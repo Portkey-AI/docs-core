@@ -1,0 +1,332 @@
+---
+title: "Cache (Simple & Semantic)"
+description: "**Simple** caching is available for all plans."
+---
+
+<Check>
+  **Semantic** caching is available for [**Production**](https://portkey.ai/pricing) and [**Enterprise**](https://portkey.ai/docs/product/enterprise-offering) users.
+</Check>
+
+Speed up and save money on your LLM requests by storing past responses in the Portkey cache. There are 2 cache modes:
+
+* **Simple:** Matches requests verbatim. Perfect for repeated, identical prompts. Works on **all models** including image generation models.
+* **Semantic:** Matches responses for requests that are semantically similar. Ideal for denoising requests with extra prepositions, pronouns, etc. Works on any model available on `**/chat/completions**`or `**/completions**` routes.
+
+Portkey cache serves requests upto **20x times faster** and **cheaper**.
+
+## Enable Cache in the Config
+
+To enable Portkey cache, just add the `cache` params to your [config object](/docs/api-reference/config-object#cache-object-details).
+
+## Simple Cache
+
+
+```Bash
+"cache": { "mode": "simple" }
+```
+
+### How it Works
+
+Simple cache performs an exact match on the input prompts. If the exact same request is received again, Portkey retrieves the response directly from the cache, bypassing the model execution.
+
+---
+
+## Semantic Cache
+
+
+```Bash
+"cache": { "mode": "semantic" }
+```
+
+### How it Works
+
+Semantic cache considers the contextual similarity between input requests. It uses cosine similarity to ascertain if the similarity between the input and a cached request exceeds a specific threshold. If the similarity threshold is met, Portkey retrieves the response from the cache, saving model execution time. Check out this [blog](https://portkey.ai/blog/reducing-llm-costs-and-latency-semantic-cache/) for more details on how we do this.
+
+<Info>
+  Semantic cache is a "superset" of both caches. Setting cache mode to "semantic" will work for when there are simple cache hits as well.
+</Info>
+
+<Note>
+  To optimise for accurate cache hit rates, Semantic cache only works with requests with less than 8,191 input tokens, and with number of messages (human, assistant, system combined) less than or equal to 4.
+</Note>
+
+### Ignoring the First Message in Semantic Cache
+
+When using the `/chat/completions` endpoint, Portkey requires at least **two** message objects in the `messages` array. The first message object, typically used for the `system` message, is not considered when determining semantic similarity for caching purposes.
+
+For example:
+
+
+```JSON
+messages = [
+
+        { "role": "system", "content": "You are a helpful assistant" },
+
+        { "role": "user", "content": "Who is the president of the US?" }
+
+]
+```
+
+In this case, only the content of the `user` message ("Who is the president of the US?") is used for finding semantic matches in the cache. The `system` message ("You are a helpful assistant") is ignored.
+
+This means that even if you change the `system` message while keeping the `user` message semantically similar, Portkey will still return a semantic cache hit.
+
+This allows you to modify the behavior or context of the assistant without affecting the cache hits for similar user queries.
+
+### [Read more how to set cache in Configs](/docs/product/ai-gateway/cache-simple-and-semantic#how-cache-works-with-configs).
+
+---
+
+## Setting Cache Age
+
+You can set the age (or "ttl") of your cached response with this setting. Cache age is also set in your Config object:
+
+```
+"cache": {
+
+    "mode": "semantic",
+
+    "max_age": 60
+
+}
+```
+
+In this example, your cache will automatically expire after 60 seconds. Cache age is set in **seconds**.
+
+<Info>
+* **Minimum** cache ageis **60 seconds**
+* **Maximum** cache ageis **90 days** (i.e. **7776000** seconds)
+* **Default** cache age is **7 days** (i.e. **604800** seconds)
+
+</Info>
+---
+
+## Force Refresh Cache
+
+Ensure that a new response is fetched and stored in the cache even when there is an existing cached response for your request. Cache force refresh can only be done **at the time of making a request**, and it is **not a part of your Config**.
+
+You can enable cache force refresh with this header:
+
+
+```Bash
+"x-portkey-cache-force-refresh": "True"
+```
+<Tabs>
+  <Tab title="NodeJS">
+```JSON
+
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: open-ai-xxx" \
+  -H "x-portkey-config: cache-config-xxx" \
+  -H "x-portkey-cache-force-refresh: true" \
+  -d '{
+    "messages": [{"role": "user","content": "Hello!"}]
+  }'
+```
+  </Tab>
+  <Tab title="Python">
+```py
+
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    virtual_key="open-ai-xxx",
+    config="pp-cache-xxx"
+)
+
+response = portkey.with_options(
+    cache_force_refresh = True
+).chat.completions.create(
+    messages = [{ "role": 'user', "content": 'Hello!' }],
+    model = 'gpt-4'
+)
+```
+  </Tab>
+  <Tab title="Node">
+```JS
+
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-cache-xxx",
+    virtualKey: "open-ai-xxx"
+})
+
+async function main(){
+    const response = await portkey.chat.completions.create({
+        messages: [{ role: 'user', content: 'Hello' }],
+        model: 'gpt-4',
+    }, {
+        cacheForceRefresh: true
+    });
+}
+
+main()
+```
+  </Tab>
+
+</Tabs>
+
+<Info>
+
+* Cache force refresh is only activated if a cache config is **also passed** along with your request. (setting `cacheForceRefresh `as `true` without passing the relevant cache config will not have any effect)
+* For requests that have previous semantic hits, force refresh is performed on ALL the semantic matches of your request.
+</Info>
+
+---
+
+## Cache Namespace: Simplified Cache Partitioning
+
+Portkey generally partitions the cache along all the values passed in your request header. With a custom cache namespace, you can now ignore metadata and other headers, and only partition the cache based on the custom strings that you send.
+
+This allows you to have finer control over your cached data and optimize your cache hit ratio.
+
+### How It Works
+
+To use Cache Namespaces, simply include the `x-portkey-cache-namespace` header in your API requests, followed by any custom string value. Portkey will then use this namespace string as the sole basis for partitioning the cache, disregarding all other headers, including metadata.
+
+For example, if you send the following header:
+
+```Bash
+"x-portkey-cache-namespace: user-123"
+```
+
+Portkey will cache the response under the namespace `user-123`, ignoring any other headers or metadata associated with the request.
+
+<Tabs>
+  <Tab title="NodeJS">
+```JS
+
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-cache-xxx",
+    virtualKey: "open-ai-xxx"
+})
+
+async function main(){
+    const response = await portkey.chat.completions.create({
+        messages: [{ role: 'user', content: 'Hello' }],
+        model: 'gpt-4',
+    }, {
+        cacheNamespace: 'user-123'
+    });
+}
+
+main()
+```
+  </Tab>
+  <Tab title="Python">
+```Python
+
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    virtual_key="open-ai-xxx",
+    config="pp-cache-xxx"
+)
+
+response = portkey.with_options(
+    cache_namespace = "user-123"
+).chat.completions.create(
+    messages = [{ "role": 'user', "content": 'Hello!' }],
+    model = 'gpt-4'
+)
+```
+  </Tab>
+<Tab title="REST API">
+```JSON
+
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: open-ai-xxx" \
+  -H "x-portkey-config: cache-config-xxx" \
+  -H "x-portkey-cache-namespace: user-123" \
+  -d '{
+    "messages": [{"role": "user","content": "Hello!"}]
+  }'
+```
+  </Tab>
+</Tabs>
+In this example, the response will be cached under the namespace `user-123`, ignoring any other headers or metadata.
+
+---
+
+## Cache in Analytics
+
+Portkey shows you powerful stats on cache usage on the Analytics page. Just head over to the Cache tab, and you will see:
+
+* Your raw number of cache hits as well as daily cache hit rate
+* Your average latency for delivering results from cache and how much time it saves you
+* How much money the cache saves you
+
+## Cache in Logs
+
+On the Logs page, the cache status is updated on the Status column. You will see `Cache Disabled` when you are not using the cache, and any of `Cache Miss`, `Cache Refreshed`, `Cache Hit`, `Cache Semantic Hit` based on the cache hit status. Read more [here](/docs/product/observability/logs).
+
+<Frame>
+  <img src="/images/product/ai-gateway/ai-11.png"/>
+</Frame>
+For each request we also calculate and show the cache response time and how much money you saved with each hit.
+
+---
+
+## How Cache works with Configs
+
+You can set cache at two levels:
+
+* **Top-level** that works across all the targets.
+* **Target-level** that works when that specific target is triggered.
+
+
+
+<Tabs>
+  <Tab title="Setting Top-Level Cache">
+```python
+{
+  "cache": {"mode": "semantic", "max_age": 60},
+  "strategy": {"mode": "fallback"},
+  "targets": [
+    {"virtual_key": "openai-key-1"},
+    {"virtual_key": "openai-key-2"}
+  ]
+}
+```
+
+  </Tab>
+  <Tab title="Setting Target-Level Cache">
+```python
+
+{
+  "strategy": {"mode": "fallback"},
+  "targets": [
+    {
+      "virtual_key": "openai-key-1",
+      "cache": {"mode": "simple", "max_age": 200}
+    },
+    {
+      "virtual_key": "openai-key-2",
+      "cache": {"mode": "semantic", "max_age": 100}
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+<Info>
+  You can also set cache at **both levels (top & target).**
+
+In this case, the **target-level cache** setting will be **given preference** over the **top-level cache** setting. You should start getting cache hits from the second request onwards for that specific target.
+
+</Info>
+<Note>
+  If any of your targets have `**override_params**` then cache on that target will not work until that particular combination of params is also stored with the cache. If there are **no** `**override_params**`for that target, then **cache will be active** on that target even if it hasn't been triggered even once.
+</Note>

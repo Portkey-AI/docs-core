@@ -1,0 +1,538 @@
+---
+title: "Tracing"
+description: "The **Tracing** capabilities in Portkey empowers you to monitor the lifecycle of your LLM requests in a unified, chronological view."
+---
+
+<Check>
+This feature is available for all plans:-
+
+* [Developer](https://app.portkey.ai/): 10k Logs / Month with 3 day Log Retention
+* [Production](https://app.portkey.ai/): 100k Logs / Month + $9 for additional 100k with 30 Days Log Retention
+* [Enterprise](https://portkey.ai/docs/product/enterprise-offering): Unlimited
+</Check>
+
+This is perfect for **agentic workflows**, **chatbots**, or **multi-step LLM calls**, by helping you understand and optimize your AI application's performance.
+
+<Frame>
+    <img src="/images/product/product-11-1.webp"/>
+</Frame>
+## How Tracing Works
+
+Portkey implements OpenTelemetry-compliant tracing. When you include a `trace ID` with your requests, all related LLM calls are grouped together in the Traces View, appearing as "spans" within that trace.
+
+> "Span" is another word for subgrouping of LLM calls. Based on how you instrument, it can refer to another group within your trace or to a single LLM call.
+
+## Trace Tree Structure
+
+Portkey uses a tree data structure for tracing, **similar to OTel.**
+
+Each node in the tree is a span with a unique `spanId` and optional `spanName`. Child spans link to a parent via the `parentSpanId`. Parentless spans become root nodes.
+
+```
+traceId
+
+├─ parentSpanId
+
+│  ├─ spanId
+
+│  ├─ spanName
+```
+
+| Key          | Expected Value | Required? |
+| ------------ | -------------- | --------- |
+| traceId      | Unique string  | YES       |
+| spanId       | Unique string  | NO        |
+| spanName     | string         | NO        |
+| parentSpanId | Unique string  | NO        |
+
+---
+
+## Enabling Tracing
+
+You can enable tracing by passing the `trace tree` values in your [Portkey metadata](/docs/product/observability/metadata) while making your request (or while instantiating your client).
+
+Based on these values, Portkey will instrument your requests, and will show the exact trace with its spans on the "Traces" view in Logs page.
+
+<Tabs>
+  <Tab title="NodeJS">
+    **Add tracing details to a single request (recommended)**
+
+```js
+const requestOptions = {
+
+    metadata: {
+
+        "traceId": "1729",
+
+        "spanId": "11",
+
+        "spanName": "LLM Call"
+
+    }
+
+}
+
+const chatCompletion = await portkey.chat.completions.create({
+
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+
+    model: 'gpt-4o',
+
+}, requestOptions);
+```
+
+#### Or, add trace details while instantiating your client
+
+
+
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+
+    apiKey: "PORTKEY_API_KEY",
+
+    virtualKey: "VIRTUAL_KEY",
+
+    metadata: {
+
+        "_user": "USER_ID",
+
+        "organisation": "ORG_ID",
+
+        "traceId": "1729"
+
+    }
+
+})
+```
+  </Tab>
+  <Tab title="Python">
+```python
+completion = portkey.with_options(
+
+    metadata = {
+
+        "traceId": "1729",
+
+        "spanId": "11",
+
+        "spanName": "LLM Call"
+
+    }
+
+).chat.completions.create(
+
+    messages = [{ "role": 'user', "content": 'Say this is a test' }],
+
+    model = 'gpt-3.5-turbo'
+
+)
+```
+
+#### Pass Trace details while instantiating your client
+
+
+
+```py
+from portkey_ai import Portkey
+
+portkey = Portkey(
+
+    api_key="PORTKEY_API_KEY",
+
+    virtual_key="VIRTUAL_KEY",
+
+    metadata={
+
+        "traceId": "1729",
+
+        "spanId": "11",
+
+        "spanName": "LLM Call"
+
+    }
+
+)
+```
+
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```NodeJS
+import { createHeaders } from 'portkey-ai'
+
+const requestOptions = {
+
+    metadata: {
+
+        "traceId": "1729",
+
+        "spanId": "11",
+
+        "spanName": "LLM Call"
+
+    }
+
+}
+
+const chatCompletion = await openai.chat.completions.create({
+
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+
+    model: 'gpt-3.5-turbo',
+
+}, requestOptions);
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```py
+
+from portkey_ai import createHeaders
+
+req_headers = createHeaders(
+    metadata = {
+        "traceId": "1729",
+        "spanId": "11",
+        "spanName": "LLM Call"
+    }
+)
+
+chat_complete = client.with_options(headers=req_headers).chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Say this is a test"}],
+)
+```
+  </Tab>
+<Tab title="REST API">
+```Bash
+
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -H "x-portkey-metadata: {\"traceId\":\"1729\",\"spanId\":\"11\",\"spanName\":\"LLM Call\"}" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user","content": "Hello!"}]
+  }'
+```
+  </Tab>
+</Tabs>
+
+
+<Info>
+    Using Metadata to help you instrument Traces is very powerful. Beyond traces & spans, you can add any details you require to the metadata and Portkey can give you filtered traces for that metadata key:value, as well as give aggregates stats for it.
+</Info>
+
+#### If you are only passing trace ID and not the span details, you can set the trace ID while making your request or while instantiating your client.
+
+<Tabs>
+  <Tab title="NodeJS">
+```js
+const requestOptions = {traceID: "YOUR_TRACE_ID"}
+
+const chatCompletion = await portkey.chat.completions.create({
+
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+
+    model: 'gpt-4o',
+
+}, requestOptions);
+
+console.log(chatCompletion.choices);
+```
+
+#### Pass Trace ID while instantiating your client
+
+
+
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+
+    apiKey: "PORTKEY_API_KEY",
+
+    virtualKey: "VIRTUAL_KEY",
+
+    traceID: "TRACE_ID"
+
+})
+```
+  </Tab>
+  <Tab title="Python">
+```python
+completion = portkey.with_options(
+
+    trace_id = "TRACE_ID"
+
+).chat.completions.create(
+
+    messages = [{ "role": 'user', "content": 'Say this is a test' }],
+
+    model = 'gpt-3.5-turbo'
+
+)
+```
+
+#### Pass Trace ID while instantiating your client
+
+```py
+from portkey_ai import Portkey
+
+portkey = Portkey(
+
+    api_key="PORTKEY_API_KEY",
+
+    virtual_key="VIRTUAL_KEY",
+
+    trace_id="TRACE_ID"
+
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```js
+
+import { createHeaders } from 'portkey-ai'
+
+const reqHeaders = {headers: createHeaders({"traceID": "TRACE_ID"})}
+
+const chatCompletion = await openai.chat.completions.create({
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: 'gpt-3.5-turbo',
+}, reqHeaders);
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```py
+
+from portkey_ai import createHeaders
+
+req_headers = createHeaders(trace_id="TRACE_ID")
+
+chat_complete = client.with_options(headers=req_headers).chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Say this is a test"}],
+)
+```
+  </Tab>
+<Tab title="REST API">
+```Bash
+
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -H "x-portkey-trace-id: TRACE_ID" \
+  -d '{
+    "model": "gpt-4-turbo",
+    "messages": [{
+        "role": "system",
+        "content": "You are a helpful assistant."
+      },{
+        "role": "user",
+        "content": "Hello!"
+      }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+
+## See Tracing in Action
+
+<iframe width="100%" height="350" src="https://www.youtube.com/embed/Y-EKz_tVNHs?si=Ycv93wxZCLInlwaf" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+## Tracing in Langchain
+
+Portkey has a dedicated handler that can instrument your Langchain chains and agents to trace them.
+
+<Tabs>
+    <Tab title="Trace Langchain Requests (Python)">
+1. First, install Portkey SDK, and Langchain's packages
+
+```py
+$ pip install langchain_OpenAI portkey-ai langchain_community
+```
+2. Import the packages
+
+```py
+from langchain_openai import ChatOpenAI
+
+from langchain.chains import LLMChain
+
+from portkey_ai.langchain import LangchainCallbackHandler
+
+from portkey_ai import createHeaders
+```
+
+3. Instantiate Portkey's Langchain Callback Handler
+
+```py
+portkey_handler = LangchainCallbackHandler(
+
+      api_key="YOUR_PORTKEY_API_KEY",
+
+      metadata={
+
+            "user_name": "User_Name",
+
+            "traceId": "Langchain_sample_callback_handler"
+
+      }
+
+)
+```
+
+4. Add the callback to the `ChatOpenAI` instance
+
+```py
+llm = ChatOpenAI(
+
+    api_key="OPENAI_API_KEY",
+
+    callbacks=[portkey_handler],
+
+)
+```
+
+5. Also add the callback when you define or run your LLM chain
+
+
+
+```py
+chain = LLMChain(
+
+    llm=llm,
+
+    prompt=prompt,
+
+    callbacks=[portkey_handler]
+
+)
+
+handler_config = {'callbacks' : [portkey_handler]}
+
+chain.invoke({"input": "what is langchain?"}, config=handler_config)
+```
+</Tab>
+
+</Tabs>
+
+
+---
+
+## Tracing Llamaindex Requests
+
+Portkey has a dedicated handler to instrument your Llamaindex requests on Portkey.
+
+<Tabs>
+    <Tab title="Trace Llamaindex Requests">
+        1. First, install Portkey SDK, and LlamaIndex packages
+
+```Bash
+$ pip install openai portkey-ai llama-index
+```
+
+1. Import the packages
+
+```py
+from llama_index.llms.openai import OpenAI
+
+from portkey_ai.llamaindex import LlamaIndexCallbackHandler
+```
+
+1. Instantiate Portkey's LlamaIndex Callback Handler
+
+```py
+portkey_handler = LlamaIndexCallbackHandler(
+
+      api_key="PORTKEY_API_KEY",
+
+      metadata={
+
+            "user_name": "User_Name",
+
+            "traceId": "Llamaindex_sample_callback_handler"
+      }
+)
+```
+
+1. Add it to `OpenAI` llm class
+
+
+
+```py
+llm = OpenAI(
+
+    model="gpt-4o",
+
+    api_key="OPENAI_API_KEY",
+
+    callbacks=[portkey_handler],
+
+)
+```
+
+1. In Llama Index, you can also set the callback at a global level
+
+
+
+```
+from llama_index.core import Settings
+
+from llama_index.core.callbacks import CallbackManager
+
+Settings.callback_manager = CallbackManager([portkey_handler])
+
+Settings.llm = llm
+```
+    </Tab>
+</Tabs>
+
+---
+
+## Inserting Logs
+
+If you are using the [Insert Log API](/docs/portkey-endpoints/logs/insert-a-log) to add logs to Portkey, your `traceId`, `spanId` etc. will become part of the metadata object in your log, and Portkey will instrument your requests to take those values into account.
+
+The logger endpoint supports inserting a single log as well as log array, and helps you build traces of any depth or complexity. For more, check here:
+
+<Card
+    title="Insert a Log"
+    href="/docs/portkey-endpoints/logs/insert-a-log"
+/>
+---
+
+## Tracing for Gateway Features
+
+Tracing also works very well to capture the Gateway behavior on retries, fallbacks, and other routing mechanisms on Portkey Gateway.
+
+Portkey automatically groups all the requests that were part of a single fallback or retry config and shows the failed and succeeded requests chronologically as "spans" inside a "trace".
+
+This is especially useful when you want to understand the total latency and behavior of your app when retry or fallbacks were triggered.
+
+For more, check out the [Fallback](/docs/product/ai-gateway/fallbacks) & [Automatic Retries](/docs/product/ai-gateway/automatic-retries) docs.
+
+---
+
+## Why Use Tracing?
+
+* **Cost Insights**: View aggregate LLM costs at the trace level.
+* **Debugging**: Easily browse all requests in a single trace and identify failures.
+* **Performance Analysis**: Understand your entire request lifecycle and total trace duration.
+* **User Feedback Integration**: Link user feedback to specific traces for targeted improvements.
+
+---
+
+## Capturing User Feedback
+
+Trace IDs can also be used to link user feedback to specific generations. This can be used in a system where users provide feedback, like a thumbs up or thumbs down, or something more complex via our feedback APIs. This feedback can be linked to traces which can span over a single generation or multiple ones. Read more here:
+
+<Card
+    title="Feedback"
+    href="/docs/product/observability/feedback"
+/>
