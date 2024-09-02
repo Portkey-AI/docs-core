@@ -1,0 +1,194 @@
+---
+title: "Instructor"
+description: "With Portkey, you can confidently take your Instructor pipelines to production and get complete observability over all of your calls + make them reliable - all with a 2 LOC change!"
+---
+
+**Instructor** is a framework for extracting structured outputs from LLMs, available in [Python](https://python.useinstructor.com/) & [JS](https://instructor-ai.github.io/instructor-js/).
+
+## Integrating Portkey with Instructor
+
+<Tabs>
+  <Tab title="Instructor Python - OpenAI">
+```python
+
+import instructor
+from pydantic import BaseModel
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+portkey = OpenAI(
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        virtual_key="OPENAI_VIRTUAL_KEY",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+class User(BaseModel):
+    name: str
+    age: int
+
+client = instructor.from_openai(portkey)
+
+user_info = client.chat.completions.create(
+    model="gpt-4-turbo",
+    max_tokens=1024,
+    response_model=User,
+    messages=[{"role": "user", "content": "John Doe is 30 years old."}],
+)
+
+print(user_info.name)
+print(user_info.age)
+```
+
+  </Tab>
+  <Tab title="Instructor JS - OpenAI">
+```python
+
+import Instructor from "@instructor-ai/instructor";
+import OpenAI from "openai";
+import { z } from "zod";
+import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai";
+
+const portkey = new OpenAI({
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "OPENAI_API_KEY",
+  }),
+});
+
+const client = Instructor({
+  client: portkey,
+  mode: "TOOLS",
+});
+
+const UserSchema = z.object({
+  age: z.number().describe("The age of the user"),
+  name: z.string(),
+});
+
+const user = await client.chat.completions.create({
+  messages: [{ role: "user", content: "Jason Liu is 30 years old" }],
+  model: "claude-3-sonnet-20240229",
+  //  model: "gpt-4",
+  max_tokens: 512,
+  response_model: {
+    schema: UserSchema,
+    name: "User",
+  },
+});
+
+console.log(user);
+```
+  </Tab>
+</Tabs>
+
+## Caching Your Requests
+
+Let's now bring down the cost of running your Instructor pipeline with Portkey caching. You can just create a Config object where you define your cache setting:
+
+```py
+
+{
+  "cache": {
+    "mode": "simple"
+  }
+}
+```
+
+You can write it raw, or use Portkey's Config builder and get a corresponding `config id`. Then, just pass it while instantiating your OpenAI client:
+
+
+<Tabs>
+  <Tab title="Instructor Python - OpenAI">
+```python
+
+import instructor
+from pydantic import BaseModel
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+cache_config = {
+  "cache": {
+    "mode": "simple"
+  }
+}
+
+portkey = OpenAI(
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        virtual_key="OPENAI_VIRTUAL_KEY",
+        api_key="PORTKEY_API_KEY",
+        config=cache_config # Or pass your Config ID saved from Portkey app
+    )
+)
+
+class User(BaseModel):
+    name: str
+    age: int
+
+client = instructor.from_openai(portkey)
+
+user_info = client.chat.completions.create(
+    model="gpt-4-turbo",
+    max_tokens=1024,
+    response_model=User,
+    messages=[{"role": "user", "content": "John Doe is 30 years old."}],
+)
+
+print(user_info.name)
+print(user_info.age)
+```
+
+  </Tab>
+  <Tab title="Instructor JS - OpenAI">
+```python
+
+import Instructor from "@instructor-ai/instructor";
+import OpenAI from "openai";
+import { z } from "zod";
+import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai";
+
+const cache_config = {
+  "cache": {
+    "mode": "simple"
+  }
+}
+
+const portkey = new OpenAI({
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "OPENAI_API_KEY",
+    config: cache_config // Or pass your Config ID saved from Portkey app
+  }),
+});
+
+const client = Instructor({
+  client: portkey,
+  mode: "TOOLS",
+});
+
+const UserSchema = z.object({
+  age: z.number().describe("The age of the user"),
+  name: z.string(),
+});
+
+const user = await client.chat.completions.create({
+  messages: [{ role: "user", content: "Jason Liu is 30 years old" }],
+  model: "claude-3-sonnet-20240229",
+  //  model: "gpt-4",
+  max_tokens: 512,
+  response_model: {
+    schema: UserSchema,
+    name: "User",
+  },
+});
+
+console.log(user);
+```
+  </Tab>
+</Tabs>
+
+Similarly, you can add [Fallback](/docs/product/ai-gateway/fallbacks), [Loadbalancing](/docs/product/ai-gateway/load-balancing), [Timeout](/docs/product/ai-gateway/request-timeouts), or [Retry](/docs/product/ai-gateway/automatic-retries) settings to your Configs and make your Instructor requests robust & reliable.
