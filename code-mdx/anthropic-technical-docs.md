@@ -590,3 +590,7 @@ Portkey offers several advanced capabilities for managing your Anthropic integra
 3. **A/B Test Different Models**: Conduct A/B tests with various Anthropic models. [Learn more](/docs/product/ai-gateway/load-balance)
 
 4. **Gain Insights to Requests**: Obtain detailed insights into your Anthropic API requests. [Learn more](/docs/product/observability/traces)
+
+## Conclusion
+
+This documentation provides a comprehensive guide to integrating Anthropic's AI models using Portkey. It covers various methods of integration, including direct API calls, virtual key usage, and special features like tool calling and prompt caching. For more detailed information or specific use cases, refer to the Anthropic and Portkey documentation linked throughout this guide.
