@@ -1,0 +1,556 @@
+---
+title: 'Cerebras'
+description: 'Integrate Cerebras LLMs into your applications with Portkey'
+---
+
+**Portkey Provider Slug:** `cerebras`
+
+## Overview
+
+Cerebras offers a low-latency solution for AI model inference powered by Cerebras Wafer-Scale Engines and CS-3 systems. This document outlines the features, supported models, and integration methods available for Cerebras through the Portkey platform.
+
+Most common models:
+- llama3.1-8b
+- llama3.1-70b
+
+## Quick Links
+
+- [Cerebras Website](https://cerebras.ai/)
+- [Documentation](https://inference-docs.cerebras.ai/introduction)
+
+## Supported Features
+
+### Supported Models
+
+| Type | Models |
+|------|--------|
+| Chat Completions | llama3.1-8b, llama3.1-70b |
+
+[More models](https://inference-docs.cerebras.ai/introduction)
+
+### Cerebras-Specific Features
+
+- **Tool Calling**: Cerebras API endpoints support tool use for programmatic execution of specified operations through requests with explicitly defined operations. [Learn more](https://inference-docs.cerebras.ai/tool-use)
+
+## Integration Guide
+
+### Chat Completions Calls
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    provider="cerebras",
+    authorisation="$PROVIDER_API_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="llama3.1-8b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    provider: "cerebras",
+    authorisation: "$PROVIDER_API_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "llama3.1-8b",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What is the capital of France?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: cerebras" \
+  -H "Authorization: Bearer $PROVIDER_API_KEY" \
+  -d '{
+    "model": "llama3.1-8b",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "What is the capital of France?"}
+    ]
+  }'
+```
+
+```Python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="$PROVIDER_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="cerebras",
+        api_key="$PORTKEY_API_KEY"
+    )
+)
+
+response = client.chat.completions.create(
+    model="llama3.1-8b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node OpenAI Node SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+    apiKey: "$PROVIDER_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "cerebras",
+        apiKey: "$PORTKEY_API_KEY"
+    })
+});
+
+const response = await openai.chat.completions.create({
+    model: "llama3.1-8b",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What is the capital of France?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+### Integration via Virtual Key
+
+1. **Generate a Virtual Key**
+   Get your API key from Cerebras and add it to Portkey to create a virtual key.
+
+   You can get your Cerebras API key from the Cerebras website [here](https://cerebras.ai/).
+
+   [Insert screenshot of virtual key generation process here]
+
+2. **Using the Virtual Key**
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    virtual_key="$VIRTUAL_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="llama3.1-8b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    virtualKey: "$VIRTUAL_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "llama3.1-8b",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What is the capital of France?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: $VIRTUAL_KEY" \
+  -d '{
+    "model": "llama3.1-8b",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "What is the capital of France?"}
+    ]
+  }'
+```
+
+```Python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="$PROVIDER_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        api_key="$PORTKEY_API_KEY",
+        virtual_key="$VIRTUAL_KEY"
+    )
+)
+
+response = client.chat.completions.create(
+    model="llama3.1-8b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node OpenAI Node SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+    apiKey: "$PROVIDER_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        apiKey: "$PORTKEY_API_KEY",
+        virtualKey: "$VIRTUAL_KEY"
+    })
+});
+
+const response = await openai.chat.completions.create({
+    model: "llama3.1-8b",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What is the capital of France?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+### Prompt Playground
+
+Manage and test prompts for Cerebras models in the Prompt Library.
+
+[Insert screenshot of Prompt Playground here]
+
+#### Using Prompts from the Prompt Library
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    provider="cerebras",
+    authorisation="$PROVIDER_API_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="llama3.1-8b",
+    prompt_slug="your-prompt-slug",
+    prompt_args={"arg1": "value1", "arg2": "value2"}
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    provider: "cerebras",
+    authorisation: "$PROVIDER_API_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "llama3.1-8b",
+    promptSlug: "your-prompt-slug",
+    promptArgs: {arg1: "value1", arg2: "value2"}
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: cerebras" \
+  -H "Authorization: Bearer $PROVIDER_API_KEY" \
+  -d '{
+    "model": "llama3.1-8b",
+    "prompt_slug": "your-prompt-slug",
+    "prompt_args": {
+      "arg1": "value1",
+      "arg2": "value2"
+    }
+  }'
+```
+
+```Python OpenAI Python SDK
+# Not supported
+```
+
+```Node OpenAI Node SDK
+// Not supported
+```
+
+</CodeGroup>
+
+### Special Example: Chat Completion with Tool Call
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    provider="cerebras",
+    authorisation="$PROVIDER_API_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="llama3.1-8b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What's the weather like in New York?"}
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get the current weather in a given location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g. San Francisco, CA"
+                        }
+                    },
+                    "required": ["location"]
+                }
+            }
+        }
+    ]
+)
+
+print(response.choices[0].message.content)
+print(response.choices[0].message.tool_calls)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    provider: "cerebras",
+    authorisation: "$PROVIDER_API_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "llama3.1-8b",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What's the weather like in New York?"}
+    ],
+    tools: [
+        {
+            type: "function",
+            function: {
+                name: "get_weather",
+                description: "Get the current weather in a given location",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        location: {
+                            type: "string",
+                            description: "The city and state, e.g. San Francisco, CA"
+                        }
+                    },
+                    required: ["location"]
+                }
+            }
+        }
+    ]
+});
+
+console.log(response.choices[0].message.content);
+console.log(response.choices[0].message.tool_calls);
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: cerebras" \
+  -H "Authorization: Bearer $PROVIDER_API_KEY" \
+  -d '{
+    "model": "llama3.1-8b",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "What'\''s the weather like in New York?"}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current weather in a given location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "The city and state, e.g. San Francisco, CA"
+              }
+            },
+            "required": ["location"]
+          }
+        }
+      }
+    ]
+  }'
+```
+
+```Python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="$PROVIDER_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="cerebras",
+        api_key="$PORTKEY_API_KEY"
+    )
+)
+
+response = client.chat.completions.create(
+    model="llama3.1-8b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What's the weather like in New York?"}
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get the current weather in a given location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g. San Francisco, CA"
+                        }
+                    },
+                    "required": ["location"]
+                }
+            }
+        }
+    ]
+)
+
+print(response.choices[0].message.content)
+print(response.choices[0].message.tool_calls)
+```
+
+```Node OpenAI Node SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+    apiKey: "$PROVIDER_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "cerebras",
+        apiKey: "$PORTKEY_API_KEY"
+    })
+});
+
+const response = await openai.chat.completions.create({
+    model: "llama3.1-8b",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What's the weather like in New York?"}
+    ],
+    tools: [
+        {
+            type: "function",
+            function: {
+                name: "get_weather",
+                description: "Get the current weather in a given location",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        location: {
+                            type: "string",
+                            description: "The city and state, e.g. San Francisco, CA"
+                        }
+                    },
+                    required: ["location"]
+                }
+            }
+        }
+    ]
+});
+
+console.log(response.choices[0].message.content);
+console.log(response.choices[0].message.tool_calls);
+```
+
+</CodeGroup>
+
+## Explore Advanced Portkey Features
+
+<CardGroup cols={2}>
+  <Card title="Configure Routing" href="/docs/product/ai-gateway/routing">
+    <img src="/api/placeholder/400/320" alt="Configure Routing" />
+  </Card>
+  <Card title="Add Metadata to Requests" href="/docs/product/observability/metadata">
+    <img src="/api/placeholder/400/320" alt="Add Metadata to Requests" />
+  </Card>
+  <Card title="A/B Test Different Models" href="/docs/product/ai-gateway/load-balance">
+    <img src="/api/placeholder/400/320" alt="A/B Test Different Models" />
+  </Card>
+  <Card title="Gain Insights to Requests" href="/docs/product/observability/traces">
+    <img src="/api/placeholder/400/320" alt="Gain Insights to Requests" />
+  </Card>
+</CardGroup>

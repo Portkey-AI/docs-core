@@ -1,0 +1,293 @@
+---
+title: 'Lingyi (01.ai)'
+description: 'Integrate Lingyi (01.ai) LLMs into your applications with Portkey'
+---
+
+**Portkey Provider Slug:** `lingyi`
+
+## Overview
+
+Lingyi (01.ai) offers Yi Open Source Models that can be easily integrated into various applications through Portkey. This document outlines the features, supported models, and integration methods available for Lingyi through the Portkey platform.
+
+## Quick Links
+
+- [Lingyi Website](https://platform.lingyiwanwu.com/)
+- [Documentation](https://github.com/01-ai/Yi-1.5)
+- [Discord Community](https://discord.gg/WWzerjfb)
+
+## Supported Features
+
+### Supported Models
+
+| Type | Models |
+|------|--------|
+| Chat Completions | Yi-Large, Yi-Large-Turbo, Yi-Large-FC, Yi-Large-RAG |
+
+[More models](https://platform.lingyiwanwu.com/)
+
+### Unsupported Features
+
+- **Prompt Playground**: Prompt playground is not supported for Yi models.
+
+## Integration Guide
+
+### Chat Completions Calls
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    provider="lingyi",
+    authorisation="$PROVIDER_API_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="Yi-Large",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Tell me about Yi models."}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    provider: "lingyi",
+    authorisation: "$PROVIDER_API_KEY"
+});
+
+async function main() {
+    const response = await portkey.chat.completions.create({
+        model: "Yi-Large",
+        messages: [
+            {role: "system", content: "You are a helpful assistant."},
+            {role: "user", content: "Tell me about Yi models."}
+        ]
+    });
+
+    console.log(response.choices[0].message.content);
+}
+
+main();
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+-H "Content-Type: application/json" \
+-H "x-portkey-api-key: $PORTKEY_API_KEY" \
+-H "x-portkey-provider: lingyi" \
+-H "Authorization: Bearer $PROVIDER_API_KEY" \
+-d '{
+  "model": "Yi-Large",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Tell me about Yi models."}
+  ]
+}'
+```
+
+```Python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="$PROVIDER_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="lingyi",
+        api_key="$PORTKEY_API_KEY"
+    )
+)
+
+response = client.chat.completions.create(
+    model="Yi-Large",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Tell me about Yi models."}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node OpenAI Node SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "$PROVIDER_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "lingyi",
+        apiKey: "$PORTKEY_API_KEY"
+    })
+});
+
+async function main() {
+    const response = await client.chat.completions.create({
+        model: "Yi-Large",
+        messages: [
+            {role: "system", content: "You are a helpful assistant."},
+            {role: "user", content: "Tell me about Yi models."}
+        ]
+    });
+
+    console.log(response.choices[0].message.content);
+}
+
+main();
+```
+
+</CodeGroup>
+
+### Integration via Virtual Key
+
+1. **Generate a Virtual Key**
+   Get your API key from Lingyi and add it to Portkey to create a virtual key.
+
+   You can get your Lingyi API key from the Lingyi website [here](https://platform.lingyiwanwu.com/).
+
+   [Insert screenshot of virtual key generation process here]
+
+2. **Using the Virtual Key**
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    virtual_key="$VIRTUAL_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="Yi-Large",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Tell me about Yi models."}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    virtualKey: "$VIRTUAL_KEY"
+});
+
+async function main() {
+    const response = await portkey.chat.completions.create({
+        model: "Yi-Large",
+        messages: [
+            {role: "system", content: "You are a helpful assistant."},
+            {role: "user", content: "Tell me about Yi models."}
+        ]
+    });
+
+    console.log(response.choices[0].message.content);
+}
+
+main();
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+-H "Content-Type: application/json" \
+-H "x-portkey-api-key: $PORTKEY_API_KEY" \
+-H "x-portkey-virtual-key: $VIRTUAL_KEY" \
+-d '{
+  "model": "Yi-Large",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Tell me about Yi models."}
+  ]
+}'
+```
+
+```Python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="$PROVIDER_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        api_key="$PORTKEY_API_KEY",
+        virtual_key="$VIRTUAL_KEY"
+    )
+)
+
+response = client.chat.completions.create(
+    model="Yi-Large",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Tell me about Yi models."}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node OpenAI Node SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "$PROVIDER_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        apiKey: "$PORTKEY_API_KEY",
+        virtualKey: "$VIRTUAL_KEY"
+    })
+});
+
+async function main() {
+    const response = await client.chat.completions.create({
+        model: "Yi-Large",
+        messages: [
+            {role: "system", content: "You are a helpful assistant."},
+            {role: "user", content: "Tell me about Yi models."}
+        ]
+    });
+
+    console.log(response.choices[0].message.content);
+}
+
+main();
+```
+
+</CodeGroup>
+
+### Prompt Playground
+
+Coming soon...
+
+## Explore Advanced Portkey Features
+
+<CardGroup cols={2}>
+  <Card title="Configure Routing" href="/docs/product/ai-gateway/routing">
+    <img src="/api/placeholder/400/320" alt="Configure Routing" />
+  </Card>
+  <Card title="Add Metadata to Requests" href="/docs/product/observability/metadata">
+    <img src="/api/placeholder/400/320" alt="Add Metadata to Requests" />
+  </Card>
+  <Card title="A/B Test Different Models" href="/docs/product/ai-gateway/load-balance">
+    <img src="/api/placeholder/400/320" alt="A/B Test Different Models" />
+  </Card>
+  <Card title="Gain Insights to Requests" href="/docs/product/observability/traces">
+    <img src="/api/placeholder/400/320" alt="Gain Insights to Requests" />
+  </Card>
+</CardGroup>
