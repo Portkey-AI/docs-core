@@ -1,0 +1,277 @@
+---
+title: 'Deepinfra'
+description: 'Integrate Deepinfra LLMs into your applications with Portkey'
+---
+
+**Portkey Provider Slug:** `deepinfra`
+
+## Overview
+
+DeepInfra makes it easy to run the latest machine learning models in the cloud. This document outlines the features, supported models, and integration methods available for Deepinfra through the Portkey platform.
+
+## Quick Links
+
+- [Deepinfra Website](https://deepinfra.com/)
+- [Documentation](https://deepinfra.com/docs)
+- [Discord Community](https://discord.gg/x88dCvhqYq)
+
+## Supported Features
+
+### Supported Models
+
+| Type | Models |
+|------|--------|
+| Chat Completions | [All OpenAI compatible chat models on Deepinfra](https://deepinfra.com/models/text-generation) |
+
+### Unsupported Models
+
+- Text-to-image
+- Automatic speech recognition
+- Embeddings
+- Custom models
+- Zero-shot image classification
+
+## Integration Guide
+
+### Chat Completions Calls
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    provider="deepinfra",
+    authorisation="$PROVIDER_API_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="meta-llama/Meta-Llama-3.1-405B-Instruct",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    provider: "deepinfra",
+    authorisation: "$PROVIDER_API_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "meta-llama/Meta-Llama-3.1-405B-Instruct",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What is the capital of France?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: deepinfra" \
+  -H "Authorization: Bearer $PROVIDER_API_KEY" \
+  -d '{
+    "model": "meta-llama/Meta-Llama-3.1-405B-Instruct",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "What is the capital of France?"}
+    ]
+  }'
+```
+
+```Python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="$PROVIDER_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="deepinfra",
+        api_key="$PORTKEY_API_KEY"
+    )
+)
+
+response = client.chat.completions.create(
+    model="meta-llama/Meta-Llama-3.1-405B-Instruct",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node OpenAI Node SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "$PROVIDER_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "deepinfra",
+        apiKey: "$PORTKEY_API_KEY"
+    })
+});
+
+const response = await client.chat.completions.create({
+    model: "meta-llama/Meta-Llama-3.1-405B-Instruct",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What is the capital of France?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+### Integration via Virtual Key
+
+1. **Generate a Virtual Key**
+   Get your API key from Deepinfra and add it to Portkey to create a virtual key.
+
+   You can get your Deepinfra API key from the Deepinfra website.
+
+   [Insert screenshot of virtual key generation process here]
+
+2. **Using the Virtual Key**
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    virtual_key="$VIRTUAL_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="meta-llama/Meta-Llama-3.1-405B-Instruct",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    virtualKey: "$VIRTUAL_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "meta-llama/Meta-Llama-3.1-405B-Instruct",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What is the capital of France?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: $VIRTUAL_KEY" \
+  -d '{
+    "model": "meta-llama/Meta-Llama-3.1-405B-Instruct",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", content: "What is the capital of France?"}
+    ]
+  }'
+```
+
+```Python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="$VIRTUAL_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        api_key="$PORTKEY_API_KEY"
+    )
+)
+
+response = client.chat.completions.create(
+    model="meta-llama/Meta-Llama-3.1-405B-Instruct",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node OpenAI Node SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "$VIRTUAL_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        apiKey: "$PORTKEY_API_KEY"
+    })
+});
+
+const response = await client.chat.completions.create({
+    model: "meta-llama/Meta-Llama-3.1-405B-Instruct",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "What is the capital of France?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+### Prompt Playground
+
+Coming soon...
+
+## Explore Advanced Portkey Features
+
+<CardGroup cols={2}>
+  <Card title="Configure Routing" href="/docs/product/ai-gateway/routing">
+    <img src="/api/placeholder/400/320" alt="Configure Routing" />
+  </Card>
+  <Card title="Add Metadata to Requests" href="/docs/product/observability/metadata">
+    <img src="/api/placeholder/400/320" alt="Add Metadata to Requests" />
+  </Card>
+  <Card title="A/B Test Different Models" href="/docs/product/ai-gateway/load-balance">
+    <img src="/api/placeholder/400/320" alt="A/B Test Different Models" />
+  </Card>
+  <Card title="Gain Insights to Requests" href="/docs/product/observability/traces">
+    <img src="/api/placeholder/400/320" alt="Gain Insights to Requests" />
+  </Card>
+</CardGroup>
