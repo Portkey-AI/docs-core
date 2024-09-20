@@ -1,0 +1,363 @@
+---
+title: 'AI21'
+description: 'Integrate AI21 LLMs into your applications with Portkey'
+---
+
+**Portkey Provider Slug:** `ai21`
+
+## Overview
+
+AI21 provides long context Large Language Models (LLMs) for integration into applications. This document outlines the features, supported models, and integration methods available for AI21 through the Portkey platform.
+
+## Quick Links
+
+- [AI21 Website](https://www.ai21.com/)
+- [Pricing](https://www.ai21.com/pricing)
+- [Documentation](https://docs.ai21.com/)
+
+## Supported Features
+
+### Supported Models
+
+| Type | Models |
+|------|--------|
+| Completions | j2-ultra |
+| Chat Completions | j2-ultra, j2-mid, j2-light |
+| Embedding | /embed (deprecated by AI21) |
+
+### Unsupported Models
+
+- jamba-1.5-mini
+- jamba-1.5-large
+
+### Unsupported Parameters
+
+- tool
+- response_format
+- documents
+
+### AI21-Specific Features
+
+- **Tool Calling**: AI21 API endpoints support tool use for programmatic execution of specified operations through requests with explicitly defined operations. [Learn more](https://docs.ai21.com/reference/jamba-15-api-ref)
+  Note: This is currently not supported by Portkey.
+
+## Integration Guide
+
+### Chat Completions
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    provider="ai21",
+    authorisation="$PROVIDER_API_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="j2-ultra",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello, how are you?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    provider: "ai21",
+    authorisation: "$PROVIDER_API_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "j2-ultra",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "Hello, how are you?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: ai21" \
+  -H "Authorization: Bearer $PROVIDER_API_KEY" \
+  -d '{
+    "model": "j2-ultra",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Hello, how are you?"}
+    ]
+  }'
+```
+
+```Python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="$PROVIDER_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="ai21",
+        api_key="$PORTKEY_API_KEY"
+    )
+)
+
+response = client.chat.completions.create(
+    model="j2-ultra",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello, how are you?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node OpenAI Node SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+    apiKey: "$PROVIDER_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "ai21",
+        apiKey: "$PORTKEY_API_KEY"
+    })
+});
+
+const response = await openai.chat.completions.create({
+    model: "j2-ultra",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "Hello, how are you?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+### Integration via Virtual Key
+
+1. **Generate a Virtual Key**
+   Get your API key from AI21 and add it to Portkey to create a virtual key.
+
+   You can get your AI21 API key from the AI21 console [here](https://studio.ai21.com/account/api-key).
+
+   [Insert screenshot of virtual key generation process here]
+
+2. **Using the Virtual Key**
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    virtual_key="$VIRTUAL_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="j2-ultra",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello, how are you?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    virtualKey: "$VIRTUAL_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "j2-ultra",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "Hello, how are you?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: $VIRTUAL_KEY" \
+  -d '{
+    "model": "j2-ultra",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Hello, how are you?"}
+    ]
+  }'
+```
+
+```Python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="$PROVIDER_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        api_key="$PORTKEY_API_KEY",
+        virtual_key="$VIRTUAL_KEY"
+    )
+)
+
+response = client.chat.completions.create(
+    model="j2-ultra",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello, how are you?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node OpenAI Node SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+    apiKey: "$PROVIDER_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        apiKey: "$PORTKEY_API_KEY",
+        virtualKey: "$VIRTUAL_KEY"
+    })
+});
+
+const response = await openai.chat.completions.create({
+    model: "j2-ultra",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "Hello, how are you?"}
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+### Prompt Playground
+
+Manage and test prompts for AI21 models in the Prompt Library.
+
+[Insert screenshot of Prompt Playground here]
+
+#### Using Prompts from the Prompt Library
+
+<CodeGroup>
+
+```Python python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="$PORTKEY_API_KEY",
+    provider="ai21",
+    authorisation="$PROVIDER_API_KEY"
+)
+
+response = portkey.chat.completions.create(
+    model="j2-ultra",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello, how are you?"}
+    ],
+    prompt_slug="my-ai21-prompt"
+)
+
+print(response.choices[0].message.content)
+```
+
+```Node node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "$PORTKEY_API_KEY",
+    provider: "ai21",
+    authorisation: "$PROVIDER_API_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "j2-ultra",
+    messages: [
+        {role: "system", content: "You are a helpful assistant."},
+        {role: "user", content: "Hello, how are you?"}
+    ],
+    promptSlug: "my-ai21-prompt"
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: ai21" \
+  -H "Authorization: Bearer $PROVIDER_API_KEY" \
+  -H "x-portkey-prompt-slug: my-ai21-prompt" \
+  -d '{
+    "model": "j2-ultra",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Hello, how are you?"}
+    ]
+  }'
+```
+
+```Python OpenAI Python SDK
+# Not supported
+```
+
+```Node OpenAI Node SDK
+// Not supported
+```
+
+</CodeGroup>
+
+## Explore Advanced Portkey Features
+
+<CardGroup cols={2}>
+  <Card title="Configure Routing" href="/docs/product/ai-gateway/routing">
+    <img src="/api/placeholder/400/320" alt="Configure Routing" />
+  </Card>
+  <Card title="Add Metadata to Requests" href="/docs/product/observability/metadata">
+    <img src="/api/placeholder/400/320" alt="Add Metadata to Requests" />
+  </Card>
+  <Card title="A/B Test Different Models" href="/docs/product/ai-gateway/load-balance">
+    <img src="/api/placeholder/400/320" alt="A/B Test Different Models" />
+  </Card>
+  <Card title="Gain Insights to Requests" href="/docs/product/observability/traces">
+    <img src="/api/placeholder/400/320" alt="Gain Insights to Requests" />
+  </Card>
+</CardGroup>
