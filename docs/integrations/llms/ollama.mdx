@@ -55,7 +55,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```js Node.js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",

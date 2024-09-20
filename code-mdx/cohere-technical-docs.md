@@ -48,7 +48,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="cohere",
-    authorisation="$COHERE_API_KEY"
+    Authorization="$COHERE_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -61,12 +61,12 @@ response = portkey.chat.completions.create(
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
   apiKey: "$PORTKEY_API_KEY",
   provider: "cohere",
-  authorisation: "$COHERE_API_KEY"
+  Authorization: "$COHERE_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -170,7 +170,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
   apiKey: "$PORTKEY_API_KEY",
@@ -256,7 +256,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="cohere",
-    authorisation="$COHERE_API_KEY"
+    Authorization="$COHERE_API_KEY"
 )
 
 response = portkey.post_proxy(
@@ -275,12 +275,12 @@ response = portkey.post_proxy(
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
   apiKey: "$PORTKEY_API_KEY",
   provider: "cohere",
-  authorisation: "$COHERE_API_KEY"
+  Authorization: "$COHERE_API_KEY"
 });
 
 const response = await portkey.postProxy({

@@ -52,7 +52,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="perplexity-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -66,12 +66,12 @@ response = portkey.chat.completions.create(
 
 ```js
 // Use Portkey Node.js SDK to make chat calls to Perplexity chat completions models
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "perplexity-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -180,7 +180,7 @@ response = portkey.chat.completions.create(
 
 ```js
 // Initialize Portkey with the virtual key in Node.js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -276,12 +276,12 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="perplexity-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
     model="llama-3.1-sonar-small-128k-online",
-    prompt_slug="prompt-library-slug",
+    prompt_id="prompt-library-slug",
     messages=[
         {"role": "user", "content": "What is the capital of France?"}
     ]
@@ -290,12 +290,12 @@ response = portkey.chat.completions.create(
 
 ```js
 // Use prompts from the Prompt Library in Node.js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "perplexity-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -316,7 +316,7 @@ curl https://api.portkey.ai/v1/chat/completions \
   -H "Authorization: Bearer $PROVIDER_API_KEY" \
   -d '{
     "model": "llama-3.1-sonar-small-128k-online",
-    "prompt_slug": "prompt-library-slug",
+    "prompt_id": "prompt-library-slug",
     "messages": [
       {"role": "user", "content": "What is the capital of France?"}
     ]

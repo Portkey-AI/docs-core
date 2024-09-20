@@ -54,7 +54,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="groq",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -69,12 +69,12 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "groq",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -164,7 +164,7 @@ import base64
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="groq",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 with open("image.jpg", "rb") as image_file:
@@ -184,13 +184,13 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 import fs from 'fs';
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "groq",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const image = fs.readFileSync('image.jpg', {encoding: 'base64'});
@@ -322,7 +322,7 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -420,12 +420,12 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="groq",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
     model="gemma-7b-it",
-    prompt_slug="my-custom-prompt",
+    prompt_id="my-custom-prompt",
     messages=[
         {"role": "user", "content": "What is the capital of France?"}
     ]
@@ -435,12 +435,12 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "groq",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -462,7 +462,7 @@ curl https://api.portkey.ai/v1/chat/completions \
   -H "Authorization: Bearer $PROVIDER_API_KEY" \
   -d '{
     "model": "gemma-7b-it",
-    "prompt_slug": "my-custom-prompt",
+    "prompt_id": "my-custom-prompt",
     "messages": [
       {"role": "user", "content": "What is the capital of France?"}
     ]
@@ -489,7 +489,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="groq",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -521,12 +521,12 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "groq",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({

@@ -44,7 +44,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="cerebras",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -59,12 +59,12 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "cerebras",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -176,7 +176,7 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -274,12 +274,12 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="cerebras",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
     model="llama3.1-8b",
-    prompt_slug="your-prompt-slug",
+    prompt_id="your-prompt-slug",
     prompt_args={"arg1": "value1", "arg2": "value2"}
 )
 
@@ -287,12 +287,12 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "cerebras",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -312,7 +312,7 @@ curl https://api.portkey.ai/v1/chat/completions \
   -H "Authorization: Bearer $PROVIDER_API_KEY" \
   -d '{
     "model": "llama3.1-8b",
-    "prompt_slug": "your-prompt-slug",
+    "prompt_id": "your-prompt-slug",
     "prompt_args": {
       "arg1": "value1",
       "arg2": "value2"
@@ -340,7 +340,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="cerebras",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -375,12 +375,12 @@ print(response.choices[0].message.tool_calls)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "cerebras",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({

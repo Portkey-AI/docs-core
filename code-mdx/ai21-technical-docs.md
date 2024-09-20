@@ -53,7 +53,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="ai21",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -68,12 +68,12 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "ai21",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -185,7 +185,7 @@ print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -283,7 +283,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="ai21",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -292,19 +292,19 @@ response = portkey.chat.completions.create(
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello, how are you?"}
     ],
-    prompt_slug="my-ai21-prompt"
+    prompt_id="my-ai21-prompt"
 )
 
 print(response.choices[0].message.content)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "ai21",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({

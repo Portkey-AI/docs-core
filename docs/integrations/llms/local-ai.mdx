@@ -64,7 +64,7 @@ print(response.choices[0].message.content)
 ```
 
 ```js Node.js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 // Initialize the client with the API key and custom host for Local AI
 const portkey = new Portkey({
