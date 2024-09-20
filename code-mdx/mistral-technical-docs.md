@@ -47,7 +47,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="mistral-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -65,7 +65,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "mistral-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -148,7 +148,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="mistral-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.embeddings.create(
@@ -163,7 +163,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "mistral-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.embeddings.create({
@@ -234,7 +234,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="mistral-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.completions.create(
@@ -250,7 +250,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "mistral-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.completions.create({
@@ -426,7 +426,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="mistral-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -444,7 +444,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "mistral-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -493,7 +493,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="mistral-ai",
-    authorisation="$PROVIDER_API_KEY",
+    Authorization="$PROVIDER_API_KEY",
     custom_host="https://api.codestral.ai"
 )
 
@@ -510,7 +510,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "mistral-ai",
-    authorisation: "$PROVIDER_API_KEY",
+    Authorization: "$PROVIDER_API_KEY",
     customHost: "https://api.codestral.ai"
 });
 

@@ -40,7 +40,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="deepbricks",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -59,7 +59,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "deepbricks",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({

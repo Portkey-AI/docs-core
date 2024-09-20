@@ -51,7 +51,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="fireworks-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -69,7 +69,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "fireworks-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -259,7 +259,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="fireworks-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -277,7 +277,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "fireworks-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -319,7 +319,7 @@ import base64
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="fireworks-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 with open("image.jpg", "rb") as image_file:
@@ -341,7 +341,7 @@ import fs from 'fs';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "fireworks-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const imageBase64 = fs.readFileSync('image.jpg', {encoding: 'base64'});
@@ -367,7 +367,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="fireworks-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.images.generate(
@@ -386,7 +386,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "fireworks-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.images.generate({
@@ -413,7 +413,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="fireworks-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 grammar = """root ::= number "+" number "=" number
@@ -434,7 +434,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "fireworks-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const grammar = `root ::= number "+" number "=" number
@@ -464,7 +464,7 @@ import json
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="fireworks-ai",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 json_schema = {
@@ -495,7 +495,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "fireworks-ai",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const jsonSchema = {

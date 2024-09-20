@@ -54,7 +54,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="groq",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -74,7 +74,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "groq",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -164,7 +164,7 @@ import base64
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="groq",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 with open("image.jpg", "rb") as image_file:
@@ -190,7 +190,7 @@ import fs from 'fs';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "groq",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const image = fs.readFileSync('image.jpg', {encoding: 'base64'});
@@ -420,7 +420,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="groq",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -440,7 +440,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "groq",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
@@ -489,7 +489,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="$PORTKEY_API_KEY",
     provider="groq",
-    authorisation="$PROVIDER_API_KEY"
+    Authorization="$PROVIDER_API_KEY"
 )
 
 response = portkey.chat.completions.create(
@@ -526,7 +526,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
     provider: "groq",
-    authorisation: "$PROVIDER_API_KEY"
+    Authorization: "$PROVIDER_API_KEY"
 });
 
 const response = await portkey.chat.completions.create({
