@@ -54,7 +54,7 @@ print(response.data[0].embedding)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
   apiKey: "$PORTKEY_API_KEY",
@@ -156,7 +156,7 @@ print(response.data[0].embedding)
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
   apiKey: "$PORTKEY_API_KEY",

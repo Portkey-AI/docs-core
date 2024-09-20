@@ -64,7 +64,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```javascript JavaScript (Portkey SDK)
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -171,7 +171,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```javascript JavaScript (Portkey SDK)
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -272,7 +272,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```javascript JavaScript (Portkey SDK)
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -335,7 +335,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```javascript JavaScript (Portkey SDK)
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 import fs from 'fs';
 
 const portkey = new Portkey({
@@ -381,7 +381,7 @@ image_url = response.data[0].url
 ```
 
 ```javascript JavaScript (Portkey SDK)
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -429,7 +429,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```javascript JavaScript (Portkey SDK)
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -490,7 +490,7 @@ generated_json = json.loads(response.choices[0].message.content)
 ```
 
 ```javascript JavaScript (Portkey SDK)
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",

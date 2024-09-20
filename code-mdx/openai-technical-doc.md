@@ -79,7 +79,7 @@ print(response.choices[0].message.content)
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -142,7 +142,7 @@ print(response.text)
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 import fs from 'fs';
 
 const portkey = new Portkey({
@@ -198,7 +198,7 @@ print(response.data[0].embedding)
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -256,7 +256,7 @@ print(response.data[0].url)
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -325,7 +325,7 @@ print(response.choices[0].message.content)
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -390,7 +390,7 @@ print(response.choices[0].message.content)
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -454,7 +454,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
   apiKey: '$PORTKEY_API_KEY',
@@ -531,7 +531,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
   apiKey: '$PORTKEY_API_KEY',
@@ -610,7 +610,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
   apiKey: '$PORTKEY_API_KEY',
@@ -659,7 +659,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```js
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
   apiKey: '$PORTKEY_API_KEY',

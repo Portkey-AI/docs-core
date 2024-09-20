@@ -60,7 +60,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -158,7 +158,7 @@ response = portkey.embeddings.create(
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -245,7 +245,7 @@ response = portkey.completions.create(
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -344,7 +344,7 @@ response = portkey.completions.create(
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -439,7 +439,7 @@ response = portkey.chat.completions.create(
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
@@ -505,7 +505,7 @@ response = portkey.completions.create(
 ```
 
 ```Node node
-import Portkey from 'portkey-ai';
+import { Portkey } from "portkey-ai";
 
 const portkey = new Portkey({
     apiKey: "$PORTKEY_API_KEY",
