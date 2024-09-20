@@ -292,7 +292,7 @@ response = portkey.chat.completions.create(
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello, how are you?"}
     ],
-    prompt_slug="my-ai21-prompt"
+    prompt_id="my-ai21-prompt"
 )
 
 print(response.choices[0].message.content)

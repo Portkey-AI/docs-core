@@ -281,7 +281,7 @@ portkey = Portkey(
 
 response = portkey.chat.completions.create(
     model="llama-3.1-sonar-small-128k-online",
-    prompt_slug="prompt-library-slug",
+    prompt_id="prompt-library-slug",
     messages=[
         {"role": "user", "content": "What is the capital of France?"}
     ]
@@ -316,7 +316,7 @@ curl https://api.portkey.ai/v1/chat/completions \
   -H "Authorization: Bearer $PROVIDER_API_KEY" \
   -d '{
     "model": "llama-3.1-sonar-small-128k-online",
-    "prompt_slug": "prompt-library-slug",
+    "prompt_id": "prompt-library-slug",
     "messages": [
       {"role": "user", "content": "What is the capital of France?"}
     ]

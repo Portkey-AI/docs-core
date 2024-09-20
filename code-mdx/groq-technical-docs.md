@@ -425,7 +425,7 @@ portkey = Portkey(
 
 response = portkey.chat.completions.create(
     model="gemma-7b-it",
-    prompt_slug="my-custom-prompt",
+    prompt_id="my-custom-prompt",
     messages=[
         {"role": "user", "content": "What is the capital of France?"}
     ]
@@ -462,7 +462,7 @@ curl https://api.portkey.ai/v1/chat/completions \
   -H "Authorization: Bearer $PROVIDER_API_KEY" \
   -d '{
     "model": "gemma-7b-it",
-    "prompt_slug": "my-custom-prompt",
+    "prompt_id": "my-custom-prompt",
     "messages": [
       {"role": "user", "content": "What is the capital of France?"}
     ]

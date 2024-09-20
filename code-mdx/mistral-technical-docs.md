@@ -431,7 +431,7 @@ portkey = Portkey(
 
 response = portkey.chat.completions.create(
     model="open-mistral-7b",
-    prompt_slug="my-saved-prompt",
+    prompt_id="my-saved-prompt",
     prompt_variables={
         "user_input": "What is the capital of France?"
     }
@@ -464,7 +464,7 @@ curl https://api.portkey.ai/v1/chat/completions \
 -H "Authorization: Bearer $PROVIDER_API_KEY" \
 -d '{
   "model": "open-mistral-7b",
-  "prompt_slug": "my-saved-prompt",
+  "prompt_id": "my-saved-prompt",
   "prompt_variables": {
     "user_input": "What is the capital of France?"
   }

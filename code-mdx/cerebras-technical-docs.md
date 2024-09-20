@@ -279,7 +279,7 @@ portkey = Portkey(
 
 response = portkey.chat.completions.create(
     model="llama3.1-8b",
-    prompt_slug="your-prompt-slug",
+    prompt_id="your-prompt-slug",
     prompt_args={"arg1": "value1", "arg2": "value2"}
 )
 
@@ -312,7 +312,7 @@ curl https://api.portkey.ai/v1/chat/completions \
   -H "Authorization: Bearer $PROVIDER_API_KEY" \
   -d '{
     "model": "llama3.1-8b",
-    "prompt_slug": "your-prompt-slug",
+    "prompt_id": "your-prompt-slug",
     "prompt_args": {
       "arg1": "value1",
       "arg2": "value2"
