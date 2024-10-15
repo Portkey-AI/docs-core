@@ -4,7 +4,7 @@ description: "Portkey adds core production capabilities to any Langchain app."
 ---
 
 <Info>
-    This guide covers the integration for the **Python** flavour of Langchain. Docs for the JS Langchain integration are [here](/integrations/libraries/langchain-js).
+This guide covers the integration for the **Python** flavour of Langchain. Docs for the JS Langchain integration are [here](/integrations/libraries/langchain-js).
 </Info>
 **LangChain** is a framework for developing applications powered by language models. It enables applications that:
 
@@ -78,9 +78,8 @@ Let's try creating a new Virtual Key for Mistral like this
 The `virtual_key` parameter sets the authentication and provider for the AI provider being used. In our case we're using the Mistral Virtual key.
 
 <Info>
-    Notice that the `api_key` can be left blank as that authentication won't be used.
+Notice that the `api_key` can be left blank as that authentication won't be used.
 </Info>
-
 
 
 ```py
@@ -104,7 +103,6 @@ The AI gateway extends Langchain's `ChatOpenAI` class making it a single interfa
 ## Embeddings
 
 Embeddings in Langchain through Portkey work the same way as the Chat Models using the `OpenAIEmbeddings` class. Let's try to create an embedding using OpenAI's embedding model
-
 
 
 ```py
@@ -131,7 +129,6 @@ If you plan to use any other embedding model, we recommend using the Portkey SDK
 [Chains](https://python.langchain.com/docs/modules/chains/) enable the integration of various Langchain concepts for simultaneous execution while Langchain supports [Prompt Templates](https://python.langchain.com/docs/modules/model%5Fio/prompts/) to construct inputs for language models. Lets see how this would work with Portkey
 
 
-
 ```py
 from langchain_openai import ChatOpenAI
 from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
@@ -154,6 +151,63 @@ chain.invoke({"input": "Explain the concept of an API"})
 ```
 
 We'd be able to view the exact prompt that was used to make the call to OpenAI in the Portkey logs dashboards.
+
+## Using Portkey Prompt Templates with Langchain
+
+Portkey features an advanced Prompts platform tailor-made for better prompt engineering. With Portkey, you can:
+
+* **Store Prompts with Access Control and Version Control:** Keep all your prompts organized in a centralized location, easily track changes over time, and manage edit/view permissions for your team.
+* **Parameterize Prompts**: Define variables and [mustache-approved tags](/product/prompt-library/prompt-templates#templating-engine) within your prompts, allowing for dynamic value insertion when calling LLMs. This enables greater flexibility and reusability of your prompts.
+* **Experiment in a Sandbox Environment**: Quickly iterate on different LLMs and parameters to find the optimal combination for your use case, without modifying your Langchain code.
+
+#### Here's how you can leverage Portkey's Prompt Management in your Langchain app:
+
+1. Save your provider keys on Portkey vault to get associated virtual keys
+2. Create your prompt template on the Portkey app, and save it to get an associated `Prompt ID`
+4. Before making a Langchain request, render the prompt template using the Portkey SDK
+4. Transform the retrieved prompt to be compatible with Langchain and send the request!
+
+#### Example: Using a Portkey Prompt Template in Langchain
+
+```py
+import json
+import os
+from langchain_openai import ChatOpenAI
+from langchain_core.messages.chat import ChatMessage
+from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL, Portkey
+
+###  Initialize Portkey client with API key
+
+client = Portkey(api_key=os.environ.get("PORTKEY_API_KEY"))
+
+### Render the prompt template with your prompt ID and variables
+
+prompt_template = client.prompts.render(
+    prompt_id="pp-movie-xxx",
+    variables={ "movie":"Fight Club" }
+).data.dict()
+
+config = {
+    "virtual_key":"openai-xxxx", # You need to send the virtual key separately
+    "override_params":{
+        "model":prompt_template["model"], # Set the model name based on the value in the prompt template
+        "temperature":prompt_template["temperature"] # Similarly, you can also set other model params
+    }
+}
+
+portkey = ChatOpenAI(
+    api_key="xx", # Pass any dummy value here
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        api_key=os.environ.get("PORTKEY_API_KEY"),
+        config=config
+    )
+)
+
+messages = [ChatMessage(content=msg["content"], role=msg["role"]) for msg in prompt_template["messages"]]
+
+print(portkey.invoke(messages).content)
+```
 
 ## Using Advanced Routing
 
