@@ -1,0 +1,371 @@
+---
+title: "Custom Headers"
+description: "Learn how to send custom arbitrary headers to your AI provider using Portkey's forward headers feature. This guide explains how to use custom headers, their benefits, and provides examples for various use cases and cloud providers."
+---
+
+
+When making requests to LLMs with Portkey, you may have sensitive information in your request headers that you don't want Portkey to track or log. Portkey's forward headers feature allows you to send these custom arbitrary headers directly to the AI provider without any processing by Portkey.
+
+## Using Forward Headers
+
+### The `x-portkey-forward-headers` Header
+
+To send custom headers, you'll use the `x-portkey-forward-headers` header. This header accepts an array of strings, where each string is the name of a header you want to forward to the AI provider.
+
+Example:
+
+```sh
+"x-portkey-forward-headers: ["X-Custom-Header", "Another-Header"]"
+```
+
+### How It Works
+
+1. You specify the names of the headers you want to forward in the `x-portkey-forward-headers` array.
+2. You include the actual custom headers in your request.
+3. Portkey identifies the specified headers and forwards them directly to the AI provider without any modification.
+
+
+
+## Forward Sensitive Headers Securely
+
+Here's an example:
+
+
+<Tabs>
+    <Tab title="NodeJS">
+        ```js
+        import Portkey from 'portkey-ai'
+
+        const portkey = new Portkey({
+            apiKey: "PORTKEY_API_KEY",
+            provider: "PROVIDER_NAME", // This can be mistral-ai, openai, or anything else
+            customHost: "http://MODEL_URL/v1/", // Your custom URL with version identifier
+            authorization: "AUTH_KEY", // If you need to pass auth
+            forwardHeaders: [ "authorization" ]
+        })
+        ```
+    </Tab>
+    <Tab title="Python">
+
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="PROVIDER_NAME", # This can be mistral-ai, openai, or anything else
+    custom_host="http://MODEL_URL/v1/", # Your custom URL with version identifier
+    authorization="AUTH_KEY", # If you need to pass auth
+    forward_headers= [ "authorization" ]
+)
+```
+    </Tab>
+  <Tab title="cURL">
+    `x-portkey-forward-headers` accepts comma separated header names
+
+    ```sh
+    curl https://api.portkey.ai/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: $PROVIDER_NAME" \
+      -H "x-portkey-custom-host: https://MODEL_URL/v1" \
+      -H "x-api-key: $API_KEY" \
+      -H "x-secret-access-key: $ACCESS_KEY" \
+      -H "x-key-id: $KEY_ID" \
+      -H "x-portkey-forward-headers: x-api-key, x-secret-access-key, x-key-id" \
+      -d '{
+        "model": "llama2",
+        "messages": [{ "role": "user", "content": "Say this is a test" }]
+      }'
+    ```
+    </Tab>
+  </Tabs>
+
+
+
+
+
+### Forward Headers in the Config Object
+
+You can also define `forward_headers` in your Config object and then pass the headers directly while making a request.
+
+```json
+{
+    "strategy": {
+        "mode": "loadbalance"
+    },
+    "targets": [
+        {
+            "provider": "openai",
+            "api_key": ""
+        },
+        {
+            "strategy": {
+                "mode": "fallback"
+            },
+            "targets": [
+                {
+                    "provider": "azure-openai",
+                    "custom_host": "http://MODEL_URL/v1",
+                    "forward_headers": ["my-auth-header-1", "my-auth-header-2"]
+                },
+                {
+                    "provider": "openai",
+                    "api_key": "sk-***"
+                }
+            ]
+        }
+    ]
+}
+```
+## Using Forward Headers with Cloud Providers (Vertex, Bedrock, Azure)
+
+Portkey's forward headers feature allows you to:
+1. Ignore sensitive information in your request headers that you don't want Portkey to track or log.
+2. Pass custom headers directly to the cloud provider.
+
+## Azure OpenAI
+
+### Key Mapping for Azure OpenAI
+
+| Parameter           | Node SDK           | Python SDK         | REST Headers                  |
+|---------------------|---------------------|--------------------|-----------------------------|
+| AZURE RESOURCE NAME | azureResourceName   | azure_resource_name | x-portkey-azure-resource-name |
+| AZURE DEPLOYMENT NAME | azureDeploymentId   | azure_deployment_id | x-portkey-azure-deployment-id |
+| API VERSION         | azureApiVersion     | azure_api_version   | x-portkey-azure-api-version   |
+| AZURE API KEY       | Authorization       | Authorization       | Authorization                 |
+| AZURE MODEL NAME    | azureModelName      | azure_model_name    | x-portkey-azure-model-name    |
+
+To ignore these headers and pass them directly to Azure OpenAI, add them to the `forwardHeaders` array. For custom headers, simply include them in the `forwardHeaders` array as well.
+
+### Example: Azure OpenAI with Forward Headers
+
+<Tabs>
+  <Tab title="Node">
+    ```js
+    import Portkey from 'portkey-ai'
+
+    const portkey = new Portkey({
+        apiKey: "PORTKEY_API_KEY",
+        provider: "azure-openai",
+        azureResourceName: "AZURE_RESOURCE_NAME",
+        azureDeploymentId: "AZURE_DEPLOYMENT_NAME",
+        azureApiVersion: "AZURE_API_VERSION",
+        azureModelName: "AZURE_MODEL_NAME",
+        Authorization: "Bearer API_KEY",
+        customHeader: "value",
+        forwardHeaders: [
+            "x-portkey-azure-resource-name",
+            "x-portkey-azure-api-version",
+            "Authorization",
+            "x-azure-custom-header"
+        ]
+    })
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from portkey_ai import Portkey
+
+    portkey = Portkey(
+        api_key = "PORTKEY_API_KEY",
+        provider = "azure-openai",
+        azure_resource_name = "AZURE_RESOURCE_NAME",
+        azure_deployment_id = "AZURE_DEPLOYMENT_NAME",
+        azure_api_version = "AZURE_API_VERSION",
+        azure_model_name = "AZURE_MODEL_NAME",
+        Authorization = "Bearer API_KEY",
+        custom_header = "value",
+        forward_headers = [
+            "x-portkey-azure-resource-name",
+            "x-portkey-azure-api-version",
+            "Authorization",
+            "x-azure-custom-header"
+        ]
+    )
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```sh
+    curl https://api.portkey.ai/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: azure-openai" \
+      -H "x-portkey-azure-resource-name: $AZURE_RESOURCE_NAME" \
+      -H "x-portkey-azure-deployment-id: $AZURE_DEPLOYMENT_ID" \
+      -H "x-portkey-azure-api-version: $AZURE_API_VERSION" \
+      -H "x-portkey-azure-model-name: $AZURE_MODEL_NAME" \
+      -H "Authorization: Bearer $AZURE_API_KEY" \
+      -H "x-azure-custom-header: value" \
+      -H "x-portkey-forward-headers: x-portkey-azure-resource-name, x-portkey-azure-api-version, Authorization, x-azure-custom-header" \
+      -d '{
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "Hello, Azure!"}]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+## AWS Bedrock
+
+### Key Mapping for AWS Bedrock
+
+| Parameter          | Node SDK           | Python SDK           | REST Headers                    |
+|--------------------|---------------------|----------------------|---------------------------------|
+| AWS ACCESS KEY ID  | awsAccessKeyId      | aws_access_key_id    | x-portkey-aws-access-key-id     |
+| AWS SECRET KEY     | awsSecretAccessKey  | aws_secret_access_key| x-portkey-aws-secret-access-key |
+| AWS REGION         | awsRegion           | aws_region           | x-portkey-aws-region            |
+| AWS SESSION TOKEN  | awsSessionToken     | aws_session_token    | x-portkey-aws-session-token     |
+
+To ignore these headers and pass them directly to AWS Bedrock, add them to the `forwardHeaders` array. For custom headers, include them in the `forwardHeaders` array as well.
+
+### Example: AWS Bedrock with Forward Headers
+
+<Tabs>
+  <Tab title="Node">
+    ```js
+    import Portkey from 'portkey-ai'
+
+    const portkey = new Portkey({
+        apiKey: "PORTKEY_API_KEY",
+        provider: "bedrock",
+        awsAccessKeyId: "AWS_ACCESS_KEY_ID",
+        awsSecretAccessKey: "AWS_SECRET_ACCESS_KEY",
+        awsRegion: "us-east-1",
+        awsSessionToken: "AWS_SESSION_TOKEN",
+        customHeader: "value",
+        forwardHeaders: [
+            "x-portkey-aws-access-key-id",
+            "x-portkey-aws-secret-access-key",
+            "x-portkey-aws-region",
+            "x-portkey-aws-session-token",
+            "x-aws-custom-header"
+        ]
+    })
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from portkey_ai import Portkey
+
+    client = Portkey(
+        api_key="PORTKEY_API_KEY",
+        provider="bedrock",
+        aws_access_key_id="AWS_ACCESS_KEY_ID",
+        aws_secret_access_key="AWS_SECRET_ACCESS_KEY",
+        aws_region="us-east-1",
+        aws_session_token="AWS_SESSION_TOKEN",
+        custom_header="value",
+        forward_headers=[
+            "x-portkey-aws-access-key-id",
+            "x-portkey-aws-secret-access-key",
+            "x-portkey-aws-region",
+            "x-portkey-aws-session-token",
+            "x-aws-custom-header"
+        ]
+    )
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```sh
+    curl https://api.portkey.ai/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: bedrock" \
+      -H "x-portkey-aws-access-key-id: $AWS_ACCESS_KEY_ID" \
+      -H "x-portkey-aws-secret-access-key: $AWS_SECRET_ACCESS_KEY" \
+      -H "x-portkey-aws-region: $AWS_REGION" \
+      -H "x-portkey-aws-session-token: $AWS_SESSION_TOKEN" \
+      -H "x-aws-custom-header: value" \
+      -H "x-portkey-forward-headers: x-portkey-aws-access-key-id, x-portkey-aws-secret-access-key, x-portkey-aws-region, x-portkey-aws-session-token, x-aws-custom-header" \
+      -d '{
+        "model": "anthropic.claude-v2",
+        "messages": [{"role": "user", "content": "Hello, AWS Bedrock!"}]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+## Google Vertex AI
+
+For Google Vertex AI, you can use the same approach to forward sensitive headers and custom headers.
+
+
+| Parameter    | Node SDK        | Python SDK        | REST Headers               |
+|--------------|------------------|--------------------|-----------------------------|
+| PROJECT ID   | vertexProjectId  | vertex_project_id  | x-portkey-vertex-project-id |
+| REGION       | vertexRegion     | vertex_region      | x-portkey-vertex-region     |
+| ACCESS TOKEN | Authorization    | Authorization      | Authorization               |
+
+To ignore these headers and pass them directly to AWS Bedrock, add them to the `forwardHeaders` array. For custom headers, include them in the `forwardHeaders` array as well.
+
+
+### Example: Google Vertex AI with Forward Headers
+
+
+
+
+<Tabs>
+  <Tab title="Node">
+    ```js
+    import Portkey from 'portkey-ai'
+
+    const portkey = new Portkey({
+        apiKey: "PORTKEY_API_KEY",
+        vertexProjectId: "sample-55646",
+        vertexRegion: "us-central1",
+        provider: "vertex_ai",
+        Authorization: "$GCLOUD AUTH PRINT-ACCESS-TOKEN",
+        customHeader: "value",
+        forwardHeaders: [
+            "x-portkey-vertex-project-id",
+            "x-portkey-vertex-region",
+            "Authorization",
+            "x-vertex-custom-header"
+        ]
+    })
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from portkey_ai import Portkey
+
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",
+        vertex_project_id="sample-55646",
+        vertex_region="us-central1",
+        provider="vertex_ai",
+        Authorization="$GCLOUD AUTH PRINT-ACCESS-TOKEN",
+        custom_header="value",
+        forward_headers=[
+            "x-portkey-vertex-project-id",
+            "x-portkey-vertex-region",
+            "Authorization",
+            "x-vertex-custom-header"
+        ]
+    )
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```sh
+    curl https://api.portkey.ai/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: vertex_ai" \
+      -H "x-portkey-vertex-project-id: sample-55646" \
+      -H "x-portkey-vertex-region: us-central1" \
+      -H "Authorization: Bearer $GCLOUD_AUTH_PRINT_ACCESS_TOKEN" \
+      -H "x-vertex-custom-header: value" \
+      -H "x-portkey-forward-headers: x-portkey-vertex-project-id, x-portkey-vertex-region, Authorization, x-vertex-custom-header" \
+      -d '{
+        "model": "gemini-pro",
+        "messages": [{"role": "user", "content": "Hello, Vertex AI!"}]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+By using the `Forward Headers` , you can specify which headers should be passed directly to the cloud provider without being processed by Portkey. This includes both sensitive information and custom headers you want to use with the provider's API.
+
+For any custom headers not listed in the key mappings, simply include them in the `forwardHeaders` array and add them as properties when initializing the Portkey client.
+
+For further assistance with custom deployments, access tokens, or using forward headers with any of these providers, please contact support@portkey.ai.
