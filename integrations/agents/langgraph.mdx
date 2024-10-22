@@ -7,16 +7,26 @@ description: "Use Portkey with LangGraph to take your AI Agents to production"
 
 ### 1\. Install the required packages:
 
+<Tabs>
+    <Tab title="Python">
 ```sh
 pip install -U langgraph langchain_openai portkey-ai
 ```
+    </Tab>
+    <Tab title="JavaScript">
+```sh
+npm install @langchain/core @langchain/langgraph @langchain/openai @langchain/community
+```
+    </Tab>
+</Tabs>
 
-###  2\. Configure your Langchain LLM objects
+### 2\. Configure your Langchain LLM objects
 
-```py
+<Tabs>
+    <Tab title="Python">
+```python
 from langchain_openai import ChatOpenAI
 from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
 
 llm = ChatOpenAI(
     api_key="OpenAI_API_Key", # Enter your Provider's API Key (OpenAI in this case)
@@ -26,62 +36,74 @@ llm = ChatOpenAI(
         api_key="PORTKEY_API_KEY"
     )
 )
-
-
 ```
+    </Tab>
+    <Tab title="JavaScript">
+```javascript
+import { ChatOpenAI } from "@langchain/openai";
+import { createHeaders, PORTKEY_GATEWAY_URL } from "portkey-ai";
+
+// Configure Portkey settings
+const portkeyConf = {
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "openaiVirtualKey"
+  })
+};
+
+// Initialize the LLM with Portkey configuration
+const llm = new ChatOpenAI({
+  apiKey: "OpenAI_API_KEY",
+  configuration: portkeyConf,
+  model: "gpt-4o" // or your preferred model
+});
+```
+    </Tab>
+</Tabs>
 
 That's all you need to do to use Portkey with LangGraph agents. Execute your agents and visit [Portkey.ai](https://app.portkey.ai) to observe your Agent's activity.
 
 ### Basic Example
 Here's a minimal working example of a LangGraph agent using Portkey AI:
-```py
+
+<Tabs>
+    <Tab title="Python">
+```python
 from typing import Annotated
 from langchain_openai import ChatOpenAI
 from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
 
 from typing_extensions import TypedDict
-
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
-
 
 class State(TypedDict):
     messages: Annotated[list, add_messages]
 
-
 graph_builder = StateGraph(State)
 
-
-
 llm = ChatOpenAI(
-    api_key="OpenAI_API_Key", # Enter your Provider's API Key (OpenAI in this case)
+    api_key="OpenAI_API_Key",
     base_url=PORTKEY_GATEWAY_URL,
     default_headers=createHeaders(
-        provider="openai", #choose your provider
+        provider="openai",
         api_key="PORTKEY_API_KEY"
     )
 )
 
-
 def chatbot(state: State):
     return {"messages": [llm.invoke(state["messages"])]}
 
-
-# The first argument is the unique node name
-# The second argument is the function or object that will be called whenever
-# the node is used.
 graph_builder.add_node("chatbot", chatbot)
 graph_builder.set_entry_point("chatbot")
 graph_builder.set_finish_point("chatbot")
 graph = graph_builder.compile()
 
-
-
 def stream_graph_updates(user_input: str):
     for event in graph.stream({"messages": [("user", user_input)]}):
         for value in event.values():
             print("Assistant:", value["messages"][-1].content)
-
 
 while True:
     try:
@@ -89,16 +111,76 @@ while True:
         if user_input.lower() in ["quit", "exit", "q"]:
             print("Goodbye!")
             break
-
         stream_graph_updates(user_input)
     except:
-        # fallback if input() is not available
         user_input = "What do you know about LangGraph?"
         print("User: " + user_input)
         stream_graph_updates(user_input)
         break
 ```
+    </Tab>
+    <Tab title="JavaScript">
+```javascript
+// agent.ts
+import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
+import { ChatOpenAI } from "@langchain/openai";
+import { MemorySaver } from "@langchain/langgraph";
+import { HumanMessage } from "@langchain/core/messages";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
+// Configure Portkey settings
+const portkeyConf = {
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: PORTKEY_API_KEY, 
+    virtualKey: "openaiVirtualKey"
+  })
+};
+
+// Define the tools for the agent to use
+const agentTools = [new TavilySearchResults({ maxResults: 3 })];
+const agentModel = new ChatOpenAI({
+  apiKey: "OPENAI_API_KEY",
+  configuration: portkeyConf,
+  model: "gpt-4"
+});
+
+// Initialize memory to persist state between graph runs
+const agentCheckpointer = new MemorySaver();
+const agent = createReactAgent({
+  llm: agentModel,
+  tools: agentTools,
+  checkpointSaver: agentCheckpointer,
+});
+
+// Example usage with async/await
+async function runAgent() {
+  // First interaction
+  const agentFinalState = await agent.invoke(
+    { messages: [new HumanMessage("what is the current weather in sf")] },
+    { configurable: { thread_id: "42" } },
+  );
+
+  console.log(
+    agentFinalState.messages[agentFinalState.messages.length - 1].content,
+  );
+
+  // Follow-up interaction using the same thread
+  const agentNextState = await agent.invoke(
+    { messages: [new HumanMessage("what about ny")] },
+    { configurable: { thread_id: "42" } },
+  );
+
+  console.log(
+    agentNextState.messages[agentNextState.messages.length - 1].content,
+  );
+}
+
+// Run the agent
+runAgent().catch(console.error);
+```
+    </Tab>
+</Tabs>
 
 ## Integration Guide
 
