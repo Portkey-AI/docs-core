@@ -1,35 +1,318 @@
 ---
-title: C#
+title: C# (.NET)
+description: Integrate Portkey in your `.NET` app easily using the OpenAI library and get advanced monitoring, routing, and enterprise features.
 ---
 
+## Building Enterprise LLM Apps with .NET
+`.NET` is Microsoft's battle-tested framework trusted by Fortune 500 companies. It's now easier than ever to build LLM apps. You get:
+| | |
+| -- | -- |
+| **Battle-Tested Security** | Built-in identity management, secret rotation, and compliance standards |
+| **Production Performance** | High-throughput processing with advanced memory management |
+| **Azure Integration** | Seamless Azure OpenAI and Active Directory support |
+
+Combined with Portkey's enterprise features, you get everything needed for mission-critical LLM deployments. Monitor costs, ensure reliability, maintain compliance, and scale with confidence.
+
+## Portkey Features
+| | |
+| :-- | :-- |
+| **Complete Observability** | Monitor costs, latency, and performance metrics |
+| **Provider Flexibility** | Route to 250+ LLMs (like Claude, Gemini, Llama, self-hosted etc.) without code changes |
+| **Smart Caching** | Reduce costs & time by caching frequent requests |
+| **High Reliability** | Automatic fallback and load balancing across providers |
+| **Prompt Management** | Use Portkey as a centralized hub to version, experiment with prompts, and call them using a single ID |
+| **Continuous Improvement** | Improve your app by capturing and analyzing user feedback |
+| **Enterprise Ready** | Budget controls, rate limits, model-provisioning, and role-based access |
+
+## Implementation Overview
+
+1. Install OpenAI SDK
+2. Create Portkey client by extending OpenAI client
+3. Use the client in your application to make requests
+
+### 1. Install the NuGet package
+Add the OpenAI [NuGet](https://www.nuget.org/) package to your .NET project:
+```sh
+dotnet add package OpenAI
+```
+
+### 2. Create Portkey Client Extension
+
+The OpenAI package does not support directly modifying the base URL or passing additional headers. So, we write a simple function to extend OpenAI's `ChatClient` to create a new `PortkeyClient`.
+
 ```csharp
-// dotnet add package RestSharp
+using OpenAI;
+using OpenAI.Chat;
+using System.ClientModel;
+using System.ClientModel.Primitives;
 
-using RestSharp;
-using System;
-using System.Threading.Tasks;
-
-public class Program
+public static class PortkeyClient
 {
-    private static readonly string PortkeyApiKey = Environment.GetEnvironmentVariable("PORTKEY_API_KEY");
-    private static readonly string OpenAiVirtualKey = "YOUR_OPENAI_VIRTUAL_KEY";
-
-    public static async Task Main()
+    private class HeaderPolicy : PipelinePolicy
     {
-        var client = new RestClient("https://api.portkey.ai/v1/chat/completions");
-        var request = new RestRequest();
-        request.AddHeader("x-portkey-api-key", PortkeyApiKey);
-        request.AddHeader("x-portkey-virtual-key", OpenAiVirtualKey);
+        private readonly Dictionary<string, string> _headers;
+        public HeaderPolicy(Dictionary<string, string> headers) => _headers = headers;
 
-        request.AddJsonBody(new
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
         {
-            model = "gpt-4o-mini",
-            max_tokens = 100,
-            messages = new[] { new { role = "user", content = "1729" } }
-        });
+            foreach (var header in _headers) message.Request.Headers.Set(header.Key, header.Value);
+            if (index < pipeline.Count) pipeline[index].Process(message, pipeline, index + 1);
+        }
 
-        var response = await client.ExecutePostAsync<dynamic>(request);
-        Console.WriteLine(response.Content);
+        public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            Process(message, pipeline, index);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    public static ChatClient CreateChatClient(Dictionary<string, string> headers, string model)
+    {
+        var options = new OpenAIClientOptions { Endpoint = new Uri("https://api.portkey.ai/v1") };
+        options.AddPolicy(new HeaderPolicy(headers), PipelinePosition.PerCall);
+        return new OpenAIClient(new ApiKeyCredential("dummy"), options).GetChatClient(model);
     }
 }
 ```
+
+### 3. Use the Portkey Client
+
+After creating the extension above, you can pass any [Portkey supported headers](/api-reference/inference-api/headers) directly while creating the new client.
+
+```csharp
+// Define Portkey headers
+var headers = new Dictionary<string, string> {
+    // Required headers
+    { "x-portkey-api-key", "..." },       // Your Portkey API key
+    { "x-portkey-virtual-key", "..." },    // Virtual key for provider
+
+    // Optional headers
+    { "x-portkey-trace-id", "my-app" },       // Custom trace identifier
+    { "x-portkey-config", "..." },            // Send Config ID
+    // Add any other Portkey headers as needed
+};
+
+// Create client
+var client = PortkeyClient.CreateChatClient(
+    headers: headers,
+    model: "gpt-4"
+);
+
+// Make request
+var response = client.CompleteChat(new UserChatMessage("Yellow!"));
+Console.WriteLine(response.Value.Content[0].Text);
+```
+
+<Info>
+While we show common headers here, you can pass any Portkey-supported headers to enable features like custom metadata, fallbacks, caching, retries, and more.
+</Info>
+
+
+### 4. View Your Request in Portkey Logs
+This request will now be logged on Portkey:
+<img src="/images/api-ref/sdks/c-sharp.png" />
+
+
+# End-to-End Example
+<Accordion title="Sending a request to Azure OpenAI">
+Save your Azure OpenAI details [on Portkey](/integrations/llms/azure-openai#portkey-sdk-integration-with-azure-openai) to get a virtual key.
+
+```csharp
+using OpenAI;
+using OpenAI.Chat;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+
+public static class Portkey
+{
+    private class HeaderPolicy : PipelinePolicy
+    {
+        private readonly Dictionary<string, string> _headers;
+        public HeaderPolicy(Dictionary<string, string> headers) => _headers = headers;
+
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            foreach (var header in _headers) message.Request.Headers.Set(header.Key, header.Value);
+            if (index < pipeline.Count) pipeline[index].Process(message, pipeline, index + 1);
+        }
+
+        public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            Process(message, pipeline, index);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    public static ChatClient CreateChatClient(Dictionary<string, string> headers, string model)
+    {
+        var options = new OpenAIClientOptions { Endpoint = new Uri("https://api.portkey.ai/v1") };
+        options.AddPolicy(new HeaderPolicy(headers), PipelinePosition.PerCall);
+        return new OpenAIClient(new ApiKeyCredential("dummy"), options).GetChatClient(model);
+    }
+}
+
+public class Program
+{
+    public static void Main()
+    {
+        var client = Portkey.CreateChatClient(
+            headers: new Dictionary<string, string> {
+                { "x-portkey-api-key", "PORTKEY API KEY" },
+                { "x-portkey-virtual-key", "AZURE VIRTUAL KEY" },
+                { "x-portkey-trace-id", "dotnet" }
+            },
+            model: "dummy" // We pass "dummy" here because for Azure the model can be configured with the virtual key
+        );
+
+        Console.WriteLine(client.CompleteChat(new UserChatMessage("1729")).Value.Content[0].Text);
+    }
+}
+```
+</Accordion>
+
+## More Features
+
+<Tabs>
+<Tab title="Async Usage">
+You can also use the `PortkeyClient` to send `Async` requests:
+
+```csharp
+var completion = await client.CompleteChatAsync(new UserChatMessage("Hello!"));
+Console.WriteLine(completion.Value.Content[0].Text);
+```
+</Tab>
+<Tab title="Multi-Turn Conversation">
+Use the `SystemChatMessage` and `UserChatMessage` properties from the OpenAI package to create multi-turn conversations:
+
+```csharp
+var messages = new List<ChatMessage>
+{
+    new SystemChatMessage("You are a helpful assistant."),
+    new UserChatMessage("What is the capital of France?")
+};
+
+var completion = client.CompleteChat(messages);
+messages.Add(new AssistantChatMessage(completion));
+```
+</Tab>
+<Tab title="Call Anthropic Models">
+Switching providers is just a matter of swapping out your virtual key. Change the virtual key to Anthropic, set the model name, and start making requests to Anthropic from the OpenAI .NET library.
+
+```csharp {41,44}
+using OpenAI;
+using OpenAI.Chat;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+
+public static class Portkey
+{
+    private class HeaderPolicy : PipelinePolicy
+    {
+        private readonly Dictionary<string, string> _headers;
+        public HeaderPolicy(Dictionary<string, string> headers) => _headers = headers;
+
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            foreach (var header in _headers) message.Request.Headers.Set(header.Key, header.Value);
+            if (index < pipeline.Count) pipeline[index].Process(message, pipeline, index + 1);
+        }
+
+        public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            Process(message, pipeline, index);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    public static ChatClient CreateChatClient(Dictionary<string, string> headers, string model)
+    {
+        var options = new OpenAIClientOptions { Endpoint = new Uri("https://api.portkey.ai/v1") };
+        options.AddPolicy(new HeaderPolicy(headers), PipelinePosition.PerCall);
+        return new OpenAIClient(new ApiKeyCredential("dummy"), options).GetChatClient(model);
+    }
+}
+
+public class Program
+{
+    public static void Main()
+    {
+        var client = Portkey.CreateChatClient(
+            headers: new Dictionary<string, string> {
+                { "x-portkey-api-key", "PORTKEY API KEY" },
+                { "x-portkey-virtual-key", "ANTHROPIC VIRTUAL KEY" },
+                { "x-portkey-trace-id", "dotnet" }
+            },
+            model: "claude-3-5-sonnet-20240620"
+        );
+
+        Console.WriteLine(client.CompleteChat(new UserChatMessage("1729")).Value.Content[0].Text);
+    }
+}
+```
+</Tab>
+<Tab title="Call Vertex Models">
+Similarly, just change your virtual key to Vertex virtual key:
+
+```csharp {41,44}
+using OpenAI;
+using OpenAI.Chat;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+
+public static class Portkey
+{
+    private class HeaderPolicy : PipelinePolicy
+    {
+        private readonly Dictionary<string, string> _headers;
+        public HeaderPolicy(Dictionary<string, string> headers) => _headers = headers;
+
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            foreach (var header in _headers) message.Request.Headers.Set(header.Key, header.Value);
+            if (index < pipeline.Count) pipeline[index].Process(message, pipeline, index + 1);
+        }
+
+        public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            Process(message, pipeline, index);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    public static ChatClient CreateChatClient(Dictionary<string, string> headers, string model)
+    {
+        var options = new OpenAIClientOptions { Endpoint = new Uri("https://api.portkey.ai/v1") };
+        options.AddPolicy(new HeaderPolicy(headers), PipelinePosition.PerCall);
+        return new OpenAIClient(new ApiKeyCredential("dummy"), options).GetChatClient(model);
+    }
+}
+
+public class Program
+{
+    public static void Main()
+    {
+        var client = Portkey.CreateChatClient(
+            headers: new Dictionary<string, string> {
+                { "x-portkey-api-key", "PORTKEY API KEY" },
+                { "x-portkey-virtual-key", "VERTEX AI VIRTUAL KEY" },
+                { "x-portkey-trace-id", "dotnet" }
+            },
+            model: "gemini-1.5-pro-002"
+        );
+
+        Console.WriteLine(client.CompleteChat(new UserChatMessage("1729")).Value.Content[0].Text);
+    }
+}
+```
+</Tab>
+</Tabs>
+
+# Next Steps
+- [Call local models](/integrations/llms/byollm)
+- [Enable cache](/product/ai-gateway/cache-simple-and-semantic)
+- [Setup fallbacks](/product/ai-gateway/fallbacks)
+- [Loadbalance requests against multiple instances](/product/ai-gateway/load-balancing)
+- [Append metadata with requests](/product/observability/metadata)
+
+# Need Help?
+Ping the Portkey team on our [Developer Forum](https://portkey.wiki/community) or email us at support@portkey.ai
