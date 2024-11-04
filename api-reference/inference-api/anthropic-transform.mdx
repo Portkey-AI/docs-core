@@ -1,0 +1,103 @@
+# Parameter Mappings & Transformations
+
+## Basic Parameter Mappings
+- `model` → direct mapping (default: 'claude-2.1')
+- `max_tokens` → direct mapping to `max_tokens`
+- `temperature` → direct mapping (constrained: 0-1)
+- `top_p` → direct mapping (default: -1)
+- `stream` → direct mapping (default: false)
+- `user` → mapped to `metadata.user_id`
+- `stop` → mapped to `stop_sequences`
+- `max_completion_tokens` → mapped to `max_tokens`
+
+## Complex Transformations
+
+### Messages Transformation
+1. System Messages:
+   - Extracted from messages array where `role === 'system'`
+   - Transformed into `AnthropicMessageContentItem[]`
+   - Handles both string content and object content with text
+   - Preserves cache control metadata if present
+
+2. Assistant Messages (`transformAssistantMessage`):
+   - Transforms content into Anthropic's content array format
+   - Handles tool calls by converting them into Anthropic's tool_use format
+   - Text content is wrapped in `{type: 'text', text: content}`
+   - Tool calls are transformed into `{type: 'tool_use', name: function.name, id: toolCall.id, input: parsed_arguments}`
+
+3. Tool Messages (`transformToolMessage`):
+   - Converted to user role with tool_result type
+   - Preserves tool_call_id as tool_use_id
+   - Content wrapped in specific format: `{type: 'tool_result', tool_use_id: id, content: string}`
+
+4. User Messages with Images:
+   - Handles base64 encoded images in content
+   - Transforms them into Anthropic's image format with proper media type
+   - Preserves cache control metadata
+
+### Tools Transformation
+- Converts OpenAI-style function definitions to Anthropic tool format
+- Maps function parameters to input_schema
+- Preserves cache control metadata
+- Structure transformation:
+  ```typescript
+  OpenAI: {function: {name, description, parameters}}
+  ↓
+  Anthropic: {name, description, input_schema: {type, properties, required}}
+  ```
+
+### Tool Choice Transformation
+- 'required' → `{type: 'any'}`
+- 'auto' → `{type: 'auto'}`
+- Function specification → `{type: 'tool', name: function.name}`
+
+# Response Transformations
+
+## Regular Response
+1. Content Processing:
+   - Extracts text content from first content item if type is 'text'
+   - Processes tool_use items into OpenAI tool_calls format
+   - Preserves tool IDs and function names
+
+2. Usage Statistics:
+   - Maps input_tokens → prompt_tokens
+   - Maps output_tokens → completion_tokens
+   - Calculates total_tokens
+   - Preserves cache-related tokens if present
+
+## Streaming Response
+1. Event Handling:
+   - Filters out 'ping' and 'content_block_stop' events
+   - Converts 'message_stop' to '[DONE]'
+   - Handles multiple event types: content_block_delta, content_block_start, message_delta, message_start
+
+2. Special States:
+   - Tracks chain of thought messages
+   - Maintains usage statistics across stream
+   - Handles tool streaming differently based on message context
+
+# Edge Cases & Special Handling
+
+1. Image Content:
+   - Special handling for base64 encoded images
+   - Parses media type from data URL
+   - Validates image URL format
+
+2. Tool Streaming:
+   - Handles partial JSON in tool arguments
+   - Manages tool indices differently when chain-of-thought messages are present
+   - Separates tool name and arguments into different stream chunks
+
+3. Cache Control:
+   - Preserves ephemeral cache control metadata throughout transformations
+   - Handles cache usage statistics in both regular and streaming responses
+
+4. Error Handling:
+   - Transforms Anthropic-specific error format to universal format
+   - Preserves error types and messages
+   - Handles non-200 response status codes
+
+5. Empty/Null Handling:
+   - Safely handles missing usage statistics
+   - Manages undefined tool calls
+   - Handles empty content arrays
