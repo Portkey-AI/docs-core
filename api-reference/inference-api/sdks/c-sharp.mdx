@@ -24,6 +24,15 @@ Combined with Portkey's enterprise features, you get everything needed for missi
 | **Continuous Improvement** | Improve your app by capturing and analyzing user feedback |
 | **Enterprise Ready** | Budget controls, rate limits, model-provisioning, and role-based access |
 
+## Supported Clients
+| | |
+| -- | -- |
+| `ChatClient` | ✅ Fully Supported |
+| `EmbeddingClient` | ✅ Fully Supported |
+| `ImageClient` | 🚧 Coming Soon |
+| `BatchClient` | 🚧 Coming Soon |
+| `AudioClient` | 🚧 Coming Soon |
+
 ## Implementation Overview
 
 1. Install OpenAI SDK
@@ -38,8 +47,10 @@ dotnet add package OpenAI
 
 ### 2. Create Portkey Client Extension
 
-The OpenAI package does not support directly modifying the base URL or passing additional headers. So, we write a simple function to extend OpenAI's `ChatClient` to create a new `PortkeyClient`.
+The OpenAI package does not support directly modifying the base URL or passing additional headers. So, we write a simple function to extend OpenAI's `ChatClient` or `EmbeddingClient` to create a new `PortkeyClient`.
 
+<Tabs>
+<Tab title="Chat">
 ```csharp
 using OpenAI;
 using OpenAI.Chat;
@@ -74,10 +85,51 @@ public static class PortkeyClient
     }
 }
 ```
+</Tab>
+<Tab title="Embedding">
 
+```csharp
+using OpenAI;
+using OpenAI.Embeddings;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+
+public static class PortkeyClient
+{
+    private class HeaderPolicy : PipelinePolicy
+    {
+        private readonly Dictionary<string, string> _headers;
+        public HeaderPolicy(Dictionary<string, string> headers) => _headers = headers;
+
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            foreach (var header in _headers) message.Request.Headers.Set(header.Key, header.Value);
+            if (index < pipeline.Count) pipeline[index].Process(message, pipeline, index + 1);
+        }
+
+        public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            Process(message, pipeline, index);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    public static EmbeddingClient CreateEmbeddingClient(Dictionary<string, string> headers, string model)
+    {
+        var options = new OpenAIClientOptions { Endpoint = new Uri("https://api.portkey.ai/v1") };
+        options.AddPolicy(new HeaderPolicy(headers), PipelinePosition.PerCall);
+        return new OpenAIClient(new ApiKeyCredential("dummy"), options).GetEmbeddingClient(model);
+    }
+}
+```
+</Tab>
+</Tabs>
 ### 3. Use the Portkey Client
 
 After creating the extension above, you can pass any [Portkey supported headers](/api-reference/inference-api/headers) directly while creating the new client.
+
+<Tabs>
+<Tab title="Chat">
 
 ```csharp
 // Define Portkey headers
@@ -102,6 +154,42 @@ var client = PortkeyClient.CreateChatClient(
 var response = client.CompleteChat(new UserChatMessage("Yellow!"));
 Console.WriteLine(response.Value.Content[0].Text);
 ```
+</Tab>
+
+<Tab title="Embedding">
+
+```csharp
+// Define Portkey headers
+var headers = new Dictionary<string, string> {
+    // Required headers
+    { "x-portkey-api-key", "..." },       // Your Portkey API key
+    { "x-portkey-virtual-key", "..." },    // Virtual key for provider
+
+    // Optional headers
+    { "x-portkey-trace-id", "..." },       // Custom trace identifier
+    { "x-portkey-config", "..." },            // Send Config ID
+    // Add any other Portkey headers as needed
+};
+
+// Create embedding client through Portkey
+var client = PortkeyClient.CreateEmbeddingClient(
+    headers: headers,
+    model: "text-embedding-3-large"
+);
+
+// Text that we want to embed
+string description = "Best hotel in town if you like luxury hotels. They have an amazing infinity pool, a spa,"
+    + " and a really helpful concierge. The location is perfect -- right downtown, close to all the tourist"
+    + " attractions. We highly recommend this hotel.";
+
+// Generate embedding
+var embeddingResult = client.GenerateEmbedding(description);
+var vector = embeddingResult.Value.ToFloats();
+
+Console.WriteLine($"Full embedding dimensions: {vector.Length}");
+```
+</Tab>
+</Tabs>
 
 <Info>
 While we show common headers here, you can pass any Portkey-supported headers to enable features like custom metadata, fallbacks, caching, retries, and more.
@@ -113,7 +201,7 @@ This request will now be logged on Portkey:
 <img src="/images/api-ref/sdks/c-sharp.png" />
 
 
-# End-to-End Example
+# Chat Completions Example
 <Accordion title="Sending a request to Azure OpenAI">
 Save your Azure OpenAI details [on Portkey](/integrations/llms/azure-openai#portkey-sdk-integration-with-azure-openai) to get a virtual key.
 
@@ -168,6 +256,81 @@ public class Program
     }
 }
 ```
+</Accordion>
+
+# Embedding Example
+<Accordion title="Sending a request to OpenAI's embedding model">
+
+```csharp
+using OpenAI;
+using OpenAI.Embeddings;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+
+public static class PortkeyClient
+{
+    private class HeaderPolicy : PipelinePolicy
+    {
+        private readonly Dictionary<string, string> _headers;
+        public HeaderPolicy(Dictionary<string, string> headers) => _headers = headers;
+
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            foreach (var header in _headers) message.Request.Headers.Set(header.Key, header.Value);
+            if (index < pipeline.Count) pipeline[index].Process(message, pipeline, index + 1);
+        }
+
+        public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            Process(message, pipeline, index);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    public static EmbeddingClient CreateEmbeddingClient(Dictionary<string, string> headers, string model)
+    {
+        var options = new OpenAIClientOptions { Endpoint = new Uri("https://api.portkey.ai/v1") };
+        options.AddPolicy(new HeaderPolicy(headers), PipelinePosition.PerCall);
+        return new OpenAIClient(new ApiKeyCredential("dummy"), options).GetEmbeddingClient(model);
+    }
+}
+
+class Program
+{
+    static void Main()
+    {
+        // Define Portkey headers
+        var headers = new Dictionary<string, string> {
+            // Required headers
+            { "x-portkey-api-key", "..." },       // Your Portkey API key
+            { "x-portkey-virtual-key", "..." },    // Virtual key for provider
+
+            // Optional headers
+            { "x-portkey-trace-id", "..." },       // Custom trace identifier
+            { "x-portkey-config", "..." },            // Send Config ID
+            // Add any other Portkey headers as needed
+        };
+
+        // Create embedding client through Portkey
+        var client = PortkeyClient.CreateEmbeddingClient(
+            headers: headers,
+            model: "text-embedding-3-large"
+        );
+
+        // Text that we want to embed
+        string description = "Best hotel in town if you like luxury hotels. They have an amazing infinity pool, a spa,"
+            + " and a really helpful concierge. The location is perfect -- right downtown, close to all the tourist"
+            + " attractions. We highly recommend this hotel.";
+
+        // Generate embedding
+        var embeddingResult = client.GenerateEmbedding(description);
+        var vector = embeddingResult.Value.ToFloats();
+
+        Console.WriteLine($"Full embedding dimensions: {vector.Length}");
+    }
+}
+```
+
 </Accordion>
 
 ## More Features
