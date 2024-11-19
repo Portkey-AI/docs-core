@@ -1,0 +1,417 @@
+---
+title: "OpenAI Swarm"
+description: The **Portkey x Swarm** integration brings advanced **AI gateway** capabilities, full-stack **observability**, and **prompt management** to build agents using OpenAI Swarm.
+---
+
+Swarm is an experimental framework by OpenAI for building multi-agent systems. It showcases the handoff & routines pattern, making agent coordination and execution lightweight, highly controllable, and easily testable. The Portkey integration extends Swarm's capabilities with production-ready features like observability, reliability, and more.
+
+
+## Getting Started
+
+<Steps>
+<Step>
+### 1\. Install the Portkey SDK
+
+```sh
+pip install -U portkey-ai
+```
+</Step>
+<Step>
+### 2\. Configure the LLM Client used in OpenAI Swarm
+Virtual Keys are a secure way to manage your LLM API KEYS in one place. Instead of handling multiple API keys in your code, you can:
+- Store your LLM provider API Keys securely in Portkey's vault
+- Create a Virtual Key that encapsulates these credentials to use with Portkey Client
+
+Create a Virtual Key from [here](https://app.portkey.ai)
+```py
+from swarm import Swarm, Agent
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+    virtual_key="YOUR_VIRTUAL_KEY" 
+    )
+
+client = Swarm(client=portkey)
+```
+
+</Step>
+<Step>
+### 3\. Create and Run an Agent
+```py
+def get_weather(location) -> str:
+    return "{'temp':67, 'unit':'F'}"
+
+
+agent = Agent(
+    name="Agent",
+    instructions="You are a helpful agent.",
+    functions=[get_weather],
+)
+
+messages = [{"role": "user", "content": "What's the weather in NYC?"}]
+
+response = client.run(agent=agent, messages=messages)
+print(response.messages[-1]["content"])
+```
+</Step>
+
+</Steps>
+
+
+## E2E example with Function Calling in OpenAI Swarm
+Here's a complete example showing function calling and agent interaction:
+```py
+from swarm import Swarm, Agent
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+    virtual_key="YOUR_VIRTUAL_KEY" 
+    )
+
+client = Swarm(client=portkey)
+
+
+def get_weather(location) -> str:
+    return "{'temp':67, 'unit':'F'}"
+
+
+agent = Agent(
+    name="Agent",
+    instructions="You are a helpful agent.",
+    functions=[get_weather],
+)
+
+messages = [{"role": "user", "content": "What's the weather in NYC?"}]
+
+response = client.run(agent=agent, messages=messages)
+print(response.messages[-1]["content"])
+```
+> The current temperature in New York City is 67°F.
+
+
+## Enabling Portkey Features
+By routing your OpenAI Swarm requests through Portkey, you get access to the following production-grade features:
+<CardGroup cols="3">
+  <Card title="Interoperability" href="#1-interoperability">
+    <p>Call various LLMs like Anthropic, Gemini, Mistral, Azure OpenAI, Google Vertex AI, and AWS Bedrock with minimal code changes.</p>
+  </Card>
+  <Card title="Caching" href="#2-caching">
+    <p>Speed up agent responses and save costs by storing past responses in the Portkey cache. Choose between Simple and Semantic cache modes.</p>
+  </Card>
+  <Card title="Reliability" href="#3-reliability">
+    <p>Set up fallbacks between different LLMs, load balance requests across multiple instances, set automatic retries, and request timeouts.</p>
+  </Card>
+  <Card title="Observability" href="#4-observability">
+    <p>Get comprehensive logs of agent interactions, including cost, tokens used, response time, and function calls. Send custom metadata for better analytics.</p>
+  </Card>
+  <Card title="Prompt Management" href="#5-prompt-management">
+    <p>Store and version agent instructions and prompts centrally, experiment with different variations, and manage them across your team.</p>
+  </Card>
+  <Card title="Continuous Improvement" href="#6-continuous-improvement">
+    <p>Capture and analyze user feedback to improve agent performance over time.</p>
+  </Card>
+  <Card title="Security & Compliance" href="#7-security-and-compliance">
+    <p>Implement budget limits, role-based access control, and audit trails for your agent operations.</p>
+  </Card>
+</CardGroup>
+
+
+
+
+## 1. Interoperability - Calling Anthropic, Gemini, Mistral, and more
+
+Switch between 200+ LLMs without code changes. Supports OpenAI, Anthropic, Azure, Google, AWS, and more. Here's how to use different providers with Swarm:
+
+<Tabs>
+  <Tab title="Anthropic">
+```python
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    virtual_key="ANTHROPIC_VIRTUAL_KEY"
+)
+
+client = Swarm(client=portkey)
+```
+  </Tab>
+  <Tab title="Azure OpenAI">
+```python
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    virtual_key="AZURE_OPEANI_VIRTUAL_KEY"
+)
+
+client = Swarm(client=portkey)
+```
+  </Tab>
+</Tabs>
+
+
+Much of these features are driven by **Portkey's Config architecture**. On the Portkey app, we make it easy to help you _create_, _manage_, and _version_ your Configs so that you can reference them easily in your Portkey Client.
+
+## Saving Configs in the Portkey App
+
+Head over to the Configs tab in Portkey app where you can save various provider Configs along with the reliability and caching features. Each Config has an associated slug that you can reference in your Llamaindex code.
+
+<Frame>
+    <img src="/images/libraries/libraries-3.avif"/>
+</Frame>
+
+## 2. Caching
+
+Agent runs are time-consuming and expensive due to their complex pipelines. Caching can significantly reduce these costs by storing frequently used data and responses. Portkey offers a built-in caching system that stores past responses, reducing the need for agent calls saving both time and money.
+
+**Simple Cache**: For exact match responses
+**Semantic Cache**: For semantically similar queries
+
+To enable Portkey cache, just add the **cache** params to your config object.
+```py
+
+config = {
+    "cache": {
+        "mode": "semantic",  # Choose between "simple" or "semantic"
+    }
+}
+
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    config=config
+    virtual_key="YOUR_VIRTUAL_KEY"
+)
+```
+
+
+## 3. Reliability
+Make your Swarm agents production-ready with Portkey's reliability features. Configure these through the Portkey dashboard or directly pass the JSON config.
+<CardGroup cols="3">
+  <Card title="Automatic Retries" icon="rotate-right">
+    Automatically retry failed agent requests with exponential backoff. Essential for handling temporary network issues or rate limits. Set custom retry attempts, delays, and conditions per provider.
+  </Card>
+  <Card title="Request Timeouts" icon="clock">
+    Set custom timeouts for agent operations to prevent hanging requests. Crucial for time-sensitive agent workflows where responses must arrive within specific timeframes. Configurable at both operation and provider levels.
+  </Card>
+  <Card title="Conditional Routing" icon="route">
+    Route agent requests to different providers based on custom conditions like cost, latency, or request properties. Perfect for optimizing agent performance while managing costs across different use cases.
+  </Card>
+  <Card title="Fallbacks" icon="shield">
+    Configure backup providers that automatically take over when primary providers fail. Keep your agents running smoothly even during outages by cascading through multiple provider options.
+  </Card>
+  <Card title="Load Balancing" icon="scale-balanced">
+    Distribute agent requests across multiple provider instances or API keys. Balance workload, manage rate limits, and optimize costs by setting custom weights for different providers.
+  </Card>
+</CardGroup>
+Configure these features through the Portkey dashboard or reference them using Config slugs in your code. Visit the Reliability Guide for detailed setup instructions.
+
+
+
+
+### 4\. [Metrics](/product/observability)
+
+Agent runs can be costly. Tracking agent metrics is crucial for understanding the performance and reliability of your AI agents. Metrics help identify issues, optimize runs, and ensure that your agents meet their intended goals.
+
+Portkey automatically logs comprehensive metrics for your AI agents, including **cost**, **tokens used**, **latency**, etc. Whether you need a broad overview or granular insights into your agent runs, Portkey's customizable filters provide the metrics you need. For agent-specific observability, add `Trace-id` to the request headers for each agent.
+
+
+
+<Frame>
+  <img src="/images/autogen/autogen-4.gif"/>
+</Frame>
+
+
+
+### 5\. [Logs](/product/observability/logs)
+
+Logs are essential for understanding agent behavior, diagnosing issues, and improving performance. They provide a detailed record of agent activities and tool use, which is crucial for debugging and optimizing processes.
+
+Portkey offers comprehensive logging features that capture detailed information about every action and decision made by your AI agents. Access a dedicated section to view records of agent executions, including parameters, outcomes, function calls, and errors. Filter logs based on multiple parameters such as trace ID, model, tokens used, and metadata.
+<Frame>
+  <img src="/images/autogen/autogen-4.gif"/>
+</Frame>
+
+
+## 6\. Continuous Improvement
+
+Now that you know how to trace & log your Llamaindex requests to Portkey, you can also start capturing user feedback to improve your app!
+
+You can append qualitative as well as quantitative feedback to any `trace ID` with the `portkey.feedback.create` method:
+
+```py Adding Feedback
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY"
+)
+
+feedback = portkey.feedback.create(
+    trace_id="YOUR_LLAMAINDEX_TRACE_ID",
+    value=5,  # Integer between -10 and 10
+    weight=1,  # Optional
+    metadata={
+        # Pass any additional context here like comments, _user and more
+    }
+)
+
+print(feedback)
+```
+
+## 7. Security & Compliance
+Set budget limits on provider API keys and implement fine-grained user roles and permissions for both the app and the Portkey APIs.
+
+
+
+
+
+
+
+
+
+## 1. Interoperability - Calling Different LLMs
+
+When building with Swarm, you might want to experiment with different LLMs or use specific providers for different agent tasks. Portkey makes this seamless - you can switch between OpenAI, Anthropic, Gemini, Mistral, or cloud providers without changing your agent code.
+
+Instead of managing multiple API keys and provider-specific configurations, Portkey's Virtual Keys give you a single point of control. Here's how you can use different LLMs with your Swarm agents:
+
+<Tabs>
+  <Tab title="Anthropic">
+```python
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    virtual_key="ANTHROPIC_VIRTUAL_KEY"
+)
+
+client = Swarm(client=portkey)
+```
+  </Tab>
+  <Tab title="Azure OpenAI">
+```python
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    virtual_key="AZURE_OPENAI_VIRTUAL_KEY"
+)
+
+client = Swarm(client=portkey)
+```
+  </Tab>
+</Tabs>
+
+## 2. Caching - Speed Up Agent Responses
+
+Agent operations often involve repetitive queries or similar tasks. Every time your agent makes an LLM call, you're paying for tokens and waiting for responses. Portkey's caching system can significantly reduce both costs and latency.
+
+Portkey offers two powerful caching modes:
+
+**Simple Cache**: Perfect for exact matches - when your agents make identical requests. Ideal for deterministic operations like function calling or FAQ-type queries.
+
+**Semantic Cache**: Uses embedding-based matching to identify similar queries. Great for natural language interactions where users might ask the same thing in different ways.
+
+```python
+config = {
+    "cache": {
+        "mode": "semantic",  # or "simple" for exact matching
+        "max_age": 3600000  # cache duration in milliseconds
+    }
+}
+
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    virtual_key="YOUR_VIRTUAL_KEY",
+    config=config
+)
+```
+
+## 3. Reliability - Keep Your Agents Running Smoothly
+
+When running agents in production, things can go wrong - API rate limits, network issues, or provider outages. Portkey's reliability features ensure your agents keep running smoothly even when problems occur.
+
+<CardGroup cols="2">
+  <Card title="Automatic Retries" icon="rotate">
+    Handles temporary failures automatically. If an LLM call fails, Portkey will retry with exponential backoff - perfect for rate limits or network blips.
+  </Card>
+
+  <Card title="Request Timeouts" icon="clock">
+    Prevent your agents from hanging. Set timeouts to ensure you get responses (or can fail gracefully) within your required timeframes.
+  </Card>
+
+  <Card title="Conditional Routing" icon="route">
+    Send different requests to different providers. Route complex reasoning to GPT-4, creative tasks to Claude, and quick responses to Gemini based on your needs.
+  </Card>
+
+  <Card title="Fallbacks" icon="shield">
+    Keep running even if your primary provider fails. Automatically switch to backup providers to maintain availability.
+  </Card>
+
+  <Card title="Load Balancing" icon="scale-balanced">
+    Spread requests across multiple API keys or providers. Great for high-volume agent operations and staying within rate limits.
+  </Card>
+</CardGroup>
+
+## 4. Observability - Understand Your Agents
+
+Building agents is the first step - but how do you know they're working effectively? Portkey provides comprehensive visibility into your agent operations through multiple lenses:
+
+**Metrics Dashboard**: Track 10+ key performance indicators like:
+- Cost per agent interaction
+- Response times and latency
+- Token usage and efficiency
+- Success/failure rates
+- Cache hit rates
+
+
+<Frame>
+  <img src="/images/autogen/autogen-4.gif"/>
+</Frame>
+
+
+**Detailed Logging**: Every agent interaction is captured with:
+- Complete conversation history
+- Function calls and their results
+- Custom metadata you define
+
+
+<Frame>
+  <img src="/images/autogen/autogen-4.gif"/>
+</Frame>
+
+
+#### Send Custom Metadata with your requests
+Add trace IDs to track specific workflows:
+
+
+
+```python
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    virtual_key="YOUR_VIRTUAL_KEY",
+    trace_id="weather_workflow_123",
+    metadata={
+        "agent": "weather_agent",
+        "environment": "production"
+    }
+)
+```
+
+
+## 5. Security & Compliance - Enterprise-Ready Controls
+
+When deploying agents in production, security is crucial. Portkey provides enterprise-grade security features:
+
+<CardGroup cols="2">
+  <Card title="Budget Controls" icon="money-bill">
+    Set and monitor spending limits per Virtual Key. Get alerts before costs exceed thresholds.
+  </Card>
+  
+  <Card title="Access Management" icon="lock">
+    Control who can access what. Assign roles and permissions for your team members.
+  </Card>
+  
+  <Card title="Audit Logging" icon="list-check">
+    Track all changes and access. Know who modified agent settings and when.
+  </Card>
+  
+  <Card title="Data Privacy" icon="shield-check">
+    Configure data retention and processing policies to meet your compliance needs.
+  </Card>
+</CardGroup>
+
+Configure these settings in the [Portkey Dashboard](https://app.portkey.ai) or programmatically through the API.
