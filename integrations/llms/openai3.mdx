@@ -1,0 +1,698 @@
+---
+title: 'OpenAI'
+description: Integrate OpenAI with Portkey to get production metrics for your requests and make chat completions, audio, image generation, structured outputs, function calling, fine-tuning, batch, and more requests.
+---
+
+<Note>
+Provider Slug: `openai`
+</Note>
+
+## Overview
+
+Portkey integrates with [OpenAI](https://platform.openai.com/docs/api-reference/introduction)'s APIs to help you create production-grade AI sppd with enhanced reliability, observability, and governance features.
+
+## Getting Started
+
+<Steps>
+  <Step title="Obtain your OpenAI API Key">
+    Visit the [OpenAI dashboard](https://platform.openai.com/account/api-keys) to generate your API key.
+  </Step>
+
+  <Step title="Create a Virtual Key in Portkey">
+    Portkey's virtual key vault simplifies your interaction with OpenAI. Virtual keys act as secure aliases for your actual API keys, offering enhanced security and easier management through [budget limits](/docs/product/observability/budget-limits) to control your API usage.
+
+    Use the Portkey app to create a [virtual key](/docs/product/ai-gateway/virtual-keys) associated with your OpenAI API key.
+  </Step>
+
+  <Step title="Initialize the Portkey Client">
+    Now that you have your virtual key, set up the Portkey client:
+
+    ### Portkey Hosted App
+    Use the Portkey API key and the OpenAI virtual key to initialize the client in your preferred programming language.
+
+    <CodeGroup>
+    ```python Python
+    from portkey_ai import Portkey
+
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+        virtual_key="VIRTUAL_KEY"   # Replace with your virtual key for OpenAI
+    )
+    ```
+
+    ```javascript Node.js
+    import Portkey from 'portkey-ai'
+
+    const portkey = new Portkey({
+        apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+        virtualKey: "VIRTUAL_KEY" // Your OpenAI Virtual Key
+    })
+    ```
+    </CodeGroup>
+
+    ### Open Source Use
+    Alternatively, use Portkey's Open Source AI Gateway to enhance your app's reliability with minimal code:
+
+    <CodeGroup>
+    ```python Python
+    from portkey_ai import Portkey, PORTKEY_GATEWAY_URL
+
+    portkey = Portkey(
+        api_key="dummy",  # Replace with your Portkey API key
+        base_url=PORTKEY_GATEWAY_URL,
+        Authorization="OPENAI_API_KEY", # Replace with your OpenAI API Key
+        provider="openai"
+    )
+    ```
+
+    ```javascript Node.js
+    import Portkey, { PORTKEY_GATEWAY_URL } from 'portkey-ai'
+
+    const portkey = new Portkey({
+        apiKey: "dummy", // Replace with your Portkey API key
+        baseUrl: PORTKEY_GATEWAY_URL,
+        Authorization: "OPENAI_API_KEY", // Replace with your OpenAI API Key
+        provider: "openai"
+    })
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+🔥 That's it! You've integrated Portkey into your application with just a few lines of code. Now let's explore making requests using the Portkey client.
+
+## Supported Models
+
+<Accordion title="Supported OpenAI Models">
+- GPT-4o
+- GPT-4o mini
+- o1-preview
+- o1-mini
+- GPT-4 Turbo
+- GPT-4
+- GPT-3.5 Turbo
+- DALL·E
+- TTS (Text-to-Speech)
+- Whisper
+- Embeddings
+- Moderation
+- GPT base
+</Accordion>
+
+## OpenAI Supported Features
+
+### Chat Completions
+
+Generate chat completions using OpenAI models through Portkey:
+
+<CodeGroup>
+```python Python
+completion = portkey.chat.completions.create(
+    messages=[{"role": "user", "content": "Say this is a test"}],
+    model="gpt-4o"
+)
+
+print(completion.choices[0].message.content)
+```
+
+```javascript Node.js
+const chatCompletion = await portkey.chat.completions.create({
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: 'gpt-4o',
+});
+
+console.log(chatCompletion.choices[0].message.content);
+```
+
+```curl REST
+curl -X POST "https://api.portkey.ai/v1/chat/completions" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -d '{
+       "messages": [{"role": "user", "content": "Say this is a test"}],
+       "model": "gpt-4o"
+     }'
+```
+</CodeGroup>
+
+### Streaming
+
+Stream responses for real-time output in your applications:
+
+<CodeGroup>
+```python Python
+chat_complete = portkey.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Say this is a test"}],
+    stream=True
+)
+
+for chunk in chat_complete:
+    print(chunk.choices[0].delta.content or "", end="", flush=True)
+```
+
+```javascript Node.js
+const stream = await portkey.chat.completions.create({
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: 'Say this is a test' }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content || '');
+}
+```
+
+```curl REST
+curl -X POST "https://api.portkey.ai/v1/chat/completions" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -d '{
+       "model": "gpt-4o",
+       "messages": [{"role": "user", "content": "Say this is a test"}],
+       "stream": true
+     }'
+```
+</CodeGroup>
+
+### Function Calling
+
+Leverage OpenAI's function calling capabilities through Portkey:
+
+<CodeGroup>
+```javascript Node.js
+let tools = [{
+    type: "function",
+    function: {
+        name: "getWeather",
+        description: "Get the current weather",
+        parameters: {
+            type: "object",
+            properties: {
+                location: { type: "string", description: "City and state" },
+                unit: { type: "string", enum: ["celsius", "fahrenheit"] }
+            },
+            required: ["location"]
+        }
+    }
+}];
+
+let response = await portkey.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "What's the weather like in Delhi - respond in JSON" }
+    ],
+    tools,
+    tool_choice: "auto",
+});
+
+console.log(response.choices[0].finish_reason);
+```
+
+```python Python
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "getWeather",
+        "description": "Get the current weather",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City and state"},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+            },
+            "required": ["location"]
+        }
+    }
+}]
+
+response = portkey.chat.completions.create(
+    model="gpt-4o",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What's the weather like in Delhi - respond in JSON"}
+    ],
+    tools=tools,
+    tool_choice="auto"
+)
+
+print(response.choices[0].finish_reason)
+```
+
+```curl REST
+curl -X POST "https://api.portkey.ai/v1/chat/completions" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -d '{
+       "model": "gpt-4o",
+       "messages": [
+         {"role": "system", "content": "You are a helpful assistant."},
+         {"role": "user", "content": "What'\''s the weather like in Delhi - respond in JSON"}
+       ],
+       "tools": [{
+         "type": "function",
+         "function": {
+           "name": "getWeather",
+           "description": "Get the current weather",
+           "parameters": {
+             "type": "object",
+             "properties": {
+               "location": {"type": "string", "description": "City and state"},
+               "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+             },
+             "required": ["location"]
+           }
+         }
+       }],
+       "tool_choice": "auto"
+     }'
+```
+</CodeGroup>
+
+### Vision
+
+Process images alongside text using OpenAI's vision capabilities:
+
+<CodeGroup>
+```python Python
+response = portkey.chat.completions.create(
+    model="gpt-4-vision-preview",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+                },
+            ],
+        }
+    ],
+    max_tokens=300,
+)
+
+print(response)
+```
+
+```javascript Node.js
+const response = await portkey.chat.completions.create({
+  model: "gpt-4-vision-preview",
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "What's in this image?" },
+        {
+          type: "image_url",
+          image_url: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+        },
+      ],
+    },
+  ],
+  max_tokens: 300,
+});
+
+console.log(response);
+```
+
+```curl REST
+curl -X POST "https://api.portkey.ai/v1/chat/completions" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -d '{
+       "model": "gpt-4-vision-preview",
+       "messages": [
+         {
+           "role": "user",
+           "content": [
+             {"type": "text", "text": "What'\''s in this image?"},
+             {
+               "type": "image_url",
+               "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+             }
+           ]
+         }
+       ],
+       "max_tokens": 300
+     }'
+```
+</CodeGroup>
+
+### Embeddings
+
+Generate embeddings for text using OpenAI's embedding models:
+
+<CodeGroup>
+```python Python
+response = portkey.embeddings.create(
+    input="Your text string goes here",
+    model="text-embedding-3-small"
+)
+
+print(response.data[0].embedding)
+```
+
+```javascript Node.js
+const response = await portkey.embeddings.create({
+  input: "Your text string goes here",
+  model: "text-embedding-3-small"
+});
+
+console.log(response.data[0].embedding);
+```
+
+```curl REST
+curl -X POST "https://api.portkey.ai/v1/embeddings" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -d '{
+       "input": "Your text string goes here",
+       "model": "text-embedding-3-small"
+     }'
+```
+</CodeGroup>
+
+### Transcription and Translation
+
+Portkey supports both `Transcription` and `Translation` methods for STT models:
+
+<CodeGroup>
+```python Python
+audio_file= open("/path/to/file.mp3", "rb")
+
+# Transcription
+transcription = portkey.audio.transcriptions.create(
+  model="whisper-1",
+  file=audio_file
+)
+print(transcription.text)
+
+# Translation
+translation = portkey.audio.translations.create(
+  model="whisper-1",
+  file=audio_file
+)
+print(translation.text)
+```
+
+```javascript Node.js
+import fs from "fs";
+
+// Transcription
+async function transcribe() {
+  const transcription = await portkey.audio.transcriptions.create({
+    file: fs.createReadStream("/path/to/file.mp3"),
+    model: "whisper-1",
+  });
+  console.log(transcription.text);
+}
+transcribe();
+
+// Translation
+async function translate() {
+    const translation = await portkey.audio.translations.create({
+        file: fs.createReadStream("/path/to/file.mp3"),
+        model: "whisper-1",
+    });
+    console.log(translation.text);
+}
+translate();
+```
+
+```curl REST
+# Transcription
+curl -X POST "https://api.portkey.ai/v1/audio/transcriptions" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -H "Content-Type: multipart/form-data" \
+     -F "file=@/path/to/file.mp3" \
+     -F "model=whisper-1"
+
+# Translation
+curl -X POST "https://api.portkey.ai/v1/audio/translations" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -H "Content-Type: multipart/form-data" \
+     -F "file=@/path/to/file.mp3" \
+     -F "model=whisper-1"
+```
+</CodeGroup>
+
+### Text to Speech
+
+Convert text to speech using OpenAI's TTS models:
+
+<CodeGroup>
+```python Python
+from pathlib import Path
+
+speech_file_path = Path(__file__).parent / "speech.mp3"
+response = portkey.audio.speech.create(
+  model="tts-1",
+  voice="alloy",
+  input="Today is a wonderful day to build something people love!"
+)
+
+with open(speech_file_path, "wb") as f:
+    f.write(response.content)
+```
+
+```javascript Node.js
+import path from 'path';
+import fs from 'fs';
+
+const speechFile = path.resolve("./speech.mp3");
+
+async function main() {
+  const mp3 = await portkey.audio.speech.createCertainly! I'll continue with the Text to Speech section and then move on to the additional features and sections:
+
+```javascript Node.js
+({
+    model: "tts-1",
+    voice: "alloy",
+    input: "Today is a wonderful day to build something people love!",
+  });
+  const buffer = Buffer.from(await mp3.arrayBuffer());
+  await fs.promises.writeFile(speechFile, buffer);
+}
+
+main();
+```
+
+```curl REST
+curl -X POST "https://api.portkey.ai/v1/audio/speech" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "model": "tts-1",
+       "voice": "alloy",
+       "input": "Today is a wonderful day to build something people love!"
+     }' \
+     --output speech.mp3
+```
+</CodeGroup>
+
+### Prompt Caching
+
+Implement prompt caching to improve performance and reduce costs:
+
+<Card title="Prompt Caching Guide" icon="bolt" href="/docs/integrations/llms/openai/prompt-caching-openai">
+  Learn how to implement prompt caching for OpenAI models with Portkey.
+</Card>
+
+### Structured Output
+
+Use structured outputs for more consistent and parseable responses:
+
+<Card title="Structured Outputs Guide" icon="code" href="/docs/integrations/llms/openai/structured-outputs">
+  Discover how to use structured outputs with OpenAI models in Portkey.
+</Card>
+
+## Supported Endpoints and Parameters
+
+| Endpoint          | Supported Parameters                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `complete`        | model, prompt, max_tokens, temperature, top_p, n, stream, logprobs, echo, stop, presence_penalty, frequency_penalty, best_of, logit_bias, user, seed, suffix              |
+| `embed`           | model, input, encoding_format, dimensions, user                                                                                                                           |
+| `chatComplete`    | model, messages, functions, function_call, max_tokens, temperature, top_p, n, stream, stop, presence_penalty, frequency_penalty, logit_bias, user, seed, tools, tool_choice, response_format, logprobs, top_logprobs, stream_options, service_tier, parallel_tool_calls, max_completion_tokens |
+| `imageGenerate`   | prompt, model, n, quality, response_format, size, style, user                                                                                                             |
+| `createSpeech`    | model, input, voice, response_format, speed                                                                                                                               |
+| `createTranscription` | All parameters supported                                                                                                                                              |
+| `createTranslation`   | All parameters supported                                                                                                                                              |
+
+---
+
+# Portkey's Advanced Features
+
+## Track End-User IDs
+
+Portkey allows you to track user IDs passed with the user parameter in OpenAI requests, enabling you to monitor user-level costs, requests, and more:
+
+<CodeGroup>
+```python Python
+response = portkey.chat.completions.create(
+  model="gpt-4o",
+  messages=[{"role": "user", "content": "Say this is a test"}],
+  user="user_123456"
+)
+```
+
+```javascript Node.js
+const chatCompletion = await portkey.chat.completions.create({
+  messages: [{ role: "user", content: "Say this is a test" }],
+  model: "gpt-4o",
+  user: "user_12345",
+});
+```
+
+```curl REST
+curl -X POST "https://api.portkey.ai/v1/chat/completions" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -d '{
+       "model": "gpt-4o",
+       "messages": [{"role": "user", "content": "Say this is a test"}],
+       "user": "user_123456"
+     }'
+```
+</CodeGroup>
+
+When you include the user parameter in your requests, Portkey logs will display the associated user ID, as shown in the image below:
+
+<img src="/images/llms/logs.png" alt="Portkey Logs with User ID" />
+
+In addition to the `user` parameter, Portkey allows you to send arbitrary custom metadata with your requests. This powerful feature enables you to associate additional context or information with each request, which can be useful for analysis, debugging, or other custom use cases.
+
+<CardGroup cols={1}>
+  <Card title="Learn More About Metadata" icon="tags" href="/docs/product/observability/metadata">
+    Explore how to use custom metadata to enhance your request tracking and analysis.
+  </Card>
+</CardGroup>
+
+## Using The Gateway Config
+
+Here's a simplified version of how to use Portkey's Gateway Configuration:
+
+<Steps>
+  <Step title="Create a Gateway Configuration" titleSize="h3">
+    You can create a Gateway configuration using the Portkey Config Dashboard or by writing a JSON configuration in your code. In this example, requests are routed based on the user's subscription plan (paid or free).
+
+    ```json
+    config = {
+      "strategy": {
+        "mode": "conditional",
+        "conditions": [
+          {
+            "query": { "metadata.user_plan": { "$eq": "paid" } },
+            "then": "gpt4o"
+          },
+          {
+            "query": { "metadata.user_plan": { "$eq": "free" } },
+            "then": "gpt-3.5"
+          }
+        ],
+        "default": "base-gpt4"
+      },
+      "targets": [
+        {
+          "name": "gpt4o",
+          "virtual_key": "xx"
+        },
+        {
+          "name": "gpt-3.5",
+          "virtual_key": "yy"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="Process Requests" titleSize="h3">
+    When a user makes a request, it will pass through Portkey's AI Gateway. Based on the configuration, the Gateway routes the request according to the user's metadata.
+    <img src="/images/llms/conditional-routing.png" alt="Conditional Routing Diagram" />
+  </Step>
+
+  <Step title="Set Up the Portkey Client" titleSize="h3">
+    Pass the Gateway configuration to your Portkey client. You can either use the config object or the Config ID from Portkey's hosted version.
+
+    <CodeGroup>
+    ```python Python
+    from portkey_ai import Portkey
+
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",
+        virtual_key="VIRTUAL_KEY",
+        config=portkey_config
+    )
+    ```
+
+    ```javascript Node.js
+    import Portkey from 'portkey-ai'
+
+    const portkey = new Portkey({
+      apiKey: "PORTKEY_API_KEY",
+      virtualKey: "VIRTUAL_KEY",
+      config: portkeyConfig
+    })
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+That's it! Portkey seamlessly allows you to make your AI app more robust using built-in gateway features. Learn more about advanced gateway features:
+
+<CardGroup cols={2}>
+  <Card title="Load Balancing" icon="balance-scale" href="/docs/product/ai-gateway/load-balancing">
+    Distribute requests across multiple targets based on defined weights.
+  </Card>
+  <Card title="Fallbacks" icon="life-ring" href="/docs/product/ai-gateway/fallbacks">
+    Automatically switch to backup targets if the primary target fails.
+  </Card>
+  <Card title="Conditional Routing" icon="route" href="/docs/product/ai-gateway/conditional-routing">
+    Route requests to different targets based on specified conditions.
+  </Card>
+  <Card title="Caching" icon="database" href="/docs/product/ai-gateway/caching">
+    Enable caching of responses to improve performance and reduce costs.
+  </Card>
+</CardGroup>
+
+## Guardrails
+
+Portkey's AI gateway enables you to enforce input/output checks on requests by applying custom hooks before and after processing. Protect your user's/company's data by using PII guardrails and many more available on Portkey Guardrails:
+
+```json
+{
+	"virtual_key":"openai-xxx",
+	"before_request_hooks": [{
+		"id": "input-guardrail-id-xx"
+	}],
+	"after_request_hooks": [{
+		"id": "output-guardrail-id-xx"
+	}]
+}
+```
+
+<Card title="Learn More About Guardrails" icon="shield-check" href="/docs/product/guardrails">
+  Explore Portkey's guardrail features to enhance the security and reliability of your AI applications.
+</Card>
+
+## Next Steps
+
+The complete list of features supported in the SDK are available in our comprehensive documentation:
+
+<Card title="Portkey SDK Documentation" icon="book-open" href="/docs/api-reference/portkey-sdk-client">
+  Explore the full capabilities of the Portkey SDK and how to leverage them in your projects.
+</Card>
+
+---
+
+## Limitations
+
+<Warning>
+Portkey does not support the following OpenAI features:
+- Streaming for audio endpoints
+- Chat completions feedback API
+- File management endpoints
+</Warning>
+
+For the most up-to-date information on supported features and endpoints, please refer to our [API Reference](/docs/api-reference/introduction).
