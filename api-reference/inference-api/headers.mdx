@@ -1,153 +1,464 @@
 ---
-title: "Headers"
-description: "When making requests to the Portkey API, you need to include specific headers to authenticate your requests, specify the provider, and configure various features. This guide explains the essential and optional headers you can use to build applications on top of Portkey."
+title: Headers
+description: Header requirements and options for the Portkey API
 ---
 
-## Essential Headers
+Portkey API accepts 4 kinds of headers for your requests:
+| | | |
+| :-- | :-- | :-- |
+| Portkey Authentication Header | `Required` | For Portkey auth |
+| Provider Authentication Headers OR Cloud-Specific Headers | `Required` | For provider auth |
+| Additional Portkey Headers | `Optional` | To pass `config`, `metadata`, `trace id`, `cache refresh` etc. |
+| Custom Headers | `Optional` | To forward any other headers directly |
 
-### 1\. API Key (`x-portkey-api-key`)
+## Portkey Authentication
 
-The `x-portkey-api-key` header is required to authenticate your requests and ensure secure access to the Portkey API. You can obtain your API key from the [Portkey dashboard](https://app.portkey.ai/).
+### Portkey API Key
 
-Example:
+<ResponseField name="x-portkey-api-key / api_key / apiKey" required type="string">
+Authenticate your requests with your Portkey API key. Obtain API key from the [Portkey dashboard](https://app.portkey.ai/api-keys).<br />
+Environment variable: `PORTKEY_API_KEY`
+<Accordion title="Example">
+<CodeGroup>
+```sh cURL {2}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+```
+```py Python {4}
+from portkey_ai import Portkey
 
-```sh
-"x-portkey-api-key: $PORTKEY_API_KEY"
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY" # defaults to os.environ.get("PORTKEY_API_KEY")
+)
+```
+```js JavaScript {4}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY' // defaults to process.env["PORTKEY_API_KEY"]
+});
+```
+</CodeGroup>
+</Accordion>
+</ResponseField>
+
+## Provider Authentication
+
+In addition to the Portkey API key, you must provide information about the AI provider you're using. There are **4** ways to do this:
+
+### 1. Provider Slug + Auth
+
+<ResponseField name="x-portkey-provider / provider" type="string">
+Specifies the provider you're using (e.g., `openai`, `anthropic`, `vertex-ai`).<br />
+List of [Portkey supported providers here](/integrations/llms).
+</ResponseField>
+<ResponseField name="Authorization" type="string">
+Pass the auth details for the specified provider as a `"Bearer $TOKEN"`.<br /><br />
+If your provider expects their auth with headers such as `x-api-key` or `api-key`, you can pass the token with the `Authorization` header directly and Portkey will convert it into the provider-specific format.
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {3,4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
 ```
 
-### 2\. Provider Information
+```py Python {5,6}
+from portkey_ai import Portkey
 
-In addition to the API key, you must provide information about the AI provider you're using. There are four ways to do this:
-
-**2.1\. Provider (**`x-portkey-provider`**) + Authentication Header**
-
-* `x-portkey-provider`: Specifies the provider you're using (e.g., "openai", "anthropic"). See the list of [Portkey-integrated providers](/integrations/llms).
-* `Authorization` (or another appropriate auth header like `x-api-key` or `api-key`): Includes the necessary authentication details for the specified provider.
-
-Example:
-
-```sh
-"x-portkey-provider: openai"
-"Authorization: Bearer $OPENAI_API_KEY"
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  provider = "openai",
+  Authorization = "Bearer OPENAI_API_KEY"
+)
 ```
 
-**2.2\. Virtual Key (`x-portkey-virtual-key`)**
+```js JavaScript {5,6}
+import Portkey from 'portkey-ai';
 
-* `x-portkey-virtual-key`: Allows you to use a pre-configured virtual key that encapsulates the provider and authentication details.
-* Virtual keys can be created and managed through the Portkey dashboard. ([Docs](/product/ai-gateway/virtual-keys))
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  provider: 'openai',
+  Authorization: 'Bearer OPENAI_API_KEY'
+});
+```
+</CodeGroup>
+</Accordion>
 
-Example:
+### 2. Virtual Key
 
-```sh
-"x-portkey-virtual-key: your_virtual_key_here"
+<ResponseField name="x-portkey-virtual-key / virtual_key / virtualKey" type="string">
+Save your provider auth on Portkey and use a virtual key to directly make a call. [Docs](/product/ai-gateway/virtual-keys))
+</ResponseField>
+
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {3}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: openai-virtual-key" \
 ```
 
-**2.3\. Config (`x-portkey-config`)**
+```py Python {5}
+from portkey_ai import Portkey
 
-* `x-portkey-config`: Accepts a JSON object or a config ID that contains the provider details and other configuration settings. Using a config object provides flexibility and allows for dynamic configuration of your requests.
-* Configs can be saved in the Portkey UI and referenced by their ID as well. ([Docs](/product/ai-gateway/configs))
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  virtual_key = "openai-virtual-key"
+)
+```
+
+```js JavaScript {5}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  virtualKey: 'openai-virtual-key'
+});
+```
+</CodeGroup>
+</Accordion>
+
+### 3. Config
+
+<ResponseField name="x-portkey-config / config" type="string or JSON">
+Pass your Portkey config with this header. Accepts a `JSON object` or a `config ID` that can also contain gateway configuration settings, and provider details.<br />
+* Configs can be saved in the Portkey UI and referenced by their ID ([Docs](/product/ai-gateway/configs))
 * Configs also enable other optional features like Caching, Load Balancing, Fallback, Retries, and Timeouts.
+</ResponseField>
 
-Example with JSON Object:
+<Accordion title="Example">
+<CodeGroup>
 
-
-
-```sh
-"x-portkey-config: {"provider": "openai", "api_key": "OPENAI_API_KEY"}"
+```sh cURL {3}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: openai-config" \
 ```
 
-Example with Config ID:
+```py Python {5}
+from portkey_ai import Portkey
 
-```sh
-"x-portkey-config: pp-config-xx"
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  config = "openai-config"
+# You can also send raw JSON
+# config = {"provider": "openai", "api_key": "OPENAI_API_KEY"}
+)
 ```
 
-**2.4\. Custom Host (`x-portkey-custom-host`) + Provider (`x-portkey-provider`) + Authentication Header**
+```js JavaScript {5}
+import Portkey from 'portkey-ai';
 
-* Use this combination when connecting to a custom-hosted provider endpoint.
-* `x-portkey-custom-host` specifies the URL of the custom endpoint. ([Docs](/integrations/llms/byollm))
-* `x-portkey-provider` indicates the provider type.
-* `Authorization` (or the appropriate auth header) includes the authentication details for the custom endpoint.
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  config: 'openai-config'
+// You can also send raw JSON
+// config: {"provider": "openai", "api_key": "OPENAI_API_KEY"}
+});
+```
+</CodeGroup>
+</Accordion>
 
+### 4. Custom Host
+
+<ResponseField name="x-portkey-custom-host / custom_host / customHost" type="string">
+Specifies the base URL where you want to send your request
+</ResponseField>
+<ResponseField name="x-portkey-provider / provider" type="string">
+Target provider that's availabe on your base URL. If you are unsure of which target provider to set, you can set `openai`.
+</ResponseField>
+<ResponseField name="Authorization" type="string">
+Pass the auth details for the specified provider as a `"Bearer $TOKEN"`.<br /><br />
+If your provider expects their auth with headers such as `x-api-key` or `api-key`, you can pass the token with the `Authorization` header directly and Portkey will convert it into the provider-specific format.
+</ResponseField>
+
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {3-5}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-custom-host: http://124.124.124.124/v1" \
+  -H "x-portkey-provider: openai" \
+  -H "Authorization: Bearer $TOKEN" \
+```
+
+```py Python {5-7}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  custom_host = "http://124.124.124.124/v1",
+  provider = "openai",
+  Authorization = "Bearer TOKEN"
+)
+```
+
+```js JavaScript {5-7}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  customHost: "http://124.124.124.124/v1",
+  provider: "openai",
+  Authorization: "Bearer TOKEN"
+});
+```
+</CodeGroup>
+</Accordion>
 ---
 
-## Optional Headers
+## Additional Portkey Headers
 
 There are additional optional Portkey headers that enable various features and enhancements:
 
-**1\. Trace ID (`x-portkey-trace-id`)**
+### Trace ID
+<ResponseField name="x-portkey-trace-id / trace_id / traceId" type="string">
+An ID you can pass to refer to one or more requests later on. If not provided, Portkey generates a trace ID automatically for each request. ([Docs](/product/observability/traces))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
 
-* `x-portkey-trace-id`: An ID you can pass to refer to one or more requests later on. If not provided, Portkey generates a trace ID automatically for each request. ([Docs](/product/observability/traces))
-
-Example:
-
-```sh
-"x-portkey-trace-id: your_custom_trace_id"
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: openai-virtual-key" \
+  -H "x-portkey-trace-id: test-request" \
 ```
 
-#### 2\. Metadata (`x-portkey-metadata`)
+```py Python {6}
+from portkey_ai import Portkey
 
-* `x-portkey-metadata`: Allows you to attach custom metadata to your requests, which can be filtered later in the analytics and log dashboards. You can include the special metadata type `_user` to associate requests with specific users. ([Docs](/product/observability/metadata))
-
-Example:
-
-```sh
-"x-portkey-metadata: {"_user": "user_id_123", "foo": "bar"}"
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  virtual_key = "openai-virtual-key",
+  trace_id = "test-request"
+)
 ```
 
-#### 3\. Cache Force Refresh (`x-portkey-cache-force-refresh`)
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
 
-* `x-portkey-cache-force-refresh`: Forces a cache refresh for your request by making a new API call and storing the updated value. Expects `true` or `false` See the caching documentation for more information. ([Docs](/product/ai-gateway/cache-simple-and-semantic))
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  virtualKey: "openai-virtual-key",
+  traceId: "test-request"
+});
+```
+</CodeGroup>
+</Accordion>
 
-Example:
+### Metadata
+<ResponseField name="x-portkey-metadata / metadata" type="JSON">
+Allows you to attach custom metadata to your requests, which can be filtered later in the analytics and log dashboards.<br />
+You can include the special metadata type `_user` to associate requests with specific users. ([Docs](/product/observability/metadata))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
 
-```sh
-"x-portkey-cache-force-refresh: true"
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: openai-virtual-key" \
+  -H "x-portkey-metadata: {'_user': 'user_id_123', 'foo': 'bar'}" \
 ```
 
-#### 4\. Cache Namespace (`x-portkey-cache-namespace`)
+```py Python {6}
+from portkey_ai import Portkey
 
-* `x-portkey-cache-namespace`: Partition your cache store based on custom strings, ignoring metadata and other headers.
-
-Example:
-
-```sh
-"x-portkey-cache-namespace: any_string"
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  virtual_key = "openai-virtual-key",
+  metadata = {"_user": "user_id_123", "foo": "bar"}"
+)
 ```
 
-#### 5\. Request Timeout (`x-portkey-request-timeout`)
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
 
-* `x-portkey-request-timeout`: Set timeout after which a request automatically terminates. The time is set in milliseconds.
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  virtualKey: "openai-virtual-key",
+  metadata: {"_user": "user_id_123", "foo": "bar"}"
+});
+```
+</CodeGroup>
+</Accordion>
 
-Example:
+### Cache Force Refresh
+<ResponseField name="x-portkey-cache-force-refresh / cache_force_refresh / cacheForceRefresh" type="boolean">
+Forces a cache refresh for your request by making a new API call and storing the updated value.<br />
+Expects `true` or `false` See the caching documentation for more information. ([Docs](/product/ai-gateway/cache-simple-and-semantic))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
 
-```sh
-"x-portkey-request-timeout: 3000"
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: openai-virtual-key" \
+  -H "x-portkey-cache-force-refresh: true" \
 ```
 
-#### 6\. Forward Headers (`x-portkey-forward-headers`)
+```py Python {6}
+from portkey_ai import Portkey
 
-* `x-portkey-forward-headers`: Allows you to forward sensitive headers directly to your model's API without any processing by Portkey. Expects an `array of strings`. ([Docs](https://portkey.ai/docs/welcome/integration-guides/byollm#forward-sensitive-headers-securely))
-
-Example:
-
-```sh
-"x-portkey-forward-headers: ["X-Custom-Header", "Another-Header"]"
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  virtual_key = "openai-virtual-key",
+  cache_force_refresh = True
+)
 ```
 
-#### 7\. Cloud-Specific Headers (`Azure`, `Google`, `AWS`)
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
 
-* Pass more configuration headers for `Azure OpenAI`, `Google Vertex AI`, or `AWS Bedrock`
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  virtualKey: "openai-virtual-key",
+  cacheForceRefresh: True
+});
+```
+</CodeGroup>
+</Accordion>
 
-**Azure**
+### Cache Namespace
+<ResponseField name="x-portkey-cache-namespace / cache_namespace / cacheNamespace" type="string">
+Partition your cache store based on custom strings, ignoring metadata and other headers.
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: openai-virtual-key" \
+  -H "x-portkey-cache-namespace: any-string" \
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  virtual_key = "openai-virtual-key",
+  cache_namespace = "any-string"
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  virtualKey: "openai-virtual-key",
+  cacheNamespace: "any-string"
+});
+```
+</CodeGroup>
+</Accordion>
+
+### Request Timeout
+<ResponseField name="x-portkey-request-timeout / request_timeout / requestTimeout" type="integer">
+Set timeout after which a request automatically terminates. The time is set in milliseconds.
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: openai-virtual-key" \
+  -H "x-portkey-request-timeout: 3000" \
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  virtual_key = "openai-virtual-key",
+  request_timeout = 3000
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  virtualKey: "openai-virtual-key",
+  reqiestTimeout: 3000
+});
+```
+</CodeGroup>
+</Accordion>
+
+## Custom Headers
+
+You can pass any other headers your API expects by directly forwarding them without any processing by Portkey.<br />
+This is especially useful if you want to pass send sensitive headers.
+
+### Forward Headers
+<ResponseField name="x-portkey-forward-headers / forward_headers / forwardHeaders" type="array of strings">
+Pass all the headers you want to forward directly in this array. ([Docs](https://portkey.ai/docs/welcome/integration-guides/byollm#forward-sensitive-headers-securely))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4-6}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: openai-virtual-key" \
+  -H "X-Custom-Header: ...."\
+  -H "Another-Header: ....."\
+  -H "x-portkey-forward-headers: ['X-Custom-Header', 'Another-Header']" \
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  virtual_key = "openai-virtual-key",
+  X-Custom-Header = "....",
+  Another-Header = "....",
+  forward_headers = ['X-Custom-Header', 'Another-Header']
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  virtualKey: "openai-virtual-key",
+  Custom-Header: "....",
+  Another-Header: "....",
+  forwardHeaders: ['X-Custom-Header', 'Another-Header']
+});
+```
+</CodeGroup>
+</Accordion>
+
+## Cloud-Specific Headers (`Azure`, `Google`, `AWS`)
+
+Pass more configuration headers for `Azure OpenAI`, `Google Vertex AI`, or `AWS Bedrock`
+
+### Azure
 
 * `x-portkey-azure-resource-name`, `x-portkey-azure-deployment-id`, `x-portkey-azure-api-version`, `Authorization`, `x-portkey-azure-model-name`
 
-**Google Vertex AI**
+### Google Vertex AI
 
 * `x-portkey-vertex-project-id`, `x-portkey-vertex-region`, `X-Vertex-AI-LLM-Request-Type`
 
-**AWS Bedrock**
+### AWS Bedrock
 
 * `x-portkey-aws-session-token`, `x-portkey-aws-secret-access-key`, `x-portkey-aws-region`, `x-portkey-aws-session-token`
 
@@ -170,10 +481,10 @@ import Portkey from 'portkey-ai';
 
 const portkey = new Portkey({
     apiKey: "PORTKEY_API_KEY",
-//  authorization: "Bearer PROVIDER_API_KEY",
+//  Authorization: "Bearer PROVIDER_API_KEY",
 //  provider: "anthropic",
 //  customHost: "CUSTOM_URL",
-//  forwardHeaders: ["authorization"],
+//  forwardHeaders: ["Authorization"],
     virtualKey: "VIRTUAL_KEY",
     config: "CONFIG_ID",
 })
@@ -195,10 +506,10 @@ from portkey_ai import Portkey
 
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
-##  authorization="Bearer PROVIDER_API_KEY",
+##  Authorization="Bearer PROVIDER_API_KEY",
 ##  provider="openai",
 ##  custom_host="CUSTOM_URL",
-##  forward_headers=["authorization"],
+##  forward_headers=["Authorization"],
     virtual_key="VIRTUAL_KEY",
     config="CONFIG_ID"
 )
