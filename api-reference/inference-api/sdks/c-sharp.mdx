@@ -77,11 +77,17 @@ public static class PortkeyClient
         }
     }
 
-    public static ChatClient CreateChatClient(Dictionary<string, string> headers, string model)
+    public static OpenAIClient CreateClient(Dictionary<string, string> headers)
     {
         var options = new OpenAIClientOptions { Endpoint = new Uri("https://api.portkey.ai/v1") };
         options.AddPolicy(new HeaderPolicy(headers), PipelinePosition.PerCall);
-        return new OpenAIClient(new ApiKeyCredential("dummy"), options).GetChatClient(model);
+        return new OpenAIClient(new ApiKeyCredential("dummy"), options);
+    }
+
+    public static ChatClient CreateChatClient(Dictionary<string, string> headers, string model)
+    {
+        var client = CreateClient(headers);
+        return client.GetChatClient(model);
     }
 }
 ```
@@ -327,6 +333,66 @@ class Program
         var vector = embeddingResult.Value.ToFloats();
 
         Console.WriteLine($"Full embedding dimensions: {vector.Length}");
+    }
+}
+```
+
+</Accordion>
+
+# Microsoft Semantic Kernel Example
+
+<Accordion title="Using Portkey with Semantic Kernel">
+We can make use of the Portkey client we created above to initialize the Semantic Kernel.
+```csharp
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
+
+public class Program
+{
+    public static async Task Main()
+    {
+        var headers = new Dictionary<string, string> {
+            // Required headers
+            { "x-portkey-api-key", "..." },       // Your Portkey API key
+            { "x-portkey-virtual-key", "..." },    // Virtual key for provider
+
+            // Optional headers
+            // { "x-portkey-trace-id", "my-app" },       // Custom trace identifier
+            // { "x-portkey-config", "..." },            // Send Config ID
+            // Add any other Portkey headers as needed
+        };
+
+        // Create client
+        var client = PortkeyClient.CreateClient(headers);
+
+        var builder = Kernel.CreateBuilder().AddOpenAIChatCompletion("gpt-4", client);
+        Kernel kernel = builder.Build();
+        var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
+
+        var history = new ChatHistory();
+
+        // Initiate a back-and-forth chat
+        string? userInput;
+        do {
+            // Collect user input
+            Console.Write("User > ");
+            userInput = Console.ReadLine();
+
+            // Add user input
+            history.AddUserMessage(userInput);
+
+            // Get the response from the AI
+            var result = await chatCompletionService.GetChatMessageContentAsync(
+                history,
+                null,
+                kernel: kernel);
+
+            // Print the results
+            Console.WriteLine("Assistant > " + result);
+
+            // Add the message from the agent to the chat history
+            history.AddMessage(result.Role, result.Content ?? string.Empty);
+        } while (userInput is not null);
     }
 }
 ```
