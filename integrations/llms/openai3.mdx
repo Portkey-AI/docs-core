@@ -1,184 +1,266 @@
 ---
 title: 'OpenAI'
-description: Integrate OpenAI with Portkey to get production metrics for your requests and make chat completions, audio, image generation, structured outputs, function calling, fine-tuning, batch, and more requests.
+description: Portkey supports OpenAI's chat completions, embeddings, audio, image, fine-tuning, batches, and more APIs.
 ---
 
+<ResponseField name="Provider Slug" type="openai">
+[Latest Pricing](https://models.portkey.ai/providers/openai) | [API Status](https://status.portkey.ai/) | [Supported Endpoints](/api-reference/inference-api/supported-providers)
+</ResponseField>
+
+## Integrate
+Just paste your OpenAI API Key from [here](https://platform.openai.com/account/api-keys) to [Portkey](https://app.portkey.ai/virtual-keys) to create your Virtual Key.
+<Frame>
+<img src="/images/integrations/openai/virtual-key-2.png" width="350" />
+</Frame>
+<Info>
+Optional
+- Add your OpenAI organization and project ID details: ([Docs](#openai-projects-and-organizations))
+- Directly use OpenAI API key without the  Virtual Key: ([Docs](/api-reference/inference-api/headers#1-provider-slug-auth))
+- Create a short-lived virtual key OR one with usage/rate limits: ([Docs](/product/ai-gateway/virtual-keys))
+</Info>
+
+## Sample Request
+Portkey is a drop-in replacement for OpenAI. You can make request using the official OpenAI or Portkey SDKs.
 <Note>
-Provider Slug: `openai`
+Popular libraries & agent frameworks like LangChain, CrewAI, AutoGen, etc. are [also supported](#popular-libraries).
+All Azure OpenAI models & endpoints are [also supported](/integrations/llms/azure-openai)
 </Note>
-
-## Overview
-
-Portkey integrates with [OpenAI](https://platform.openai.com/docs/api-reference/introduction)'s APIs to help you create production-grade AI sppd with enhanced reliability, observability, and governance features.
-
-## Getting Started
-
-<Steps>
-  <Step title="Obtain your OpenAI API Key">
-    Visit the [OpenAI dashboard](https://platform.openai.com/account/api-keys) to generate your API key.
-  </Step>
-
-  <Step title="Create a Virtual Key in Portkey">
-    Portkey's virtual key vault simplifies your interaction with OpenAI. Virtual keys act as secure aliases for your actual API keys, offering enhanced security and easier management through [budget limits](/docs/product/observability/budget-limits) to control your API usage.
-
-    Use the Portkey app to create a [virtual key](/docs/product/ai-gateway/virtual-keys) associated with your OpenAI API key.
-  </Step>
-
-  <Step title="Initialize the Portkey Client">
-    Now that you have your virtual key, set up the Portkey client:
-
-    ### Portkey Hosted App
-    Use the Portkey API key and the OpenAI virtual key to initialize the client in your preferred programming language.
-
-    <CodeGroup>
-    ```python Python
-    from portkey_ai import Portkey
-
-    portkey = Portkey(
-        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        virtual_key="VIRTUAL_KEY"   # Replace with your virtual key for OpenAI
-    )
-    ```
-
-    ```javascript Node.js
-    import Portkey from 'portkey-ai'
-
-    const portkey = new Portkey({
-        apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
-        virtualKey: "VIRTUAL_KEY" // Your OpenAI Virtual Key
-    })
-    ```
-    </CodeGroup>
-
-    ### Open Source Use
-    Alternatively, use Portkey's Open Source AI Gateway to enhance your app's reliability with minimal code:
-
-    <CodeGroup>
-    ```python Python
-    from portkey_ai import Portkey, PORTKEY_GATEWAY_URL
-
-    portkey = Portkey(
-        api_key="dummy",  # Replace with your Portkey API key
-        base_url=PORTKEY_GATEWAY_URL,
-        Authorization="OPENAI_API_KEY", # Replace with your OpenAI API Key
-        provider="openai"
-    )
-    ```
-
-    ```javascript Node.js
-    import Portkey, { PORTKEY_GATEWAY_URL } from 'portkey-ai'
-
-    const portkey = new Portkey({
-        apiKey: "dummy", // Replace with your Portkey API key
-        baseUrl: PORTKEY_GATEWAY_URL,
-        Authorization: "OPENAI_API_KEY", // Replace with your OpenAI API Key
-        provider: "openai"
-    })
-    ```
-    </CodeGroup>
-  </Step>
-</Steps>
-
-🔥 That's it! You've integrated Portkey into your application with just a few lines of code. Now let's explore making requests using the Portkey client.
-
-## Supported Models
-
-<Accordion title="Supported OpenAI Models">
-- GPT-4o
-- GPT-4o mini
-- o1-preview
-- o1-mini
-- GPT-4 Turbo
-- GPT-4
-- GPT-3.5 Turbo
-- DALL·E
-- TTS (Text-to-Speech)
-- Whisper
-- Embeddings
-- Moderation
-- GPT base
-</Accordion>
-
-## OpenAI Supported Features
-
-### Chat Completions
-
-Generate chat completions using OpenAI models through Portkey:
-
 <CodeGroup>
-```python Python
-completion = portkey.chat.completions.create(
-    messages=[{"role": "user", "content": "Say this is a test"}],
-    model="gpt-4o"
+
+```ts NodeJS
+import Portkey from 'portkey-ai';
+
+const client = new Portkey({
+  apiKey: 'PORTKEY_API_KEY',
+  virtualKey: 'PROVIDER_VIRTUAL_KEY'
+});
+
+async function main() {
+  const response = await client.chat.completions.create({
+    messages: [{ role: "user", content: "Bob the builder.." }],
+    model: "gpt-4o",
+  });
+
+  console.log(response.choices[0].message.content);
+}
+
+main();
+```
+```py Python
+from portkey_ai import Portkey
+
+client = Portkey(
+  api_key = "PORTKEY_API_KEY",
+  virtual_key = "PROVIDER_VIRTUAL_KEY"
 )
 
-print(completion.choices[0].message.content)
-```
+response = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
 
-```javascript Node.js
-const chatCompletion = await portkey.chat.completions.create({
+print(response.choices[0].message)
+```
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: $PORTKEY_PROVIDER_VIRTUAL_KEY" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "user", "content": "Hello!" }
+    ]
+  }'
+```
+```py OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="xx",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        api_key="PORTKEY_API_KEY",
+        virtual_key="OPENAI_VIRTUAL_KEY"
+    )
+)
+
+completion = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+
+print(completion.choices[0].message)
+```
+```ts OpenAI NodeJS SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'xx',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "OPENAI_VIRTUAL_KEY"
+  })
+});
+
+async function main() {
+  const completion = await openai.chat.completions.create({
     messages: [{ role: 'user', content: 'Say this is a test' }],
     model: 'gpt-4o',
-});
+  });
 
-console.log(chatCompletion.choices[0].message.content);
-```
+  console.log(chatCompletion.choices);
+}
 
-```curl REST
-curl -X POST "https://api.portkey.ai/v1/chat/completions" \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
-     -d '{
-       "messages": [{"role": "user", "content": "Say this is a test"}],
-       "model": "gpt-4o"
-     }'
+main();
 ```
 </CodeGroup>
 
-### Streaming
-
-Stream responses for real-time output in your applications:
-
+## Local Setup
+If you do not want to use Portkey's hosted API, you can also run Portkey locally:
+<AccordionGroup>
+<Accordion title="Open Source (npm or docker)">
+Portkey runs on our popular [open source Gateway](https://git.new/portkey). You can spin it up locally to make requests without sending them to the Portkey API.
 <CodeGroup>
-```python Python
-chat_complete = portkey.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "Say this is a test"}],
-    stream=True
+```sh Install the Gateway
+npx @portkey-ai/gateway
+```
+
+```sh Docker Image
+npx @portkey-ai/gateway
+```
+</CodeGroup>
+| Your Gateway is running on http://localhost:8080/v1 🚀 | |
+| - | - |
+
+Then, just change the `baseURL` to the local Gateway URL, and make requests:
+<CodeGroup>
+```ts NodeJS
+import Portkey from 'portkey-ai';
+
+const client = new Portkey({
+  baseUrl: 'http://localhost:8080/v1',
+  apiKey: 'PORTKEY_API_KEY',
+  virtualKey: 'PROVIDER_VIRTUAL_KEY'
+});
+
+async function main() {
+  const response = await client.chat.completions.create({
+    messages: [{ role: "user", content: "Bob the builder.." }],
+    model: "gpt-4o",
+  });
+
+  console.log(response.choices[0].message.content);
+}
+
+main();
+```
+```py Python
+from portkey_ai import Portkey
+
+client = Portkey(
+  base_url = 'http://localhost:8080/v1',
+  api_key = "PORTKEY_API_KEY",
+  virtual_key = "PROVIDER_VIRTUAL_KEY"
 )
 
-for chunk in chat_complete:
-    print(chunk.choices[0].delta.content or "", end="", flush=True)
-```
+response = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
 
-```javascript Node.js
-const stream = await portkey.chat.completions.create({
-  model: 'gpt-4',
-  messages: [{ role: 'user', content: 'Say this is a test' }],
-  stream: true,
+print(response.choices[0].message)
+```
+```sh cURL
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: $PORTKEY_PROVIDER_VIRTUAL_KEY" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "user", "content": "Hello!" }
+    ]
+  }'
+```
+```py OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="xx",
+    base_url="https://localhost:8080/v1",
+    default_headers=createHeaders(
+        api_key="PORTKEY_API_KEY",
+        virtual_key="OPENAI_VIRTUAL_KEY"
+    )
+)
+
+completion = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+
+print(completion.choices[0].message)
+```
+```ts OpenAI NodeJS SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'xx',
+  baseURL: 'https://localhost:8080/v1',
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "OPENAI_VIRTUAL_KEY"
+  })
 });
 
-for await (const chunk of stream) {
-  process.stdout.write(chunk.choices[0]?.delta?.content || '');
-}
-```
+async function main() {
+  const completion = await openai.chat.completions.create({
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: 'gpt-4o',
+  });
 
-```curl REST
-curl -X POST "https://api.portkey.ai/v1/chat/completions" \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
-     -d '{
-       "model": "gpt-4o",
-       "messages": [{"role": "user", "content": "Say this is a test"}],
-       "stream": true
-     }'
+  console.log(chatCompletion.choices);
+}
+
+main();
 ```
 </CodeGroup>
 
-### Function Calling
+</Accordion>
+<Accordion title="On-Prem Deployment (AWS, GCP, Azure)">
+    Portkey's data & control planes can be fully deployed on-prem with the Enterprise license.
 
-Leverage OpenAI's function calling capabilities through Portkey:
+    [More details here](http://localhost:3000/product/enterprise-offering/private-cloud-deployments)
+</Accordion>
+</AccordionGroup>
 
+---
+
+## Integration Overview
+
+### OpenAI Endpoints & Capabilities
+
+Portkey works with *all* of OpenAI's endpoints and supports all OpenAI capabilities like prompt caching, structured outputs, and more. Find examples for each below:
+<AccordionGroup>
+<Accordion title="Tool Calling (Function Calling)">
 <CodeGroup>
 ```javascript Node.js
 let tools = [{
@@ -269,8 +351,12 @@ curl -X POST "https://api.portkey.ai/v1/chat/completions" \
      }'
 ```
 </CodeGroup>
+</Accordion>
 
-### Vision
+<Accordion title="Streaming">
+</Accordion>
+
+<Accordion title="Vision">
 
 Process images alongside text using OpenAI's vision capabilities:
 
@@ -340,7 +426,9 @@ curl -X POST "https://api.portkey.ai/v1/chat/completions" \
 ```
 </CodeGroup>
 
-### Embeddings
+</Accordion>
+
+<Accordion title="Embeddings">
 
 Generate embeddings for text using OpenAI's embedding models:
 
@@ -373,8 +461,9 @@ curl -X POST "https://api.portkey.ai/v1/embeddings" \
      }'
 ```
 </CodeGroup>
+</Accordion>
 
-### Transcription and Translation
+<Accordion title="Transcription and Translation">
 
 Portkey supports both `Transcription` and `Translation` methods for STT models:
 
@@ -438,7 +527,9 @@ curl -X POST "https://api.portkey.ai/v1/audio/translations" \
 ```
 </CodeGroup>
 
-### Text to Speech
+</Accordion>
+
+<Accordion title="Text to Speech">
 
 Convert text to speech using OpenAI's TTS models:
 
@@ -492,7 +583,9 @@ curl -X POST "https://api.portkey.ai/v1/audio/speech" \
 ```
 </CodeGroup>
 
-### Prompt Caching
+</Accordion>
+
+<Accordion title="Prompt Caching">
 
 Implement prompt caching to improve performance and reduce costs:
 
@@ -500,7 +593,12 @@ Implement prompt caching to improve performance and reduce costs:
   Learn how to implement prompt caching for OpenAI models with Portkey.
 </Card>
 
-### Structured Output
+</Accordion>
+
+<Accordion title="Realtime API">
+</Accordion>
+
+<Accordion title="Structured Outputs">
 
 Use structured outputs for more consistent and parseable responses:
 
@@ -508,23 +606,18 @@ Use structured outputs for more consistent and parseable responses:
   Discover how to use structured outputs with OpenAI models in Portkey.
 </Card>
 
-## Supported Endpoints and Parameters
+</Accordion>
 
-| Endpoint          | Supported Parameters                                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `complete`        | model, prompt, max_tokens, temperature, top_p, n, stream, logprobs, echo, stop, presence_penalty, frequency_penalty, best_of, logit_bias, user, seed, suffix              |
-| `embed`           | model, input, encoding_format, dimensions, user                                                                                                                           |
-| `chatComplete`    | model, messages, functions, function_call, max_tokens, temperature, top_p, n, stream, stop, presence_penalty, frequency_penalty, logit_bias, user, seed, tools, tool_choice, response_format, logprobs, top_logprobs, stream_options, service_tier, parallel_tool_calls, max_completion_tokens |
-| `imageGenerate`   | prompt, model, n, quality, response_format, size, style, user                                                                                                             |
-| `createSpeech`    | model, input, voice, response_format, speed                                                                                                                               |
-| `createTranscription` | All parameters supported                                                                                                                                              |
-| `createTranslation`   | All parameters supported                                                                                                                                              |
+<Accordion title="Image Generation">
+</Accordion>
+</AccordionGroup>
 
----
 
-# Portkey's Advanced Features
+### Portkey Features
 
-## Track End-User IDs
+<AccordionGroup>
+
+<Accordion title="Track End-User IDs">
 
 Portkey allows you to track user IDs passed with the user parameter in OpenAI requests, enabling you to monitor user-level costs, requests, and more:
 
@@ -569,7 +662,9 @@ In addition to the `user` parameter, Portkey allows you to send arbitrary custom
   </Card>
 </CardGroup>
 
-## Using The Gateway Config
+</Accordion>
+
+<Accordion title="Setup Fallbacks & Loadbalancer">
 
 Here's a simplified version of how to use Portkey's Gateway Configuration:
 
@@ -656,7 +751,9 @@ That's it! Portkey seamlessly allows you to make your AI app more robust using b
   </Card>
 </CardGroup>
 
-## Guardrails
+</Accordion>
+
+<Accordion title="Setup Guardrails">
 
 Portkey's AI gateway enables you to enforce input/output checks on requests by applying custom hooks before and after processing. Protect your user's/company's data by using PII guardrails and many more available on Portkey Guardrails:
 
@@ -676,23 +773,235 @@ Portkey's AI gateway enables you to enforce input/output checks on requests by a
   Explore Portkey's guardrail features to enhance the security and reliability of your AI applications.
 </Card>
 
-## Next Steps
+</Accordion>
 
-The complete list of features supported in the SDK are available in our comprehensive documentation:
+<Accordion title="Cache Requests">
+</Accordion>
 
-<Card title="Portkey SDK Documentation" icon="book-open" href="/docs/api-reference/portkey-sdk-client">
-  Explore the full capabilities of the Portkey SDK and how to leverage them in your projects.
-</Card>
+<Accordion title="Send Custom Metadata">
+</Accordion>
+
+<Accordion title="Send Custom Metadata">
+</Accordion>
+
+<Accordion title="Setup Rate Limits">
+</Accordion>
+
+<Accordion title="Create & Deploy Prompt Templates">
+</Accordion>
+
+</AccordionGroup>
+
+
+### Popular Libraries
+
+You can make your OpenAI integrations with popular libraries also production-ready and reliable with native integrations.
+
+<AccordionGroup>
+<Accordion title="OpenAI with Langchain">
+</Accordion>
+<Accordion title="OpenAI with LangGraph">
+</Accordion>
+<Accordion title="OpenAI with Llamaindes">
+</Accordion>
+<Accordion title="OpenAI with CrewAI">
+</Accordion>
+<Accordion title="OpenAI with CrewAI">
+</Accordion>
+<Accordion title="OpenAI with Vercel">
+</Accordion>
+</AccordionGroup>
 
 ---
 
-## Limitations
+## Cookbooks
+
+<CardGroup cols={2}>
+    <Card title="Setup a fallback from OpenAI to Azure OpenAI" />
+<Card title="A/B test your prompts" />
+</CardGroup>
+
+---
+
+## Appendix
+
+### OpenAI Projects & Organizations
+<Accordion title="Managing OpenAI Orgs on Portkey">
+Organization management is particularly useful if you belong to multiple organizations or are accessing projects through a legacy OpenAI user API key. Specifying the organization and project IDs also helps you maintain better control over your access rules, usage, and costs.
+
+In Portkey, you can add your OpenAI Org & Project details by **Using Virtual Keys**, **Using Configs**, or **While Making a Request**.
+
+<AccordionGroup>
+
+<Accordion title="Using Virtual Keys">
+
+When selecting OpenAI from the Virtual Key dropdown menu while creating a virtual key, Portkey displays optional fields for the organization ID and project ID alongside the API key field.
+<Frame>
+<img src="/images/integrations/openai/virtual-key-2.png" width="500" />
+</Frame>
+<Info>
+Portkey takes budget management a step further than OpenAI. While OpenAI allows setting budget limits per project, Portkey enables you to set budget limits for each virtual key you create. For more information on budget limits, [refer to this documentation](/product/ai-gateway/virtual-keys/budget-limits)
+</Info>
+
+</Accordion>
+
+<Accordion title="Using Configs">
+
+You can also specify the organization and project details in your request config, either at the root level or within a specific target.
+
+```json {3,4}
+{
+	"provider": "openai",
+	"api_key": "OPENAI_API_KEY",
+	"openai_organization": "org-xxxxxx",
+	"openai_project": "proj_xxxxxxxx"
+}
+```
+
+</Accordion>
+
+<Accordion title="While Making a Request">
+
+Pass OpenAI organization and project details directly when making a request:
+
+<CodeGroup>
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="OPENAI_API_KEY",
+    organization="org-xxxxxxxxxx",
+    project="proj_xxxxxxxxx",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+chat_complete = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Say this is a test"}],
+)
+
+print(chat_complete.choices[0].message.content)
+```
+
+```js OpenAI NodeJS
+import OpenAI from "openai";
+import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai";
+
+const openai = new OpenAI({
+  apiKey: "OPENAI_API_KEY",
+  organization: "org-xxxxxx",
+  project: "proj_xxxxxxx",
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "openai",
+    apiKey: "PORTKEY_API_KEY",
+  }),
+});
+
+async function main() {
+  const chatCompletion = await openai.chat.completions.create({
+    messages: [{ role: "user", content: "Say this is a test" }],
+    model: "gpt-4o",
+  });
+
+  console.log(chatCompletion.choices);
+}
+
+main();
+```
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-openai-organization: org-xxxxxxx" \
+  -H "x-portkey-openai-project: proj_xxxxxxx" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user","content": "Hello!"}]
+  }'
+```
+```python Portkey Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="openai",
+    Authorization="Bearer OPENAI_API_KEY",
+    openai_organization="org-xxxxxxxxx",
+    openai_project="proj_xxxxxxxxx",
+)
+
+chat_complete = portkey.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Say this is a test"}],
+)
+
+print(chat_complete.choices[0].message.content)
+```
+```js Portkey NodeJS
+import Portkey from "portkey-ai";
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "openai",
+  Authorization: "Bearer OPENAI_API_KEY",
+  openaiOrganization: "org-xxxxxxxxxxx",
+  openaiProject: "proj_xxxxxxxxxxxxx",
+});
+
+async function main() {
+  const chatCompletion = await portkey.chat.completions.create({
+    messages: [{ role: "user", content: "Say this is a test" }],
+    model: "gpt-4o",
+  });
+
+  console.log(chatCompletion.choices);
+}
+
+main();
+```
+</CodeGroup>
+
+</Accordion>
+</AccordionGroup>
+</Accordion>
+
+### Supported Parameters
+
+<Accordion title="List of supported & unsupported parameters from OpenAI">
+
+| Method / Endpoint          | Supported Parameters                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `completions`        | model, prompt, max_tokens, temperature, top_p, n, stream, logprobs, echo, stop, presence_penalty, frequency_penalty, best_of, logit_bias, user, seed, suffix              |
+| `embeddings`           | model, input, encoding_format, dimensions, user                                                                                                                           |
+| `chat.completions`    | model, messages, functions, function_call, max_tokens, temperature, top_p, n, stream, stop, presence_penalty, frequency_penalty, logit_bias, user, seed, tools, tool_choice, response_format, logprobs, top_logprobs, stream_options, service_tier, parallel_tool_calls, max_completion_tokens |
+| `image.generations`   | prompt, model, n, quality, response_format, size, style, user                                                                                                             |
+| `create.speech`    | model, input, voice, response_format, speed                                                                                                                               |
+| `create.transcription` | All parameters supported                                                                                                                                              |
+| `create.translation`   | All parameters supported                                                                                                                                              |
+
+</Accordion>
+
+### Supported Models
+
+<Accordion title="List of OpenAI models supported by Portkey">
+</Accordion>
+
+### Supported Endpoints & Capabilities
+
+<Accordion title="List of OpenAI endpoints supported by Portkey">
+</Accordion>
+
+### Limitations
 
 <Warning>
 Portkey does not support the following OpenAI features:
 - Streaming for audio endpoints
-- Chat completions feedback API
-- File management endpoints
 </Warning>
-
-For the most up-to-date information on supported features and endpoints, please refer to our [API Reference](/docs/api-reference/introduction).
