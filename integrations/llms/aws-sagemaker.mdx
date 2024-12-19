@@ -1,43 +1,236 @@
 ---
-title: 'AWS Sagemaker'
+title: "AWS SageMaker"
 description: Route to your AWS Sagemaker models through Portkey
 ---
 
-<ResponseField name="Provider Slug" type="sagemaker">
-</ResponseField>
+Sagemaker allows users to host any ML model on their own AWS infrastructure.
 
-## Integrate
-Choose your auth type: `AWS Access Key` or using `AWS Assumed Role`, and add all the relevant details to create an associated virtual key.
-<Frame>
-<img src="/images/llms/sagemaker-auth-options.png" width="350" />
-</Frame>
+With portkey you can manage/restrict access, log requests, and more.
+
+<Note>
+Provider Slug. `sagemaker`
+</Note>
+
+## Portkey SDK Integration with AWS Sagemaker
+
+### 1\. Install the Portkey SDK
+
+Add the Portkey SDK to your application to interact with Sagemaker's API through Portkey's gateway.
+
+
 <Tabs>
-<Tab title="AWS Access Key">
-- [Follow this guide](/integrations/llms/aws-bedrock#how-to-find-your-aws-credentials) to get your `AWS Secret Access Key`, `AWS Access Key Id`, and `AWS Region`.
-- For Sagemaker-specific configuration options, get them from the Sagemaker console.
-<Frame>
-<img src="/images/llms/sagemaker-auth-access-key.png" />
-</Frame>
-</Tab>
-<Tab title="AWS Assumed Role">
-- [Follow this guide](/product/ai-gateway/virtual-keys/bedrock-amazon-assumed-role) to get your `AWS Role ARN`, `External Id`, and `AWS Region`.
-- For Sagemaker-specific configuration options, get them from the Sagemaker console.
-<Frame>
-<img src="/images/llms/sagemaker-auth-access-key.png" />
-</Frame>
-</Tab>
+    <Tab title="NodeJS">
+
+```sh
+npm install --save portkey-ai
+```
+    </Tab>
+    <Tab title="Python">
+        ```sh
+        pip install portkey-ai
+        ```
+    </Tab>
+
+  </Tabs>
+
+### 2\. Initialize Portkey with a Virtual Key
+
+There are multiple ways to integrate Sagemaker with Portkey.
+You can use your AWS credentials, or use an assumed role.
+
+In this example we will create a virtual key and use it to interact with Sagemaker.
+This helps you restrict access (specific models, few endpoints, etc).
+
+
+<Note>
+Here's how to find your AWS credentials:
+<CardGroup cols={2}>
+<Card title="AWS Access Key" href="/integrations/llms/aws-bedrock#how-to-find-your-aws-credentials">
+<br />Use your `AWS Secret Access Key`, `AWS Access Key Id`, and `AWS Region` to create your Virtual key.<br /><br />
+
+[**Integration Guide**](/integrations/llms/aws-bedrock#how-to-find-your-aws-credentials)
+</Card>
+<Card title="AWS Assumed Role" href="/product/ai-gateway/virtual-keys/bedrock-amazon-assumed-role">
+<br />Take your `AWS Assumed Role ARN` and `AWS Region` to create the virtaul key.<br /><br /><br />
+
+[**Integration Guide**](/product/ai-gateway/virtual-keys/bedrock-amazon-assumed-role)
+</Card>
+</CardGroup>
+</Note>
+
+Create a virtual key in the Portkey dashboard in the virtual keys section.
+You can select sagemaker as the provider, and fill in deployment details.
+
+Initialize the Portkey SDK with the virtual key. (If you are using the REST API, skip to next step)
+<Tabs>
+    <Tab title="NodeJS SDK">
+        ```js
+        import Portkey from 'portkey-ai'
+
+        const portkey = new Portkey({
+            apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
+            virtualKey: "VIRTUAL_KEY" // Replace with your Sagemaker Virtual Key
+        })
+        ```
+    </Tab>
+    <Tab title="Python SDK">
+        ```python
+        from portkey_ai import Portkey
+
+        portkey = Portkey(
+            api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+            virtual_key="VIRTUAL_KEY" # Replace with your Sagemaker Virtual Key
+        )
+        ```
+    </Tab>
 </Tabs>
 
+### 3\. Invoke the Sagemaker model
 
-## Sample Request
-You can now proxy to any Sagemaker URL with Portkey.
 
-```sh cURL
+<Tabs>
+    <Tab title="Python SDK">
+        ```python
+        response = portkey.post(
+            url="endpoints/{endpoint_name}/invocations",
+            # You can pass any key value pair required by the model, apart from `url`, they are passed as kwargs to the Sagemaker endpoint
+            inputs="my_custom_value",
+            my_custom_key="my_custom_value",
+        )
+
+        print(response)
+        ```
+    </Tab>
+    <Tab title="NodeJS SDK">
+        ```js
+        const response = await portkey.post(
+            url="endpoints/{endpoint_name}/invocations",
+            // You can pass any key value pair required by the model, apart from `url`, they are passed as kwargs to the Sagemaker endpoint
+            inputs="my_custom_value",
+            my_custom_key="my_custom_value",
+        )
+
+
+        console.log(response);
+        ```
+    </Tab>
+        <Tab title="REST API">
+        ```cURL
+        curl --location 'https://api.portkey.ai/v1/endpoints/{endpoint_name}/invocations' \
+        --header 'x-portkey-virtual-key: {VIRTUAL_KEY}' \
+        --header 'x-portkey-api-key: {PORTKEY_API_KEY}' \
+        --header 'Content-Type: application/json' \
+        --data '{
+            # You can pass any key value pair required by the model, they are passed as kwargs to the Sagemaker endpoint
+            "inputs": "my_custom_value",
+            "my_custom_key": "my_custom_value"
+        }'
+        ```
+    </Tab>
+
+  </Tabs>
+
+## Making Requests without Virtual Keys
+
+If you do not want to add your AWS details to Portkey vault, you can also directly pass them while instantiating the Portkey client.
+
+These are the supported headers/parameters for Sagemaker (Not required if you're using a virtual key):
+
+
+| Node SDK                             | Python SDK                             | REST Headers                                      |
+| -----------------------------------  | -------------------------------------- | ------------------------------------------------- |
+| awsAccessKeyId                       | aws_access_key_id                      | x-portkey-aws-access-key-id                       |
+| awsSecretAccessKey                   | aws_secret_access_key                  | x-portkey-aws-secret-access-key                   |
+| awsRegion                           | aws_region                             | x-portkey-aws-region                              |
+| awsSessionToken                     | aws_session_token                      | x-portkey-aws-session-token                       |
+| sagemakerCustomAttributes           | sagemaker_custom_attributes           | x-portkey-amzn-sagemaker-custom-attributes        |
+| sagemakerTargetModel               | sagemaker_target_model                | x-portkey-amzn-sagemaker-target-model             |
+| sagemakerTargetVariant             | sagemaker_target_variant              | x-portkey-amzn-sagemaker-target-variant           |
+| sagemakerTargetContainerHostname   | sagemaker_target_container_hostname   | x-portkey-amzn-sagemaker-target-container-hostname |
+| sagemakerInferenceId               | sagemaker_inference_id                | x-portkey-amzn-sagemaker-inference-id             |
+| sagemakerEnableExplanations        | sagemaker_enable_explanations         | x-portkey-amzn-sagemaker-enable-explanations      |
+| sagemakerInferenceComponent        | sagemaker_inference_component         | x-portkey-amzn-sagemaker-inference-component      |
+| sagemakerSessionId                 | sagemaker_session_id                  | x-portkey-amzn-sagemaker-session-id               |
+| sagemakerModelName                 | sagemaker_model_name                  | x-portkey-amzn-sagemaker-model-name               |
+
+### Example
+
+<Tabs>
+    <Tab title="Python">
+
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+    provider="sagemaker",
+    aws_region="us-east-1", # Replace with your AWS region  
+    aws_access_key_id="AWS_ACCESS_KEY_ID", # Replace with your AWS access key id
+    aws_secret_access_key="AWS_SECRET_ACCESS_KEY", # Replace with your AWS secret access key
+    amzn_sagemaker_inference_component="SAGEMAKER_INFERENCE_COMPONENT" # Replace with your Sagemaker inference component
+)
+
+response = portkey.post(
+    url="endpoints/{endpoint_name}/invocations",
+    # You can pass any key value pair required by the model, apart from `url`, they are passed as kwargs to the Sagemaker endpoint
+    inputs="my_custom_value",
+    my_custom_key="my_custom_value"
+)
+
+print(response)
+```
+    </Tab>
+    <Tab title="NodeJS">
+
+```js
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    api_key:"PORTKEY_API_KEY",
+    provider:"sagemaker",
+    aws_access_key_id:"AWS_ACCESS_KEY_ID",
+    aws_secret_access_key:"AWS_SECRET_ACCESS_KEY",
+    aws_region:"us-east-1",
+    amzn_sagemaker_inference_component:"SAGEMAKER_INFERENCE_COMPONENT"
+})
+
+const response = await portkey.post(
+    url="endpoints/{endpoint_name}/invocations",
+    // You can pass any key value pair required by the model, apart from `url`, they are passed as kwargs to the Sagemaker endpoint
+    inputs="my_custom_value",
+    my_custom_key="my_custom_value"
+)
+
+console.log(response)
+```
+    </Tab>
+  <Tab title="cURL">
+
+```sh
 curl https://api.portkey.ai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-virtual-key: $SAGEMAKER_VIRTUAL_KEY" \
+  -H "x-portkey-provider: sagemaker" \
+  -H "x-portkey-aws-access-key-id: $AWS_ACCESS_KEY_ID" \
+  -H "x-portkey-aws-secret-access-key: $AWS_SECRET_ACCESS_KEY" \
+  -H "x-portkey-aws-region: $AWS_REGION" \
+  -H "x-portkey-amzn-sagemaker-inference-component: $SAGEMAKER_INFERENCE_COMPONENT" \
   -d '{
-    ...
+    # You can pass any key value pair apart from `url` required by the model, they are passed as kwargs to the Sagemaker endpoint
+    "inputs": "my_custom_value",
+    "my_custom_key": "my_custom_value"
   }'
 ```
+    </Tab>
+  </Tabs>
+
+## Next Steps
+
+The complete list of features supported in the SDK are available on the link below.
+<Card title="SDK" href="/api-reference/portkey-sdk-client"/>
+
+You'll find more information in the relevant sections:
+
+1. [Add metadata to your requests](/product/observability/metadata)
+2. [Add gateway configs to your Sagemaker requests](/product/ai-gateway/configs)
+3. [Tracing Sagemaker requests](/product/observability/traces)
