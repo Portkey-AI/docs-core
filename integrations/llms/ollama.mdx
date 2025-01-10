@@ -9,10 +9,16 @@ Provider Slug. `ollama`
 ## Portkey SDK Integration with Ollama Models
 
 Portkey provides a consistent API to interact with models from various providers.
-Following is an example that shows how to proxy requests to any Ollama model through Portkey:
+
+<Note>
+If you are running the open source Portkey Gateway, refer to this guide on how to connect Portkey with Ollama.
+</Note>
 
 ### 1\. Expose your Ollama API
-Expose your Ollama API by using a tunneling service like [ngrok](https://ngrok.com/) or any other way you prefer. You can skip this step if you're self-hosting the Gateway.
+
+Expose your Ollama API by using a tunneling service like [ngrok](https://ngrok.com/) or any other way you prefer.
+
+You can skip this step if you're self-hosting the Gateway.
 
 For using Ollama with ngrok, here's a [useful guide](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-can-i-use-ollama-with-ngrok)
 ```sh
@@ -141,6 +147,140 @@ Use the Portkey SDK to invoke chat completions from your Ollama model, just as y
         ```
     </Tab>
   </Tabs>
+
+## Local Setup (npm or docker)
+
+First, install the Gateway locally:
+
+<Tabs>
+    <Tab title="Install the Gateway">
+```sh
+npx @portkey-ai/gateway
+```
+| Your Gateway is running on http://localhost:8080/v1 🚀 | |
+| - | - |
+    </Tab>
+    <Tab title="Docker Image">
+```sh
+docker pull portkeyai/gateway
+```
+| Your Gateway is running on http://host.docker.internal:8080/v1 🚀 | |
+| - | - |
+    </Tab>
+</Tabs>
+
+
+Then, just change the `baseURL` to the Gateway URL, `customHost` to the Ollam URL, and make requests.
+
+<Note>
+If you are running Portkey inside a `Docker container`, but Ollama is running natively on your machine (i.e. not in Docker), you will have to refer to Ollama using `http://host.docker.internal:11434` for the Gateway to be able to call it.
+</Note>
+
+<CodeGroup>
+```ts NodeJS
+import Portkey from 'portkey-ai';
+
+const client = new Portkey({
+  baseUrl: 'http://localhost:8080/v1',
+  apiKey: 'PORTKEY_API_KEY',
+  virtualKey: 'PROVIDER_VIRTUAL_KEY',
+  customHost: "http://host.docker.internal:11434" // Your Ollama Docker URL
+});
+
+async function main() {
+  const response = await client.chat.completions.create({
+    messages: [{ role: "user", content: "Bob the builder.." }],
+    model: "gpt-4o",
+  });
+
+  console.log(response.choices[0].message.content);
+}
+
+main();
+```
+```py Python
+from portkey_ai import Portkey
+
+client = Portkey(
+  base_url = 'http://localhost:8080/v1',
+  api_key = "PORTKEY_API_KEY",
+  virtual_key = "PROVIDER_VIRTUAL_KEY",
+  custom_host="http://localhost:11434" # Your Ollama URL
+)
+
+response = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+
+print(response.choices[0].message)
+```
+```sh cURL
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-custom-host: http://localhost:11434" \
+  -H "x-portkey-virtual-key: $PORTKEY_PROVIDER_VIRTUAL_KEY" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "user", "content": "Hello!" }
+    ]
+  }'
+```
+```py OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="xx",
+    base_url="https://localhost:8080/v1",
+    default_headers=createHeaders(
+        api_key="PORTKEY_API_KEY",
+        virtual_key="OPENAI_VIRTUAL_KEY",
+        custom_host="http://localhost:11434"
+    )
+)
+
+completion = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+
+print(completion.choices[0].message)
+```
+```ts OpenAI NodeJS SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'xx',
+  baseURL: 'https://localhost:8080/v1',
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "OPENAI_VIRTUAL_KEY",
+    customHost: "http://localhost:11434"
+  })
+});
+
+async function main() {
+  const completion = await openai.chat.completions.create({
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: 'gpt-4o',
+  });
+
+  console.log(chatCompletion.choices);
+}
+
+main();
+```
+</CodeGroup>
 
 
 ## Next Steps
