@@ -3,52 +3,182 @@ title: 'Open WebUI'
 description: 'Cost tracking, observability, and more for Open WebUI'
 ---
 
-Open WebUI is the most loved open source web interface for running LLMs. Integrating portkey with open-webui is as simple as writing 50 lines of code.
-There's 10's of provider plugins like anthropic, vertex in open webui, but they get outdated and might not be maintained. 
-Portkey is a unified interface for all your LLM providers. It's the only plugin you'll need for your model management, cost tracking, observability, metadata logging, and more.
+Open WebUI is the most loved open source web interface for running LLMs. While Open WebUI supports various provider plugins like Anthropic and Vertex, these plugins often become outdated and may lack maintenance. Portkey solves this challenge by providing a unified interface for all your LLM providers, offering comprehensive features for model management, cost tracking, observability, and metadata logging.
 
-If you're an IT admin planning to deploy a centralized instance of Open WebUI and track usage and limits, Portkey fits right in.
+For IT administrators deploying centralized instances of Open WebUI, Portkey provides essential enterprise features including usage tracking, access controls, and budget management.
 
-### Common use cases
-1. **Cost tracking**: Track usage and limits for all your users and models.
-2. **Observability**: Get detailed observability into all your LLM traffic.
-3. **Metadata logging**: Log all requests and responses to your LLM providers by user, model, provider, etc.
-4. **Access control**: Control access to your Open WebUI instance using Portkey RBAC.
+### Common Use Cases
+1. **Cost tracking**: Monitor usage and enforce limits across users and models.
+2. **Observability**: Gain detailed insights into all LLM traffic with 40+ key metrics.
+3. **Metadata logging**: Track all requests and responses by user, model, provider, and custom parameters.
+4. **Access control**: Manage Open WebUI access using Portkey's Role-Based Access Control.
+5. **Enterprise Security**: Implement organization-wide guardrails and compliance measures.
 
+## Basic Integration
 
-## Integrate Portkey with Open WebUI
-Portkey follows the OpenAI API specification, so it's fully compatible with Open WebUI. 
-It supports function calling, streaming, image generation, prompting with documents, etc. out of the box.
+Portkey follows the OpenAI API specification, making it fully compatible with Open WebUI. It supports function calling, streaming, image generation, and document-based prompting out of the box. The integration uses Open WebUI's pipeline functionality.
 
-There's multiple ways to use Portkey with Open WebUI.
-Underlying any such integration would be what is called an [Open WebUI pipe](https://docs.openwebui.com/tutorials/plugin/functions/#pipe-function).
+### Step 1: Install Portkey Plugin
+Install the [Portkey plugin](https://openwebui.com/f/nath/portkey/) in your Open WebUI instance. For detailed plugin information, see the [Open WebUI plugins documentation](https://docs.openwebui.com/tutorials/plugin/functions).
 
-The following is an example using Portkey Virtual Keys.
-Feel free to edit the plugin once installed to use advanced features like Configs, Conditional routing, etc.
+If you want to manually install portkey Functions: 
+1. Navigate to `Workspace` and then go-to the `Functions` section.
+2. Click on the `+` button in UI
+3. Copy and Paste the [Portkey plugin](https://openwebui.com/f/nath/portkey/) code. 
 
-### Step 1: Install Portkey Plugin in Open WebUI
-[Portkey plugin](https://openwebui.com/f/nath/portkey/)
+### Step 2: Create Virtual Keys
+Create virtual keys in the Portkey console for each LLM provider you plan to use. Virtual keys allow you to:
+- Set budget limits
+- Configure rate limits
+- Track usage at a granular level
 
-more on [Open WebUI plugins here](https://docs.openwebui.com/tutorials/plugin/functions)
-
-### Step 2: Create a Portkey Virtual Key in the Portkey Console
 <Note>
     Skip this step if you're using the open source version of Portkey.
 </Note>
 
-Create virtual keys for each of your LLM providers in the portkey console.
+### Step 3: Configure Pipeline Variables
+1. Navigate to `Workspace` and then go-to the `Functions` section,
+2. Click the `Edit` button (or use the Valves button for UI input) and add your `Portkey API Keys` and Virtual.
+3. Add your virtual keys insde the JSON 
+`virtual_keys {"openai": "YOUR_OPENAI_VIRTUAL_KEY", "anthropic": "YOUR_ANTHROPIC_VIRTUAL_KEY"}` 
+4. Configure model names in the pipes function. Use the syntax- `{provider_slug_from_portkey}/{model_id_from_provider}` example: `openai/gpt-3.5-turbo`
+5. Save your changes
 
-### Step 3: Update the Open WebUI Pipe variables
-1. In the functions section of your open-webui workspace settings, click on the `Edit` button
-(Alternatively you can click on the Valves button to input in the UI, but it's recommended to update the code).
-(_This step can only be done by the open-webui workspace admin_)
-2. Input your Portkey API key and the virtual key for the LLM providers you want to use.
-3. Add models names in the pipes function.
-4. Save the changes.
+### Step 4: Verify Integration
+Test the setup by chatting with a model and checking the Portkey console for cost, token usage, and metadata logs.
 
-### Step 4: Test the integration
-Chat with one of the models and see the cost, tokens, and metadata logged in the Portkey console!
+## Advanced Features
+Portkey's advanced features can be implemented through configs in OpenWebUI. These configs are JSON objects that control routing, guardrails, prompts, and more.
 
-## Support for the Open WebUI Integration
+You can create your Config object in Portkey's app and add them to your Portkey function like this:
+```py
+ def pipe(self, body: dict, __user__: dict) -> Union[str, Generator, Iterator]:
+        if not self.valves.PORTKEY_API_KEY:
+            raise Exception("PORTKEY_API_KEY not provided in the valves.")
+#.... pipe function continued
 
-If you face any issues in integrating Portkey with Open WebUI, please ping the Portkey team on our community forum [here](https://portkey.wiki/community).
+        headers = {
+            "Authorization": f"{self.valves.PORTKEY_API_KEY}",
+            "Content-Type": "application/json",
+            "accept": "application/json",
+            "x-portkey-provider": f"{model_provider}",
+            "x-portkey-virtual-key": f"{virtual_key}",
+            "x-portkey-metadata": json.dumps(metadata),
+            "x-portkey-config": "YOUR_PORTKEY_CONFIG_ID", # Add your config is the headers:
+        }
+#.... pipe function continued
+```
+
+
+### Observabiltiy and Analytics
+Portkey provides comprehensive monitoring capabilities:
+- Real-time cost tracking
+- Token usage monitoring
+- Response time analytics
+- 40+ key metrics
+- Detailed Logs and Traces
+
+<Frame>
+  <img src="/images/product/product-1.png"/>
+</Frame>
+
+### Advanced Routing
+Portkey enables advances request routing for your Open WebUI requests including load balancing, retires, fallbacks, conditional-routing and more. Here's an example of routing based on user plans:
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "metadata.user_plan": { "$eq": "paid" } },
+        "then": "gpt4o"
+      },
+      {
+        "query": { "metadata.user_plan": { "$eq": "free" } },
+        "then": "gpt-3.5"
+      }
+    ],
+    "default": "base-gpt4"
+  },
+  "targets": [
+    {
+      "name": "gpt4o",
+      "virtual_key": "xx"
+    },
+    {
+      "name": "gpt-3.5",
+      "virtual_key": "yy"
+    }
+  ]
+}
+```
+
+This configuration automatically routes requests to different models based on the user's plan. [Learn more](/ai-gateway).
+
+### Custom Metadata Tracking
+For enterprises using OpenWebUI as a secure ChatGPT alternative, Portkey provides comprehensive metadata tracking. Here's how you can modify your Portkey function to add metadata to your requests.
+
+```python
+#... Portkey function continued
+    
+    def pipe(self, body: dict, __user__: dict) -> Union[str, Generator, Iterator]:
+        if not self.valves.PORTKEY_API_KEY:
+            raise Exception("PORTKEY_API_KEY not provided in the valves.")
+
+        model_id = body["model"]
+        if model_id.startswith("portkey."):
+            model_id = model_id[len("portkey.") :]
+        model_id_parts = model_id.split("/")
+        model_provider = model_id_parts[0]
+        model_id = model_id_parts[1]
+        virtual_key = self.VIRTUAL_KEYS[f"{model_provider}"]
+        metadata = {
+            "_user": f"{__user__.get('email')}",
+            "_department": "engineering",
+            "_project": "customer_support"
+        } # You can add any number of metadata key-value pairs to track your model usage
+
+        payload = {**body, "model": model_id}
+
+        headers = {
+            "Authorization": f"{self.valves.PORTKEY_API_KEY}",
+            "Content-Type": "application/json",
+            "accept": "application/json",
+            "x-portkey-provider": f"{model_provider}",
+            # "x-portkey-virtual-key": f"{virtual_key}",
+            "x-portkey-metadata": json.dumps(metadata),
+            "x-portkey-config": "pc-siddha-61a05a",
+        }
+
+# ...Portkey function continued
+```
+You can add any number of metadata keys (maximum 128 characters per value) and filter logs using these parameters in the Portkey console.
+
+### Organization Management and Access Control
+Portkey provides a hierarchical organization structure:
+
+- **Organizations**: Enterprise-level containers
+- **Workspaces**: Team or project-specific environments
+- **Users**: Team members with defined roles
+
+This enables:
+- Centralized organizational control
+- Team-level access management
+- Project isolation
+- Resource usage tracking
+- SSO integration with providers like Okta, Microsoft Azure AD, and Google Workspace
+
+### Central Guardrails
+Securty is a big concern for companies utilisng AI. Portkey solves this by Implementing organization-wide safety measures using built-in Guradrails. You can have both deterministic or llm based guradraisl for your resoponses:
+- PII detection and redaction
+- Content filtering
+- Regex Check, NSFW control
+- Custom prompt validation
+Learn more about [guardrails here](/guardrails).
+
+
+## Support
+For integration assistance:
+- Community Forum: [Portkey Community](https://portkey.wiki/community)
+- Enterprise Support: support@portkey.ai
