@@ -2,53 +2,253 @@
 title: 'Open WebUI'
 description: 'Cost tracking, observability, and more for Open WebUI'
 ---
+This guide will help you implement enterprise-grade security, observability, and governance for OpenWebUI using Portkey. While OpenWebUI supports various provider plugins, Portkey provides a unified interface for all your LLM providers, offering comprehensive features for model management, cost tracking, observability, and metadata logging.
 
-Open WebUI is the most loved open source web interface for running LLMs. Integrating portkey with open-webui is as simple as writing 50 lines of code.
-There's 10's of provider plugins like anthropic, vertex in open webui, but they get outdated and might not be maintained. 
-Portkey is a unified interface for all your LLM providers. It's the only plugin you'll need for your model management, cost tracking, observability, metadata logging, and more.
+For IT administrators deploying centralized instances of OpenWebUI, Portkey enables essential enterprise features including usage tracking, access controls, and budget management. Let's walk through implementing these features step by step.
 
-If you're an IT admin planning to deploy a centralized instance of Open WebUI and track usage and limits, Portkey fits right in.
+# Understanding the Implementation
+When implementing Portkey with OpenWebUI in your organization, we'll follow these key steps:
 
-### Common use cases
-1. **Cost tracking**: Track usage and limits for all your users and models.
-2. **Observability**: Get detailed observability into all your LLM traffic.
-3. **Metadata logging**: Log all requests and responses to your LLM providers by user, model, provider, etc.
-4. **Access control**: Control access to your Open WebUI instance using Portkey RBAC.
+1. Basic OpenWebUI integration with Portkey
+2. Setting up organizational governance using Virtual Keys and Configs
+3. Managing user access and permissions
 
-
-## Integrate Portkey with Open WebUI
-Portkey follows the OpenAI API specification, so it's fully compatible with Open WebUI. 
-It supports function calling, streaming, image generation, prompting with documents, etc. out of the box.
-
-There's multiple ways to use Portkey with Open WebUI.
-Underlying any such integration would be what is called an [Open WebUI pipe](https://docs.openwebui.com/tutorials/plugin/functions/#pipe-function).
-
-The following is an example using Portkey Virtual Keys.
-Feel free to edit the plugin once installed to use advanced features like Configs, Conditional routing, etc.
-
-### Step 1: Install Portkey Plugin in Open WebUI
-[Portkey plugin](https://openwebui.com/f/nath/portkey/)
-
-more on [Open WebUI plugins here](https://docs.openwebui.com/tutorials/plugin/functions)
-
-### Step 2: Create a Portkey Virtual Key in the Portkey Console
 <Note>
-    Skip this step if you're using the open source version of Portkey.
+If you're an individual user just looking to use Portkey with OpenWebUI, you only need to complete Steps 1 and 2 to get started.
 </Note>
 
-Create virtual keys for each of your LLM providers in the portkey console.
+## Step 1: Basic Integration 
 
-### Step 3: Update the Open WebUI Pipe variables
-1. In the functions section of your open-webui workspace settings, click on the `Edit` button
-(Alternatively you can click on the Valves button to input in the UI, but it's recommended to update the code).
-(_This step can only be done by the open-webui workspace admin_)
-2. Input your Portkey API key and the virtual key for the LLM providers you want to use.
-3. Add models names in the pipes function.
-4. Save the changes.
+Let's start by integrating Portkey with your OpenWebUI installation. This integration uses OpenWebUI's pipeline functionality to route all requests through Portkey's Platform.
 
-### Step 4: Test the integration
-Chat with one of the models and see the cost, tokens, and metadata logged in the Portkey console!
+### Installing the Portkey Plugin
+1. Start your OpenWebUI server
+2. Navigate to `Workspace` and then go to the `Functions` section
+3. Click on the `+` button in UI
+4. Copy and paste the [Portkey plugin](https://openwebui.com/f/nath/portkey/) code
 
-## Support for the Open WebUI Integration
+<Frame>
+<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
+</Frame>
 
-If you face any issues in integrating Portkey with Open WebUI, please ping the Portkey team on our community forum [here](https://portkey.wiki/community).
+## Step 2: Setting Up Portkey Pipeline
+
+To use OpenWebUI with Portkey, you'll need to configure three key components:
+
+### 1. Portkey API Key
+Get your Portkey API key from [here](https://app.portkey.ai/api-keys). You'll need this for authentication with Portkey's services.
+
+### 2. Virtual Keys
+Virtual Keys are Portkey's secure way to manage your LLM provider API keys. They provide essential controls like:
+- Budget limits for API usage
+- Rate limiting capabilities
+- Secure API key storage
+
+
+Craeate a [Virtual Key](https://app.portkey.ai/virtual-keys) in your Portkey dashboard and save it for future use.
+
+For detailed information on budget limits, [refer to this documentation](/product/ai-gateway/virtual-keys/budget-limits)
+
+### 3. Using Configs (Optional)
+Configs in Portkey enhance your implementation with features like advanced routing, fallbacks, and retries. Here's a simple config example that implements 5 retry attempts on server errors:
+
+```json
+{
+    "retry": {
+        "attempts": 5
+    },
+    "virtual_key": "virtual-key-xxx"
+}
+```
+You can create and store these configs in Portkey's config library. This can later be accessed on using the Config Slug in Open WebUI.
+
+Configs are highly flexible and can be customized for various use cases. Learn more in our [Configs documentation](https://docs.portkey.ai/configs).
+
+
+### Step 3: Configure Pipeline Variables
+
+The pipeline setup involves configuring both credentials and model access in OpenWebUI.
+
+#### Credentials Setup
+1. In OpenWebUI, navigate to `Workspace` → `Functions`
+2. Click the `Valves` button to open the configuration interface 
+3. Add the following credentials:
+   - Your Portkey API Key
+   - Config slug (if using Configs)
+   - Base URL (only needed for Open Source Gateway users)
+
+<Frame>
+<img src="/images/integrations/openwebui.png" width="600" />
+</Frame>
+#### Model Configuration
+1. In the Functions section, click the `...` button and select `Edit`
+2. Find the virtual keys JSON object in the Portkey function code
+3. Update it with your virtual keys:
+   ```json
+   "virtual_keys": {
+       "openai": "YOUR_OPENAI_VIRTUAL_KEY",
+       "anthropic": "YOUR_ANTHROPIC_VIRTUAL_KEY"
+   }
+   ```
+4. Configure model names in the pipe function in this format:
+   ```json
+    {
+        "id": "provider_slug_from_portkey/model_id_from_provider", // syntax for ID
+        "name": "provider_slug_from_portkey/model_id_from_provider", // for easier navigation
+    }
+   
+   ```
+   Example:
+```json
+    {
+        "id": "openai/gpt-4o",
+        "name": "openai/gpt-4o",
+    }
+ ```
+   
+   <Note> Make sure you use the correct provider slug from Portke docs. Ex: `perplexity-ai` is correct. `perplexity` is wrong</Note>
+5. Save your changes
+
+### Step 3: Setting Up Organizational Governance (Enterprises)
+Many enterprises are choosing OpenWebUI as a secure, self-hosted alternative to ChatGPT. While OpenWebUI handles core functionality and data privacy compliance, enterprise deployments face several challenges:
+
+- Cost control across multiple teams
+- Model access management for different teams
+- Usage tracking and attribution
+- Security and compliance standards
+
+Portkey adds a governance layer to address these challenges. Here's how to implement it:
+
+#### 1. Set Budget Controls and Rate Limits 
+
+Virtual Keys provide granular control over LLM access. Create different Virtual Keys for different departments/teams:
+
+1. Go to the [Portkey AI dashboard](https://app.portkey.ai/virtual-keys) Virtual Keys page and create your virtual keys
+2. Set appropriate limits:
+   - Monthly budget
+   - Rate limits
+3. Create and save your Virtual Key
+
+<Frame>
+<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
+</Frame>
+
+#### 2. Configure Model Routing Rules
+
+As your OpenWebUI usage scales, defining rules for model access and request routing is essential. Portkey Configs act as the control layer for these requests. Using configs you can:
+
+
+- Provider and Model Access: Define which teams can use specific providers and models.
+- Guardrails: Configure input and output checks to prevent exposure of sensitive data (e.g., PII).
+- Reliability Features: Enable caching, retries, timeouts, and other mechanisms to improve system resilience.
+
+
+
+Here’s a basic configuration to route requests to OpenAI, specifically using GPT-4o:
+
+
+
+```json
+{
+	"strategy": {
+		"mode": "single"
+	},
+	"targets": [
+		{
+			"virtual_key": "YOUR_OPENAI_VIRTUAL_KEY",
+			"override_params": {
+				"model": "gpt-4o"
+			}
+		}
+	]
+}
+```
+
+Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard. You'll need the config ID for connecting to OpenWebUI.
+
+
+
+#### 3: Set Up Team Access Controls
+
+Now that you have budget controls and routing rules, you'll need to create API keys for teams to use OpenWebUI with these controls. These keys will:
+- Track usage automatically
+- Apply the correct configs
+- Collect metadata for each request
+
+Create API keys through:
+- [Portkey App](https://app.portkey.ai/)
+- [API Key Management API](/api-reference/admin-api/control-plane/api-keys/create-api-key)
+
+The Portkey plugin automatically captures user email as `_user` in metadata. You can add fields like department, project, or environment for detailed tracking.
+
+Example using Python SDK:
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_ADMIN_API_KEY")
+
+api_key = portkey.api_keys.create(
+    name="engineering-team",
+    type="organisation",
+    workspace_id="YOUR_WORKSPACE_ID",
+    defaults={
+        "config_id": "your-config-id",
+        "metadata": {
+            "environment": "production",
+            "department": "engineering"
+        }
+    },
+    scopes=["logs.view", "configs.read"]
+)
+```
+
+For detailed key management instructions, see our [API Keys documentation](/api-reference/admin-api/control-plane/api-keys/create-api-key).
+
+### Step 4: Deploy to OpenWebUI Instances
+
+Apply your governance setup to OpenWebUI instances using the Basic setup steps described earlier. Your OpenWebUI deployment now has enterprise-grade governance.
+
+# Portkey Features
+By integrating Portkey with OpenWebUI, you unlock the following enterprise-grade features:
+
+## Unified Access to 250+ LLMs
+Seamlessly manage and access over 250 LLMs, including OpenAI, Anthropic, and Cohere, from a single platform. Simplify provider integration, configuration, and operational workflows.
+
+## Observability and Cost Tracking with Custom Metadata
+Track and analyze API usage with granular visibility. Custom metadata lets you monitor team-specific expenses, enabling precise cost attribution and control.
+- Real-time cost tracking
+- Token usage monitoring
+- Response time analytics
+- 40+ key metrics
+
+<Frame>
+  <img src="/images/product/product-1.png"/>
+</Frame>
+
+## Comprehensive Logs and Traces
+Ensure operational excellence with detailed logs and traces for every API request. Facilitate debugging, meet compliance requirements, and gain actionable insights into your Open WebUI use cases.
+<Frame>
+    <img src="/images/product/product-2.avif"/>
+</Frame>
+
+## Advanced Guardrails
+Protect your data and enhance reliability with real-time checks on LLM inputs and outputs. Leverage guardrails to:
+- Prevent sensitive data leaks
+- Enforce compliance with organizational policies
+
+
+## Organization Management and Access Control
+Portkey's hierarchical organization structure includes:
+
+- **Organizations**: Enterprise-level containers
+- **Workspaces**: Team or project-specific environments
+- **Users**: Team members with defined roles
+
+This enables:
+- Centralized organizational control
+- Team-level access management
+- Project isolation
+- Resource usage tracking
+- [SSO integration](/docs-core/product/enterprise-offering.mdx)
+
+
