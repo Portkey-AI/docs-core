@@ -1,29 +1,38 @@
 ---
-title: "Track and Analyze LLM Costs by Custom Attributes Using Portkey Metadata"
-description: "Implement granular cost tracking across users, teams, and workflows with Portkey's metadata analytics capabilities."
+title: "Track Your LLM Costs Across Users, Teams, Projects, and More Using Portkey Metadata"
+description: "Implement granular cost tracking across your entire LLM infrastructure with Portkey's metadata feature."
 ---
-## Understanding the Cost Attribution Challenge
+LLMs runs are costly. As you build more sophisticated applications, you need to track costs across different dimensions like users, teams, and workflows. You need to spend a lot of time setting up systems to track costs on a user level.
+Consider these scenarios:
 
-Production LLM applications require precise cost tracking across multiple dimensions:
+1. Your customer service automation serves thousands of users daily - how do you track costs per customer?
+2. Your enterprise has multiple teams using LLMs - how do you allocate budgets effectively?
+3. Your application has different features using LLMs - which ones are most cost-efficient?
+
+Portkey's metadata feature allows you to tag every LLM request with custom attributes, enabling:
 
 1. **User-level spend analysis** for customer billing
 2. **Team/resource allocation** across departments
 3. **Workflow optimization** by feature/use case
-4. **Environment tracking** (prod vs staging)
-5. **Model version comparisons**
+4. **Environment tracking** (prod vs staging) and more
 
-Traditional methods require complex log parsing and post-processing. Portkey's metadata API eliminates this overhead through request-level tagging.
+This guide explains how to implement user-specific cost tracking, analyze costs in the Portkey dashboard, and access cost data programmatically via the analytics API.
 
-<a name="metadata-solution"></a>
-## Portkey's Metadata-Driven Cost Tracking
 
-### Key Capabilities
-- **Real-time filtering** in analytics dashboard
-- **API-accessible** aggregated metrics
-- **128-character** metadata values
-- **Special `_user` field** for built-in user analytics
+**Let's get Started**
 
-```python
+## Set Up Your Metadata for cost tracking
+Portkey's Metadata feature allows you to tag requests with custom key-value pairs. This can later be used to filter your logs across different dimensions like users, teams, and workflows. You can pass any number of keys, all values should be of type string with max-length as 128 characters.
+
+For this example let's track costs across different users, team and production environments. Here's how you can set up metadata for cost tracking:
+
+Portkey's metadta acceps a JSON object of `key:value` paris to track your LLM requests. Here's how you will implement it in your LLM request:
+
+<Note> **The `_user` field** is for built-in user analytics </Note>
+
+<CodeGroup>
+
+```python Python
 # Python Implementation Example
 from portkey import Portkey
 
@@ -36,158 +45,229 @@ response = portkey.chat.completions.create(
     messages=[...],
     model="gpt-4",
     metadata={
-        "_user": "customer_12345",  # Special user identifier
-        "project": "mobile_app_v2",
-        "team": "growth",
-        "experiment_group": "chat_ui_v3",
+        "_user": "customer_1",  # Special user identifier
+        "team": "mobile_app_v2",
         "env": "production"
     }
 )
 ```
+```javascript NodeJS
+import {Portkey} from 'portkey-ai'
 
-### Best Practices
-1. Use `_user` for primary user identification
-2. Include both static (team) and dynamic (A/B test) context
-3. Maintain consistent key naming conventions
-4. Avoid PII in metadata values
-5. Combine with existing OpenAI `user` field
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "OPENAI_VIRTUAL_KEY"
+})
 
-<a name="implementation-steps"></a>
-## Implementing User-Specific Cost Tracking
-
-### Step 1: Inject Application Context
-```javascript
-// Node.js Implementation
 const requestOptions = {
     metadata: {
-        "_user": auth.currentUser.id,
-        "subscription_tier": userProfile.plan,
-        "feature_flag": getActiveExperiment(),
-        "request_source": req.headers['x-request-source']
+        "_user": "USER_ID",
+        "organisation": "ORG_ID",
+        "request_id": "1729"
     }
-};
+}
 
-const completion = await portkey.chat.completions.create(
-    { messages: [...], model: 'gpt-4' },
-    requestOptions
-);
+const chatCompletion = await portkey.chat.completions.create({
+    messages: [{ role: 'user', content: 'Who was ariadne?' }],
+    model: 'gpt-4',
+}, requestOptions);
+
+console.log(chatCompletion.choices);
 ```
 
-### Step 2: Verify Metadata Attachment
-1. Navigate to **Logs** in Portkey Dashboard
-2. Filter by recent request ID
-3. Confirm metadata appears in request details
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: $OPENAI_VIRTUAL_KEY" \
+  -H "x-portkey-metadata: {\"_user\":\"USER_ID\", \"organisation\":\"ORG_ID\", \"request_id\":\"1729\"}" \
+  -d '{
+    "model": "gpt-4",
+    "messages": [{"role": "user","content": "Hello!"}]
+  }'
+```
 
-<a name="dashboard-analysis"></a>
+</CodeGroup>
+
+You can inject your application context into the metadata JSON object inside your application code.
+
+
 ## Analyzing Costs in Portkey Dashboard
 
 ### Live Cost Monitoring
-1. Go to **Analytics > Metadata** tab
-2. Select metric: `Cost`, `Requests`, or `Tokens`
-3. Add metadata filters:
-   - Single filter: `_user = customer_12345`
-   - Combined filters: `team=growth AND env=production`
+1. Go to **Portkey Dashboard**
+2. In the Searc Bar select the `>Meta`
+3. Add metadata filters: `_user = customer_12345` (You can combine diffrent metadata filters to get a granular view of your LLM costs.)
 
-![Metadata cost dashboard showing filtered results](https://portkey.ai/docs/images/metadata-analytics-example.png)
+<Frame>
+    <img src="/images/guides/dashboard-metadata.png"/>
+</Frame>
 
-### Historical Trend Analysis
-1. Set date range picker
-2. Compare multiple metadata groups
-3. Export CSV for external reporting
+You can also set the `time range` to get a historical view of your costs.
 
-<a name="api-integration"></a>
-## Programmatic Access via Analytics API
+## Use Portkey's Analytics API to track costs on Metadata
 
-### Get Cost Breakdown by Metadata Group
-```bash
-curl "https://api.portkey.ai/v1/analytics/groups/metadata/team?\
-time_of_generation_min=2024-03-01&\
-time_of_generation_max=2024-03-31&\
-page_size=50" \
--H "x-portkey-api-key: YOUR_PORTKEY_KEY"
+The Portkey Analytics API enables you to programmatically access your LLM cost and usage data for automation and system integration. While the dashboard provides excellent visual analytics, the API allows you to build custom solutions and integrate cost data directly into your existing systems.
+
+
+
+### Understanding the Analytics API
+
+The API provides comprehensive cost analytics data across any metadata dimension you've configured. You can query historical data, aggregate costs across different timeframes, and access detailed metrics for each metadata value.
+Here's what you can access through the API:
+
+
+```json
+"data": [
+  {
+    "metadata_value": "kreacher",
+    "requests": 4344632,
+    "cost": 3887.3066999996863,
+    "avg_tokens": 447.3689256075083,
+    "avg_weighted_feedback": 4.2,
+    "requests_with_feedback": 10,
+    "last_seen": "2025-02-03T07:19:30.000Z",
+    "object": "analytics-group"
+  },
+  {
+    ...more such objects
+  }
 ```
 
-### API Response Structure
-```json
-{
-  "object": "list",
-  "total": 12,
-  "data": [
-    {
-      "metadata_value": "growth",
-      "requests": 245,
-      "cost": 1856,
-      "avg_tokens": 423,
-      "last_seen": "2024-03-28T14:32:11Z"
-    }
-  ]
+These metrics enable you to understand not just the costs, but also the usage patterns and efficiency of your LLM implementations.  For the scope of this guide we are interested in the `cost` metric. Here's how you can access this data programmatically using the Portkey Analytics API:
+
+## Getting Started with the API
+
+Before making your first API call, you'll need to obtain an API key from the Portkey Dashboard. This key requires analytics scope access, which you can configure in your API key settings.
+
+
+<Note>
+Here are the docs for the [Analytics API](/api-reference/admin-api/control-plane/analytics/groups-paginated-data/get-metadata-grouped-data)
+</Note>
+
+The API follows RESTful principles and accepts standard HTTP requests. Here's how to get started:
+
+1. Replace the api key in the `x-portkey-api-key` header.
+2. In the url replace `{metadataKey}` with the metadata key you want to track costs for.
+
+<Note>
+1. Portkey only sends a default number of list items in the response. You can get the complete list of repsonsee by setting the `page_size (Integer)` attribute in the request as the total number of list items you need.
+2. If you need to add more filters to the request you can add them in the `metadata` field of the request body by passing strigfied  JSON with `{ "key": "value" }` pair.
+</Note>
+
+That's all you need to do the get the resonse data with the cost metric for the metadata key you are tracking.
+
+<CodeGroup>
+
+```js NodeJS
+const options = {method: 'GET', headers: {'x-portkey-api-key': '<api-key>'}};
+
+fetch('https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}', options)
+  .then(response => response.json())
+  .then(response => console.log(response))
+  .catch(err => console.error(err));
+
+```
+
+```py Python
+import requests
+
+url = "https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}"
+
+headers = {"x-portkey-api-key": "<api-key>"}
+
+response = requests.request("GET", url, headers=headers)
+
+print(response.text)
+
+```
+
+```sh cURL
+curl --request GET \
+  --url https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey} \
+  --header 'x-portkey-api-key: <api-key>'
+```
+
+```java Java
+HttpResponse<String> response = Unirest.get("https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}")
+  .header("x-portkey-api-key", "<api-key>")
+  .asString();
+```
+
+```go GO
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"io/ioutil"
+)
+
+func main() {
+
+	url := "https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}"
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("x-portkey-api-key", "<api-key>")
+	res, _ := http.DefaultClient.Do(req)
+	defer res.Body.Close()
+	body, _ := ioutil.ReadAll(res.Body)
+
+	fmt.Println(res)
+	fmt.Println(string(body))
+
+}
+
+```
+
+```js PHP
+<?php
+
+$curl = curl_init();
+
+curl_setopt_array($curl, [
+  CURLOPT_URL => "https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}",
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_ENCODING => "",
+  CURLOPT_MAXREDIRS => 10,
+  CURLOPT_TIMEOUT => 30,
+  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+  CURLOPT_CUSTOMREQUEST => "GET",
+  CURLOPT_HTTPHEADER => [
+    "x-portkey-api-key: <api-key>"
+  ],
+]);
+
+$response = curl_exec($curl);
+$err = curl_error($curl);
+
+curl_close($curl);
+
+if ($err) {
+  echo "cURL Error #:" . $err;
+} else {
+  echo $response;
 }
 ```
 
-### Key API Parameters
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `metadataKey` | path | Grouping dimension (e.g., `_user`, `project`) |
-| `time_of_generation_{min/max}` | query | ISO8601 timestamp range |
-| `cost_{min/max}` | query | Filter by cost in cents |
-| `metadata` | query | JSON string for key-value filters |
+</CodeGroup>
 
-<a name="advanced-techniques"></a>
-## Advanced Cost Analysis Techniques
 
-### Time-Sliced Comparative Analysis
-```python
-# Compare monthly team spend
-def get_team_cost(team, month):
-    params = {
-        "metadataKey": "team",
-        "time_of_generation_min": f"{month}-01",
-        "time_of_generation_max": f"{month}-31",
-        "metadata": json.dumps({"team": team})
-    }
-    response = requests.get(
-        "https://api.portkey.ai/v1/analytics/groups/metadata/team",
-        headers=headers,
-        params=params
-    )
-    return response.json()['data'][0]['cost']
-```
+### Working with API Response Data
+The API returns paginated results, with each page containing detailed metrics for different metadata values. You can use this data to:
 
-### Multi-Dimensional Filtering
-```javascript
-// Get premium user costs in production
-const filters = {
-    metadata: JSON.stringify({
-        tier: "premium",
-        env: "production"
-    }),
-    cost_min: 1000 // $10.00
-};
+- Create automated cost reports by aggregating data across different timeframes
+- Monitor usage patterns and identify optimization opportunities
+- Track cost allocation across teams or features
+- Generate custom visualizations for stakeholder reporting
 
-const analytics = await portkey.get('/analytics/groups/metadata/_user', {
-    params: filters
-});
-```
+Many organizations integrate the Analytics API with their existing systems. For example:
+- A customer service platform might pull cost data hourly to update their billing systems. The API's metadata grouping allows them to track costs per customer and automate usage-based billing.
+- A product team might use the API to track costs across different features and optimize their LLM models based on usage patterns.
 
-### Workflow-Specific Monitoring
-1. **Feature rollouts**:
-   ```json
-   {"experiment_group": "chat_ui_v3"}
-   ```
-2. **Model comparisons**:
-   ```json
-   {"model_version": "llama-3-70b"}
-   ```
-3. **Cost center tracking**:
-   ```json
-   {"department": "customer_success", "project": "onboarding_ai"}
-   ```
 
----
+## Next Steps
+1. [Set Up Budget Limit for your API Keys Thresholds](/product/ai-gateway/virtual-keys/budget-limits)
+2. [How to set up fallbacks for your API requests](/product/ai-gateway/fallbacks)
+3. [Portkey's Prompt management system](/product/prompt-library)
 
-**Next Steps**
-1. [Set Up Cost Alert Thresholds](/docs/guides/cost-alerts)
-2. [Integrate with BI Tools](/docs/analytics/bi-integration)
-3. [Review Metadata Best Practices](/docs/metadata-guide)
-
-*Need enterprise-grade reporting? [Contact Sales](https://portkey.ai/contact) for custom analytics solutions.*
+*Need enterprise-grade reporting? [Contact Sales](https://calendly.com/portkey-ai) for custom analytics solutions.*
