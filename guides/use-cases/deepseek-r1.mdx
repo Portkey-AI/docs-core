@@ -1,17 +1,20 @@
 ---
-title: "Compare DeepSeek models witht the OpenAI o1, o3-mini, and Claude-3.5-Sonnet using Portkey"
+title: "Using DeepSeek Models with Portey and Comparing Against OpenAI, Anthropic & More"
 ---
 # Introduction
 
-DeepSeek R1 has taken the AI world by storm with its state-of-the-art reasoning capabilities. It has outperformed the top models by each provider in almost all the major benchmarks. But this is not the first time a new model has broken records. The most interesting part about this model is that it is Open Source under MIT license.
-DeepSeek-R1 was released as an open weight model, with a technical report that shares many details. This is the first time that we have seen any state-of-the-art model being released as an Open Source model, consistently matching or exceeding the performance of proprietary models across MATH (91.6% accuracy), AIME (52.5% accuracy), and Codeforces (1450 rating) benchmarks.
-The hype is real, and many developers are looking to try this model in their applications. But since this model is based in China, it is difficult to use it in the US and many other countries because of data protection laws. This presents a significant challenge for organizations wanting to leverage DeepSeek R1's capabilities while maintaining compliance with local regulations.
-Fortunately, many providers acted fast to integrate this model into their platforms. Together AI, Cerebras, Fireworks, Azure, and AWS Bedrock now offer DeepSeek R1, making it accessible worldwide while ensuring compliance with local data protection requirements.
-In this guide, we will explore:
+DeepSeek R1 has emerged as a groundbreaking open-source AI model, challenging proprietary solutions with its MIT-licensed availability and state-of-the-art performance.
 
+It has outperformed the top models by each provider in almost all the major benchmarks. But this is not the first time a new model has broken records. The most interesting part about this model is this model has Open Sourced its code and training weights with a fraction of costs of any other model.
+
+While its Chinese origins initially raised data sovereignty concerns, major cloud providers have rapidly integrated DeepSeek R1, making it globally accessible through compliant channels.
+
+In this guide, we will explore:
 - How to access DeepSeek R1 through different providers
 - Real-world performance comparisons with top models from each provider
 - Implementation patterns for various use cases
+
+
 
 All of this is made possible through Portkey's AI Gateway, which provides a unified API for accessing DeepSeek R1 across multiple providers
 
@@ -116,21 +119,108 @@ prompt2 = """Which number is bigger: 9.111 or 9.9?"""
 
 3. Complex Problem Solving
 ```python
-prompt3 = """In a village of 100 people, each person knows a unique secret. They can only share
-information one-on-one, and only one exchange can happen per day. What is the minimum number
-of days needed for everyone to know all secrets? Explain your reasoning step by step."""
+prompt3 = """In a village of 100 people, each person knows a unique secret. They can only share information one-on-one, and only one exchange can happen per day. What is the minimum number of days needed for everyone to know all secrets? Explain your reasoning step by step."""
 ```
 
 4. Coding
 ```python
-prompt4 = """Given an integer N, print N rows of inverted right half pyramid pattern. In inverted right half pattern of N rows, the first row has N number of stars, second row has (N - 1) number of stars and so on till the Nth row which has only 1 star.
-"""
+prompt4 = """Given an integer N, print N rows of inverted right half pyramid pattern. In inverted right half pattern of N rows, the first row has N number of stars, second row has (N - 1) number of stars and so on till the Nth row which has only 1 star."""
 ```
 
 
-Here's the link to the cookbook to see the code snippets as well as results of the comparison.
+Here's the link to the cookbook to follow along as well as results of the comparison.
 
-[![](/images/guides/colab-badge.svg)](link-to-cookbook)
+[![](/images/guides/colab-badge.svg)](https://colab.research.google.com/drive/1IdvfXz3Dy_G8JbjU0fZqcOIORYGBAmab?usp=sharing)
+
+
+<Steps>
+<Step title="pip Install">
+```py
+!pip install portkey-ai
+```
+</Step>
+<Step title="Set up Virtual keys">
+    ```py
+    # Configuration
+    MODELS = [
+        ["o1", "openai"],
+        ["o3-mini", "openai"],
+        ["claude-3-5-sonnet-latest", "anthropic"],
+        ["deepseek-ai/DeepSeek-R1", "together-ai"]
+    ]
+
+    VIRTUAL_KEYS = {
+        "openai": "main-258f4d",
+        "anthropic": "tooljet---anthr-4e8bfc",
+        "together-ai": "togetherai-key-f3e18f"
+    }
+
+    PORTKEY_API_KEY = "PORTKEY_API_KEY"
+    ```
+</Step>
+<Step title="Creating a function to run all the prompts and show the output in a table">
+    ```py
+    from typing import final
+    from portkey_ai import Portkey
+    from IPython.display import Markdown, display
+    from tabulate import tabulate
+
+
+    def final_answer(prompt):
+      def run_comparison_models(prompt):
+          outputs = {}
+          for model, provider in MODELS:
+              client = Portkey(
+                  api_key=PORTKEY_API_KEY,
+                  virtual_key=VIRTUAL_KEYS[provider]
+              )
+
+              # Set the token limit based on the model
+              token_param = 'max_tokens' if model not in ['o1', 'o3-mini'] else 'max_completion_tokens'
+              token_value = 8000  # Adjust the value as necessary
+              try:
+                  response = client.chat.completions.create(
+                      model=model,
+                      messages=[
+                          {"role": "system", "content": "You are a helpful assistant that shows step-by-step reasoning."},
+                          {"role": "user", "content": prompt}
+                      ],
+                      **{token_param: token_value}  # Dynamically set the token parameter
+                  )
+                  outputs[model] = response.choices[0].message.content
+              except Exception as e:
+                  outputs[model] = f"Error: {str(e)}"
+          return outputs
+
+
+      def print_model_outputs(outputs):
+        table_data = []
+        print(outputs)
+        for model, output in outputs.items():
+            table_data.append([model, output.strip()])
+
+        headers = ["Model", "Output"]
+        table = tabulate(table_data, headers, tablefmt="grid")
+        print(table)
+        print()
+
+      final_result=run_comparison_models(prompt)
+      print_model_outputs(final_result)
+
+    ```
+</Step>
+<Step title="Running the function">
+    Do this for how many ever prompts you want to try out.
+    ```py
+    prompt1 = """How many times does the letter 'r' appear in the word 'strrawberrry'?"""
+
+    final_answer(prompt1)
+    ```
+</Step>
+</Steps>
+
+
+You can view the result of this comparison in the [cookbook](https://colab.research.google.com/drive/1IdvfXz3Dy_G8JbjU0fZqcOIORYGBAmab?usp=sharing) and see how DeepSeek R1 compares against the top models from OpenAI and Anthropic.
 
 
 
