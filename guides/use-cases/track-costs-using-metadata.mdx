@@ -1,0 +1,193 @@
+---
+title: "Track and Analyze LLM Costs by Custom Attributes Using Portkey Metadata"
+description: "Implement granular cost tracking across users, teams, and workflows with Portkey's metadata analytics capabilities."
+---
+## Understanding the Cost Attribution Challenge
+
+Production LLM applications require precise cost tracking across multiple dimensions:
+
+1. **User-level spend analysis** for customer billing
+2. **Team/resource allocation** across departments
+3. **Workflow optimization** by feature/use case
+4. **Environment tracking** (prod vs staging)
+5. **Model version comparisons**
+
+Traditional methods require complex log parsing and post-processing. Portkey's metadata API eliminates this overhead through request-level tagging.
+
+<a name="metadata-solution"></a>
+## Portkey's Metadata-Driven Cost Tracking
+
+### Key Capabilities
+- **Real-time filtering** in analytics dashboard
+- **API-accessible** aggregated metrics
+- **128-character** metadata values
+- **Special `_user` field** for built-in user analytics
+
+```python
+# Python Implementation Example
+from portkey import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    virtual_key="OPENAI_VIRTUAL_KEY"
+)
+
+response = portkey.chat.completions.create(
+    messages=[...],
+    model="gpt-4",
+    metadata={
+        "_user": "customer_12345",  # Special user identifier
+        "project": "mobile_app_v2",
+        "team": "growth",
+        "experiment_group": "chat_ui_v3",
+        "env": "production"
+    }
+)
+```
+
+### Best Practices
+1. Use `_user` for primary user identification
+2. Include both static (team) and dynamic (A/B test) context
+3. Maintain consistent key naming conventions
+4. Avoid PII in metadata values
+5. Combine with existing OpenAI `user` field
+
+<a name="implementation-steps"></a>
+## Implementing User-Specific Cost Tracking
+
+### Step 1: Inject Application Context
+```javascript
+// Node.js Implementation
+const requestOptions = {
+    metadata: {
+        "_user": auth.currentUser.id,
+        "subscription_tier": userProfile.plan,
+        "feature_flag": getActiveExperiment(),
+        "request_source": req.headers['x-request-source']
+    }
+};
+
+const completion = await portkey.chat.completions.create(
+    { messages: [...], model: 'gpt-4' },
+    requestOptions
+);
+```
+
+### Step 2: Verify Metadata Attachment
+1. Navigate to **Logs** in Portkey Dashboard
+2. Filter by recent request ID
+3. Confirm metadata appears in request details
+
+<a name="dashboard-analysis"></a>
+## Analyzing Costs in Portkey Dashboard
+
+### Live Cost Monitoring
+1. Go to **Analytics > Metadata** tab
+2. Select metric: `Cost`, `Requests`, or `Tokens`
+3. Add metadata filters:
+   - Single filter: `_user = customer_12345`
+   - Combined filters: `team=growth AND env=production`
+
+![Metadata cost dashboard showing filtered results](https://portkey.ai/docs/images/metadata-analytics-example.png)
+
+### Historical Trend Analysis
+1. Set date range picker
+2. Compare multiple metadata groups
+3. Export CSV for external reporting
+
+<a name="api-integration"></a>
+## Programmatic Access via Analytics API
+
+### Get Cost Breakdown by Metadata Group
+```bash
+curl "https://api.portkey.ai/v1/analytics/groups/metadata/team?\
+time_of_generation_min=2024-03-01&\
+time_of_generation_max=2024-03-31&\
+page_size=50" \
+-H "x-portkey-api-key: YOUR_PORTKEY_KEY"
+```
+
+### API Response Structure
+```json
+{
+  "object": "list",
+  "total": 12,
+  "data": [
+    {
+      "metadata_value": "growth",
+      "requests": 245,
+      "cost": 1856,
+      "avg_tokens": 423,
+      "last_seen": "2024-03-28T14:32:11Z"
+    }
+  ]
+}
+```
+
+### Key API Parameters
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `metadataKey` | path | Grouping dimension (e.g., `_user`, `project`) |
+| `time_of_generation_{min/max}` | query | ISO8601 timestamp range |
+| `cost_{min/max}` | query | Filter by cost in cents |
+| `metadata` | query | JSON string for key-value filters |
+
+<a name="advanced-techniques"></a>
+## Advanced Cost Analysis Techniques
+
+### Time-Sliced Comparative Analysis
+```python
+# Compare monthly team spend
+def get_team_cost(team, month):
+    params = {
+        "metadataKey": "team",
+        "time_of_generation_min": f"{month}-01",
+        "time_of_generation_max": f"{month}-31",
+        "metadata": json.dumps({"team": team})
+    }
+    response = requests.get(
+        "https://api.portkey.ai/v1/analytics/groups/metadata/team",
+        headers=headers,
+        params=params
+    )
+    return response.json()['data'][0]['cost']
+```
+
+### Multi-Dimensional Filtering
+```javascript
+// Get premium user costs in production
+const filters = {
+    metadata: JSON.stringify({
+        tier: "premium",
+        env: "production"
+    }),
+    cost_min: 1000 // $10.00
+};
+
+const analytics = await portkey.get('/analytics/groups/metadata/_user', {
+    params: filters
+});
+```
+
+### Workflow-Specific Monitoring
+1. **Feature rollouts**:
+   ```json
+   {"experiment_group": "chat_ui_v3"}
+   ```
+2. **Model comparisons**:
+   ```json
+   {"model_version": "llama-3-70b"}
+   ```
+3. **Cost center tracking**:
+   ```json
+   {"department": "customer_success", "project": "onboarding_ai"}
+   ```
+
+---
+
+**Next Steps**
+1. [Set Up Cost Alert Thresholds](/docs/guides/cost-alerts)
+2. [Integrate with BI Tools](/docs/analytics/bi-integration)
+3. [Review Metadata Best Practices](/docs/metadata-guide)
+
+*Need enterprise-grade reporting? [Contact Sales](https://portkey.ai/contact) for custom analytics solutions.*
