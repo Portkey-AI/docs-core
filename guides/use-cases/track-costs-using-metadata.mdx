@@ -1,0 +1,290 @@
+---
+title: "Tracking LLM Costs Per User with Portkey"
+description: "Monitor and analyze user-level LLM costs across 1600+ models using Portkey's metadata and analytics API."
+---
+
+LLM runs are expensive. As your application scales, tracking costs per user, team, or workflow becomes essential to maintaining efficiency and budgeting effectively.
+
+Traditional solutions only provide API key-level tracking, requiring complex custom systems for detailed analysis. Portkey solves this with **metadata-based tracking**, allowing you to monitor and allocate costs seamlessly.
+
+## Why Track LLM Costs Per User?
+Consider these scenarios:
+
+1. Your SaaS platform serves thousands of users—how do you track and bill their usage fairly?
+2. Your enterprise team needs cost transparency across different departments—how do you allocate expenses?
+3. Your application has multiple features leveraging LLMs—how much is each feature costing you?
+
+With Portkey, you can track costs per user using **two methods**:
+
+1. **Portkey Dashboard:** Use metadata filters to analyze costs visually.
+2. **Analytics API:** Integrate with your systems to display real-time cost insights in your app.
+
+This guide walks you through both approaches.
+
+------
+
+## Step 1: Attach User Metadata to LLM Requests
+Portkey allows you to attach metadata (key-value pairs) to each request, enabling cost breakdowns per user.
+
+Portkey's metadata accepts a JSON object of `key:value` pair. Each metadata value should be a **string** (max length: **128 characters**). Here’s how to implement it:
+
+
+<CodeGroup>
+
+```python Python
+# Python Implementation Example
+from portkey import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    virtual_key="OPENAI_VIRTUAL_KEY"
+)
+
+
+response = portkey.with_options(
+    metadata = {
+        "_user": "customer_1",  # Special user identifier
+        "team": "mobile_app_v2",
+        "env": "production"
+}).chat.completions.create(
+    messages = [{ "role": 'user', "content": 'What is 1729' }],
+    model = 'gpt-4'
+)
+
+print(response.choices[0].message)
+```
+```javascript NodeJS
+import {Portkey} from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "OPENAI_VIRTUAL_KEY"
+})
+
+const requestOptions = {
+    metadata: {
+        "_user": "USER_ID",
+        "organisation": "ORG_ID",
+        "request_id": "1729"
+    }
+}
+
+const chatCompletion = await portkey.chat.completions.create({
+    messages: [{ role: 'user', content: 'Who was ariadne?' }],
+    model: 'gpt-4',
+}, requestOptions);
+
+console.log(chatCompletion.choices);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: $OPENAI_VIRTUAL_KEY" \
+  -H "x-portkey-metadata: {\"_user\":\"USER_ID\", \"organisation\":\"ORG_ID\", \"request_id\":\"1729\"}" \
+  -d '{
+    "model": "gpt-4",
+    "messages": [{"role": "user","content": "Hello!"}]
+  }'
+```
+
+</CodeGroup>
+
+Each metadata field in your request helps categorize and track costs. You can inject these values dynamically from your application context.
+
+
+---
+
+## Step 2: View User Costs in the Portkey Dashboard
+
+Portkey’s dashboard provides a **live view** of costs broken down by metadata filters.
+
+1. Open **Portkey Dashboard**
+2. In the **Search Bar**, select `>Meta`
+3. Add a metadata filter, e.g., `_user = customer_12345`
+
+You can also combine filters (e.g., `_user` + `env`) and adjust the **time range** for historical cost tracking.
+
+<Frame>
+    <img src="/images/guides/dashboard-metadata.png"/>
+</Frame>
+
+This gives you an instant breakdown of LLM expenses per user or team.
+
+---
+
+
+## Step 3: Fetch Cost Data Programmatically via the Analytics API
+
+For deeper integrations, the **Analytics API** enables real-time cost tracking inside your own application. This is useful for:
+- **User-facing billing dashboards** (show users their LLM usage in real time)
+- **Automated cost monitoring** (trigger alerts when a user’s spending exceeds a threshold)
+- **Enterprise reporting** (export data for budget forecasting)
+
+
+**Understanding the Analytics API**
+
+The API provides comprehensive cost analytics data across any metadata dimension you've configured. You can query historical data, aggregate costs across different timeframes, and access detailed metrics for each metadata value.
+Here's what you can access through the API:
+
+
+```json
+"data": [
+  {
+    "metadata_value": "kreacher",
+    "requests": 4344632,
+    "cost": 3887.3066999996863,
+    "avg_tokens": 447.3689256075083,
+    "avg_weighted_feedback": 4.2,
+    "requests_with_feedback": 10,
+    "last_seen": "2025-02-03T07:19:30.000Z",
+    "object": "analytics-group"
+  },
+  {
+    ...more such objects
+  }
+```
+
+These metrics provide insights into costs, usage patterns, and efficiency. The response includes:
+
+- Total requests and costs per metadata value
+- Average token usage for optimization analysis
+- User feedback metrics for quality assessment
+- Timestamp data for temporal analysis
+
+
+## Step 4: Tracking User Costs using Portkey's Analytics API
+
+Before making your first API call, you'll need to obtain an API key from the Portkey Dashboard. This key requires analytics scope access, which you can configure in your API key settings.
+
+
+<Note>
+Review the complete [Analytics API](/api-reference/admin-api/control-plane/analytics/groups-paginated-data/get-metadata-grouped-data) documentation for additional endpoints and features.
+</Note>
+
+The API follows RESTful principles and accepts standard HTTP requests. Here's how to get started:
+
+1. Replace the api key in the `x-portkey-api-key` header.
+2. In the url replace `{metadataKey}` with the metadata key you want to track costs for.
+
+<Note>
+- Use the `page_size` parameter to control the number of results per response
+- Include additional filters by passing a stringified JSON object in the `metadata` field
+</Note>
+
+That's all you need to do the get the resonse data with the cost metric for the metadata key you are tracking.
+
+<CodeGroup>
+
+```js NodeJS
+const options = {method: 'GET', headers: {'x-portkey-api-key': '<api-key>'}};
+
+fetch('https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}', options)
+  .then(response => response.json())
+  .then(response => console.log(response))
+  .catch(err => console.error(err));
+
+```
+
+```py Python
+import requests
+
+url = "https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}"
+
+headers = {"x-portkey-api-key": "<api-key>"}
+
+response = requests.request("GET", url, headers=headers)
+
+print(response.text)
+
+```
+
+```sh cURL
+curl --request GET \
+  --url https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey} \
+  --header 'x-portkey-api-key: <api-key>'
+```
+
+```java Java
+HttpResponse<String> response = Unirest.get("https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}")
+  .header("x-portkey-api-key", "<api-key>")
+  .asString();
+```
+
+```go GO
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"io/ioutil"
+)
+
+func main() {
+
+	url := "https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}"
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("x-portkey-api-key", "<api-key>")
+	res, _ := http.DefaultClient.Do(req)
+	defer res.Body.Close()
+	body, _ := ioutil.ReadAll(res.Body)
+
+	fmt.Println(res)
+	fmt.Println(string(body))
+
+}
+
+```
+
+```js PHP
+<?php
+
+$curl = curl_init();
+
+curl_setopt_array($curl, [
+  CURLOPT_URL => "https://api.portkey.ai/v1/analytics/groups/metadata/{metadataKey}",
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_ENCODING => "",
+  CURLOPT_MAXREDIRS => 10,
+  CURLOPT_TIMEOUT => 30,
+  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+  CURLOPT_CUSTOMREQUEST => "GET",
+  CURLOPT_HTTPHEADER => [
+    "x-portkey-api-key: <api-key>"
+  ],
+]);
+
+$response = curl_exec($curl);
+$err = curl_error($curl);
+
+curl_close($curl);
+
+if ($err) {
+  echo "cURL Error #:" . $err;
+} else {
+  echo $response;
+}
+```
+
+</CodeGroup>
+
+
+**How Developers & Teams Use This API**
+- **CTOs:** Gain visibility into LLM costs across teams.
+- **DevOps:** Monitor and optimize token usage.
+- **Product Teams:** Track costs by feature to identify inefficiencies.
+- **Finance Teams:** Automate cost allocation and reporting.
+
+## Step 5: Automate User Cost Tracking
+Once you’ve integrated metadata tagging and the Analytics API, you can:
+- **Trigger alerts** when users exceed spending limits
+- **Embed LLM cost breakdowns** into your SaaS billing dashboard
+- **Optimize feature costs** by analyzing usage patterns
+
+## **Next Steps**
+1. **[Set Up Budget Limits for API Keys](/product/ai-gateway/virtual-keys/budget-limits)**
+2. **[Implement Fallback Strategies for Cost Control](/product/ai-gateway/fallbacks)**
+3. **[Explore Portkey’s Prompt Management](/product/prompt-library)**
+
+Need enterprise-grade cost tracking? **[Contact Sales](https://calendly.com/portkey-ai)** for custom analytics solutions.
