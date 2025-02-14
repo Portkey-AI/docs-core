@@ -1,121 +1,117 @@
 ---
-title: 'Open WebUI'
-description: 'Cost tracking, observability, and more for Open WebUI'
+title: 'Anything LLM'
+description: 'Add usage tracking, cost controls, and security guardrails to your Anything LLM deployment'
 ---
-This guide will help you implement enterprise-grade security, observability, and governance for OpenWebUI using Portkey. While OpenWebUI supports various provider plugins, Portkey provides a unified interface for all your LLM providers, offering comprehensive features for model management, cost tracking, observability, and metadata logging.
+Anything LLM all-in-one Desktop & Docker AI application with built-in RAG, AI agents, and more.
+While Anything LLM delivers robust chat capabilities, Portkey adds essential enterprise controls for production deployments:
 
-For IT administrators deploying centralized instances of OpenWebUI, Portkey enables essential enterprise features including usage tracking, access controls, and budget management. Let's walk through implementing these features step by step.
+- **Unified AI Gateway** - Single interface for 1600+ LLMs with API key management. (not just OpenAI & Anthropic)
+- **Centralized AI observability**: Real-time usage tracking for 40+ key metrics and logs for every request
+- **Governance** - Real-time spend tracking, set budget limits and RBAC in your Anything LLM setup
+- **Security Guardrails** - PII detection, content filtering, and compliance controls
 
-# Understanding the Implementation
-When implementing Portkey with OpenWebUI in your organization, we'll follow these key steps:
-
-1. Basic OpenWebUI integration with Portkey
-2. Setting up organizational governance using Virtual Keys and Configs
-3. Managing user access and permissions
+This guide will walk you through integrating Portkey with Anything LLM and setting up essential enterprise features including usage tracking, access controls, and budget management.
 
 <Note>
-If you're an individual user just looking to use Portkey with OpenWebUI, you only need to complete Steps 1 and 2 to get started.
+  If you are an enterprise looking to use Anything LLM in your organisation, [check out this section](#3-set-up-enterprise-governance-for-anything-llm).
 </Note>
 
-## 1. Basic Integration
+# 1. Setting up Portkey
+Portkey allows you to use 1600+ LLMs with your Anything LLM setup, with minimal configuration required. Let's set up the core components in Portkey that you'll need for integration.
 
-Let's start by integrating Portkey with your OpenWebUI installation. This integration uses OpenWebUI's pipeline functionality to route all requests through Portkey's Platform.
+<Steps>
+<Step title="Create Virtual Key">
+Virtual Keys are Portkey's secure way to manage your LLM provider API keys. Think of them like disposable credit cards for your LLM API keys, providing essential controls like:
+- Budget limits for API usage
+- Rate limiting capabilities
+- Secure API key storage
 
-**Installing the Portkey Plugin**
-1. Start your OpenWebUI server
-2. Navigate to `Workspace` and then go to the `Functions` section
-3. Click on the `+` button in UI
-4. Copy and paste the [Portkey plugin](https://openwebui.com/f/nath/portkey/) code
+To create a virtual key:
+Go to [Virtual Keys](https://app.portkey.ai/virtual-keys) in the Portkey App. Save and copy the virtual key ID
 
 <Frame>
 <img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
 </Frame>
 
-## 2. Setting Up Portkey Pipeline
+<Note>
+Save your virtual key ID - you'll need it for the next step.
+</Note>
+</Step>
 
-To use OpenWebUI with Portkey, you'll need to configure three key components:
+<Step title="Create Default Config">
 
-**Portkey API Key**:
-Get your Portkey API key from [here](https://app.portkey.ai/api-keys). You'll need this for authentication with Portkey's services.
+Configs in Portkey are JSON objects that define how your requests are routed. They help with implementing features like advanced routing, fallbacks, and retries.
 
-**Virtual Keys**:
-Virtual Keys are Portkey's secure way to manage your LLM provider API keys. They provide essential controls like:
-- Budget limits for API usage
-- Rate limiting capabilities
-- Secure API key storage
+We need to create a default config to route our requests to the virtual key created in Step 1.
 
-
-Craeate a [Virtual Key](https://app.portkey.ai/virtual-keys) in your Portkey dashboard and save it for future use.
-
-For detailed information on budget limits, [refer to this documentation](/product/ai-gateway/virtual-keys/budget-limits)
-
-**Using Configs (Optional)**:
-Configs in Portkey enhance your implementation with features like advanced routing, fallbacks, and retries. Here's a simple config example that implements 5 retry attempts on server errors:
-
-```json
-{
-    "retry": {
-        "attempts": 5
-    },
-    "virtual_key": "virtual-key-xxx"
-}
-```
-You can create and store these configs in Portkey's config library. This can later be accessed on using the Config Slug in Open WebUI.
-
-Configs are highly flexible and can be customized for various use cases. Learn more in our [Configs documentation](https://docs.portkey.ai/configs).
-
-
-## 3. Configure Pipeline Variables
-
-The pipeline setup involves configuring both credentials and model access in OpenWebUI.
-
-**Credentials Setup**:
-1. In OpenWebUI, navigate to `Workspace` → `Functions`
-2. Click the `Valves` button to open the configuration interface
-3. Add the following credentials:
-   - Your Portkey API Key
-   - Config slug (if using Configs)
-   - Base URL (only needed for Open Source Gateway users)
+To create your config:
+1. Go to [Configs](https://app.portkey.ai/configs) in Portkey dashboard
+2. Create new config with:
+    ```json
+    {
+        "virtual_key": "YOUR_VIRTUAL_KEY_FROM_STEP1",
+    }
+    ```
+3. Save and note the Config name for the next step
 
 <Frame>
-<img src="/images/integrations/openwebui.png" width="600" />
+<img src="/images/integrations/config.png" width="500"/>
 </Frame>
 
-**Model Configuration**
-1. In the Functions section, click the `...` button and select `Edit`
-2. Find the virtual keys JSON object in the Portkey function code
-3. Update it with your virtual keys:
-   ```json
-   "virtual_keys": {
-       "openai": "YOUR_OPENAI_VIRTUAL_KEY",
-       "anthropic": "YOUR_ANTHROPIC_VIRTUAL_KEY"
-   }
-   ```
-4. Configure model names in the pipe function in this format:
-   ```json
-    {
-        "id": "provider_slug_from_portkey/model_id_from_provider", // syntax for ID
-        "name": "provider_slug_from_portkey/model_id_from_provider", // for easier navigation
-    }
+<Note>
+This basic config connects to your virtual key. You can add more advanced portkey features later.
+</Note>
+</Step>
 
-   ```
-   Example:
-```json
-    {
-        "id": "openai/gpt-4o",
-        "name": "openai/gpt-4o",
-    }
- ```
+<Step title="Configure Portkey API Key">
 
-   <Note> Make sure you use the correct provider slug from Portke docs. Ex: `perplexity-ai` is correct. `perplexity` is wrong</Note>
-5. Save your changes
+Now create Portkey API key access point and attach the config you created in Step 2:
+
+1. Go to [API Keys](https://app.portkey.ai/api-keys) in Portkey and Create new API key
+2. Select your config from `Step 2`
+3. Generate and save your API key
+
+<Frame>
+<img src="/images/integrations/api-key.png" width="500"/>
+</Frame>
+
+<Note>
+Save your API key securely - you'll need it for Anything LLM integration.
+</Note>
+</Step>
+</Steps>
+
+# 2. Integrate Portkey with AnythingLLM
+
+Now that you have your Portkey components set up, let's connect them to AnythingLLM. Since Portkey provides OpenAI API compatibility, integration is straightforward and requires just a few configuration steps in your AnythingLLM interface.
+
+<Note>
+You need your Portkey API Key from [Step 1](#Getting-started-with-portkey) before going further.
+</Note>
+
+1. Launch your AnythingLLM application
+2. Navigate to `Settings > AI Providers > LLM`
+3. In the LLM Provider dropdown, select `Generic OpenAI`
+4. Configure the following settings:
+   - Base URL: `https://api.portkey.ai/v1`
+   - API Key: Your Portkey API key from the setup
+   - Chat Model: Your preferred model name (e.g., `gpt-4`, `claude-2`)
+   - Token Context Window: Set based on your model's limits
+   - Max Tokens: Configure according to your needs
+
+
+You can monitor your requests and usage in the [Portkey Dashboard](https://app.portkey.ai/dashboard).
+
+<Warning>
+Make sure your virtual key has sufficient budget and rate limits for your expected usage. Also use the complete model name given by the provider.
+</Warning>
 
 
 
-# 4. Set Up Enterprise Governance for OpenWebUI
+# 3. Set Up Enterprise Governance for Anything LLM
 
 **Why Enterprise Governance?**
-If you are using OpenWeb UI inside your orgnaization, you need to consider several governance aspects:
+If you are using Anything LLM inside your orgnaization, you need to consider several governance aspects:
 - **Cost Management**: Controlling and tracking AI spending across teams
 - **Access Control**: Managing which teams can use specific models
 - **Usage Analytics**: Understanding how AI is being used across the organization
@@ -175,7 +171,7 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
 }
 ```
 
-Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard. You'll need the config ID for connecting to OpenWeb UI's setup.
+Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard. You'll need the config ID for connecting to Anything LLM's setup.
 
 
 <Note>
@@ -224,7 +220,7 @@ For detailed key management instructions, see our [API Keys documentation](/api-
 
   <Accordion title="Step 4: Deploy & Monitor">
 ### Step 4: Deploy & Monitor
-After distributing API keys to your team members, your enterprise-ready OpenWeb UI setup is ready to go. Each team member can now use their designated API keys with appropriate access levels and budget controls.
+After distributing API keys to your team members, your enterprise-ready Anything LLM setup is ready to go. Each team member can now use their designated API keys with appropriate access levels and budget controls.
 Apply your governance setup using the integration steps from earlier sections
 Monitor usage in Portkey dashboard:
 - Cost tracking by department
@@ -237,7 +233,7 @@ Monitor usage in Portkey dashboard:
 
 <Check>
 ### Enterprise Features Now Available
-**OpenWeb UI now has:**
+**Anything LLM now has:**
 
 - Departmental budget controls
 - Model access governance
@@ -248,7 +244,7 @@ Monitor usage in Portkey dashboard:
 </Check>
 
 # Portkey Features
-Now that you have enterprise-grade Zed setup, let's explore the comprehensive features Portkey provides to ensure secure, efficient, and cost-effective AI operations.
+Now that you have enterprise-grade Anything LLM setup, let's explore the comprehensive features Portkey provides to ensure secure, efficient, and cost-effective AI operations.
 
 ### 1. Comprehensive Metrics
 Using Portkey you can track 40+ key metrics including cost, token usage, response time, and performance across all your LLM providers in real time. You can also filter these metrics based on custom metadata that you can set in your configs. Learn more about metadata here.
