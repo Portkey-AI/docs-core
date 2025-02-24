@@ -1,80 +1,169 @@
 ---
-title: "Building a full-stack SEO Content Generator using Perplexity, SERP APIs, and LLMs"
+title: 'Building a AI SEO Agent'
+description: 'Learn how to create a powerful AI-driven SEO content system that combines real-time research, intelligent content generation, and quality verification'
 ---
+Creating high-quality, SEO-optimized content is a time-consuming challenge. Content creators spend hours researching topics, analyzing competitors, and crafting content that both ranks well and engages readers. What if we could automate this process while maintaining (or even exceeding) human-level quality?
 
-# Building an Automated Blog Writer with Portkey
+In this tutorial, we'll build an intelligent content generation system that transforms hours of work into minutes. We'll combine the power of multiple AI models through Portkey to create a workflow that mirrors expert content creators.
+## What We're Building ?
 
-## Overview
+We're creating a sophisticated AI agent that mirrors the workflow of expert content creators:
 
-This guide demonstrates how to build an automated blog writing system using Portkey's prompt templates. The system takes a search query, generates a structured blog post, reviews it for quality, and produces a final optimized version through multiple iterations.
-
-## Architecture
+1. **Research and Planning Agent**(OpenAI o1): Uses Serper Dev's SERP API to gather real-time. Acts as our strategic planner, analyzing search results and crafting intelligent content outlines. We chose o1 for its superior reasoning capabilities and cost-effective input token pricing.
+2. **Content Writing Agent** (Google Gemini): Creates the actual content using Google's grounding mode, ensuring outputs are factual and well-supported. This helps avoid common LLM pitfalls like hallucination.
+3. **Quality Assurance Agent** (OpenAI o1): Reviews and scores the generated content, providing actionable feedback for improvements.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '16px', 'fontFamily': 'arial' }}}%%
-graph TD
-    classDef search fill:#e1f5fe,stroke:#01579b,stroke-width:3px
-    classDef generate fill:#f3e5f5,stroke:#4a148c,stroke-width:3px
-    classDef review fill:#e8f5e9,stroke:#1b5e20,stroke-width:3px
-
-    A[User Query] --> B[Search Google]:::search
-    B --> C[Generate Blog Outline]:::generate
-    C --> D[Write Initial Blog]:::generate
-    D --> E[Review Content]:::review
-    E --> F{Quality Check}
-    F -->|Needs Improvement| G[Generate Final Version]:::generate
-    G --> H[Final Blog Post]
+graph LR
+    A[Topic Input] --> B[Research & Planning Agent]
+    B --> C[Writing Agent]
+    C --> D[Review Agent]
+    D --> E{Meets Standards?}
+    E -->|No| C
+    E -->|Yes| F[Final Content]
 ```
 
-## Implementation
 
-### 1. Setup and Dependencies
+## Why This Approach Works
+Our system solves the problem of creating high-quality SEO content in record time by:
+- Using real-time SERP data for current insights
+- Employing multiple specialized agents
+- Implementing quality verification
+- Learning from top-ranking content
 
-```python
-from portkey_ai import Portkey
-import requests
+
+## Tools of Choice
+
+1. **Portkey**: Accesssing AI models and Managing Prompts
+
+2. **Search APIs**: Serper Dev APIs for real-time SERP data. (Get 2500 free credits wehn you sign up for free)
+
+3. **AI Models**: OpenAI O1 for strategic planning and content evaluation. Google Gemini with Grouding mode for content creation.
+
+
+Let's dive in and start build! 🚀
+
+<Note>
+    You can follow along with the code snippets using this [Google Colab Notebook](https://colab.research.google.com/)
+</Note>
+
+## Setting Up Your Environment 🏗️
+
+First, let's install our dependencies and initialize Portkey:
+```bash
+!pip install portkey-ai python-dotenv requests --quiet
+```
+
+```py
+import os
 import json
+import requests
+from portkey_ai import Portkey
 
-# Initialize Portkey client
+# Initialize Portkey Client
 portkey = Portkey(
-    api_key="YOUR_API_KEY",
-    trace_id="YOUR_TRACE_ID"
+    api_key="YOUR_PORTKEY_API_KEY",
 )
 ```
+### Working with Portkey's Prompt Library
 
-### 2. Search Function Setup
+Before we dive into creating agens, let's understand how Portkey's prompt library works. Unlike traditional approaches where prompts are written directly in code, Portkey allows you to:
+
+- Create and manage prompts through an intuitive UI
+- Access prompts via simple prompt tags in code calls
+
+
+We use Mustache templating `{{variable}}` in our prompts, which allows for dynamic content insertion. This makes our prompts more flexible and reusable. To follow this guide you will need to create prompts in the Portkey UIs as shown in the examples below and access them using Prompt_id inside your codebase.
+
+<Note>
+You will need to choose the right model setting for your prompts in Portkey. we wil use OpenAI O1 for Planning and Evaluation and Google's Grounding mode for generating blogs.
+</Note>
+
+<Frame>
+    <img src="/images/guides/folder-seo.png"/>
+</Frame>
+
+
+## Creating Our Agents 🤖
+
+Let's break down each agent's role and how to implement them:
+
+
+### 1. Research & Planning Agent
+
+This agent gathers and analyzes current information about your topic. It uses SERP APIs to get the top performaning content on Web and then uses OpenAI's o1 model to create a strategic content plan based on the search results.
+
+<Frame>
+    <img src="/images/guides/planning.png"/>
+</Frame>
+
 
 ```python
 def search_google(query: str, api_key: str) -> dict:
     """Search Google using Serper.dev API"""
     url = "https://google.serper.dev/search"
     headers = {
-        'X-API-KEY': api_key,
+        'X-API-KEY': "YOUR_SERPER_DEV_API_KEY",
         'Content-Type': 'application/json'
     }
     response = requests.post(url, headers=headers, json={"q": query, "num": 5})
     return response.json()
-```
 
-### 3. Blog Generation Pipeline
-
-#### Step 1: Generate Blog Outline
-```python
 def get_search_results_and_send_to_llm() -> str:
-    """Generate initial blog outline from search results"""
+    """Get search results and generate initial outline"""
     query = input("Enter your search query: ")
     results = search_google(query, "YOUR_SERPER_API_KEY")
+    results_str = json.dumps(results)
 
-    # Use Portkey prompt template for outline generation
     prompt_completion = portkey.prompts.completions.create(
         prompt_id="pp-main-969042",
-        variables={"api_result": json.dumps(results)}
+        variables={"api_result": results_str}
     )
     return prompt_completion.choices[0].message.content
+
+def extract_blog_outline(llm_response: str) -> str:
+    """Extract blog outline from LLM response"""
+    start = llm_response.find('<Blog>') + len('<Blog>')
+    end = llm_response.find('</Blog>')
+    return llm_response[start:end].strip()
 ```
 
-#### Step 2: Write Initial Blog
-```python
+### 2. Content Writing Agent
+
+Generates the actual content following the plan:
+- SEO-optimized writing
+- Natural language flow
+- Proper formatting
+- Internal/external linking
+
+<Frame>
+    <img src="/images/guides/content.png"/>
+</Frame>
+
+<Accordion title="Prompt">
+    ```
+    System: You're a helpful assistant that will assist the user in writing blogs based on the outline they provide. Before composing any information, you will first verify your results against relevant search results to ensure accuracy and reliability.
+    ```
+
+    ```
+    User: here is the user blog outline: {{blog_outline}}
+    ```
+
+    ```
+    Tool:
+    {
+   	"type": "function",
+   	"function": {
+    		"name": "google_search"
+   	}
+    }
+
+    ```
+
+</Accordion>
+
+
+```py
 def write_blog_post(outline: str) -> str:
     """Generate initial blog post from outline"""
     completion = portkey.prompts.completions.create(
@@ -82,10 +171,71 @@ def write_blog_post(outline: str) -> str:
         variables={"blog_outline": outline}
     )
     return completion.choices[0].message.content
+
+initial_blog = write_blog_post(outline)
+print("\nGenerated Blog Post:\n", initial_blog)
+
+
 ```
 
-#### Step 3: Review Content
-```python
+### 3. Review Agent
+
+Ensures quality and optimization:
+- SEO score calculation
+- Content quality metrics
+- Improvement suggestions
+- Final refinements
+
+<Frame>
+    <img src="/images/guides/evaluate.png"/>
+</Frame>
+
+<Accordion title="Prompt">
+
+```
+System: O1 model does not support system message
+```
+
+```
+User:
+You're a helpful assistant. Your job is to review the blog provided to you, rate it out of 5, and identify the top critiques based on effective SEO strategies.
+
+# Steps
+1. Read the blog thoroughly to understand its content and structure.
+2. Evaluate the blog based on key SEO content only strategies such as keyword usage, content quality, readability. (keep it related to the blog post content only, not on any other variable)
+3. Assign a rating from 1 to 5, where 1 is poor and 5 is excellent.
+4. List the top critiques you find, focusing on areas for improvement related to SEO.
+
+# Output Format
+Provide your evaluation in a structured format:
+- Rating: [1-5]
+- Top Critiques: [List of critiques]
+
+# Examples
+**Example 1:**
+- Input: Blog about "Healthy Eating"
+- Output:
+  - Rating: 4
+  - Top Critiques:
+    1. Good keyword usage but lacks internal links.
+    2. Content is informative but could be more engaging.
+
+**Example 2:**
+- Input: Blog about "Travel Tips"
+- Output:
+  - Rating: 3
+  - Top Critiques:
+    1. Needs better formatting for readability.
+    2. Lacks images and multimedia elements to enhance engagement.
+(Note: Real examples should be longer and provide more detailed critiques.)
+
+# Notes
+Consider the latest SEO trends and guidelines while reviewing the blog.
+Here is the blog {{blog}}
+```
+</Accordion>
+
+```py
 def review_blog(blog_content: str) -> str:
     """Review and provide feedback on blog content"""
     review_completion = portkey.prompts.completions.create(
@@ -93,10 +243,55 @@ def review_blog(blog_content: str) -> str:
         variables={"blog": blog_content}
     )
     return review_completion.choices[0].message.content
+
+
+# Step 4: Review the blog
+review_feedback = review_blog(initial_blog)
+print("\nReview Feedback:\n", review_feedback)
+
 ```
 
-#### Step 4: Generate Final Version
-```python
+
+### 4. Write the Final Blog Post after Review
+
+<Frame>
+    <img src="/images/guides/final-content.png"/>
+</Frame>
+
+<Accordion title="Prompt">
+```
+System:
+You're a helpful assistant. Your task is to write a blog post based on a user's draft and the feedback provided.
+Please ensure that the final blog post is well-structured, engaging, and incorporates the feedback effectively.
+
+# Steps
+
+1. Review the user’s blog post draft thoroughly.
+2. Analyze the feedback given to identify key areas for improvement.
+3. Rewrite the blog post, ensuring clarity and coherence.
+4. Incorporate the feedback into the revised draft.
+5. Ensure the tone and style are appropriate for the intended audience.
+
+```
+```
+User:
+{{blog}} &
+{{review_feedback}}
+
+```
+
+```
+Tool:
+{
+	"type": "function",
+	"function": {
+		"name": "google_search"
+	}
+}
+```
+</Accordion>
+
+```py
 def write_final_blog(blog_content: str, review_feedback: str) -> str:
     """Generate final blog incorporating review feedback"""
     final_completion = portkey.prompts.completions.create(
@@ -107,101 +302,22 @@ def write_final_blog(blog_content: str, review_feedback: str) -> str:
         }
     )
     return final_completion.choices[0].message.content
-```
 
-## Portkey Prompt Templates
-
-### 1. Main Outline Generator (pp-main-969042)
-Purpose: Analyzes search results and creates structured blog outline
-```yaml
-name: "Blog Outline Generator"
-description: "Generates structured blog outlines from search results"
-input_variables:
-  - api_result: JSON string of search results
-output_format: Markdown blog outline
-```
-
-### 2. Blog Writer (pp-write-blog-f801d1)
-Purpose: Converts outline into full blog post
-```yaml
-name: "Blog Content Writer"
-description: "Generates full blog post from outline"
-input_variables:
-  - blog_outline: Structured outline
-output_format: Markdown blog post
-```
-
-### 3. Content Reviewer (pp-blog-revie-017642)
-Purpose: Reviews blog quality and provides feedback
-```yaml
-name: "Content Reviewer"
-description: "Reviews blog content and provides structured feedback"
-input_variables:
-  - blog: Blog content to review
-output_format: JSON with review metrics and feedback
-```
-
-### 4. Final Blog Generator (pp-final-blog-4441fc)
-Purpose: Creates final version incorporating feedback
-```yaml
-name: "Final Blog Generator"
-description: "Generates optimized final blog version"
-input_variables:
-  - blog: Original blog content
-  - review_feedback: Review feedback
-output_format: Markdown blog post
-```
-
-## Usage Example
-
-```python
-# Get initial outline
-llm_response = get_search_results_and_send_to_llm()
-outline = extract_blog_outline(llm_response)
-
-# Generate initial blog
-initial_blog = write_blog_post(outline)
-
-# Get review feedback
-review_feedback = review_blog(initial_blog)
-
-# Generate final version
+# Step 5: Write final blog with feedback
 final_blog = write_final_blog(initial_blog, review_feedback)
+print("\nFinal Reviewed Blog Post:\n", final_blog)
 ```
 
-## Review Criteria
+## Conclusion
+We've built a sophisticated SEO content generation system that combines:
 
-The system evaluates content on:
-- Keyword optimization
-- Internal/external linking
-- Multimedia integration
-- Meta descriptions
-- Content structure
-- Readability
+- Strategic planning with o1
+- Grounded content creation with Gemini
+- Automated quality assurance
+- Efficient prompt management
 
-## Best Practices
+This system demonstrates the power of combining specialized AI models through Portkey's orchestration layer. The result is a highly efficient content creation pipeline that maintains quality while dramatically reducing production time.
 
-1. **Prompt Management**
-   - Keep prompt templates versioned
-   - Test prompts with various inputs
-   - Monitor prompt performance
+---
 
-2. **Content Quality**
-   - Set minimum quality thresholds
-   - Review automated content periodically
-   - Update prompt templates based on results
-
-3. **System Optimization**
-   - Cache search results when possible
-   - Batch process similar topics
-   - Monitor API usage and costs
-
-## Next Steps
-
-1. Clone the repository and install dependencies
-2. Configure your Portkey API key
-3. Set up your Serper API key
-4. Create your prompt templates in Portkey
-5. Run the system with test queries
-
-For support, join our [Discord community](https://discord.gg/portkey) or contact support@portkey.ai.
+Need help or have questions? Join our [Discord community](https://discord.gg/portkey) or contact support@portkey.ai.
