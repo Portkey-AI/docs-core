@@ -1,0 +1,334 @@
+---
+title: "Meta Prompting | A complete guide on how to improve and refine your LLM Prompts"
+---
+
+Meta-prompting is a powerful technique where we use one language model to generate or improve prompts for another model. Typically, this involves using a more capable model with advanced reasoning capabilities to optimize prompts for models that will be used in production. In our case, we'll leverage the unique strengths of different models to create a cost-effective and powerful meta-prompting pipeline.
+
+In this guide, we'll begin with a simple prompt for summarizing news articles and then enhance it through a systematic process. We'll use OpenAI O1 to analyze and refine our prompt, adding more detail and clarity along the way. Finally, we'll evaluate the outputs systematically to understand the impact of our refinements.
+
+## Our Approach
+
+- **OpenAI O1 or DeepSeek R1** The smarter model. These models are particularly cost-effective for input-heavy operations and excels at analytical tasks. Since evaluation involves processing large amounts of input text, using OpenAI O1 helps optimize costs while giving high-quality assessments.
+
+- **GPT-4o or Claude 3.5 Sonnet**: for our main summarization tasks. These models provide superior task performance and reliability for production use cases. They will be our main model to actually generate summaries.
+
+
+## Setting Up Our Environment
+
+First, let's import the necessary libraries and set up our Portkey client. We'll be using Portkey's prompt library to manage our prompts and the BBC news dataset from HuggingFace for our examples.
+
+```bash
+!pip install portkey-ai datasets futures pydantic --quiet
+```
+
+## Importing the Data
+
+Let's kick things off by importing the `bbc_news_alltime` dataset from HuggingFace. This dataset contains BBC News articles, capturing everything published monthly up to the latest complete month. For our experiment, we'll focus exclusively on a sample from a recent month to keep things current and manageable.
+
+```py
+from tqdm import tqdm
+from pydantic import BaseModel
+from datasets import load_dataset
+import pandas as pd
+
+
+ds = load_dataset("RealTimeData/bbc_news_alltime", "2025-01")
+df = pd.DataFrame(ds['train']).sample(n=100, random_state=1)
+df.head()
+```
+
+## Working with Portkey's Prompt Library
+
+Before we dive into creating prompts, let's understand how Portkey's prompt library works. Unlike traditional approaches where prompts are written directly in code, Portkey allows you to:
+
+- Create and manage prompts through an intuitive UI
+- Version control your prompts
+- Access prompts via simple API calls
+- Deploy prompts to different environments
+
+We use Mustache templating `{{variable}}` in our prompts, which allows for dynamic content insertion. This makes our prompts more flexible and reusable. To follow this guide you will need to create prompts in the Portkey UIs as shown in the examples below and access them using Prompt_id inside your codebase.
+
+<Note>
+    You will need to choose the right model setting for your prompts in Portkey. For example, you can use OpenAI O1 for refining prompts and GPT-4o for generating summaries.
+</Note>
+
+<Frame>
+    <img src="/images/guides/prompt-folder.png"/>
+</Frame>
+
+## Creating Portkey Client
+Let's create our Portkey Client that will be used to make LLM calls and access prompts.
+```py
+from portkey_ai import Portkey
+
+client = Portkey(
+    api_key="01jOHZchZAk8QyM1g1T+QnAiLznQ",
+    virtual_key="main-258f4d"
+)
+```
+
+
+## Starting with a Basic Prompt
+
+Let's start with a straightforward prompt and then use OpenAI O1 to enhance it for better results. We want to summarize news articles, so this is what we'll initially ask the model to do:
+
+```py
+simple_prompt = "Summarize this news article: {{article}}"
+```
+
+<Frame>
+    <img src="/images/guides/simple-prompt.png"/>
+</Frame>
+
+## Enhancing Our Prompt
+
+To improve the prompt, we need to provide OpenAI O1 with the context and goals we want to achieve. We can then ask it to generate a more detailed prompt that would produce richer and more comprehensive news summaries.
+
+Our meta-prompt is designed to analyze prompts across several dimensions:
+- Task understanding
+- Reasoning structure
+- Output format
+- Edge case handling
+- Example clarity
+
+<Accordion title="Meta Prompt Text">
+    ```py
+    You are an expert editor tasked with evaluating the quality of a news article summary. Below is the original article and the summary to be evaluated:
+
+
+
+    Original Article:
+
+    {{original_article}}
+
+    Summary:
+
+    {{summary}}
+
+
+
+    Please evaluate the summary based on the following criteria, using a scale of 1 to 5 (1 being the lowest and 5 being the highest). Be critical in your evaluation and only give high scores for exceptional summaries:
+
+    1. Categorization and Context: Does the summary clearly identify the type or category of news (e.g., Politics, Technology, Sports) and provide appropriate context?
+
+    2. Keyword and Tag Extraction: Does the summary include relevant keywords or tags that accurately capture the main topics and themes of the article?
+
+    3. Sentiment Analysis: Does the summary accurately identify the overall sentiment of the article and provide a clear, well-supported explanation for this sentiment?
+
+    4. Clarity and Structure: Is the summary clear, well-organized, and structured in a way that makes it easy to understand the main points?
+
+    5. Detail and Completeness: Does the summary provide a detailed account that includes all necessary components (type of news, tags, sentiment) comprehensively?
+
+    Provide your scores and justifications for each criterion, ensuring a rigorous and detailed evaluation.
+    ```
+
+</Accordion>
+
+
+<Frame>
+    <img src="/images/guides/meta-prompt-text.png"/>
+</Frame>
+
+
+
+```py
+simple_prompt = "Summarize this news article: {{article}}"
+
+
+def get_model_response():
+    prompt_completion = client.prompts.completions.create(
+      prompt_id="pp-meta-promp-e792c1",
+      variables={
+          "simple_prompt": simple_prompt
+      }
+    )
+    return prompt_completion.choices[0].message.content
+
+
+complex_prompt = get_model_response()
+print(complex_prompt)
+```
+<Frame>
+    <img src="/images/guides/complex-prompt.png"/>
+</Frame>
+
+## Generating Summaries
+
+Now that we have both prompts, let's generate the summaries! For each entry in our dataset, we'll use both the simple and the enhanced prompts to see how they compare. By doing this, we'll get a firsthand look at how our refinements with OpenAI O1 can lead to richer and more detailed summaries.
+
+```py
+def generate_response1(article):
+    prompt_completion = client.prompts.completions.create(
+      prompt_id="pp-original-p-e82888",
+      variables={
+          "article": article
+      }
+    )
+    return prompt_completion.choices[0].message.content
+
+def generate_response2(article):
+    prompt_completion = client.prompts.completions.create(
+      prompt_id="pp-improved-p-2f6404",
+      variables={"new_prompt":complex_prompt,
+                 "article":article}
+    )
+
+
+    return prompt_completion.choices[0].message.content
+
+
+def generate_summaries(row):
+    simple_itinerary = generate_response1(row["content"])
+    complex_itinerary = generate_response2(row["content"])
+    return simple_itinerary, complex_itinerary
+
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+
+# Add new columns to the dataframe for storing itineraries
+df['simple_summary'] = None
+df['complex_summary'] = None
+
+# Use ThreadPoolExecutor to generate itineraries concurrently
+with ThreadPoolExecutor() as executor:
+    futures = {executor.submit(generate_summaries, row): index for index, row in df.iterrows()}
+    for future in tqdm(as_completed(futures), total=len(futures), desc="Generating Itineraries"):
+        index = futures[future]
+        simple_itinerary, complex_itinerary = future.result()
+        df.at[index, 'simple_summary'] = simple_itinerary
+        df.at[index, 'complex_summary'] = complex_itinerary
+
+df.head()
+```
+
+
+## Evaluating the Results
+We will be using LLM as a Judge technique to evaluate the summaries. This technique involves using a language model to evaluate outputs based on specific criteria.
+
+Here's where things get really interesting. We'll use OpenAI o1 as a judge to evaluate our summaries. This "LLM as a judge" approach involves having the language model evaluate outputs based on specific criteria.
+
+Our evaluation prompt assesses five key dimensions:
+1. **Categorization and Context**: How well does the summary identify the type of news and provide appropriate context?
+2. **Keyword and Tag Extraction**: Does it capture the main topics and themes effectively?
+3. **Sentiment Analysis**: How accurately does it reflect the article's tone and emotional content?
+4. **Clarity and Structure**: Is the summary well-organized and easy to understand?
+5. **Detail and Completeness**: Does it provide a comprehensive overview of the article?
+
+<Frame>
+    <img src="/images/guides/evaluation.png"/>
+</Frame>
+
+```py
+def evaluate_summaries(row):
+
+    simple_messages = client.prompts.render(
+        prompt_id="pp-evaluation-acf2ca",
+        variables={
+            "original_article":row["content"],
+            "summary":row['simple_summary']
+            },
+    )
+
+    complex_messages = client.prompts.render(
+        prompt_id="pp-evaluation-acf2ca",
+        variables={
+            "original_article":row["content"],
+            "summary":row['complex_summary']
+            },
+    )
+
+
+    simple_summary = client.beta.chat.completions.parse(
+        model="gpt-4o",
+        messages=simple_messages.data.messages,
+        response_format=ScoreCard
+        )
+
+    simple_summary = simple_summary.choices[0].message.parsed
+
+    complex_summary = client.beta.chat.completions.parse(
+        model="gpt-4o",
+        messages=simple_messages.data.messages,
+        response_format=ScoreCard
+      )
+
+    complex_summary = complex_summary.choices[0].message.parsed
+
+    return simple_summary, complex_summary
+
+# Add new columns to the dataframe for storing evaluations
+df['simple_evaluation'] = None
+df['complex_evaluation'] = None
+
+# Use ThreadPoolExecutor to evaluate itineraries concurrently
+with ThreadPoolExecutor() as executor:
+    futures = {executor.submit(evaluate_summaries, row): index for index, row in df.iterrows()}
+    for future in tqdm(as_completed(futures), total=len(futures), desc="Evaluating Summaries"):
+        index = futures[future]
+        simple_evaluation, complex_evaluation = future.result()
+        df.at[index, 'simple_evaluation'] = simple_evaluation
+        df.at[index, 'complex_evaluation'] = complex_evaluation
+
+# df.head()
+```
+
+## Analyzing the Results
+
+Let's visualize how our enhanced prompt performs compared to the basic version:
+
+```bash
+!pip install matplotlib --quiet
+```
+
+```py
+
+import matplotlib.pyplot as plt
+
+df["simple_scores"] = df["simple_evaluation"].apply(lambda x: [score for key, score in x.model_dump().items() if key != 'justification'])
+df["complex_scores"] = df["complex_evaluation"].apply(lambda x: [score for key, score in x.model_dump().items() if key != 'justification'])
+
+
+# Calculate average scores for each criterion
+criteria = [
+    'Categorisation',
+    'Keywords and Tags',
+    'Sentiment Analysis',
+    'Clarity and Structure',
+    'Detail and Completeness'
+]
+
+# Calculate average scores for each criterion by model
+simple_avg_scores = df['simple_scores'].apply(pd.Series).mean()
+complex_avg_scores = df['complex_scores'].apply(pd.Series).mean()
+
+
+# Prepare data for plotting
+avg_scores_df = pd.DataFrame({
+    'Criteria': criteria,
+    'Original Prompt': simple_avg_scores,
+    'Improved Prompt': complex_avg_scores
+})
+
+# Plotting
+ax = avg_scores_df.plot(x='Criteria', kind='bar', figsize=(6, 4))
+plt.ylabel('Average Score')
+plt.title('Comparison of Simple vs Complex Prompt Performance by Model')
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+plt.show()
+```
+
+<Frame>
+    <img src="/images/guides/chart.png"/>
+</Frame>
+
+
+After evaluating the results, we found that while the basic prompt performed well in clarity and structure, the enhanced prompt significantly improved outputs across several other key criteria: Categorization, Keywords and Tags, Sentiment Analysis, and Detail and Completeness. The complex prompt led to summaries that were more informative, better organized, and richer in content.
+
+
+
+## Conclusion
+
+Meta prompting is a powerful technique that can significantly enhance the quality of outputs from language models. Our exploration showed that starting with a simple prompt and refining it using OpenAI O1 led to summaries that were more informative, better organized, and richer in content—improving across key criteria like categorization, keywords and tags, sentiment analysis, and completeness.
