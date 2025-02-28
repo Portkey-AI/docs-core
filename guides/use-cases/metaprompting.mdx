@@ -1,5 +1,5 @@
 ---
-title: "Meta Prompting | A complete guide on how to improve and refine your LLM Prompts"
+title: "Meta Prompting with LLM as a Judge"
 ---
 
 Meta-prompting is a powerful technique where we use one language model to generate or improve prompts for another model. Typically, this involves using a more capable model with advanced reasoning capabilities to optimize prompts for models that will be used in production. In our case, we'll leverage the unique strengths of different models to create a cost-effective and powerful meta-prompting pipeline.
@@ -33,7 +33,7 @@ import pandas as pd
 
 
 ds = load_dataset("RealTimeData/bbc_news_alltime", "2025-01")
-df = pd.DataFrame(ds['train']).sample(n=100, random_state=1)
+df = pd.DataFrame(ds['train'][:25])  # Select first 25 items
 df.head()
 ```
 
@@ -62,8 +62,9 @@ Let's create our Portkey Client that will be used to make LLM calls and access p
 from portkey_ai import Portkey
 
 client = Portkey(
-    api_key="YOUR_PORTKEY_API_KEY",
-    virtual_key="YOUR_OPENAI_VIRTUAL_KEY"
+    api_key="YOUR_PORTKEY_API_KEY", # Portkey API Key
+    virtual_key="YOUR_OPENAI_VRITUAL_KEY", #You can create a virtual key on Portkey.ai App
+    trace_id="meta_prompting" # Optional
 )
 ```
 
@@ -108,17 +109,11 @@ Our meta-prompt is designed to analyze prompts across several dimensions:
 
 
     Please evaluate the summary based on the following criteria, using a scale of 1 to 5 (1 being the lowest and 5 being the highest). Be critical in your evaluation and only give high scores for exceptional summaries:
-
     1. Categorization and Context: Does the summary clearly identify the type or category of news (e.g., Politics, Technology, Sports) and provide appropriate context?
-
     2. Keyword and Tag Extraction: Does the summary include relevant keywords or tags that accurately capture the main topics and themes of the article?
-
     3. Sentiment Analysis: Does the summary accurately identify the overall sentiment of the article and provide a clear, well-supported explanation for this sentiment?
-
     4. Clarity and Structure: Is the summary clear, well-organized, and structured in a way that makes it easy to understand the main points?
-
     5. Detail and Completeness: Does the summary provide a detailed account that includes all necessary components (type of news, tags, sentiment) comprehensively?
-
     Provide your scores and justifications for each criterion, ensuring a rigorous and detailed evaluation.
     ```
 
@@ -126,18 +121,19 @@ Our meta-prompt is designed to analyze prompts across several dimensions:
 
 
 <Frame>
-    <img src="/images/guides/meta-prompt-text.png"/>
+    <img src="/images/guides/meta-prompt.png"/>
+
+
 </Frame>
 
 
 
 ```py
-simple_prompt = "Summarize this news article: {{article}}"
-
+simple_prompt = "Summarize this: {{article}}"
 
 def get_model_response():
     prompt_completion = client.prompts.completions.create(
-      prompt_id="pp-meta-promp-e792c1",
+      prompt_id="pp-meta-promp-e792c1",  # Your Prompt_ID for Meta Prompt from Portkey Dashboard
       variables={
           "simple_prompt": simple_prompt
       }
@@ -157,18 +153,18 @@ print(complex_prompt)
 Now that we have both prompts, let's generate the summaries! For each entry in our dataset, we'll use both the simple and the enhanced prompts to see how they compare. By doing this, we'll get a firsthand look at how our refinements with OpenAI O1 can lead to richer and more detailed summaries.
 
 ```py
-def generate_response1(article):
+def generate_simple_prompt_summary(article):
     prompt_completion = client.prompts.completions.create(
-      prompt_id="pp-original-p-e82888",
+      prompt_id="pp-original-p-e82888", # Your Prompt ID for simple prompt from Portkey Dashboard
       variables={
           "article": article
       }
     )
     return prompt_completion.choices[0].message.content
 
-def generate_response2(article):
+def generate_complex_prompt_summary(article):
     prompt_completion = client.prompts.completions.create(
-      prompt_id="pp-improved-p-2f6404",
+      prompt_id="pp-improved-p-2f6404", #Your Prompt_ID for complext prompt from Portkey Dashboard
       variables={"new_prompt":complex_prompt,
                  "article":article}
     )
@@ -177,9 +173,10 @@ def generate_response2(article):
     return prompt_completion.choices[0].message.content
 
 
+
 def generate_summaries(row):
-    simple_itinerary = generate_response1(row["content"])
-    complex_itinerary = generate_response2(row["content"])
+    simple_itinerary = generate_simple_prompt_summary(row["content"])
+    complex_itinerary = generate_complex_prompt_summary(row["content"])
     return simple_itinerary, complex_itinerary
 
 
@@ -216,14 +213,25 @@ Our evaluation prompt assesses five key dimensions:
 5. **Detail and Completeness**: Does it provide a comprehensive overview of the article?
 
 <Frame>
-    <img src="/images/guides/evaluation.png"/>
+    <img src="/images/guides/evaluate.png"/>
 </Frame>
 
 ```py
+
+from pydantic import BaseModel
+
+class ScoreCard(BaseModel):
+    justification: str
+    categorization: int
+    keyword_extraction: int
+    sentiment_analysis: int
+    clarity_structure: int
+    detail_completeness: int
+
 def evaluate_summaries(row):
 
     simple_messages = client.prompts.render(
-        prompt_id="pp-evaluation-acf2ca",
+        prompt_id="pp-evaluation-acf2ca", #Your Prompt_ID for LLM as a  Judge Evaluation Prompt from Portkey Dashboard
         variables={
             "original_article":row["content"],
             "summary":row['simple_summary']
@@ -231,7 +239,7 @@ def evaluate_summaries(row):
     )
 
     complex_messages = client.prompts.render(
-        prompt_id="pp-evaluation-acf2ca",
+        prompt_id="pp-evaluation-acf2ca",  #Your Prompt_ID for LLM as a Judge Evaluation Prompt from Portkey Dashboard
         variables={
             "original_article":row["content"],
             "summary":row['complex_summary']
@@ -249,7 +257,7 @@ def evaluate_summaries(row):
 
     complex_summary = client.beta.chat.completions.parse(
         model="gpt-4o",
-        messages=simple_messages.data.messages,
+        messages=complex_messages.data.messages,
         response_format=ScoreCard
       )
 
