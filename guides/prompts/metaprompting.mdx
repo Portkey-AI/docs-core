@@ -1,5 +1,5 @@
 ---
-title: "Meta Prompting | A complete guide on how to improve and refine your LLM Prompts"
+title: "Meta Prompting | A complete guide on how to enghance your Prompts"
 ---
 
 <Frame>
@@ -36,7 +36,7 @@ import pandas as pd
 
 
 ds = load_dataset("RealTimeData/bbc_news_alltime", "2025-01")
-df = pd.DataFrame(ds['train']).sample(n=100, random_state=1)
+df = pd.DataFrame(ds['train'][:25])  # Select first 25 items
 df.head()
 ```
 
@@ -65,8 +65,9 @@ Let's create our Portkey Client that will be used to make LLM calls and access p
 from portkey_ai import Portkey
 
 client = Portkey(
-    api_key="01jOHZchZAk8QyM1g1T+QnAiLznQ",
-    virtual_key="main-258f4d"
+    api_key="YOUR_PORTKEY_API_KEY", # Portkey API Key
+    virtual_key="YOUR_OPENAI_VRITUAL_KEY", #You can create a virtual key on Portkey.ai App
+    trace_id="meta_prompting" # Optional
 )
 ```
 
@@ -135,12 +136,11 @@ Our meta-prompt is designed to analyze prompts across several dimensions:
 
 
 ```py
-simple_prompt = "Summarize this news article: {{article}}"
-
+simple_prompt = "Summarize this: {{article}}"
 
 def get_model_response():
     prompt_completion = client.prompts.completions.create(
-      prompt_id="pp-meta-promp-e792c1",
+      prompt_id="pp-meta-promp-e792c1",  # Your Prompt_ID for Meta Prompt from Portkey Dashboard
       variables={
           "simple_prompt": simple_prompt
       }
@@ -151,6 +151,7 @@ def get_model_response():
 complex_prompt = get_model_response()
 print(complex_prompt)
 ```
+
 <Frame>
     <img src="/images/guides/complex-prompt.png"/>
 </Frame>
@@ -160,18 +161,18 @@ print(complex_prompt)
 Now that we have both prompts, let's generate the summaries! For each entry in our dataset, we'll use both the simple and the enhanced prompts to see how they compare. By doing this, we'll get a firsthand look at how our refinements with OpenAI O1 can lead to richer and more detailed summaries.
 
 ```py
-def generate_response1(article):
+def generate_simple_prompt_summary(article):
     prompt_completion = client.prompts.completions.create(
-      prompt_id="pp-original-p-e82888",
+      prompt_id="pp-original-p-e82888", # Your Prompt ID for simple prompt from Portkey Dashboard
       variables={
           "article": article
       }
     )
     return prompt_completion.choices[0].message.content
 
-def generate_response2(article):
+def generate_complex_prompt_summary(article):
     prompt_completion = client.prompts.completions.create(
-      prompt_id="pp-improved-p-2f6404",
+      prompt_id="pp-improved-p-2f6404", #Your Prompt_ID for complext prompt from Portkey Dashboard
       variables={"new_prompt":complex_prompt,
                  "article":article}
     )
@@ -181,10 +182,9 @@ def generate_response2(article):
 
 
 def generate_summaries(row):
-    simple_itinerary = generate_response1(row["content"])
-    complex_itinerary = generate_response2(row["content"])
+    simple_itinerary = generate_simple_prompt_summary(row["content"])
+    complex_itinerary = generate_complex_prompt_summary(row["content"])
     return simple_itinerary, complex_itinerary
-
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
@@ -223,10 +223,20 @@ Our evaluation prompt assesses five key dimensions:
 </Frame>
 
 ```py
+from pydantic import BaseModel
+
+class ScoreCard(BaseModel):
+    justification: str
+    categorization: int
+    keyword_extraction: int
+    sentiment_analysis: int
+    clarity_structure: int
+    detail_completeness: int
+
 def evaluate_summaries(row):
 
     simple_messages = client.prompts.render(
-        prompt_id="pp-evaluation-acf2ca",
+        prompt_id="pp-evaluation-acf2ca", #Your Prompt_ID for LLM as a  Judge Evaluation Prompt from Portkey Dashboard
         variables={
             "original_article":row["content"],
             "summary":row['simple_summary']
@@ -234,7 +244,7 @@ def evaluate_summaries(row):
     )
 
     complex_messages = client.prompts.render(
-        prompt_id="pp-evaluation-acf2ca",
+        prompt_id="pp-evaluation-acf2ca",  #Your Prompt_ID for LLM as a Judge Evaluation Prompt from Portkey Dashboard
         variables={
             "original_article":row["content"],
             "summary":row['complex_summary']
@@ -252,7 +262,7 @@ def evaluate_summaries(row):
 
     complex_summary = client.beta.chat.completions.parse(
         model="gpt-4o",
-        messages=simple_messages.data.messages,
+        messages=complex_messages.data.messages,
         response_format=ScoreCard
       )
 
@@ -272,8 +282,7 @@ with ThreadPoolExecutor() as executor:
         simple_evaluation, complex_evaluation = future.result()
         df.at[index, 'simple_evaluation'] = simple_evaluation
         df.at[index, 'complex_evaluation'] = complex_evaluation
-
-# df.head()
+df.head()
 ```
 
 ## Analyzing the Results
