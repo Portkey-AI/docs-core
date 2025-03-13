@@ -12,16 +12,21 @@ To get started with Pangea, visit their documentation:
 
 ### 1. Add Pangea Credentials to Portkey
 
-* Navigate to the `Plugins` page under `Settings`
+* Navigate to the `Plugins` page under `Sidebar`
 * Click on the edit button for the Pangea integration
-* Add your Pangea token and domain information
+* Add your Pangea token and domain information (refer to [Pangea's documentation](https://pangea.cloud/docs/ai-guard) for how to obtain these credentials)
+
 
 ### 2. Add Pangea's Guardrail Check
 
-* Navigate to the "Guardrails" page
+* Navigate to the `Guardrails` page and click the `Create` button
 * Search for Pangea's AI Guard and click `Add`
-* Configure your recipe and debug settings
+* Configure your guardrail settings: recipe & debug (see [Pangea's API documentation](https://pangea.cloud/docs/ai-guard/apis) for more details)
 * Set any actions you want on your check, and create the Guardrail!
+
+<Note>
+    Guardrail Actions allow you to orchestrate your guardrails logic. You can learn them [here](/product/guardrails#there-are-6-types-of-guardrail-actions)
+</Note>
 
 | Check Name | Description | Parameters | Supported Hooks |
 |------------|-------------|------------|-----------------|
@@ -30,23 +35,169 @@ To get started with Pangea, visit their documentation:
 ### 3. Add Guardrail ID to a Config and Make Your Request
 
 * When you save a Guardrail, you'll get an associated Guardrail ID - add this ID to the `before_request_hooks` or `after_request_hooks` params in your Portkey Config
-* Save this Config and pass it along with any Portkey request you're making!
+* Create these Configs in Portkey UI, save them, and get an associated Config ID to attach to your requests. [More here](/product/ai-gateway/configs).
+
 
 Here's an example configuration:
 
 ```json
 {
-  "guardrails": [
+  "before_request_hooks": [
+      {"id": "guardrails-id-xxx"}
+    ],
+  "after_request_hooks": [
+      {"id": "guardrails-id-xxx"}
+  ]
+}
+```
+
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***" // Supports a string config id or a config object
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***" # Supports a string config id or a config object
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+
+```js
+const openai = new OpenAI({
+  apiKey: 'OPENAI_API_KEY',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    config: "CONFIG_ID"
+  })
+});
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```py
+client = OpenAI(
+    api_key="OPENAI_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+        config="CONFIG_ID"
+    )
+)
+```
+  </Tab>
+<Tab title="cURL">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [{
+        "role": "user",
+        "content": "Hello!"
+      }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+For more, refer to the [Config documentation](/product/ai-gateway/configs).
+
+Your requests are now guarded by Pangea AI Guard and you can see the Verdict and any action you take directly on Portkey logs! More detailed logs for your requests will also be available on your Pangea dashboard.
+
+---
+
+## Using Raw Guardrails with Pangea
+
+You can define Pangea guardrails directly in your code for more programmatic control without using the Portkey UI. This "raw guardrails" approach lets you dynamically configure guardrails based on your application's needs.
+
+<Note>
+    We recommend that you create guardrails using the Portkey UI whenever possible. Raw guardrails are more complex and require you to manage credentials and configurations directly in your code.
+</Note>
+
+<Accordion title="Key Configuration Properties">
+
+
+### Available Pangea Guardrails
+
+| Guardrail Name | ID | Description | Parameters |
+| -------------- | -- | ----------- | ---------- |
+| Pangea AI Guard | `pangea.textGuard` |Scans LLM inputs/outputs for malicious content, harmful patterns, etc.| `recipe` (string), `debug` (boolean) |
+| Pangea PII Guard | `pangea.pii` | Detects and optionally redacts personal identifiable information | `redact` (boolean) |
+
+### Implementation Examples
+<Accordion title="Key Configuration Properties">
+
+
+- **`type`**: Always set to `"guardrail"` for guardrail checks
+- **`id`**: A unique identifier for your guardrail
+- **`credentials`**: Authentication details for Pangea
+  - `api_key`: Your Pangea API key
+  - `domain`: Your Pangea domain (e.g., `aws.us-east-1.pangea.cloud`)
+- **`checks`**: Array of guardrail checks to run
+  - `id`: The specific guardrail ID from the table above
+  - `parameters`: Configuration options specific to each guardrail
+- **`deny`**: Whether to block the request if guardrail fails (true/false)
+- **`async`**: Whether to run guardrail asynchronously (true/false)
+- **`on_success`/`on_fail`**: Optional callbacks for success/failure scenarios
+  - `feedback`: Data for logging and analytics
+  -  `weight`: Importance of this feedback (0-1)
+  -  `value`: Feedback score (-10 to 10)
+
+</Accordion>
+
+```json
+{
+  "before_request_hooks": [
     {
-      "provider": "pangea",
-      "config": {
-        "token": "YOUR_PANGEA_TOKEN",
-        "domain": "YOUR_PANGEA_DOMAIN",
-        "recipe": "YOUR_RECIPE_KEY",
-        "debug": false,
-        "overrides": {
-          "prompt_guard": {
-            "state": "enabled"
+      "type": "guardrail",
+      "id": "pangea-org-guard",
+      "credentials": {
+        "api_key": "your_pangea_api_key",
+        "domain": "your_pangea_domain"
+      },
+      "checks": [
+        {
+          "id": "pangea.textGuard",
+          "parameters": {
+            "recipe": "security_recipe",
+            "debug": true,
+          }
+        }
+      ],
+      "deny": true,
+      "async": false,
+      "on_success": {
+        "feedback": {
+          "weight": 1,
+          "value": 1,
+          "metadata": {
+            "user": "user_xyz",
+          }
+        }
+      },
+      "on_fail": {
+        "feedback": {
+          "weight": 1,
+          "value": -1,
+          "metadata": {
+            "user": "user_xyz",
           }
         }
       }
@@ -55,27 +206,10 @@ Here's an example configuration:
 }
 ```
 
-And here's how to use it in your code:
-
-```python
-from portkey import Config
-
-config = Config(
-    guardrails=[{
-        "provider": "pangea",
-        "config": {
-            "token": "ptk_prod_xxx",
-            "domain": "aws.us-east-1.pangea.cloud",
-            "recipe": "default_recipe",
-            "debug": True
-        }
-    }]
-)
-```
-
-Your requests are now guarded by Pangea AI Guard and you can see the Verdict and any action you take directly on Portkey logs! More detailed logs for your requests will also be available on your Pangea dashboard.
-
----
+<Note>
+When using raw guardrails, you must provide valid credentials for the Pangea service directly in your config. Make sure to handle these credentials securely and consider using environment variables or secrets management.
+</Note>
+</Accordion>
 
 ## Get Support
 
