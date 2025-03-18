@@ -1,0 +1,200 @@
+---
+title: "Run Evals on Portkey"
+---
+
+## Overview
+
+Evaluations are a crucial component of building any production-level AI application. With LLM models becoming increasingly commoditized, the real value comes from building the right orchestration for your AI pipeline. What many developers don't realize is how important a good quality evaluation system is for ensuring your AI application performs reliably.
+
+In this guide, we'll walk through how to implement evaluations on the Portkey platform.
+
+## What We're Building
+
+We'll create a simple AI evaluation system for your application that combines two powerful evaluation methods:
+
+1. **LLM-based evaluations**: Using another LLM to judge the quality of responses
+2. **Deterministic checks**: Applying specific rules to validate outputs
+
+This approach gives you both nuanced quality assessment and reliable pass/fail checks.
+
+## Prerequisites
+
+- A Portkey account with an API key
+- An existing application using LLMs through Portkey
+
+## Setting Up Your Environment
+
+First, install the Portkey SDK:
+
+```bash
+pip install portkey-ai
+```
+
+Then import the necessary libraries:
+
+```python
+from portkey_ai import Portkey
+from pydantic import BaseModel
+import json
+```
+
+## Step 1: Initialize the Portkey Client
+
+```python
+client = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",  # Replace with your actual API key
+    virtual_key="YOUR_VIRTUAL_KEY",   # Optional: Use if you have virtual keys configured
+)
+```
+
+## Step 2: Set Up a Simple LLM Call
+
+Let's create a basic LLM call that we'll evaluate:
+
+```python
+def get_llm_response(prompt):
+    response = client.chat.completions.create(
+        model="gpt-4-turbo",
+        messages=[{"role": "user", "content": prompt}],
+        trace_id="test-eval-" + str(hash(prompt))[:8]  # Create a unique trace ID
+    )
+    return response
+
+# Test with a simple prompt
+prompt = "Say: This is not a test"
+response = get_llm_response(prompt)
+llm_output = response.choices[0].message.content
+print("LLM Response:", llm_output)
+```
+
+## Step 3: Implement LLM-Based Evaluation
+
+Now, let's use another LLM call to evaluate the quality of the first response:
+
+```python
+class Eval(BaseModel):
+    evaluation: int
+
+def evaluate_with_llm(response_content, criteria):
+    """
+    Evaluate LLM output using another LLM
+    Returns a score on a scale (e.g., -5 to 5)
+    """
+    system_prompt = f"Evaluate if the input meets these criteria: {criteria}. Respond with evaluation: 5 if excellent, 3 if good, 0 if neutral, -3 if poor, -5 if very poor."
+
+    completion = client.beta.chat.completions.parse(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": response_content}
+        ],
+        response_format=Eval,
+    )
+
+    parsed_data = json.loads(completion.choices[0].message.content)
+    return parsed_data["evaluation"]
+
+# Evaluation criteria
+eval_criteria = "The response should clearly state 'This is not a test'"
+eval_score = evaluate_with_llm(llm_output, eval_criteria)
+print(f"Evaluation Score: {eval_score}")
+```
+
+## Step 4: Implement Deterministic Checks
+
+Let's add a simple deterministic check as well:
+
+```python
+def deterministic_check(response_content, expected_phrase, exact_match=False):
+    """
+    Check if response contains (or exactly matches) an expected phrase
+    Returns: 5 if pass, -5 if fail
+    """
+    if exact_match:
+        return 5 if response_content.strip() == expected_phrase else -5
+    else:
+        return 5 if expected_phrase in response_content else -5
+
+# Run deterministic check
+check_phrase = "This is not a test"
+deterministic_score = deterministic_check(llm_output, check_phrase)
+print(f"Deterministic Check Score: {deterministic_score}")
+```
+
+## Step 5: Record Feedback to Portkey
+
+Now, let's submit these evaluation scores as feedback to Portkey:
+
+```python
+def record_feedback(trace_id, score, metadata=None):
+    """
+    Record evaluation feedback to Portkey
+    """
+    if metadata is None:
+        metadata = {}
+
+    feedback = client.feedback.create(
+        trace_id=trace_id,
+        value=score,  # Integer between -10 and 10
+        weight=1.0,   # Default weight
+        metadata=metadata
+    )
+    return feedback
+
+# Record LLM-based evaluation
+llm_feedback = record_feedback(
+    trace_id=response.id,
+    score=eval_score,
+    metadata={
+        "evaluation_type": "llm",
+        "criteria": eval_criteria
+    }
+)
+
+# Record deterministic check
+deterministic_feedback = record_feedback(
+    trace_id=response.id,
+    score=deterministic_score,
+    metadata={
+        "evaluation_type": "deterministic",
+        "expected_phrase": check_phrase
+    }
+)
+
+print("Feedback recorded successfully")
+```
+
+
+## Analyzing Evaluation Results in the Portkey Dashboard
+
+After running your evaluations, you can analyze the results in the Portkey dashboard:
+
+1. Navigate to your Portkey dashboard
+2. Go to the "Feedback" section
+3. Filter by date range and feedback values
+4. View the distribution of feedback values
+5. Drill down into specific traces to see detailed evaluation results
+
+The dashboard shows:
+- Feedback count by value
+- Weighted average feedback
+- Trends over time
+- Performance by model
+
+## Conclusion
+
+Implementing a robust evaluation system is essential for ensuring your AI applications perform reliably and meet quality standards. By using Portkey's evaluation capabilities, you can:
+
+1. Continuously monitor LLM response quality
+2. Compare performance across different models
+3. Identify patterns in poor-performing responses
+4. Collect and analyze user feedback
+5. Make data-driven decisions for improving your AI systems
+
+Start with simple evaluations and gradually build up to more sophisticated pipelines as you learn what metrics matter most for your specific use case.
+
+## Additional Resources
+
+- [Portkey API Documentation](https://docs.portkey.ai)
+- [Feedback API Reference](https://docs.portkey.ai/reference/feedback)
+- [Evaluation Best Practices](https://docs.portkey.ai/guides/evaluation-best-practices)
