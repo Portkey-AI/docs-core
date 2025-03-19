@@ -1,0 +1,149 @@
+---
+title: '6. Operational Best Pracitces'
+description: ''
+---
+
+Effective operation of GenAI applications is crucial for maintaining optimal performance and cost-efficiency over time. This section explores key operational best practices that can help organizations maximize the value of their LLM investments.
+
+## 6.1 Monitoring and Governance
+Implementing robust monitoring and governance practices is essential for maintaining control over GenAI usage and costs.
+
+## Key Aspects of Monitoring and Governance
+
+1. **Usage Tracking**: Monitor the number of API calls, token usage, and associated costs for each model and application.
+2. **Performance Metrics**: Track response times, error rates, and model accuracy to ensure quality of service.
+3. **Cost Allocation**: Implement systems to attribute costs to specific projects, teams, or business units.
+4. **Alerting**: Set up alerts for unusual spikes in usage or costs to quickly identify and address issues.
+5. **Compliance Monitoring**: Ensure that AI usage adheres to regulatory requirements and internal policies.
+
+## Implementation Example
+
+Here's a basic example using Prometheus and Flask for monitoring:
+
+```python
+from prometheus_client import Counter, Histogram
+from flask import Flask, request, jsonify
+import time
+
+app = Flask(__name__)
+
+# Define metrics
+API_CALLS = Counter('api_calls_total', 'Total number of API calls', ['model'])
+TOKEN_USAGE = Counter('token_usage_total', 'Total number of tokens used', ['model'])
+RESPONSE_TIME = Histogram('response_time_seconds', 'Response time in seconds', ['model'])
+
+@app.route('/generate', methods=['POST'])
+def generate():
+    model_name = request.json['model']
+    prompt = request.json['prompt']
+    
+    API_CALLS.labels(model=model_name).inc()
+    
+    start_time = time.time()
+    response = generate_text(model_name, prompt)  # Your text generation function
+    end_time = time.time()
+    
+    TOKEN_USAGE.labels(model=model_name).inc(len(response.split()))
+    RESPONSE_TIME.labels(model=model_name).observe(end_time - start_time)
+    
+    return jsonify({"response": response})
+
+if __name__ == '__main__':
+    app.run()
+```
+
+By implementing comprehensive monitoring and governance practices, organizations can maintain better control over their LLM usage, optimize costs, and ensure compliance with relevant regulations.
+
+## 6.2 Caching Strategies
+
+Implementing effective caching strategies can significantly reduce API calls and associated costs in LLM applications.
+
+## Types of Caching
+
+1. **Result Caching**: Store and reuse results for identical queries.
+2. **Semantic Caching**: Cache results for semantically similar queries.
+3. **Partial Result Caching**: Cache intermediate results for complex queries.
+
+## Implementing a Semantic Cache
+
+Here's a basic example of implementing a semantic cache:
+
+```python
+import numpy as np
+from sentence_transformers import SentenceTransformer
+
+class SemanticCache:
+    def __init__(self):
+        self.cache = {}
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+
+    def get(self, query):
+        query_embedding = self.model.encode([query])[0]
+        for cached_query, (cached_embedding, result) in self.cache.items():
+            similarity = np.dot(query_embedding, cached_embedding)
+            if similarity > 0.95:  # Adjust threshold as needed
+                return result
+        return None
+
+    def set(self, query, result):
+        query_embedding = self.model.encode([query])[0]
+        self.cache[query] = (query_embedding, result)
+
+# Usage
+cache = SemanticCache()
+result = cache.get("What's the weather like today?")
+if result is None:
+    result = expensive_api_call("What's the weather like today?")
+    cache.set("What's the weather like today?", result)
+print(result)
+```
+
+By implementing effective caching strategies, organizations can significantly reduce the number of API calls to their LLM services, leading to substantial cost savings and improved response times.
+## 6.3 Automated Model Selection and Routing
+
+Implementing an automated system for model selection and routing can optimize cost and performance based on the specific requirements of each query.
+
+## Key Components
+
+1. **Query Classifier**: Categorize incoming queries based on complexity, domain, etc.
+2. **Model Selector**: Choose the appropriate model based on the query classification.
+3. **Performance Monitor**: Track the performance of selected models for continuous improvement.
+
+## Implementation Example
+
+Here's a basic example of how you might implement automated model selection and routing:
+
+```python
+class ModelRouter:
+    def __init__(self):
+        self.models = {
+            "simple": SimpleModel(),
+            "complex": ComplexModel(),
+            "specialized": SpecializedModel()
+        }
+
+    def classify_query(self, query):
+        # Implement query classification logic
+        # This could be based on keywords, length, complexity, etc.
+        if len(query.split()) < 10:
+            return "simple"
+        elif any(keyword in query.lower() for keyword in ["analyze", "compare", "explain"]):
+            return "complex"
+        else:
+            return "specialized"
+
+    def select_model(self, query_type):
+        return self.models[query_type]
+
+    def route_query(self, query):
+        query_type = self.classify_query(query)
+        selected_model = self.select_model(query_type)
+        return selected_model.generate(query)
+
+# Usage
+router = ModelRouter()
+result = router.route_query("What's the capital of France?")
+print(result)
+```
+
+By implementing automated model selection and routing, organizations can ensure that each query is handled by the most appropriate model, optimizing for both cost and performance.
