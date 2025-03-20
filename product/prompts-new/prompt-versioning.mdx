@@ -2,33 +2,81 @@
 title: "Prompt Versioning & Labels"
 ---
 
+Effective prompt management includes tracking changes, controlling access, and deploying the right version at the right time. Portkey's prompt versioning system helps you maintain a history of your prompt iterations while ensuring production stability.
 
-## Versioning Prompts
+## Understanding Prompt Versioning
 
-Whenever any changes are made to your prompt template, Portkey saves your changes in the browser **but** they are **not pushed** to Portkey. You can click on the `Update` button on the top right to save the latest version of the prompt on Portkey.
+Every time you make changes to a prompt template, Portkey tracks these modifications. The versioning system allows you to:
+
+- Try and test different prompt variations
+- Keep a complete history of all prompt changes
+- Compare different versions
+- Revert to previous versions when needed
+- Deploy specific versions to different environments
+
+**Updating vs. Publishing a Prompt Template**
+
+When working with prompts in Portkey, it's important to understand the difference between updating and publishing:
+
+- **Update**: When you edit a prompt, changes are saved as a new version but not pushed to production
+- **Publish**: Making a specific version the "production" version that's used by default
+
+
+
+
+## Managing Prompt Versions
+
+### Creating New Versions
+
+Whenever any changes are made to your prompt template, Portkey saves your changes in the browser **but** they are **not pushed** to production. You can click on the `Update` button on the top right to save the latest version of the prompt on Portkey.
 
 <Frame>
   <img src="/images/product/ai-gateway/ai-24.png"/>
 </Frame>
 
+### Publishing Prompts
 
-**All** of your prompt versions can be seen on the right column of the playground:
+Publishing a prompt version marks it as the default version that will be used when no specific version is requested. This is especially important for production environments.
+
+Updating the Prompt does not automatically update your prompt in production. While updating, you can tick `Publish prompt changes` which will also update your prompt deployment to the latest version.
+
+1. Create and test your new prompt version
+2. When ready for production, click "Update" and check "Publish prompt changes"
+3. Portkey will save the new version and mark it as the published version
+4. All default API calls will now use this version
+
+<Frame>
+  <img src="/images/product/ai-gateway/ai-26.png"/>
+</Frame>
+
+### Viewing Version History
+
+**All** of your prompt versions can be seen by clicking the `Version History` button on the playground:
 
 <Frame>
   <img src="/images/product/ai-gateway/ai-25.png"/>
 </Frame>
-You can `Restore` or `Publish` any of the previous versions by clicking on the elipsis.
 
----
+You can `Restore` or `Publish` any of the previous versions by clicking on the ellipsis menu.
+
+### Comparing Versions
+
+To compare different versions of your prompt:
+
+1. Select the versions you want to compare from the version history panel
+2. Click "Compare on playground" to see a side-by-side of different prompt versions
+
+This helps you understand how prompts have evolved and which changes might have impacted performance.
 
 ## Using Different Prompt Versions
 
 By default, when you pass the `PROMPT_ID` in `prompts.completions.create` method, Portkey sends the request to the `Published` version of your prompt.
 
-But, you can also call any of the other prompt versions (that you can see on the right side bar) by appending their version numbers with the `PROMPT_ID` slug.
+You can also call any specific prompt version by appending version identifiers to your `PROMPT_ID`.
 
-**For example,**
+### Version Number References
 
+**For example:**
 
 ```js
 response = portkey.prompts.completions.create(
@@ -37,27 +85,39 @@ response = portkey.prompts.completions.create(
 )
 ```
 
-Here, I am sending my request to **Version #12** of my prompt template. Portkey also has the `latest` tag that will always send the request to the **latest available version** of your prompt, regardless if it's published or not.
+Here, the request is sent to **Version 12** of the prompt template.
 
+### Special Version References
+
+Portkey supports special version references:
 
 ```js
+// Latest version (may not be published)
 response = portkey.prompts.completions.create(
     prompt_id="pp-classification-prompt@latest",
     variables={ }
 )
+
+// Published version (default when no suffix is provided)
+response = portkey.prompts.completions.create(
+    prompt_id="pp-classification-prompt",
+    variables={ }
+)
 ```
 
-* `latest` refers to the last version of prompt, it may not be the same as the `Published` version of your prompt.
-* When no suffix is provided, Portkey defaults to send the request to the `Published` version of the prompt
-
-This feature allows you to easily switch between different versions of your prompts for experimenting or specific use cases without affecting your production environment.
-
----
+**Important Notes:**
+* `@latest` refers to the most recent version, regardless of publication status
+* When no suffix is provided, Portkey defaults to the `Published` version
+* Each version is immutable once created - to make changes, you must create a new version
 
 ## Prompt Labels
 
-You can add version tags/labels like `staging`, `production` to any prompt version to track changes, and call them directly:
+Labels provide a more flexible and meaningful way to reference prompt versions compared to version numbers. You can add version tags/labels like `staging`, `production` to any prompt version to track changes and call them directly:
+
 <Frame><img width="200" src="/images/changelog/prompt-labels.gif" /></Frame>
+
+### Using Labels in Your Code
+
 <CodeGroup>
     ```ts @staging {2}
     const promptCompletion = portkey.prompts.completions.create({
@@ -79,35 +139,26 @@ You can add version tags/labels like `staging`, `production` to any prompt versi
     ```
 </CodeGroup>
 
+### Creating and Managing Labels
+
+To create or manage labels:
+
+1. Navigate to the prompt version sidebar
+2. Click on "Labels" to view all available labels
+3. Select a version and apply the desired label
+4. You can move labels between versions as needed
+
 <Info>
-    - There are 3 default labels: `production`, `staging`, `development` which can not be removed.
+    - There are 3 default labels: `production`, `staging`, `development` which cannot be removed.
     - Custom labels are unique to the workspace where they are created.
     - If you delete a custom label, any prompt completion requests to that label will start failing.
 </Info>
----
 
-## Publishing Prompts
+### Best Practices for Using Labels
 
-Updating the Prompt does not automatically update your prompt in production. While updating, you can tick `Publish prompt changes` which will also update your prompt deployment to the latest version.
+- Use `development` for experimental versions
+- Use `staging` for versions ready for testing
+- Use `production` for versions ready for real users
+- Create custom labels for specific use cases or experiments
 
-<Frame>
-  <img src="/images/product/ai-gateway/ai-26.png"/>
-</Frame>
-
-
----
-
-## FAQs
-<AccordionGroup>
-<Accordion title="How many prompt templates can I create on Portkey?">
-On the Prod or Enterprise Portkey plans, you can create unlimited prompt templates, while on the free Dev plan, you can create upto 3 prompt templates.
-</Accordion>
-
-<Accordion title="How can I move my existing prompt template to a folder?">
-You will see a "move" icon next to the various actions buttons when you hover on your prompt template. You can click on it and then choose which folder you'd like to move the prompt to.
-</Accordion>
-
-<Accordion title="I want to move multiple prompts to a folder. How to do that?">
-Portkey supports multi-select for prompt templates. First select all the prompts you want, and at the top of the prompts page you will see the "move" icon using which you can move all the selected prompts to another folder.
-</Accordion>
-</AccordionGroup>
+Labels make it easy for you to test prompt versions through different environments.
