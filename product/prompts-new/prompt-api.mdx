@@ -1,3 +1,536 @@
 ---
 title: "Prompt API"
+description: "Learn how to integrate Portkey's prompt templates directly into your applications using the Prompt API"
 ---
+
+
+<Info>
+This feature is available on all Portkey [plans](https://portkey.ai/pricing).
+</Info>
+
+
+The Portkey Prompts API allows you to seamlessly integrate your saved prompts directly into your applications. This powerful feature lets you separate prompt engineering from application code, making both easier to maintain while providing consistent, optimized prompts across your AI applications.
+
+With the Prompt API, you can:
+- Use versioned prompts in production applications
+- Dynamically populate prompts with variables at runtime
+- Override prompt parameters as needed without modifying the original templates
+- Retrieve prompt details for use with provider-specific SDKs
+
+## API Endpoints
+
+Portkey offers two primary endpoints for working with saved prompts:
+
+1. **Prompt Completions** (`/prompts/{promptId}/completions`) - Execute your saved prompt templates directly, receiving model completions
+2. **Prompt Render** (`/prompts/{promptId}/render`) - Retrieve your prompt template with variables populated, without executing it
+
+## Prompt Completions
+
+The Completions endpoint is the simplest way to use your saved prompts in production. It handles the entire process - retrieving the prompt, applying variables, sending it to the appropriate model, and returning the completion.
+
+### Making a Completion Request
+
+<Tabs>
+<Tab title="Python SDK">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY"
+)
+
+# Execute the prompt with provided variables
+completion = portkey.prompts.completions.create(
+    prompt_id="YOUR_PROMPT_ID",
+    variables={
+        "user_input": "Hello world"
+    },
+    max_tokens=250,
+    presence_penalty=0.2
+)
+
+print(completion)
+```
+</Tab>
+<Tab title="NodeJS SDK">
+```javascript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+});
+
+// Execute the prompt with provided variables
+const completion = await portkey.prompts.completions.create({
+    promptID: "YOUR_PROMPT_ID",
+    variables: {
+        "user_input": "Hello world"
+    },
+    max_tokens: 250,
+    presence_penalty: 0.2
+});
+
+console.log(completion);
+```
+</Tab>
+<Tab title="cURL">
+```bash
+curl -X POST "https://api.portkey.ai/v1/prompts/YOUR_PROMPT_ID/completions" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "variables": {
+      "user_input": "Hello world"
+    },
+    "max_tokens": 250,
+    "presence_penalty": 0.2
+  }'
+```
+</Tab>
+</Tabs>
+
+### Streaming Support
+
+The completions endpoint also supports streaming responses for real-time interactions:
+
+<Tabs>
+<Tab title="NodeJS SDK">
+```javascript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+});
+
+// Create a streaming completion
+const streamCompletion = await portkey.prompts.completions.create({
+    promptID: "YOUR_PROMPT_ID",
+    variables: {
+        "user_input": "Hello world"
+    },
+    stream: true
+});
+
+// Process the stream
+for await (const chunk of streamCompletion) {
+    console.log(chunk);
+}
+```
+</Tab>
+<Tab title="Python SDK">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY"
+)
+
+# Create a streaming completion
+completion = portkey.prompts.completions.create(
+    prompt_id="YOUR_PROMPT_ID",
+    variables={
+        "user_input": "Hello world"
+    },
+    stream=True
+)
+
+# Process the stream
+for chunk in completion:
+    print(chunk)
+```
+</Tab>
+</Tabs>
+
+## Prompt Render
+
+You can retrieve your saved prompts on Portkey using the `/prompts/$PROMPT_ID/render` endpoint. Portkey returns a JSON containing your prompt or messages body along with all the saved parameters that you can directly use in any request.
+
+This is helpful if you are required to use provider SDKs and can not use the Portkey SDK in production. ([Example of how to use Portkey prompt templates with OpenAI SDK](/product/prompt-library/retrieve-prompts#using-the-render-output-in-a-new-request))
+
+## Using the `Render` Endpoint/Method
+
+1. Make a request to `https://api.portkey.ai/v1/prompts/$PROMPT_ID/render` with your prompt ID
+2. Pass your Portkey API key with `x-portkey-api-key` in the header
+3. Send up the variables in your payload with `{ "variables": { "VARIABLE_NAME": "VARIABLE_VALUE" } }`
+
+That's it! See it in action:
+
+<Tabs>
+    <Tab title="cURL">
+
+```sh
+curl -X POST "https://api.portkey.ai/v1/prompts/$PROMPT_ID/render" \
+-H "Content-Type: application/json" \
+-H "x-portkey-api-key: $PORTKEY_API_KEY" \
+-d '{
+  "variables": {"movie":"Dune 2"}
+}'
+```
+
+The Output:
+
+```JSON
+{
+    "success": true,
+    "data": {
+        "model": "gpt-4",
+        "n": 1,
+        "top_p": 1,
+        "max_tokens": 256,
+        "temperature": 0,
+        "presence_penalty": 0,
+        "frequency_penalty": 0,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You're a helpful assistant."
+            },
+            {
+                "role": "user",
+                "content": "Who directed Dune 2?"
+            }
+        ]
+    }
+}
+```
+
+    </Tab>
+    <Tab title="Portkey Python SDK">
+
+```py
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY"
+)
+
+render = portkey.prompts.render(
+  prompt_id="PROMPT_ID",
+  variables={ "movie":"Dune 2" }
+)
+
+print(render.data)
+```
+
+The Output:
+
+```JSON
+{
+    "model": "gpt-4",
+    "n": 1,
+    "top_p": 1,
+    "max_tokens": 256,
+    "temperature": 0,
+    "presence_penalty": 0,
+    "frequency_penalty": 0,
+    "messages": [
+        {
+            "role": "system",
+            "content": "You're a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": "Who directed Dune 2?"
+        }
+    ]
+}
+```
+
+    </Tab>
+  <Tab title="Portkey Node SDK">
+
+```js
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+})
+
+async function getRender(){
+    const render = await portkey.prompts.render({
+        promptID: "PROMPT_ID",
+        variables: { "movie":"Dune 2" }
+    })
+
+    console.log(render.data)
+}
+
+getRender()
+```
+
+The Output:
+
+```JSON
+{
+    "model": "gpt-4",
+    "n": 1,
+    "top_p": 1,
+    "max_tokens": 256,
+    "temperature": 0,
+    "presence_penalty": 0,
+    "frequency_penalty": 0,
+    "messages": [
+        {
+            "role": "system",
+            "content": "You're a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": "Who directed Dune 2?"
+        }
+    ]
+}
+```
+    </Tab>
+
+  </Tabs>
+
+
+## Updating Prompt Params While Retrieving the Prompt
+
+If you want to change any model params (like `temperature`, `messages body` etc) while retrieving your prompt from Portkey, you can send the override params in your `render` payload.
+
+Portkey will send back your prompt with overridden params, **without** making any changes to the saved prompt on Portkey.
+
+<Tabs>
+ <Tab title="cURL">
+
+ ```sh
+curl -X POST "https://api.portkey.ai/v1/prompts/$PROMPT_ID/render" \
+-H "Content-Type: application/json" \
+-H "x-portkey-api-key: $PORTKEY_API_KEY" \
+-d '{
+  "variables": {"movie":"Dune 2"},
+  "model": "gpt-3.5-turbo",
+  "temperature": 2
+}'
+```
+
+Based on the above snippet, `model` and `temperature` params in the retrieved prompt will be **overridden** with the newly passed values
+
+The New Output:
+
+```JSON
+{
+    "success": true,
+    "data": {
+        "model": "gpt-3.5-turbo",
+        "n": 1,
+        "top_p": 1,
+        "max_tokens": 256,
+        "temperature": 2,
+        "presence_penalty": 0,
+        "frequency_penalty": 0,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You're a helpful assistant."
+            },
+            {
+                "role": "user",
+                "content": "Who directed Dune 2?"
+            }
+        ]
+    }
+}
+```
+
+    </Tab>
+        <Tab title="Python SDK">
+```py
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY"
+)
+
+render = portkey.prompts.render(
+  prompt_id="PROMPT_ID",
+  variables={ "movie":"Dune 2" },
+  model="gpt-3.5-turbo",
+  temperature=2
+)
+
+print(render.data)
+```
+
+Based on the above snippet, `model` and `temperature` params in the retrieved prompt will be **overridden** with the newly passed values.
+
+**The New Output:**
+
+```JSOn
+{
+    "model": "gpt-3.5-turbo",
+    "n": 1,
+    "top_p": 1,
+    "max_tokens": 256,
+    "temperature": 2,
+    "presence_penalty": 0,
+    "frequency_penalty": 0,
+    "messages": [
+        {
+            "role": "system",
+            "content": "You're a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": "Who directed Dune 2?"
+        }
+    ]
+}
+```
+
+    </Tab>
+    <Tab title="NodeJS SDK">
+```js
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+})
+
+async function getRender(){
+    const render = await portkey.prompts.render({
+        promptID: "PROMPT_ID",
+        variables: { "movie":"Dune 2" },
+        model: "gpt-3.5-turbo",
+        temperature: 2
+    })
+
+    console.log(render.data)
+}
+
+getRender()
+```
+
+Based on the above snippet, `model` and `temperature` params in the retrieved prompt will be **overridden** with the newly passed values.
+
+**The New Output:**
+
+```JSON
+{
+    "model": "gpt-3.5-turbo",
+    "n": 1,
+    "top_p": 1,
+    "max_tokens": 256,
+    "temperature": 2,
+    "presence_penalty": 0,
+    "frequency_penalty": 0,
+    "messages": [
+        {
+            "role": "system",
+            "content": "You're a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": "Who directed Dune 2?"
+        }
+    ]
+}
+```
+    </Tab>
+  </Tabs>
+
+
+## Using the `render` Output in a New Request
+
+Here's how you can take the output from the `render` API and use it for making a call. We'll take example of OpenAI SDKs, but you can use it simlarly for any other provider SDK as well.
+
+<Tabs>
+  <Tab title="OpenAI NodeJS">
+
+```js
+import Portkey from 'portkey-ai';
+import OpenAI from 'openai';
+
+// Retrieving the Prompt from Portkey
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+})
+
+async function getPromptTemplate() {
+    const render_response = await portkey.prompts.render({
+        promptID: "PROMPT_ID",
+        variables: { "movie":"Dune 2" }
+    })
+    return render_response.data;
+}
+
+// Making a Call to OpenAI with the Retrieved Prompt
+
+const openai = new OpenAI({
+    apiKey: 'OPENAI_API_KEY',
+    baseURL: 'https://api.portkey.ai/v1',
+    defaultHeaders: {
+      'x-portkey-provider': 'openai',
+      'x-portkey-api-key': 'PORTKEY_API_KEY',
+      'Content-Type': 'application/json',
+    }
+});
+
+async function main() {
+    const PROMPT_TEMPLATE = await getPromptTemplate();
+    const chatCompletion = await openai.chat.completions.create(PROMPT_TEMPLATE);
+    console.log(chatCompletion.choices[0]);
+}
+
+main();
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```py
+from portkey_ai import Portkey
+from openai import OpenAI
+
+# Retrieving the Prompt from Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY"
+)
+
+render_response = portkey.prompts.render(
+  prompt_id="PROMPT_ID",
+  variables={ "movie":"Dune 2" }
+)
+
+PROMPT_TEMPLATE = render_response.data
+
+# Making a Call to OpenAI with the Retrieved Prompt
+
+openai = OpenAI(
+    api_key = "OPENAI_API_KEY",
+    base_url = "https://api.portkey.ai/v1",
+    default_headers = {
+      'x-portkey-provider': 'openai',
+      'x-portkey-api-key': 'PORTKEY_API_KEY',
+      'Content-Type': 'application/json',
+    }
+)
+
+chat_complete = openai.chat.completions.create(**PROMPT_TEMPLATE)
+
+print(chat_complete.choices[0].message.content)
+```
+  </Tab>
+</Tabs>
+
+
+# CRUD: coming soon 🚀
+
+
+## API Reference
+
+For complete API details, including all available parameters and response formats, refer to the API reference documentation:
+
+- [Prompt Completions API Reference](https://portkey.ai/docs/api-reference/inference-api/prompts/prompt-completion)
+- [Prompt Render API Reference](https://portkey.ai/docs/api-reference/inference-api/prompts/render)
+
+## Next Steps
+
+Now that you understand how to integrate prompts into your applications, explore these related features:
+
+- [Prompt Playground](/product/prompts-new/prompt-playground) - Create and test prompts in an interactive environment
+- [Prompt Versioning](/product/prompts-new/prompt-versioning) - Track changes to your prompts over time
+- [Prompt Observability](/product/prompts-new/prompt-observability) - Monitor prompt performance in production
