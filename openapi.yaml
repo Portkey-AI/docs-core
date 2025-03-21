@@ -75,6 +75,7 @@ paths:
       servers:
         - url: https://api.portkey.ai/v1
         - url: http://localhost:8080/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Chat
       summary: Chat
@@ -114,31 +115,33 @@ paths:
           Custom-Host: []
 
       x-code-samples:
-        - lang: curl
-          source: |
-            curl https://api.portkey.ai/v1/chat/completions \
-              -H "Content-Type: application/json" \
-              -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-              -H "x-portkey-virtual-key: $PORTKEY_PROVIDER_VIRTUAL_KEY" \
-              -d '{
-                "model": "gpt-4o",
-                "messages": [
-                  {
-                    "role": "system",
-                    "content": "You are a helpful assistant."
-                  },
-                  {
-                    "role": "user",
-                    "content": "Hello!"
-                  }
-                ]
-              }'
         - lang: python
+          label: Default
           source: |
             from portkey_ai import Portkey
 
             portkey = Portkey(
               api_key = "PORTKEY_API_KEY",
+              virtual_key = "PROVIDER_VIRTUAL_KEY"
+            )
+
+            response = portkey.chat.completions.create(
+              model="gpt-4o",
+              messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Hello!"}
+              ]
+            )
+
+            print(response.choices[0].message)
+        - lang: python
+          label: Enterprise
+          source: |
+            from portkey_ai import Portkey
+
+            portkey = Portkey(
+              api_key = "PORTKEY_API_KEY",
+              base_url = "PORTKEY_ENTERPRISE_AI_GATEWAY_URL",
               virtual_key = "PROVIDER_VIRTUAL_KEY"
             )
 
@@ -174,6 +177,10 @@ paths:
   /completions:
     post:
       operationId: createCompletion
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: http://localhost:8080/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Completions
       summary: Completions
@@ -258,6 +265,9 @@ paths:
   /prompts/{promptId}/completions:
     post:
       operationId: createPromptCompletion
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Prompts
       summary: Prompts Completions
@@ -471,6 +481,10 @@ paths:
   /images/generations:
     post:
       operationId: createImage
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: http://localhost:8080/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Images
       summary: Create Image
@@ -547,6 +561,10 @@ paths:
   /images/edits:
     post:
       operationId: createImageEdit
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: http://localhost:8080/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Images
       summary: Create Image Edit
@@ -627,6 +645,10 @@ paths:
   /images/variations:
     post:
       operationId: createImageVariation
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: http://localhost:8080/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Images
       summary: Creates Image Variation
@@ -701,6 +723,10 @@ paths:
   /embeddings:
     post:
       operationId: createEmbedding
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: http://localhost:8080/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Embeddings
       summary: Embeddings
@@ -780,6 +806,10 @@ paths:
   /audio/speech:
     post:
       operationId: createSpeech
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: http://localhost:8080/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Audio
       summary: Create Speech
@@ -874,6 +904,10 @@ paths:
   /audio/transcriptions:
     post:
       operationId: createTranscription
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: http://localhost:8080/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Audio
       summary: Create Transcription
@@ -952,6 +986,10 @@ paths:
   /audio/translations:
     post:
       operationId: createTranslation
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: http://localhost:8080/v1
+        - url: PORTKEY_ENTERPRISE_AI_GATEWAY_URL/v1
       tags:
         - Audio
       summary: Create Translation
@@ -12007,30 +12045,12 @@ components:
               "total_tokens": 12
             }
           }
-    
-    ChatCompletionRequestAssistantMessageContentPart:
-            oneOf:
-                - $ref: "#/components/schemas/ChatCompletionRequestMessageContentPartText"
-                - $ref: "#/components/schemas/ChatCompletionRequestAssistantMessageContentThinkingPart"
-
-            x-oaiExpandable: true
 
     ChatCompletionRequestMessageContentPart:
       oneOf:
         - $ref: "#/components/schemas/ChatCompletionRequestMessageContentPartText"
         - $ref: "#/components/schemas/ChatCompletionRequestMessageContentPartImage"
       x-oaiExpandable: true
-
-    ChatCompletionRequestAssistantMessageContentThinkingPart:
-            type: object
-            title: Thinking part
-            properties:
-                thinking:
-                    type: string
-                    description: The thinking of the assistant.
-                signature:
-                    type: string
-                    description: The signature of the assistant.
 
     ChatCompletionRequestMessageContentPartImage:
       type: object
@@ -12135,14 +12155,7 @@ components:
       properties:
         content:
           nullable: true
-          oneOf:
-              - type: string
-                description: The text contents of the message.
-              - type: array
-                description: An array of content parts with a defined type, each can be of type `text` or `image_url` when passing in images. You can pass multiple images by adding multiple `image_url` content parts. Image input is only supported when using the `gpt-4-visual-preview` model.
-                items:
-                    $ref: "#/components/schemas/ChatCompletionRequestAssistantMessageContentPart"
-                minItems: 1
+          type: string
           description: |
             The contents of the assistant message. Required unless `tool_calls` or `function_call` is specified.
         role:
@@ -12656,20 +12669,6 @@ components:
           example: 1
           nullable: true
           description: *completions_top_p_description
-        thinking:
-            type: object
-            description: |
-                An object specifying the thinking configuration for the model.
-            properties:
-                type:
-                    type: string
-                    enum: ["enabled"]
-                budget_tokens:
-                    type: integer
-                    description: |
-                        The maximum number of tokens the model can use for thinking.
-                        If the model exceeds this limit, it will stop thinking and generate a response.
-                        If not provided, the model will think until the response is generated.
         tools:
           type: array
           description: >

@@ -4,14 +4,29 @@ title: "Bring Your Own Guardrails"
 
 Portkey supports bringing your own Guardrail using a custom webhook:
 <Frame>
-  <img src="/images/guardrails/g6.png"/>
+  <img src="/images/guardrails/webhook.png" width="400" />
 </Frame>
 
-Add `Webhook` as a Guardrail Check and setup any Guardrail Actions along with it. This is useful when you have an existing custom guardrail pipeline in your app and you are sending your LLM inputs or outputs to it for sync or async evaluation. Bring that onto Portkey's Gateway, make it production-grade, and enforce LLM behavior in real-time, easily.
+Add `Webhook` as a Guardrail Check and setup any Guardrail Actions along with it. This is useful when you have an existing custom guardrail pipeline in your app and you are sending your LLM inputs or outputs to it for sync or async evaluation (such as a custom PII redactor). 
 
-## How Custom Webhook Works
+Bring that onto Portkey's Gateway, make it production-grade, and enforce LLM behavior in real-time, easily.
 
-In the Guardrail check, Portkey expects your `Webhook URL` and any `headers` (including `Authorization`) you need to send.
+## Configuring Webhook in UI
+
+In the Guardrail check UI, Portkey expects 3 things:
+| Field | Description | Type |
+| :-- | :-- | :-- |
+| **Webhook URL** | The URL of your webhook | `string` |
+| **Headers** | The headers your webhook expects, including `Authorization` | `JSON` |
+| **Timeout** | Time to wait for the Webhook to respond | `number` (milliseconds) |
+
+### Webhook URL 
+
+This will be the publicly available URL of your webhook. 
+
+<Note>
+Portkey's Enterprise customers can configure the AI Gateway to securely access webhooks within your private networks as well.
+</Note>
 
 ### Headers
 
@@ -19,10 +34,32 @@ Headers here should be a JSON object, like below:
 
 ```JSON
 {
-    "Authorization":"MY_API_KEY",
-    "Content-Type":"Application/JSON"
+    "Authorization":"Bearer MY_API_KEY",
+    "Content-Type":"application/json"
 }
 ```
+
+You can include any custom headers your webhook endpoint requires.
+
+### Timeout
+
+This is the time in milliseconds that Portkey's Gateway will wait for your webhook to respond. If your webhook doesn't respond within this timeout, Portkey will automatically return the Webhook verdict to be TRUE`.
+
+Default timeout is `3000ms` (3 seconds).
+
+## Expected Webhook Signature
+
+When a request hits Portkey's Gateway with your webhook configured as a Guardrail check, Portkey makes a POST request to your webhook URL with the following payload:
+
+```JSON
+{
+  "content": "The content to check (prompt or completion)",
+  "metadata": {
+    // Any metadata you sent along with your request
+  }
+}
+```
+
 
 Portkey makes a `POST` request to your webhook URL and expects two objects in the response: `verdict` and `data`.
 
