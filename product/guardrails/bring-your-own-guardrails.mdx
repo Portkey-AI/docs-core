@@ -1,101 +1,421 @@
 ---
 title: "Bring Your Own Guardrails"
+description: "Integrate your custom guardrails with Portkey using webhooks"
 ---
 
-Portkey supports bringing your own Guardrail using a custom webhook:
+Portkey's webhook guardrails allow you to integrate your existing guardrail infrastructure with our AI Gateway. This is perfect for teams that have already built custom guardrail pipelines (like PII redaction, sensitive content filtering, or data validation) and want to:
+
+- Enforce guardrails directly within the AI request flow
+- Make existing guardrail systems production-ready
+- Modify AI requests and responses in real-time
+
+## How It Works
+
+1. You add a Webhook as a Guardrail Check in Portkey
+2. When a request passes through Portkey's Gateway:
+   - Portkey sends relevant data to your webhook endpoint
+   - Your webhook evaluates the request/response and returns a verdict
+   - Based on your webhook's response, Portkey either allows the request to proceed, modifies it if required, or applies your configured guardrail actions
+
+## Setting Up a Webhook Guardrail
+
+### Configure Your Webhook in Portkey App
+
 <Frame>
-  <img src="/images/guardrails/g6.png"/>
+  <img src="/images/guardrails/webhook.png" width="350" />
 </Frame>
 
-Add `Webhook` as a Guardrail Check and setup any Guardrail Actions along with it. This is useful when you have an existing custom guardrail pipeline in your app and you are sending your LLM inputs or outputs to it for sync or async evaluation. Bring that onto Portkey's Gateway, make it production-grade, and enforce LLM behavior in real-time, easily.
+In the Guardrail configuration UI, you'll need to provide:
 
-## How Custom Webhook Works
+| Field | Description | Type |
+| :-- | :-- | :-- |
+| **Webhook URL** | Your webhook's endpoint URL | `string` |
+| **Headers** | Headers to include with webhook requests | `JSON` |
+| **Timeout** | Maximum wait time for webhook response | `number` (ms) |
 
-In the Guardrail check, Portkey expects your `Webhook URL` and any `headers` (including `Authorization`) you need to send.
+#### Webhook URL
 
-### Headers
+This should be a publicly accessible URL where your webhook is hosted.
 
-Headers here should be a JSON object, like below:
+<Note>
+**Enterprise Feature**: Portkey Enterprise customers can configure secure access to webhooks within private networks.
+</Note>
 
-```JSON
+#### Headers
+
+Specify headers as a JSON object:
+
+```json
 {
-    "Authorization":"MY_API_KEY",
-    "Content-Type":"Application/JSON"
+  "Authorization": "Bearer YOUR_API_KEY",
+  "Content-Type": "application/json"
 }
 ```
 
-Portkey makes a `POST` request to your webhook URL and expects two objects in the response: `verdict` and `data`.
+#### Timeout
 
-### Custom Metadata
+The maximum time Portkey will wait for your webhook to respond before proceeding with a default `verdict: true`.
 
-You can send any Metadata to your Webhook URL with Portkey's [Metadata header](/product/observability/metadata).
-```py
-"x-portkey-metadata": {"user":"john"}
+- Default: `3000ms` (3 seconds)
+- If your webhook processing is time-intensive, consider increasing this value
+
+### Webhook Request Structure
+
+Your webhook should accept `POST` requests with the following structure:
+
+#### Request Headers
+
+| Header | Description |
+| :-- | :-- |
+| `Content-Type` | Always set to `application/json` |
+| Custom Headers | Any headers you configured in the Portkey UI |
+
+#### Request Body
+
+Portkey sends comprehensive information about the AI request to your webhook:
+
+<Expandable title="Webhook Request Structure">
+  <ParamField body="request" type="object">
+    Information about the user's request to the LLM
+    <Expandable title="Properties">
+      <ParamField body="json" type="object">OpenAI compliant request body json.</ParamField>
+      <ParamField body="text" type="string">Last message/prompt content from the overall request body.</ParamField>
+      <ParamField body="isStreamingRequest" type="boolean">Whether the request uses streaming</ParamField>
+    </Expandable>
+  </ParamField>
+  
+  <ParamField body="response" type="object">
+    Information about the LLM's response (empty for beforeRequestHook)
+    <Expandable title="Properties">
+      <ParamField body="json" type="object">OpenAI compliant response body json.</ParamField>
+      <ParamField body="text" type="string">Last message/prompt content from the overall response body.</ParamField>
+      <ParamField body="statusCode" type="number">HTTP status code from LLM provider</ParamField>
+    </Expandable>
+  </ParamField>
+  
+  <ParamField body="provider" type="string">Portkey provider slug. Example: `openai`, `azure-openai`, etc.</ParamField>
+  <ParamField body="requestType" type="string">Type of request: `chatComplete`, `complete`, or `embed`</ParamField>
+<ParamField body="metadata" type="object">Custom metadata passed with the request. Can come from: 1) the `x-portkey-metadata` header, 2) default API key settings, or 3) workspace defaults.</ParamField>
+<ParamField body="eventType" type="string">When the hook is triggered: `beforeRequestHook` or `afterRequestHook`</ParamField>
+</Expandable>
+
+#### Event Types
+
+Your webhook can be triggered at two points:
+
+- **beforeRequestHook**: Before the request is sent to the LLM provider
+- **afterRequestHook**: After receiving a response from the LLM provider
+
+<CodeGroup>
+```JSON beforeRequestHook Example [expandable]
+ {
+    "request": {
+        "json": {
+            "stream": false,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant"
+                },
+                {
+                    "role": "user",
+                    "content": "Say Hi"
+                }
+            ],
+            "max_tokens": 20,
+            "n": 1,
+            "model": "gpt-4o-mini"
+        },
+        "text": "Say Hi",
+        "isStreamingRequest": false,
+        "isTransformed": false
+    },
+    "response": {
+        "json": {},
+        "text": "",
+        "statusCode": null,
+        "isTransformed": false
+    },
+    "provider": "openai",
+    "requestType": "chatComplete",
+    "metadata": {
+        "_user": "visarg123"
+    },
+    "eventType": "beforeRequestHook"
+}
 ```
-When you make the request, Portkey will automatically forward all your metadata info to your Webhook URL. [More about Metadata here](/product/observability/metadata#adding-metadata-to-requests)
+```JSON afterRequestHook Example [expandable]
+{
+    "request": {
+        "json": {
+            "stream": false,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant"
+                },
+                {
+                    "role": "user",
+                    "content": "Say Hi"
+                }
+            ],
+            "max_tokens": 20,
+            "n": 1,
+            "model": "gpt-4o-mini"
+        },
+        "text": "Say Hi",
+        "isStreamingRequest": false,
+        "isTransformed": false
+    },
+    "response": {
+        "json": {
+            "id": "chatcmpl-B9SAAj7zd4mq12omkeEImYvYnjbOr",
+            "object": "chat.completion",
+            "created": 1741592910,
+            "model": "gpt-4o-mini-2024-07-18",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hi! How can I assist you today?",
+                        "refusal": null
+                    },
+                    "logprobs": null,
+                    "finish_reason": "stop"
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 18,
+                "completion_tokens": 10,
+                "total_tokens": 28,
+                "prompt_tokens_details": {
+                    "cached_tokens": 0,
+                    "audio_tokens": 0
+                },
+                "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "audio_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0
+                }
+            },
+            "service_tier": "default",
+            "system_fingerprint": "fp_06737a9306"
+        },
+        "text": "Hi! How can I assist you today?",
+        "statusCode": 200,
+        "isTransformed": false
+    },
+    "provider": "openai",
+    "requestType": "chatComplete",
+    "metadata": {
+        "_user": "visarg123"
+    },
+    "eventType": "afterRequestHook"
+}
+```
+</CodeGroup>
 
-## Webhook Response
+### Webhook Response Structure
 
-Portkey expects two objects: `verdict` and `data`
+Your webhook must return a response that follows this structure:
 
-| Object  | Type    | Required? |
-| ------- | ------- | --------- |
-| `verdict` | `boolean` | Yes       |
-| `data`   | `any`     | No        |
+#### Response Body
 
-#### Here's a sample webhook response:
+<Expandable title="Webhook Response Schema">
+  <ResponseField required name="verdict" type="boolean">
+    Whether the request/response passes your guardrail check:
+    - `true`: No violations detected
+    - `false`: Violations detected
+  </ResponseField>
 
+  <ResponseField name="transformedData" type="object">
+    Optional field to modify the request or response
+    <Expandable title="Properties">
+      <ResponseField name="request" type="object">
+        Modified request data (only for beforeRequestHook)
+        If this field is found in the Webhook response, Portkey will fully override the existing request body with the returned data.
+      </ResponseField>
+      <ResponseField name="response" type="object">
+        Modified response data (only for afterRequestHook)
+        If this field is found in the Webhook response, Portkey will fully override the existing response body with the returned data.
+      </ResponseField>
+    </Expandable>
+  </ResponseField>
+</Expandable>
 
-```JSON
+## Webhook Capabilities
+
+Your webhook can perform three main actions:
+
+### Simple Validation
+
+Return a verdict without modifying the request/response:
+
+```json
+{
+  "verdict": true  // or false if the request violates your guardrails
+}
+```
+
+### Request Transformation
+
+Modify the user's request before it reaches the LLM provider:
+
+<Tabs>
+<Tab title="Example: Adding Content Policy">
+```json
 {
   "verdict": true,
-  "data": {
-    "reason": "User passed all security checks",
-    "score": 0.95,
-    "additionalInfo": {
-      "userStatus": "verified",
-      "lastCheckTimestamp": "2024-08-21T14:30:00Z"
+  "transformedData": {
+    "request": {
+      "json": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful assistant. Do not provide harmful content."
+          },
+          {
+            "role": "user",
+            "content": "Original user message"
+          }
+        ],
+        "max_tokens": 100,
+        "model": "gpt-4o"
+      }
     }
   }
 }
 ```
-
-#### Check out the Webhook implementation here:
-
-<Accordion title="https://github.com/Portkey-AI/gateway/blob/main/plugins/default/webhook.ts" href="https://github.com/Portkey-AI/gateway/blob/main/plugins/default/webhook.ts" icon="github" >
-
-```js
-import { PluginContext, PluginHandler, PluginParameters } from '../types';
-import { post } from '../utils';
-
-export const handler: PluginHandler = async (
-  context: PluginContext,
-  parameters: PluginParameters
-) => {
-  let error = null;
-  let verdict = false;
-  let data = null;
-  try {
-    let url = parameters.webhookURL;
-    let headers: Record<string, string=""> = parameters?.headers
-      ? JSON.parse(parameters.headers)
-      : {};
-    ({ verdict, data } = await post(url, context, { headers }, 3000));
-  } catch (e: any) {
-    delete e.stack;
-    error = e;
+</Tab>
+<Tab title="Example: PII Redaction">
+```json
+{
+  "verdict": true,
+  "transformedData": {
+    "request": {
+      "json": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful assistant"
+          },
+          {
+            "role": "user",
+            "content": "My name is [REDACTED] and my email is [REDACTED]"
+          }
+        ],
+        "max_tokens": 100,
+        "model": "gpt-4o"
+      }
+    }
   }
-  return { error, verdict, data };
-};
-</string,>
+}
 ```
-</Accordion>
+</Tab>
+</Tabs>
 
+### Response Transformation
 
-Based on the verdict value, the Guardrail Check will `PASS` or `FAIL`, and will have subsequent impact on the Guardrail Actions you've set.
+Modify the LLM's response before it reaches the user:
 
-<Info>
-  The webhook request automatically time out after **3 seconds** \-this can not be changed. So, if a webhook request times out, the Guardrail verdict will return `PASS` for that request.
-</Info>
+<Tabs>
+<Tab title="Example: Content Filtering">
+```json
+{
+  "verdict": true,
+  "transformedData": {
+    "response": {
+      "json": {
+        "id": "chatcmpl-123",
+        "object": "chat.completion",
+        "created": 1741592832,
+        "model": "gpt-4o-mini",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "I've filtered this response to comply with our content policies."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 23,
+          "completion_tokens": 12,
+          "total_tokens": 35
+        }
+      },
+      "text": "I've filtered this response to comply with our content policies."
+    }
+  }
+}
+```
+</Tab>
+<Tab title="Example: Response Enhancement">
+```json
+{
+  "verdict": true,
+  "transformedData": {
+    "response": {
+      "json": {
+        "id": "chatcmpl-123",
+        "object": "chat.completion",
+        "created": 1741592832,
+        "model": "gpt-4o-mini",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Original response with additional disclaimer: This response is provided for informational purposes only."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 23,
+          "completion_tokens": 20,
+          "total_tokens": 43
+        }
+      },
+      "text": "Original response with additional disclaimer: This response is provided for informational purposes only."
+    }
+  }
+}
+```
+</Tab>
+</Tabs>
 
-Head over to the [**Portkey Discord community**](https://portkey.ai/community) if you are building out custom webhooks and need any help!
+## Passing Metadata to Your Webhook
+
+You can include additional context with each request using Portkey's metadata feature:
+
+```json
+// In your API request to Portkey
+"x-portkey-metadata": {"user": "john", "context": "customer_support"}
+```
+
+This metadata will be forwarded to your webhook in the `metadata` field. [Learn more about metadata](/product/observability/metadata).
+
+## Important Implementation Notes
+
+1. **Complete Transformations**: When using `transformedData`, include all fields in your transformed object, not just the changed portions.
+
+2. **Independent Verdict and Transformation**: The `verdict` and any transformations are independent. You can return `verdict: false` while still returning transformations.
+
+3. **Default Behavior**: If your webhook fails to respond within the timeout period, Portkey will default to `verdict: true`.
+
+4. **Event Type Awareness**: When implementing transformations, ensure your webhook checks the `eventType` field to determine whether it's being called before or after the LLM request.
+
+## Example Implementation
+
+Check out our Guardrail Webhook implementation on GitHub:
+
+<Card title="Guardrail Webhook Implementation" icon="github" href="https://github.com/Portkey-AI/gateway/blob/main/plugins/default/webhook.ts" />
+
+## Get Help
+
+Building custom webhooks? Join the [Portkey Discord community](https://portkey.ai/community) for support and to share your implementation experiences!
