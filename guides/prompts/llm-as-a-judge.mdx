@@ -255,13 +255,14 @@ portkey = Portkey(
     api_key="YOUR_PORTKEY_API_KEY",
     trace_id="customer-support-eval-run-1"  # For tracing in Portkey
 )
-
 def evaluate_interaction(customer_query, agent_response):
     """
     Evaluate a customer support interaction using LLM-as-a-Judge
     """
     # Use response_schema to ensure structured output
     response_schema = {
+        "name": "evaluation",
+        "schema": {
         "type": "object",
         "properties": {
             "critique": {
@@ -272,40 +273,40 @@ def evaluate_interaction(customer_query, agent_response):
                 "type": "string",
                 "enum": ["good", "bad"],
                 "description": "The final judgment: 'good' or 'bad'"
-            },
-            "improvement_areas": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Specific areas where the response could be improved"
             }
         },
         "required": ["critique", "outcome"]
+        }
     }
 
     # Call Portkey's prompt API with response_schema
     response = portkey.prompts.completions.create(
-        prompt_id="your-judge-prompt-id",  # Replace with your actual prompt ID for LLM as a Judge
+        prompt_id="pp-llm-judge-62a41d",  # Replace with your actual prompt ID for LLM as a Judge
         variables={
             "user_input": customer_query,
             "generated_query": agent_response,
-            "customer_service_info": "your-company-info-partial-id",
-            "guidelines": "your-guidelines-partial-id"
         },
-        response_format={"type": "json_object", "schema": response_schema}
+        response_format={"type": "json_schema", "json_schema": response_schema, }
     )
 
     # Extract structured response and log feedback to Portkey
-    result = response.choices[0].json_object
+    result = response.choices[0].message.content
 
-    # Log the evaluation result to Portkey for analytics
+
+    import json
+
+    # Parse the JSON string into a dictionary
+    result_dict = json.loads(result)
+
+    trace = response.get_headers()['trace-id']
+    print(result_dict["outcome"])
+
+    # Now you can access the dictionary with keys
     portkey.feedback.create(
-        trace_id=customer-support-eval-run-1,  # Use the trace ID from the evaluation
-        value=1 if result["outcome"] == "good" else 0,  # Convert outcome to numeric rating
-        metadata={
-            "critique": result["critique"],
-            "improvement_areas": result.get("improvement_areas", [])
-        }
+        trace_id=trace,
+        value=1 if result_dict["outcome"] == "good" else 0,  # Now this will work
     )
+
 
     return result
 
@@ -363,7 +364,7 @@ The feedback data we collect using the `portkey.feedback.create()` method automa
 4. Share results with stakeholders through customizable reports
 
 <Frame>
-    <img src="/images/guides/prompts/evaluation-dashboard.png"/> # TODO
+    <img src="/images/product/feedback.png"/>
 </Frame>
 
 The dashboard gives you a bird's-eye view of your evaluation metrics, making it easy to spot trends and areas for improvement.
