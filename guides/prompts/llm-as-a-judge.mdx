@@ -9,7 +9,7 @@ You need a system that can automatically evaluate customer support interactions 
 
 Quality assurance for customer support interactions is critical but increasingly challenging as AI Agents handle more customer conversations. Manual reviews are great but they don't scale.
 
-The "LLM-as-a-Judge" approach offers a powerful solution to this challenge. This guide will show you how to build an automated evaluation system that scales to thousands of interactions. By the end, you'll have a robust workflow that helps you improve AI agents repsonses.
+The "LLM-as-a-Judge" approach offers a powerful solution to this challenge. This guide will show you how to build an automated evaluation system that scales to thousands of interactions. By the end, you'll have a robust workflow that helps you improve AI agents responses.
 
 ## What We're Building
 
@@ -37,21 +37,25 @@ With an LLM-as-a-Judge system, you can:
 
 ```mermaid
 flowchart TD
-    A[User Query & Agent's Response] --> B{LLM-as-a-Judge}
+    A[Customer Query & Agent Response] --> B{LLM-as-a-Judge}
     B --> C[Evaluation & Feedback]
-    C --> D{Accuracy Check}
-    D -->|Desired Accuracy Achieved?| E[End Process]
-    D -->|Not Achieved| A[Repeat Process]
+    C --> D{Quality Check}
+    D -->|Meets Quality Standards| E[Continue]
+    D -->|Needs Improvement| F[Improve Agent]
+    F --> G[Re-evaluate with LLM-as-a-Judge]
 ```
 
+## Industry Best Practices for AI Agent Evaluation
 
-# How LLM-as-a-Judge Improves AI Support
-We'll create an LLM as a judge workflow that evaluates customer support interactions by analyzing both the customer's query and the AI agent's response. For each interaction, our system will:
+Before diving into implementation, let's briefly look at evaluation approaches for customer support AI:
 
-- Determine whether the response meets quality standards (pass/fail)
-- Provide a detailed critique explaining the reasoning behind the judgment
-- Scale easily to run tests on thousands of interactions
+- **Human Evaluation**: The gold standard, but doesn't scale
+- **Offline Benchmarking**: Testing against curated datasets with known answers
+- **Online Evaluation**: Monitoring live interactions and collecting user feedback
+- **Multi-dimensional Scoring**: Evaluating across different attributes (accuracy, helpfulness, tone)
+- **LLM-as-a-Judge**: Using a powerful model to simulate expert human judgment
 
+This cookbook focuses on building a robust LLM-as-a-Judge system that balances accuracy with scalability, allowing you to evaluate thousands of customer interactions automatically.
 
 ## Working with [Portkey's Prompt Studio](/product/prompt-engineering-studio)
 
@@ -62,7 +66,13 @@ We will be using [Prompt Studio](/product/prompt-engineering-studio) in this coo
 - Access prompts via simple API calls
 - Deploy prompts to different environments
 
-We use Mustache templating `{{variable}}` in our prompts, which allows for dynamic content insertion. This makes our prompts more flexible and reusable. To follow this guide, you will need to create prompt partials first, then create the main template in the Portkey UI, and finally access them using the prompt_id inside your codebase.
+We use Mustache templating `{{variable}}` in our prompts, which allows for dynamic content insertion. This makes our prompts more flexible and reusable. 
+
+### What are Prompt Partials?
+
+Prompt partials are reusable components in Portkey that let you modularize parts of your prompts. Think of them like building blocks that can be combined to create complex prompts. In this guide, we'll create several partials (company info, guidelines, examples) and then combine them in a main prompt.
+
+To follow this guide, you will need to create prompt partials first, then create the main template in the Portkey UI, and finally access them using the prompt_id inside your codebase.
 
 ## Step-by-Step Guide to Building LLM-as-a-Judge
 
@@ -193,7 +203,7 @@ After creating this partial, you'll receive another partial ID (e.g., `pl-exampl
 ### Step 4: Create the Main Judge Prompt Template
 
 Now that you have all the partials, it's time to create the main judge prompt template that brings everything together.
-We will reference the partials we created earlier to provide context, guidelines, and examples to the judge using mustache varibles. You can learn more about [it here](/product/prompt-library/prompt-partials)
+We will reference the partials we created earlier to provide context, guidelines, and examples to the judge using mustache variables. 
 
 <Frame>
     <img src="/images/guides/prompts/main-judge.png"/>
@@ -233,9 +243,9 @@ This template sets the evaluator role, inserts your company information, guideli
 
 Once you've created the main template, you'll get a prompt ID that you'll use in your code to access this prompt.
 
-### Step 5: Implementing the Evaluation Code
+### Step 5: Implementing the Evaluation Code with Structured Output
 
-Now that you have your prompt template set up in Portkey, you can use this simple Python code to evaluate customer support interactions:
+Now that you have your prompt template set up in Portkey, use this Python code to evaluate customer support interactions with structured output:
 
 ```python
 from portkey_ai import Portkey
@@ -250,26 +260,54 @@ def evaluate_interaction(customer_query, agent_response):
     """
     Evaluate a customer support interaction using LLM-as-a-Judge
     """
-    # Format the query and response for evaluation
-    formatted_input = f"""
-    {{
-      "customer_message": "{customer_query}",
-      "agent_response": "{agent_response}"
-    }}
-    """
-
-    # Call Portkey's prompt API
+    # Use response_schema to ensure structured output
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "critique": {
+                "type": "string",
+                "description": "A detailed critique of the agent's response"
+            },
+            "outcome": {
+                "type": "string",
+                "enum": ["good", "bad"],
+                "description": "The final judgment: 'good' or 'bad'"
+            },
+            "improvement_areas": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific areas where the response could be improved"
+            }
+        },
+        "required": ["critique", "outcome"]
+    }
+    
+    # Call Portkey's prompt API with response_schema
     response = portkey.prompts.completions.create(
         prompt_id="your-judge-prompt-id",  # Replace with your actual prompt ID for LLM as a Judge
         variables={
             "user_input": customer_query,
-            "generated_query": formatted_input,
+            "generated_query": agent_response,
             "customer_service_info": "your-company-info-partial-id",
             "guidelines": "your-guidelines-partial-id"
-        }
+        },
+        response_format={"type": "json_object", "schema": response_schema}
     )
 
-    return response.choices[0].text
+    # Extract structured response and log feedback to Portkey
+    result = response.choices[0].json_object
+    
+    # Log the evaluation result to Portkey for analytics
+    portkey.feedback.create(
+        trace_id=customer-support-eval-run-1,  # Use the trace ID from the evaluation
+        value=1 if result["outcome"] == "good" else 0,  # Convert outcome to numeric rating
+        metadata={
+            "critique": result["critique"],
+            "improvement_areas": result.get("improvement_areas", [])
+        }
+    )
+    
+    return result
 
 # Example usage
 customer_query = "I've been waiting for my refund for over two weeks now. When will I receive it?"
@@ -284,7 +322,12 @@ Example output:
 ```json
 {
   "critique": "The agent response provides general information about refund processing times (7-10 business days) but doesn't address why the customer's refund is taking over two weeks, which exceeds the standard timeline. While the agent offers to check the status, they don't acknowledge the customer's obvious frustration with the delay, missing an opportunity for empathy. There's also no clear explanation of when the agent will 'get back' with the information, leaving the timeline ambiguous.",
-  "outcome": "bad"
+  "outcome": "bad",
+  "improvement_areas": [
+    "Acknowledge customer frustration",
+    "Explain why the refund exceeds standard timeline",
+    "Provide specific timeframe for follow-up"
+  ]
 }
 ```
 </Accordion>
@@ -310,12 +353,67 @@ One of Portkey's key advantages is its built-in observability. Each evaluation g
 
 This visibility helps you identify performance bottlenecks, track costs as you scale, debug problematic evaluations, and compare different judge prompt versions.
 
-Once your system is operational, you can use it to drive continuous improvement:
+### Visualizing Evaluation Results on the Portkey Dashboard
 
-1. Run evaluations on your full dataset to understand overall quality levels
-2. Identify categories of failures and look for patterns in failing responses
-3. Compare against golden dataset to validate judge performance
-4. Re-evaluate after agent improvements to measure the impact of changes
+The feedback data we collect using the `portkey.feedback.create()` method automatically appears in the Portkey dashboard, allowing you to:
+
+1. Track evaluation outcomes over time
+2. Identify specific areas where your agent consistently struggles
+3. Measure improvement after making changes to your AI agent
+4. Share results with stakeholders through customizable reports
+
+<Frame>
+    <img src="/images/guides/prompts/evaluation-dashboard.png"/> # TODO
+</Frame>
+
+The dashboard gives you a bird's-eye view of your evaluation metrics, making it easy to spot trends and areas for improvement.
+
+## Running Evaluations at Scale
+
+Once your LLM-as-a-Judge system is operational, you can scale it to evaluate thousands of interactions:
+
+```python
+import pandas as pd
+from tqdm import tqdm
+import time
+
+# Load your dataset of customer interactions
+df = pd.read_csv("customer_interactions.csv")
+
+# Run evaluations on the entire dataset
+results = []
+for idx, row in tqdm(df.iterrows(), total=len(df)):
+    customer_query = row['customer_query']
+    agent_response = row['agent_response']
+    
+    try:
+        # Evaluate the interaction
+        evaluation = evaluate_interaction(customer_query, agent_response)
+        
+        # Store the result with the original data
+        results.append({
+            "customer_query": customer_query,
+            "agent_response": agent_response,
+            "critique": evaluation["critique"],
+            "outcome": evaluation["outcome"],
+            "improvement_areas": evaluation.get("improvement_areas", [])
+        })
+        
+        # Add a small delay to avoid rate limits
+        time.sleep(0.5)
+    except Exception as e:
+        print(f"Error evaluating interaction {idx}: {e}")
+
+# Save the results
+results_df = pd.DataFrame(results)
+results_df.to_csv("evaluation_results.csv", index=False)
+
+# Calculate overall performance
+pass_rate = (results_df['outcome'] == 'good').mean() * 100
+print(f"Overall pass rate: {pass_rate:.2f}%")
+```
+
+This code runs your evaluator on an entire dataset, collects the results, and calculates an overall pass rate.
 
 ## Next Steps
 After implementing your LLM-as-a-Judge system, here are key ways to leverage it:
