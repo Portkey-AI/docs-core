@@ -5,9 +5,87 @@ openapi: post /prompts/{promptId}/render
 
 Given a prompt ID, variable values, and *optionally* any hyperparameters, this API returns a JSON object containing the **raw prompt template**.
 
-<Card
-    title="Example: Using Prompt Render output in a new request"
-    href="/product/prompt-library/retrieve-prompts#using-the-render-output-in-a-new-request"
-    icon="lightbulb"
-    horizontal="True"
-/>
+<Note>
+Note: Unlike inference requests, Prompt Render API calls are processed through Portkey's Control Plane services.
+</Note>
+
+<Accordion icon="lightbulb" title="Example: Using Prompt Render output in a new request">
+
+Here’s how you can take the output from the `render API` and use it for making a separate LLM call. We’ll take example of OpenAI SDKs, but you can use it simlarly for any other frameworks like Langchain etc. as well.
+
+<CodeGroup> 
+
+```py OpenAI Python
+from portkey_ai import Portkey
+from openai import OpenAI
+
+# Retrieving the Prompt from Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY"
+)
+
+render_response = portkey.prompts.render(
+  prompt_id="PROMPT_ID",
+  variables={ "movie":"Dune 2" }
+)
+
+PROMPT_TEMPLATE = render_response.data
+
+# Making a Call to OpenAI with the Retrieved Prompt
+
+openai = OpenAI(
+    api_key = "OPENAI_API_KEY",
+    base_url = "https://api.portkey.ai/v1",
+    default_headers = {
+      'x-portkey-provider': 'openai',
+      'x-portkey-api-key': 'PORTKEY_API_KEY',
+      'Content-Type': 'application/json',
+    }
+)
+
+chat_complete = openai.chat.completions.create(**PROMPT_TEMPLATE)
+
+print(chat_complete.choices[0].message.content)
+```
+
+```ts OpenAI NodeJS
+import Portkey from 'portkey-ai';
+import OpenAI from 'openai';
+
+// Retrieving the Prompt from Portkey
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+})
+
+async function getPromptTemplate() {
+    const render_response = await portkey.prompts.render({
+        promptID: "PROMPT_ID",
+        variables: { "movie":"Dune 2" }
+    })
+    return render_response.data;
+}
+
+// Making a Call to OpenAI with the Retrieved Prompt
+
+const openai = new OpenAI({
+    apiKey: 'OPENAI_API_KEY',
+    baseURL: 'https://api.portkey.ai/v1',
+    defaultHeaders: {
+      'x-portkey-provider': 'openai',
+      'x-portkey-api-key': 'PORTKEY_API_KEY',
+      'Content-Type': 'application/json',
+    }
+});
+
+async function main() {
+    const PROMPT_TEMPLATE = await getPromptTemplate();
+    const chatCompletion = await openai.chat.completions.create(PROMPT_TEMPLATE);
+    console.log(chatCompletion.choices[0]);
+}
+
+main();
+```
+</CodeGroup>
+</Accordion>
