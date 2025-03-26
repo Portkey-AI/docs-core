@@ -1,0 +1,105 @@
+---
+title: JWT Authentication
+description: Configure JWT-based authentication for your organization in Portkey.
+---
+
+<Info>
+  This feature is available only on the [Enterprise Plan](/product/enterprise-offering) of Portkey.
+</Info>
+
+
+## Overview
+
+Portkey supports JWT-based authentication in addition to API Key authentication. Clients can authenticate API requests using a JWT token, which is validated against a configured JWKS (JSON Web Key Set). This guide explains the requirements and setup process for JWT authentication in Portkey.
+
+## Configuring JWT Authentication
+
+JWT authentication can be configured under **Admin Settings** → **Organisation** → **Authentication**.
+
+<Frame>
+<img src="/images/product/jwt.png"></img>
+</Frame>
+
+### JWKS Configuration
+
+To validate JWTs, you must configure one of the following:
+
+- **JWKS URL**: A URL from which the public keys will be dynamically fetched.
+- **JWKS JSON**: A static JSON containing public keys.
+
+## JWT Requirements
+
+### Supported Algorithm
+
+- JWTs must be signed using **RS256** (RSA Signature with SHA-256).
+
+### Required Claims
+
+Your JWT payload must contain the following claims:
+
+| **Claim Key**                     | **Description**                          |
+|------------------------------------|------------------------------------------|
+| `portkey_oid` / `organisation_id` | Unique identifier for the organization.  |
+| `portkey_workspace` / `workspace_slug` | Identifier for the workspace.         |
+| `scope` / `scopes`                | Permissions granted by the token.        |
+
+### User Identification
+
+Portkey identifies users in the following order of precedence for logging and metrics:
+
+1. `email_id`
+2. `sub`
+3. `uid`
+
+## Authentication Process
+
+1. The client sends an HTTP request with the JWT in the `x-portkey-api-key` header:
+
+   ```http
+   x-portkey-api-key: <JWT_TOKEN>
+   ```
+
+2. The server validates the JWT:
+   - Verifies the signature using the JWKS.
+   - Checks if the token is expired.
+   - Ensures the required claims are present.
+
+3. If valid, the request is authenticated, and user details are extracted for authorization and logging.
+4. If invalid, the request is rejected with an HTTP **401 Unauthorized** response.
+
+## Authorization & Scopes
+
+Once the JWT is validated, the server checks for the required **scope**. The following scopes are supported:
+
+
+[`workspaces.read`,`workspaces.update`,`workspaces.list`,`logs.export`,`logs.list`,`logs.view`,`analytics.view`,`prompts.render`,`configs.create`,`configs.update`,`configs.delete`,`configs.read`,`configs.list`,`virtual_keys.create`,`virtual_keys.update`,`virtual_keys.delete`,`virtual_keys.duplicate`,`virtual_keys.read`,`virtual_keys.list`,`virtual_keys.copy`,`workspace_users.create`,`workspace_users.read`,`workspace_users.update`,`workspace_users.delete`,`workspace_users.list`,`completions.write`,`logs.write`]
+
+
+Scopes can also be prefixed with `portkey.` (e.g., `portkey.completions.write`).
+
+<Note>
+    JWT tokens function exactly like workspace API keys when they have the correct scopes. They are not equivalent to organisation API keys.
+</Note>
+
+## Caching & Token Revocation
+
+- JWTs are cached until they expire to reduce validation overhead.
+- We will be providing an endpoint to invalidate JWT tokens for revocation purposes (currently in development).
+
+
+## Example JWT Payload
+
+```json
+{
+  "portkey_oid" : "org_123456",
+  "portkey_workspace": "workspace_abc",
+  "scope": ["completions.write"],
+  "email_id": "user@example.com",
+  "sub": "user-123",
+  "exp": 1735689600
+}
+```
+
+## Conclusion
+
+JWT authentication enhances security and flexibility by leveraging public-key cryptography. Ensure that your JWTs comply with the above requirements to integrate seamlessly with Portkey.
