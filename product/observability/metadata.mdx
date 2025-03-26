@@ -1,65 +1,36 @@
 ---
 title: Metadata
+description: Add custom context to your AI requests for better observability and analytics
 ---
+
 <Info>
 This feature is available on all Portkey plans.
 </Info>
-You can send custom metadata along with your requests in Portkey, which can later be used for auditing or filtering logs. You can pass **any number** of keys, all values should be of type  `string` with **max-length** as **128** characters.
 
-## Adding Metadata to Requests
+## What is Metadata?
 
-The metadata object accepts a JSON - Portkey will then parse it and let you filter on your metadata.
+Metadata in Portkey allows you to attach custom contextual information to your AI requests. Think of it as tagging your requests with important business context that helps you:
+
+- **Track usage** across different users, environments, or features
+- **Filter logs** to isolate specific request types
+- **Analyze patterns** in how your AI is being used
+- **Audit activities** for compliance and security
 
 ```python
-PORTKEY_METADATA = {
-    "_user": "userid123",
-    "environment": "production",
-    "organisation": "orgid123",
-    "prompt": "summarisationPrompt",
-    "foo": "abc",
-    "bar": "def"
+# Example metadata
+{
+    "_user": "user-123",      # Who made this request?
+    "environment": "prod",    # Where was it made from?
+    "feature": "chat-assist", # What feature was using AI?
+    "request_id": "42aff12"   # Your internal tracking ID
 }
 ```
-**_user is a special key**
 
-This key is used to **provide user analytics** in the analytics section of Portkey app.
-
-If you pass the `user` key in the OpenAI request body, we will automatically also store it in Portkey's `_user` key. If both the OpenAI request body `user` key and the Portkey metadata `_user` key are passed, then only the metadata `_user` key will be stored.
-
-###
-
-Send metadata along with your requests as shown below:
+## Quick Implementation
 
 <Tabs>
-  <Tab title="NodeJS">
-
-```js
-import {Portkey} from 'portkey-ai'
-
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",
-    virtualKey: "OPENAI_VIRTUAL_KEY"
-})
-
-const requestOptions = {
-    metadata: {
-        "_user": "USER_ID",
-        "organisation": "ORG_ID",
-        "request_id": "1729"
-    }
-}
-
-const chatCompletion = await portkey.chat.completions.create({
-    messages: [{ role: 'user', content: 'Who was ariadne?' }],
-    model: 'gpt-4',
-}, requestOptions);
-
-console.log(chatCompletion.choices);
-```
-  </Tab>
   <Tab title="Python">
-
-```py
+```python
 from portkey_ai import Portkey
 
 portkey = Portkey(
@@ -67,23 +38,49 @@ portkey = Portkey(
     virtual_key="OPENAI_VIRTUAL_KEY"
 )
 
+# Add metadata to track context
 response = portkey.with_options(
-    metadata = {
-        "_user": "USER_ID",
+    metadata={
+        "_user": "user-123",
         "environment": "production",
-        "prompt": "test_prompt",
-        "session_id": "1729"
-}).chat.completions.create(
-    messages = [{ "role": 'user', "content": 'What is 1729' }],
-    model = 'gpt-4'
+        "feature": "summarization",
+        "request_id": "1729"
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": "Summarize this article"}],
+    model="gpt-4"
 )
-
-print(response.choices[0].message)
 ```
   </Tab>
-  <Tab title="OpenAI NodeJS">
+  <Tab title="NodeJS">
+```javascript
+import {Portkey} from 'portkey-ai'
 
-```py
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "OPENAI_VIRTUAL_KEY"
+})
+
+// Request with business context metadata
+const completion = await portkey.chat.completions.create(
+    {
+        messages: [{ role: 'user', content: 'Summarize this article' }],
+        model: 'gpt-4',
+    }, 
+    {
+        metadata: {
+            "_user": "user-123",
+            "environment": "production",
+            "feature": "summarization",
+            "request_id": "1729"
+        }
+    }
+);
+```
+  </Tab>
+  <Tab title="OpenAI SDK">
+```javascript
+// Using with OpenAI SDK
 import OpenAI from 'openai';
 import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
@@ -91,66 +88,114 @@ const openai = new OpenAI({
   baseURL: PORTKEY_GATEWAY_URL,
   defaultHeaders: createHeaders({
     apiKey: "PORTKEY_API_KEY",
-    metadata: {"_user": "USER_ID"}
+    metadata: {
+      "_user": "user-123",
+      "feature": "customer-support"
+    }
   })
 });
 
-async function main() {
-  const chatCompletion = await openai.chat.completions.create({
-    messages: [{ role: 'user', content: 'What is the capital of Uzbekistan?' }],
-    model: 'gpt-4',
-  });
-
-  console.log(chatCompletion.choices[0].message);
-}
-
-main();
-```
-  </Tab>
-  <Tab title="OpenAI Python">
-
-```py
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-client = OpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        metadata={"_user": "USER_ID"}
-    )
-)
-
-response = client.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role": "user", "content": "Say this is a test"}],
-)
-
-print(response.choices[0].message)
+const completion = await openai.chat.completions.create({
+  messages: [{ role: 'user', content: 'Help with my order' }],
+  model: 'gpt-4',
+});
 ```
   </Tab>
   <Tab title="cURL">
-
-```sh
+```bash
 curl https://api.portkey.ai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
   -H "x-portkey-virtual-key: $OPENAI_VIRTUAL_KEY" \
-  -H "x-portkey-metadata: {\"_user\":\"john\"}" \
+  -H "x-portkey-metadata: {\"_user\":\"user-123\",\"feature\":\"search\"}" \
   -d '{
     "model": "gpt-4",
-    "messages": [{"role": "user","content": "Hello!"}]
+    "messages": [{"role": "user","content": "Find relevant docs"}]
   }'
 ```
   </Tab>
 </Tabs>
 
-## Using Metadata
+## Common Use Cases
 
-### See metadata summary on the Analytics page:
+<CardGroup cols={2}>
+  <Card title="User Analytics" icon="user">
+    Track which users are using AI features by adding the `_user` identifier in metadata
+  </Card>
+  <Card title="Cost Attribution" icon="money-bill">
+    Attribute AI costs to teams, features or products by adding identifiers in metadata
+  </Card>
+  <Card title="Environment Tracking" icon="server">
+    Differentiate between dev/staging/prod usage with the `environment` metadata key
+  </Card>
+  <Card title="Feature Usage" icon="puzzle-piece">
+    See which product features are using AI most heavily with feature identifiers
+  </Card>
+</CardGroup>
 
-Just head over to the metadata tab and you should see all of your keys in the filter.
+## Metadata Keys and Values
 
-### Filter requests according to your custom metadata on the Logs page
+- You can send **any number** of metadata keys with each request
+- All values must be **strings** with a maximum length of **128** characters
+- Keys can be any string, but some have special meaning (like `_user`)
 
-Select the "Meta" filter and choose the key:value pairs you want to filter the requests on. All the custom keys you have sent with _any_ of your requests should show up here.
+### Special Metadata Keys
+
+| Key | Purpose | Notes |
+|-----|---------|-------|
+| `_user` | User tracking | Powers user-level analytics in the Portkey dashboard |
+
+<Info>
+**About the `_user` key:** If you pass a `user` field in your OpenAI request body, we'll automatically copy it to the `_user` metadata key. If both exist, the explicit `_user` metadata value takes precedence.
+</Info>
+
+## Where to See Your Metadata
+
+### Analytics Dashboard
+
+Analytics dashboard has a dedicated Tab to view aggregate stats on all your metadat keys:
+<Frame>
+  <img src="/images/metadata.png" alt="Analytics with metadata filters" />
+</Frame>
+
+
+
+### Request Logs
+
+You can also apply any metadata filters to the logs or analytics and filter data by any metadata key you've used:
+<Frame>
+<img src="/images/metadata-filters.png" />
+</Frame>
+
+
+## Enterprise Features
+
+For enterprise users, Portkey offers advanced metadata governance and lets you define metadata at multiple levels:
+
+1. **Request level** - Applied to a single request
+2. **API key level** - Applied to all requests using that key
+3. **Workspace level** - Applied to all requests in a workspace
+
+<Card title="Enforcing Required Metadata" href="/product/administration/enforcing-request-metadata">
+  Define mandatory metadata fields that must be included with all requests
+</Card>
+
+When the same key appears at multiple levels, the **precedence order** is:
+
+1. Request metadata (highest priority)
+2. API key metadata
+3. Workspace metadata (lowest priority)
+
+## Best Practices
+
+- Use **consistent keys** across your organization
+- Create **naming conventions** for metadata keys
+- Consider adding these common fields:
+  - `_user`: Who initiated this request
+  - `environment`: Which environment (dev/staging/prod)
+  - `feature` or `component`: Which part of your product
+  - `version`: API or app version
+  - `session_id`: To group related requests
+  - `request_id`: Your internal tracking ID
+
+- For proper tracking, **always include the `_user` field** when the request is on behalf of an end-user
