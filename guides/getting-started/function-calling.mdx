@@ -15,8 +15,7 @@ Function calling is currently supported on select models on **Anyscale**, **Toge
 
 We want the LLM to tell what's the temperature in Delhi today. We'll use a "Weather API" to fetch the weather:
 
-```Node Node
-
+```js
 import Portkey from "portkey-ai";
 
 const portkey = new Portkey({
@@ -25,9 +24,7 @@ const portkey = new Portkey({
 });
 
 // Describing what the Weather API does and expects
-
 let tools = [
-
     {
         "type": "function",
         "function": {
@@ -49,7 +46,6 @@ let tools = [
 ];
 
 let response = await portkey.chat.completions.create({
-
     model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
     messages: [
         {"role": "system", "content": "You are helpful assistant."},
@@ -57,7 +53,6 @@ let response = await portkey.chat.completions.create({
     ],
     tools,
     tool_choice: "auto", // auto is default, yet explicit
-
 });
 
 console.log(response.choices[0].finish_reason)
@@ -66,7 +61,7 @@ console.log(response.choices[0].finish_reason)
 Here, we've defined what the Weather API expects for its requests in the `tool` param, and set `tool_choice` to auto. So, based on the user messages, the LLM will decide if it should do a function call to fulfill the request. Here, it will choose to do that, and we'll see the following output:
 
 
-```Node
+```json
 {
 
     "role": "assistant",
@@ -85,50 +80,38 @@ Here, we've defined what the Weather API expects for its requests in the `tool` 
 We can just take the `tool_call` made by the LLM, and pass it to our `getWeather` function - it should return a proper response to our query. We then take that response and send it to our LLM to complete the loop:
 
 
-```Node
+```js
 /**
-
 * getWeather(..) is a utility to call external weather service APIs
-
 * Responds with: {"temperature": 20, "unit": "celsius"}
-
 **/
 
 let weatherData = await getWeather(JSON.parse(arguments));
-
 let content = JSON.stringify(weatherData);
 
 // Push assistant and tool message from earlier generated function arguments
-
 messages.push(assistantMessage); //
-
 messages.push({
-
     role: "tool",
     content: content,
     toolCallId: "call_x8we3xx"
     name: "getWeather"
-
 });
 
 let response = await portkey.chat.completions.create({
-
   model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
   tools:tools,
   messages:messages,
   tool_choice: "auto",
-
 });
-
 ```
 
 We should see this final output:
 
-```Node
+```json
 {
     "role": "assistant",
     "content": "It's 30 degrees celsius in Delhi, India.",
-
 }
 ```
 
@@ -145,17 +128,8 @@ Function Calling Workflow
 
 ## Supporting Models
 
-While most providers have standard function calling as illustrated above, models on Together AI & select new models on OpenAI (`gpt-4-turbo-preview`, `gpt-4-0125-preview`, `gpt-4-1106-preview`, `gpt-3.5-turbo-0125`, and `gpt-3.5-turbo-1106`) also support **parallel function calling** \- here, you can pass multiple requests in a single query, the model will pick the relevant tool for each query, and return an array of `tool_calls` each with a unique ID. ([Read here for more info](https://platform.openai.com/docs/guides/function-calling/parallel-function-calling))
+Portkey's AI Gateway provides native function calling (also known as tool calling) support across our entire ecosystem of AI providers, including OpenAI, Anthropic, Google, Together AI, Fireworks AI, and many more. If you discover a function-calling capable LLM that isn't working with Portkey, please let us know [on Discord](https://portkey.wiki/community).
 
-| Model/Provider                                                  | Standard Function Calling                             | Parallel Function Calling |
-| --------------------------------------------------------------- | ----------------------------------------------------- | ------------------------- |
-| mistralai/Mistral-7B-Instruct-v0.1 Anyscale                     | <Icon icon="square-check" />                                                     | <Icon icon="xmark" />                         |
-| mistralai/Mixtral-8x7B-Instruct-v0.1Anyscale                    | <Icon icon="square-check" />                                                     | <Icon icon="xmark" />                         |
-| mistralai/Mixtral-8x7B-Instruct-v0.1Together AI                 | <Icon icon="square-check" />                                                     | <Icon icon="square-check" />                         |
-| mistralai/Mistral-7B-Instruct-v0.1Together AI                   | <Icon icon="square-check" />                                                     | <Icon icon="square-check" />                         |
-| togethercomputer/CodeLlama-34b-InstructTogether AI              | <Icon icon="square-check" />                                                     | <Icon icon="square-check" />                         |
-| gpt-4 and previous releases OpenAI / Azure OpenAI               | <Icon icon="square-check" />                                                     | <Icon icon="square-check" /> (some)                  |
-| gpt-3.5-turbo and previous releases OpenAI / Azure OpenAI       | <Icon icon="square-check" />                                                     | <Icon icon="square-check" /> (some)                  |
-| firefunction-v1Fireworks                                        | <Icon icon="square-check" />                                                     | <Icon icon="xmark" />                         |
-| fw-function-call-34b-v0Fireworks                                | [<Icon icon="square-check" />](https://github.com/Portkey-AI/gateway/issues/335) | <Icon icon="xmark" />                         |
-| gemini-1.0-progemini-1.0-pro-001gemini-1.5-pro-lates **Google** | [<Icon icon="square-check" />](https://github.com/Portkey-AI/gateway/issues/335) | <Icon icon="xmark" />                         |
+<Note>
+    Portkey also supports parallel tool calling when available from the provider. This feature allows you to submit multiple requests in a single query. The model automatically selects the appropriate tool for each request and returns an array of `tool_calls`, each with a unique identifier. For more details, see the [parallel function calling documentation](https://platform.openai.com/docs/guides/function-calling/parallel-function-calling).
+</Note>

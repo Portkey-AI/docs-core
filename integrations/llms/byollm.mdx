@@ -1,222 +1,346 @@
 ---
 title: "Bring Your Own LLM"
+description: "Integrate your privately hosted LLMs with Portkey for unified management, observability, and reliability."
 ---
 
-Portkey provides a robust and secure platform to observe, integrate, and manage your **locally or privately hosted custom models.**
+Portkey's Bring Your Own LLM feature allows you to seamlessly integrate privately hosted language models into your AI infrastructure. This powerful capability enables unified management of both private and commercial LLMs through a consistent interface while leveraging Portkey's comprehensive suite of observability and reliability features.
 
-## Integrating Custom Models with Portkey SDK
+## Key Benefits
 
-You can integrate any custom LLM with Portkey as long as it's API is compliant with any of the **15+** providers Portkey already supports.
+- **Unified API Access**: Manage private and commercial LLMs through a single, consistent interface
+- **Enhanced Reliability**: Leverage Portkey's fallbacks, retries, and load balancing for your private deployments
+- **Comprehensive Monitoring**: Track performance, usage, and costs alongside your commercial LLM usage
+- **Simplified Access Control**: Manage team-specific permissions and usage limits
+- **Secure Credential Management**: Protect sensitive authentication details through Portkey's secure vault
 
-### 1\. Install the Portkey SDK
-
-<Tabs>
-    <Tab title="NodeJS">
-        ```sh
-        npm install --save portkey-ai
-        ```
-
-    </Tab>
-    <Tab title="Python">
-        ```sh
-        pip install portkey-ai
-        ```
-    </Tab>
-
-  </Tabs>
-
-
-
-
-### 2\. Initialize Portkey with your Custom URL
-
-Instead of using a `provider` \+ `Authorization` pair or a `virtualKey` referring to the provider, you can specify a `provider` \+ `custom_host` pair while instantiating the Portkey client.
-
-`custom_host` here refers to the URL where your custom model is hosted, including the API version identifier.
-
-
-<Tabs>
-    <Tab title="NodeJS SDK">
-        ```js
-        import Portkey from 'portkey-ai'
-
-        const portkey = new Portkey({
-            apiKey: "PORTKEY_API_KEY",
-            provider: "PROVIDER_NAME", // This can be mistral-ai, openai, or anything else
-            customHost: "http://MODEL_URL/v1/", // Your custom URL with version identifier
-            Authorization: "AUTH_KEY", // If you need to pass auth
-        })
-        ```
-    </Tab>
-    <Tab title="Python SDK">
-        ```python
-        from portkey_ai import Portkey
-
-        portkey = Portkey(
-            api_key="PORTKEY_API_KEY",
-            provider="PROVIDER_NAME", # This can be mistral-ai, openai, or anything else
-            custom_host="http://MODEL_URL/v1/", # Your custom URL with version identifier
-            Authorization="AUTH_KEY", # If you need to pass auth
-        )
-        ```
-    </Tab>
-
-  </Tabs>
-
-
-
-
-More on `custom_host` [here](/product/ai-gateway/universal-api#integrating-local-or-private-models).
-
-### 3\. Invoke Chat Completions
-
-Use the Portkey SDK to invoke chat completions from your model, just as you would with any other provider.
-
-
-<Tabs>
-    <Tab title="NodeJS SDK">
-        ```js
-        const chatCompletion = await portkey.chat.completions.create({
-            messages: [{ role: 'user', content: 'Say this is a test' }]
-        });
-
-        console.log(chatCompletion.choices);
-        ```
-    </Tab>
-    <Tab title="Python SDK">
-
-```python
-completion = portkey.chat.completions.create(
-    messages= [{ "role": 'user', "content": 'Say this is a test' }]
-)
-
-print(completion)
-```
-    </Tab>
-
-  </Tabs>
-
-
-
-## Forward Sensitive Headers Securely
-
-When integrating custom LLMs with Portkey, you may have sensitive information in your request headers that you don't want Portkey to track or log. Portkey provides a secure way to forward specific headers directly to your model's API without any processing.
-
-Just specify an array of header names using the `forward_headers` property when initializing the Portkey client. Portkey will then forward these headers directly to your custom host URL without logging or tracking them.
-
-Here's an example:
-
-
-<Tabs>
-    <Tab title="NodeJS">
-        ```js
-        import Portkey from 'portkey-ai'
-
-        const portkey = new Portkey({
-            apiKey: "PORTKEY_API_KEY",
-            provider: "PROVIDER_NAME", // This can be mistral-ai, openai, or anything else
-            customHost: "http://MODEL_URL/v1/", // Your custom URL with version identifier
-            Authorization: "AUTH_KEY", // If you need to pass auth
-            forwardHeaders: [ "Authorization" ]
-        })
-        ```
+## Integration Options
 
 <Note>
-With the JS SDK, you need to transform your headers to **Camel Case** and then include them while initializing the Portkey client.
-Example: If you have a header of the format `X-My-Custom-Header`, it should be sent as `xMyCustomHeader` in the SDK
-</Note>
-    </Tab>
-    <Tab title="Python">
+**Prerequisites**
 
+Your private LLM must implement an API specification compatible with one of Portkey's [supported providers](/integrations/llms) (e.g., OpenAI's `/chat/completions`, Anthropic's `/messages`, etc.).
+</Note>
+
+Portkey offers two primary methods to integrate your private LLMs:
+
+1. **Using Virtual Keys**: Store your deployment details securely in Portkey's vault
+2. **Direct Integration**: Pass deployment details in your requests without storing them
+
+### Option 1: Using Virtual Keys
+
+#### Step 1: Add Your Deployment Details
+
+Navigate to the [Virtual Keys](https://app.portkey.ai/virtual-keys) section in your Portkey dashboard and create a new Virtual Key.
+
+<Frame caption="Adding a private LLM as a Virtual Key">
+  <img src="/images/private-llm.png" alt="Virtual Key setup for private LLM" />
+</Frame>
+
+1. Click **"Add Key"** and enable the **"Local/Privately hosted provider"** toggle
+2. Configure your deployment:
+   - Select the matching provider API specification (typically `OpenAI`)
+   - Enter your model's base URL in the `Custom Host` field
+   - Add required authentication headers and their values
+3. Click **"Create"** to generate your virtual key
+
+#### Step 2: Use Your Virtual Key in Requests
+
+After creating your virtual key, you can use it in your applications:
+
+<CodeGroup>
+```js NodeJS
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    virtualKey: "YOUR_PRIVATE_LLM_VIRTUAL_KEY"
+})
+
+async function main() {
+  const response = await portkey.chat.completions.create({
+    messages: [{ role: "user", content: "Explain quantum computing in simple terms" }],
+    model: "YOUR_MODEL_NAME",  // The model name your private deployment expects
+  });
+
+  console.log(response.choices[0].message.content);
+}
+
+main();
+```
+
+```py Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    virtual_key="YOUR_PRIVATE_LLM_VIRTUAL_KEY"
+)
+
+response = portkey.chat.completions.create(
+  model="YOUR_MODEL_NAME",  # The model name your private deployment expects
+  messages=[
+    {"role": "user", "content": "Explain quantum computing in simple terms"}
+  ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-virtual-key: $YOUR_PRIVATE_LLM_VIRTUAL_KEY" \
+  -d '{
+    "model": "YOUR_MODEL_NAME",
+    "messages": [
+      { "role": "user", "content": "Explain quantum computing in simple terms" }
+    ]
+  }'
+```
+</CodeGroup>
+
+### Option 2: Direct Integration Without Virtual Keys
+
+If you prefer not to store your private LLM details in Portkey's vault, you can pass them directly in your API requests:
+
+<CodeGroup>
+```js NodeJS
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "openai",  // The API spec your LLM implements
+    customHost: "https://your-llm-server.com/v1/",  // Include the API version
+    Authorization: "Bearer YOUR_AUTH_TOKEN",  // Optional: Any auth headers needed
+    forwardHeaders: ["Authorization"]  // Headers to forward without processing
+})
+
+async function main() {
+  const response = await portkey.chat.completions.create({
+    messages: [{ role: "user", content: "Explain quantum computing in simple terms" }],
+    model: "YOUR_MODEL_NAME",
+  });
+
+  console.log(response.choices[0].message.content);
+}
+
+main();
+```
+
+```py Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="openai",  # The API spec your LLM implements
+    custom_host="https://your-llm-server.com/v1/",  # Include the API version
+    Authorization="Bearer YOUR_AUTH_TOKEN",  # Optional: Any auth headers needed
+    forward_headers=["Authorization"]  # Headers to forward without processing
+)
+
+response = portkey.chat.completions.create(
+    model="YOUR_MODEL_NAME",
+    messages=[{"role": "user", "content": "Explain quantum computing in simple terms"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -H "x-portkey-custom-host: https://your-llm-server.com/v1" \
+  -H "Authorization: Bearer YOUR_AUTH_TOKEN" \
+  -H "x-portkey-forward-headers: Authorization" \
+  -d '{
+    "model": "YOUR_MODEL_NAME",
+    "messages": [
+      { "role": "user", "content": "Explain quantum computing in simple terms" }
+    ]
+  }'
+```
+</CodeGroup>
+
+<Note>
+The `custom_host` must include the API version path (e.g., `/v1/`). Portkey will automatically append the endpoint path (`/chat/completions`, `/completions`, or `/embeddings`).
+</Note>
+
+## Securely Forwarding Sensitive Headers
+
+For headers containing sensitive information that shouldn't be logged or processed by Portkey, use the `forward_headers` parameter to pass them directly to your private LLM:
+
+<Tabs>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "openai",
+    customHost: "https://your-llm-server.com/v1/",
+    // Headers to include with requests
+    Authorization: "Bearer sk_live_xxxxx",
+    xApiKey: "sensitive-key-value",
+    xOrgId: "org-12345",
+    // Headers to forward without processing
+    forwardHeaders: ["Authorization", "xApiKey", "xOrgId"]
+})
+```
+<Note>
+In the JavaScript SDK, convert header names to **camelCase**. For example, `X-My-Custom-Header` becomes `xMyCustomHeader`.
+</Note>
+  </Tab>
+  <Tab title="Python">
 ```python
 from portkey_ai import Portkey
 
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
-    provider="PROVIDER_NAME", # This can be mistral-ai, openai, or anything else
-    custom_host="http://MODEL_URL/v1/", # Your custom URL with version identifier
-    Authorization="AUTH_KEY", # If you need to pass auth
-    forward_headers= [ "Authorization" ]
+    provider="openai",
+    custom_host="https://your-llm-server.com/v1/",
+    # Headers to include with requests
+    Authorization="Bearer sk_live_xxxxx",
+    x_api_key="sensitive-key-value",
+    x_org_id="org-12345",
+    # Headers to forward without processing
+    forward_headers=["Authorization", "x_api_key", "x_org_id"]
 )
 ```
-
 <Note>
-With the Python SDK, you need to transform your headers to **Snake Case** and then include them while initializing the Portkey client.
-Example: If you have a header of the format `X-My-Custom-Header`, it should be sent as `X_My_Custom_Header` in the SDK
-
+In the Python SDK, convert header names to **snake_case**. For example, `X-My-Custom-Header` becomes `x_my_custom_header`.
 </Note>
-    </Tab>
+  </Tab>
   <Tab title="cURL">
-    `x-portkey-forward-headers` accepts comma separated header names
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -H "x-portkey-custom-host: https://your-llm-server.com/v1" \
+  -H "Authorization: Bearer sk_live_xxxxx" \
+  -H "x-api-key: sensitive-key-value" \
+  -H "x-org-id: org-12345" \
+  -H "x-portkey-forward-headers: Authorization, x-api-key, x-org-id" \
+  -d '{
+    "model": "YOUR_MODEL_NAME",
+    "messages": [{ "role": "user", "content": "Hello!" }]
+  }'
+```
+  </Tab>
+</Tabs>
 
-    ```sh
-    curl https://api.portkey.ai/v1/chat/completions \
-      -H "Content-Type: application/json" \
-      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-      -H "x-portkey-provider: $PROVIDER_NAME" \
-      -H "x-portkey-custom-host: https://MODEL_URL/v1" \
-      -H "x-api-key: $API_KEY" \
-      -H "x-secret-access-key: $ACCESS_KEY" \
-      -H "x-key-id: $KEY_ID" \
-      -H "x-portkey-forward-headers: x-api-key, x-secret-access-key, x-key-id" \
-      -d '{
-        "model": "llama2",
-        "messages": [{ "role": "user", "content": "Say this is a test" }]
-      }'
-    ```
-    </Tab>
-  </Tabs>
+### Using Forward Headers in Gateway Configs
 
+You can also specify `forward_headers` in your Gateway Config for consistent header forwarding:
 
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    {
+      "provider": "openai",
+      "custom_host": "https://your-private-llm.com/v1",
+      "forward_headers": ["Authorization", "x-api-key", "x-custom-token"]
+    },
+    {
+      "provider": "openai",
+      "api_key": "sk-xxxxx"  // Fallback to commercial provider
+    }
+  ]
+}
+```
 
+## Advanced Features
 
+### Using Private LLMs with Gateway Configs
 
-### Forward Headers in the Config Object
+Private LLMs work seamlessly with all Portkey Gateway features. Some common use cases:
 
-You can also define `forward_headers` in your Config object and then pass the headers directly while making a request.
+- **Load Balancing**: Distribute traffic across multiple private LLM instances
+- **Fallbacks**: Set up automatic failover between private and commercial LLMs
+- **Conditional Routing**: Route requests to different LLMs based on metadata
 
 ```json
 {
     "strategy": {
-        "mode": "loadbalance"
+        "mode": "fallback"
     },
     "targets": [
         {
             "provider": "openai",
-            "api_key": ""
+            "custom_host": "http://PRIVATE_LLM/v1",
+            "forward_headers": ["Authorization"]
         },
         {
-            "strategy": {
-                "mode": "fallback"
-            },
-            "targets": [
-                {
-                    "provider": "azure-openai",
-                    "custom_host": "http://MODEL_URL/v1",
-                    "forward_headers": ["my-auth-header-1", "my-auth-header-2"]
-                },
-                {
-                    "provider": "openai",
-                    "api_key": "sk-***"
-                }
-            ]
+            "virtual_key": "openai-key"
         }
     ]
 }
 ```
 
+Learn more about [Gateway Configs](/product/ai-gateway/configs).
+
+
+## Monitoring and Analytics
+
+Portkey provides comprehensive observability for your private LLM deployments, just like it does for commercial providers:
+
+- **Log Analysis**: View detailed request and response logs
+- **Performance Metrics**: Track latency, token usage, and error rates
+- **User Attribution**: Associate requests with specific users via metadata
+
+<Frame caption="Portkey Analytics Dashboard for Private LLMs">
+  <img src="/images/product/dashboard.png" alt="Analytics dashboard showing private LLM usage" />
+</Frame>
+
+
+## Troubleshooting
+
+| Issue | Possible Causes | Solutions |
+|-------|-----------------|-----------|
+| Connection Errors | Incorrect URL, network issues, firewall rules | Verify URL format, check network connectivity, confirm firewall allows traffic |
+| Authentication Failures | Invalid credentials, incorrect header format | Check credentials, ensure headers are correctly formatted and forwarded |
+| Timeout Errors | LLM server overloaded, request too complex | Adjust timeout settings, implement load balancing, simplify requests |
+| Inconsistent Responses | Different model versions, configuration differences | Standardize model versions, document expected behavior differences |
+
+## FAQs
+
+<AccordionGroup>
+  <Accordion title="Can I use any private LLM with Portkey?">
+    Yes, as long as it implements an API specification compatible with one of Portkey's supported providers (OpenAI, Anthropic, etc.). The model should accept requests and return responses in the format expected by that provider.
+  </Accordion>
+
+  <Accordion title="How do I handle multiple deployment endpoints?">
+    You have two options:
+    1. Create separate virtual keys for each endpoint
+    2. Use Gateway Configs with load balancing to distribute traffic across multiple endpoints
+  </Accordion>
+
+  <Accordion title="Are there any request volume limitations?">
+    Portkey itself doesn't impose specific request volume limitations for private LLMs. Your throughput will be limited only by your private LLM deployment's capabilities and any rate limits you configure in Portkey.
+  </Accordion>
+
+  <Accordion title="Can I use different models with the same private deployment?">
+    Yes, you can specify different model names in your requests as long as your private LLM deployment supports them. The model name is passed through to your deployment.
+  </Accordion>
+
+  <Accordion title="Can I mix private and commercial LLMs in the same application?">
+    Absolutely! One of Portkey's key benefits is the ability to manage both private and commercial LLMs through a unified interface. You can even set up fallbacks between them or route requests conditionally.
+  </Accordion>
+</AccordionGroup>
+
 ## Next Steps
 
-Explore the complete list of features supported in the SDK:
+Explore these related resources to get the most out of your private LLM integration:
 
-<Card title="SDK" href="/api-reference/portkey-sdk-client">
-</Card>
-
----
-
-You'll find more information in the relevant sections:
-
-1. [Add metadata to your requests](/product/observability/metadata)
-2. [Add gateway configs to your requests](/product/ai-gateway/universal-api#ollama-in-configs)
-3. [Tracing requests](/product/observability/traces)
-4. [Setup a fallback from OpenAI to your local LLM](/product/ai-gateway/fallbacks)
+<CardGroup cols={2}>
+  <Card title="Universal API" icon="globe" href="/product/ai-gateway/universal-api">  </Card>
+  <Card title="Adding Metadata" icon="tags" href="/product/observability/metadata">
+  </Card>
+  <Card title="Gateway Configs" icon="sliders" href="/product/ai-gateway/configs">
+  </Card>
+  <Card title="Request Tracing" icon="route" href="/product/observability/traces">  </Card>
+</CardGroup>
