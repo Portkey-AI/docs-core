@@ -429,10 +429,207 @@ Here's an example using Anthropic `claude-3.5-sonnet` model
 
 On completion, the request will get logged in Portkey where any image inputs or outputs can be viewed. Portkey will automatically render the base64 images to help you debug any issues quickly.
 
+
+
+## Calude PDF Support
+
+Anthropic Claude can now process PDFs to extract text, analyze charts, and understand visual content from documents. With Portkey, you can seamlessly integrate this capability into your applications using the familiar OpenAI-compatible API schema.
+
+<Note>
+PDF support is available on the following Claude models:
+- Claude 3.7 Sonnet (`claude-3-7-sonnet-20250219`)
+- Claude 3.5 Sonnet (`claude-3-5-sonnet-20241022`, `claude-3-5-sonnet-20240620`)
+- Claude 3.5 Haiku (`claude-3-5-haiku-20241022`)
+</Note>
+
+When using PDF support with Portkey, be aware of these limitations:
+- Maximum request size: 32MB
+- Maximum pages per request: 100
+- Format: Standard PDF (no passwords/encryption)
+
+### Processing PDFs with Claude
+
+Currently, Portkey supports PDF processing using base64-encoded PDF documents, following the same pattern as image handling in Claude's multimodal capabilities.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    from portkey_ai import Portkey
+    import base64
+    import httpx
+
+    # Initialize the Portkey client
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+        virtual_key="VIRTUAL_KEY"   # Replace with your virtual key for Anthropic
+    )
+
+    # Fetch and encode the PDF
+    pdf_url = "https://assets.anthropic.com/m/1cd9d098ac3e6467/original/Claude-3-Model-Card-October-Addendum.pdf"
+    pdf_data = "data:application/pdf;base64," + base64.standard_b64encode(httpx.get(pdf_url).content).decode("utf-8")
+
+    # Alternative: Load from a local file
+    # with open("document.pdf", "rb") as f:
+    #     pdf_data = "data:application/pdf;base64," + base64.standard_b64encode(f.read()).decode("utf-8")
+
+    # Create the request
+    response = portkey.chat.completions.create(
+        model="claude-3-5-sonnet-20240620",
+        max_tokens=1024,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a helpful document analysis assistant."
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "What are the key findings in this document?"
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": pdf_data
+                        }
+                    }
+                ]
+            }
+        ]
+    )
+
+    print(response.choices[0].message.content)
+    ```
+  </Tab>
+  <Tab title="NodeJS">
+    ```javascript
+    import Portkey from 'portkey-ai';
+    import axios from 'axios';
+    import fs from 'fs';
+
+    // Initialize the Portkey client
+    const portkey = new Portkey({
+      apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
+      virtualKey: "VIRTUAL_KEY" // Replace with your virtual key for Anthropic
+    });
+
+    async function processPdf() {
+      // Method 1: Fetch PDF from URL
+      const pdfUrl = "https://assets.anthropic.com/m/1cd9d098ac3e6467/original/Claude-3-Model-Card-October-Addendum.pdf";
+      const response = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
+      const pdfBase64 = Buffer.from(response.data).toString('base64');
+      const pdfData = `data:application/pdf;base64,${pdfBase64}`;
+
+      // Method 2: Load PDF from local file
+      // const pdfFile = fs.readFileSync('document.pdf');
+      // const pdfBase64 = Buffer.from(pdfFile).toString('base64');
+      // const pdfData = `data:application/pdf;base64,${pdfBase64}`;
+
+      // Send to Claude
+      const result = await portkey.chat.completions.create({
+        model: "claude-3-5-sonnet-20240620",
+        max_tokens: 1024,
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful document analysis assistant."
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "What are the key findings in this document?"
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: pdfData
+                }
+              }
+            ]
+          }
+        ]
+      });
+
+      console.log(result.choices[0].message.content);
+    }
+
+    processPdf();
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```sh
+    # First, encode your PDF to base64 (this example uses a command line approach)
+    # For example using curl + base64:
+    PDF_BASE64=$(curl -s "https://assets.anthropic.com/m/1cd9d098ac3e6467/original/Claude-3-Model-Card-October-Addendum.pdf" | base64)
+
+    # Alternatively, from a local file:
+    # PDF_BASE64=$(base64 -i document.pdf)
+
+    # Then make the API call with the base64-encoded PDF
+    curl "https://api.portkey.ai/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: anthropic" \
+      -H "x-api-key: $ANTHROPIC_API_KEY" \
+      -d '{
+        "model": "claude-3-5-sonnet-20240620",
+        "max_tokens": 1024,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful document analysis assistant."
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "What are the key findings in this document?"
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:application/pdf;base64,'$PDF_BASE64'"
+                }
+              }
+            ]
+          }
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  We are currently working on enabling direct URL-based PDF support for Anthropic. Stay tuned for updates!
+</Note>
+
+
+### Best Practices for PDF Processing
+
+For optimal results when working with PDFs:
+
+- Place PDFs before any text content in your requests
+- Ensure PDFs contain standard fonts and clear, legible text
+- Verify that pages are properly oriented
+- Split large PDFs into smaller chunks when they approach size limits
+- Be specific in your questions to get more targeted analysis
+
+### Calculating Costs
+
+When processing PDFs, token usage is calculated based on both text content and the visual representation of pages:
+
+- Text tokens: Typically 1,500-3,000 tokens per page, depending on content density
+- Image tokens: Each page converted to an image adds to the token count similar to image processing
+
+
+
 **For more info, check out this guide:**
 
-<Card title="Vision" href="/product/ai-gateway/multimodal-capabilities/vision">
-  Learn more about Vision capabilities
+<Card title="Anthropic's PDF Support Docs" href="https://docs.anthropic.com/en/docs/build-with-claude/pdf-support">
 </Card>
 
 ## Prompt Caching
@@ -569,7 +766,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
         model: "claude-3-7-sonnet-latest",
         max_tokens: 3000,
         thinking: {
-            type: "enabled", 
+            type: "enabled",
             budget_tokens: 2030
         },
         stream: false,
@@ -597,7 +794,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
       //       console.log(contentBlock);
       //     }
       //   }
-      // } 
+      // }
     }
     await getChatCompletionFunctions();
     ```
@@ -790,7 +987,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
         model: "claude-3-7-sonnet-latest",
         max_tokens: 3000,
         thinking: {
-            type: "enabled", 
+            type: "enabled",
             budget_tokens: 2030
         },
         stream: false,
