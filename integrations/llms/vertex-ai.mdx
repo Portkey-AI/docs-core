@@ -36,11 +36,11 @@ pip install portkey-ai
 
 ### 2\. Initialize Portkey with the Virtual Key
 
-To integrate Vertex AI with Portkey, you'll need your `Vertex Project Id` & `Vertex Region`, with which you can set up the Virtual key.
+To integrate Vertex AI with Portkey, you'll need your `Vertex Project Id` Or `Service Account JSON` & `Vertex Region`, with which you can set up the Virtual key.
 
-[Here's a guide on how to find your Vertex Project details](/integrations/llms/vertex-ai#how-to-find-your-google-vertex-credentials).
+[Here's a guide on how to find your Vertex Project details](/integrations/llms/vertex-ai#how-to-find-your-google-vertex-project-details)
 
-If you are integrating through Service Account File, [refer to this guide](/integrations/llms/vertex-ai#get-your-vertex-service-account-json).
+If you are integrating through Service Account File, [refer to this guide](/integrations/llms/vertex-ai#get-your-service-account-json).
 
 <Tabs>
   <Tab title="NodeJS SDK">
@@ -106,6 +106,57 @@ Example: `anthropic.claude-3-5-sonnet@20240620`
 Similarly, for Meta models, prepend `meta.` to the model name.<br />
 Example: `meta.llama-3-8b-8192`
 </Note>
+
+
+
+
+
+## Using Self-Deployed Models on Vertex AI (Hugging Face, Custom Models)
+
+Portkey supports connecting to self-deployed models on Vertex AI, including models from Hugging Face or any custom models you've deployed to a Vertex AI endpoint.
+
+**Requirements for Self-Deployed Models**
+
+To use self-deployed models on Vertex AI through Portkey:
+
+1. **Model Naming Convention**: When making requests to your self-deployed model, you must prefix the model name with `endpoints.`
+   ```
+   endpoints.my_endpoint_name
+   ```
+
+2. **Required Permissions**: The Google Cloud service account used in your Portkey virtual key must have the `aiplatform.endpoints.predict` permission.
+
+<Tabs>
+  <Tab title="NodeJS SDK">
+```js
+const chatCompletion = await portkey.chat.completions.create({
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: 'endpoints.my_custom_llm', // Notice the 'endpoints.' prefix
+}, {Authorization: "Bearer $YOUR_VERTEX_ACCESS_TOKEN"});
+
+console.log(chatCompletion.choices);
+```
+  </Tab>
+  <Tab title="Python SDK">
+```python
+completion = portkey.with_options(Authorization="Bearer $YOUR_VERTEX_ACCESS_TOKEN").chat.completions.create(
+    messages= [{ "role": 'user', "content": 'Say this is a test' }],
+    model= 'endpoints.my_huggingface_model' # Notice the 'endpoints.' prefix
+)
+
+print(completion)
+```
+  </Tab>
+</Tabs>
+
+<Info>
+**Why the prefix?** Vertex AI's product offering for self-deployed models is called "Endpoints." This naming convention indicates to Portkey that it should route requests to your custom endpoint rather than a standard Vertex AI model.
+
+This approach works for all models you can self-deploy on Vertex AI Model Garden, including Hugging Face models and your own custom models.
+</Info>
+
+
+
 
 ## Document, Video, Audio Processing
 
@@ -333,7 +384,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
         model: "anthropic.claude-3-7-sonnet@20250219",
         max_tokens: 3000,
         thinking: {
-            type: "enabled", 
+            type: "enabled",
             budget_tokens: 2030
         },
         stream: true,
@@ -554,7 +605,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
         model: "anthropic.claude-3-7-sonnet@20250219",
         max_tokens: 3000,
         thinking: {
-            type: "enabled", 
+            type: "enabled",
             budget_tokens: 2030
         },
         stream: true,
@@ -863,7 +914,7 @@ If you mix regular tools with grounding tools, vertex might throw an error sayin
 ## gemini-2.0-flash-thinking-exp and other thinking/reasoning models
 
 `gemini-2.0-flash-thinking-exp` models return a Chain of Thought response along with the actual inference text,
-this is not openai compatible, however, Portkey supports this by adding a `\r\n\r\n` and appending the two responses together. 
+this is not openai compatible, however, Portkey supports this by adding a `\r\n\r\n` and appending the two responses together.
 You can split the response along this pattern to get the Chain of Thought response and the actual inference text.
 
 If you require the Chain of Thought response along with the actual inference text, pass the [strict open ai compliance flag](/product/ai-gateway/strict-open-ai-compliance) as `false` in the request.
@@ -878,19 +929,9 @@ You can also pass your Vertex AI details & secrets directly without using the Vi
 
 Vertex AI expects a `region`, a `project ID` and the `access token` in the request for a successful completion request. This is how you can specify these fields directly in your requests:
 
-### How to Find Your Google Vertex Project Details
 
-To obtain your **Vertex Project ID and Region,** [navigate to Google Vertex Dashboard]( https://console.cloud.google.com/vertex-ai).
 
-* You can copy the **Project ID** located at the top left corner of your screen.
-* Find the **Region dropdown** on the same page to get your Vertex Region.
 
-<Frame>
-![Logo](/images/llms/vertex.png)
-</Frame>
-### Get Your Vertex Service Account JSON
-
-* [Follow this process](https://cloud.google.com/iam/docs/keys-create-delete) to get your Service Account JSON.
 
 ### Example Request
 
@@ -992,6 +1033,49 @@ curl 'https://api.portkey.ai/v1/chat/completions' \
 </Tabs>
 
 For further questions on custom Vertex AI deployments or fine-grained access tokens, reach out to us on support@portkey.ai
+
+
+
+
+### How to Find Your Google Vertex Project Details
+
+To obtain your **Vertex Project ID and Region,** [navigate to Google Vertex Dashboard]( https://console.cloud.google.com/vertex-ai).
+
+* You can copy the **Project ID** located at the top left corner of your screen.
+* Find the **Region dropdown** on the same page to get your Vertex Region.
+
+<Frame>
+![Logo](/images/llms/vertex.png)
+</Frame>
+
+### Get Your Service Account JSON
+* [Follow this process](https://cloud.google.com/iam/docs/keys-create-delete) to get your Service Account JSON.
+
+When selecting Service Account File as your authentication method, you'll need to:
+
+1. Upload your Google Cloud service account JSON file
+2. Specify the Vertex Region
+
+This method is particularly important for using self-deployed models, as your service account must have the `aiplatform.endpoints.predict` permission to access custom endpoints.
+
+Learn more about permission on your Vertex IAM key [here](https://cloud.google.com/vertex-ai/docs/general/iam-permissions).
+
+<Info>
+**For Self-Deployed Models**: Your service account **must** have the `aiplatform.endpoints.predict` permission in Google Cloud IAM. Without this specific permission, requests to custom endpoints will fail.
+</Info>
+
+### Using Project ID and Region Authentication
+
+For standard Vertex AI models, you can simply provide:
+
+1. Your Vertex Project ID (found in your Google Cloud console)
+2. The Vertex Region where your models are deployed
+
+This method is simpler but may not have all the permissions needed for custom endpoints.
+
+
+
+
 
 ---
 
