@@ -111,32 +111,63 @@ Configs is one of Portkey's most powerful features and is used to define all kin
 	Now, you can use Configs to add **Guardrail checks** & **actions** to your request.
 </Info>
 
-### Add Guardrail ID `before the request` OR `after the request`
 
-| Type                | Config Key                 | Value                       | Description                                                           |
-|:------------------- |:-------------------------- |:--------------------------- |:--------------------------------------------------------------------- |
-| Before Request Hook | **before\_request\_hooks** | `[{`"id":"$guardrail_id"`}]` | This key is used to run Guardrail checks & actions on the **INPUT**.  |
-| After Request Hook  | **after\_request\_hooks**  | `[{`"id":"$guardrail_id"`}]` | This key is used to run Guardrail checks & actions on the **OUTPUT**. |
 
-### Example Config with Guardrails
 
-```JSON Simple Config
+### Option 1: Direct Guardrail Configuration (Recommended)
+
+Portkey now offers a more intuitive way to add guardrails to your configurations:
+
+| Config Key           | Value                                 | Description                                                      |
+|:---------------------|:--------------------------------------|:-----------------------------------------------------------------|
+| **input_guardrails** | `["guardrails-id-xxx", "guardrails-id-yyy"]` | Apply these guardrails to the **INPUT** before sending to LLM |
+| **output_guardrails**| `["guardrails-id-xxx", "guardrails-id-yyy"]` | Apply these guardrails to the **OUTPUT** from the LLM       |
+
+```json
 {
-	"retry": {
-		"attempts": 3
-	},
-	"cache": {
-		"mode": "simple"
-	},
-	"virtual_key":"openai-xxx",
-	"before_request_hooks": [{
-		"id": "input-guardrail-id-xx"
-	}],
-	"after_request_hooks": [{
-		"id": "output-guardrail-id-xx"
-	}]
+  "retry": {
+    "attempts": 3
+  },
+  "cache": {
+    "mode": "simple"
+  },
+  "virtual_key": "openai-xxx",
+  "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
+  "output_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"]
 }
 ```
+
+### Option 2: Hook-Based Configuration (For Creating [Raw Guardrails](/product/guardrails/creating-raw-guardrails-in-json))
+
+You can also continue to use the original hook-based approach:
+
+| Type                | Config Key                | Value                       | Description                                                           |
+|:------------------- |:--------------------------|:----------------------------|:----------------------------------------------------------------------|
+| Before Request Hook | **before_request_hooks**  | `[{"id":"$guardrail_id"}]`  | These hooks run on the **INPUT** before sending to the LLM            |
+| After Request Hook  | **after_request_hooks**   | `[{"id":"$guardrail_id"}]`  | These hooks run on the **OUTPUT** after receiving from the LLM        |
+
+
+```json
+{
+  "retry": {
+    "attempts": 3
+  },
+  "cache": {
+    "mode": "simple"
+  },
+  "virtual_key": "openai-xxx",
+  "before_request_hooks": [{
+    "id": "input-guardrail-id-xx"
+  }],
+  "after_request_hooks": [{
+    "id": "output-guardrail-id-xx"
+  }]
+}
+```
+
+<Note>
+Both configuration approaches work identically - choose whichever is more intuitive for your team. The simplified `input_guardrails` and `output_guardrails` fields are recommended for better readability.
+</Note>
 
 ### Guardrail Behaviour on the Gateway
 
@@ -163,38 +194,31 @@ For requests where `async= FALSE`:
 
 <Tabs>
   <Tab title="Fallback to Another Model on Guardrail Fail">
-
 ```json
 {
   "strategy": {
     "mode": "fallback",
-    "on_status_codes": [246,446]
+    "on_status_codes": [246, 446]
   },
   "targets": [
     {"virtual_key": "openai-key-xxx"},
     {"virtual_key": "anthropic-key-xxx"}
   ],
-  "before_request_hooks": [
-    {"id": "guardrails-id-xxx"}
-  ]
+  "input_guardrails": ["guardrails-id-xxx"]
 }
 ```
   </Tab>
-  <Tab title="Retry on Guardrail Fail">
-
+  <Tab title="Retry on Guardrail Fail (Simplified)">
 ```json
-	{
-	"retry": {
-		"on_status_codes": [246],
-		"attempts": 5
-	},
-	"after_request_hooks": [
-		{"id": "guardrails-id"}
-	]
+{
+  "retry": {
+    "on_status_codes": [246],
+    "attempts": 5
+  },
+  "output_guardrails": ["guardrails-id-xxx"]
 }
 ```
   </Tab>
-
 </Tabs>
 
 
