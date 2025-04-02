@@ -1,54 +1,240 @@
 ---
-title: "Architecture"
+title: "Enterprise Architecture"
+sidebarTitle: "Architecture"
+description: "Comprehensive guide to Portkey's hybrid deployment architecture for enterprises"
 ---
 
-## Overview
+Portkey Enterprise offers a **secure hybrid deployment model** that balances security, flexibility, and fast deployment timelines:
 
-Portkey for enterprises is preferably deployed in a hybrid cloud architecture with the AI gateway hosted in the Customer VPC which manages all the traffic from the Customer applications to the respective LLMs. An attached cache manages the keys, access control, routing rules, guardrails and all other traffic management.
+- **Data Plane** runs within your VPC, keeping sensitive LLM data and AI traffic in your environment
+- **Control Plane** hosted by Portkey handles administration, configs, and analytics
 
-The Control Plane hosted in Portkey's VPC provides the Control Panel UI that helps you control the Data Plane including users, prompts templates, virtual keys, access management, configs while providing key observability information like logs and analytics.
-
-The architecture comprises:
-
-* **Data Plane** (In Customer VPC): Hosts the AI gateway with an attached cache and optionally a log store.
-* **Control Plane** (In Portkey VPC): Hosts the Control Panel UI, the metrics store, a transactional DB and optionally the log store.
-
-<Frame caption="Deployment modes for Portkey Enterprise (Private Cloud)">
-  <img src="/images/guardrails/g15.avif"/>
+<Frame caption="Portkey Enterprise Hybrid Deployment Architecture">
+  <img src="/images/hybrid-deployment.png" alt="Portkey's Hybrid Deployment Architecture showing Data Plane in customer VPC and Control Plane in Portkey VPC" />
 </Frame>
-All the metrics, logs, prompt templates and other data stored in the Control Plane is encrypted and stored in an isolated data shard. The Customer can optionally provide their own encryption keys from a KMS. Portkey connect to AWS KMS and provides envelope encryption across the Control Plane.
 
-## Role of the Control Plane
+<Card title="Schedule an Enterprise Architecture Demo" icon="calendar" href="https://portkey.wiki/demo-27">
+  Want to learn more about our hybrid deployment model? Schedule a personalized demo with our solutions team to see how Portkey Enterprise can fit your security and compliance requirements.
+</Card>
 
-The control plane takes away the hassle of hosting and managing the moving parts of the AI gateway while maintaining the highest levels of availability and flexibility. The Portkey Control Plane takes care of the
 
-* Prompt Management, Versioning and Deployments
-* Aggregating metrics effectively across the gateway traffic
-* UI for viewing logs and analytics with advanced filters, metadata and feedback
-* Organisation and team management including Roles & Permissions
-* Config management and versioning for the Gateway
-* and more
+## Core Architecture Components
 
-without customers needing to manage all these systems in-house. The privately deployed AI gateway can seamlessly sync and decrypt information from the Control Plane so all the data & traffic stays within the Customer's cloud.
+### Data Plane (Your VPC)
 
-Maintaining the transactional database in the control plane is crucial for several reasons:
+The Data Plane is deployed in your cloud environment and processes all your AI traffic:
 
-1. **Continuous Updates and Flexibility:** Our UI and backend require constant updates to stay current with new models and providers. By keeping control of the transactional database, we can implement these changes swiftly without relying on individual deployments. This ensures that our customers always have access to the latest features and integrations.
-2. **Timely Adjustments to Model Pricing and Configuration:** Model pricing, configurations, and parameters frequently change, necessitating prompt updates to maintain optimal performance and cost-efficiency. Having the transactional database in the control plane allows us to roll out these updates seamlessly, often multiple times a week, ensuring a smooth and uninterrupted user experience.
+| Component | Description | Security Benefit |
+| :--------- | :----------- | :--------------- |
+| **AI Gateway** | Core engine that routes traffic across LLM providers and implements metering, access control, and guardrails | All LLM requests remain in your network perimeter |
+| **Cache Store** | Local cache storage for gateway consumption | Eliminates runtime dependency on Control Plane |
+| **Data Store** | Storage for LLM request/response logs | Keep sensitive LLM data completely in your environment |
 
-## Data flow between Customer Cloud and Portkey Cloud
+The AI Gateway runs as containerized workloads in your infrastructure, deployable via your preferred orchestration method (Kubernetes, ECS, etc.).
 
-1. **AI gateway will send anonymised request metrics to the analytics store**. This contains information such as model used, prompt IDs, configs used, tokens, cost, request timings that are then made available on Portkey's analytics dashboards. [Sample data that is sent](/product/enterprise-offering/private-cloud-deployments/architecture#sample-files).
-2. **AI Gateway maintains a sync with the Control Plane** through a heartbeat to update the cache stores every 30 seconds. Data for prompt updates, config updates, virtual keys, and API keys are fetched, decrypted and stored in the gateway's cache.
-During any LLM call, the AI Gateway directly utilizes data stored in cache.
-3. **If Logs are stored in Customer Cloud**: Portkey's UI will make a call to the AI gateway to fetch a log by id when a customer views it on the dashboard. **If Logs are stored in Portkey Cloud**: The AI gateway will encrypt and send the log to be stored in the Portkey Logs store. In this case, no inbound connection is needed from Portkey to Customer Cloud. [Sample Log Data](/product/enterprise-offering/private-cloud-deployments/architecture#sample-files)
+### Control Plane (Portkey VPC)
 
-## New features and patch management
+The Control Plane is fully managed by Portkey and provides the administrative layer for your deployment:
 
-Portkey is able to launch newer features to the Customer's deployment automatically, for most features. For anything that involves changes on the AI Gateway, new releases and patches will be made available through the container registry.
+- Hosts the web dashboard for managing configurations, tracking analytics, and viewing logs
+- Maintains routing configs, provider integrations
+- Stores non-sensitive metadata and aggregated metrics
+- Automatically updates with new features and provider integrations without requiring changes to your infrastructure
 
-### Sample Files
-<CardGroup >
-  <Card title="4KB Sample Log File" href="https://github.com/Portkey-AI/docs-core/tree/main/images/enterprise/private-cloud-deployments/architecture/sample_log_file.json"/>
-  <Card title="3KB Metric File" href="https://github.com/Portkey-AI/docs-core/tree/main/images/enterprise/private-cloud-deployments/architecture/sample_metric_file.json"/>
+## Data Flow Between Planes
+
+<Accordion icon="network-wired" title="AI Traffic Flow (Fully Contained in Your VPC)">
+  All LLM traffic stays within your network boundary:
+  
+  1. Your application sends requests to the AI Gateway
+  2. The Gateway processes the request (applying routing, caching, guardrails)
+  3. The Gateway forwards the request to the appropriate LLM provider
+  4. Responses from LLMs return through the same path
+  
+  **Security Benefit**: Complete isolation of sensitive prompt data and responses
+</Accordion>
+
+<Accordion icon="database" title="Data Sync (Gateway ↔ Control Plane)">
+  The AI Gateway periodically synchronizes with the Control Plane:
+  
+  - **Frequency**: 30-second heartbeat intervals
+  - **Data Retrieved**: Prompt templates, routing configs, virtual keys, API keys
+  - **Process**: Data is fetched, decrypted locally, and stored in the Gateway cache
+  - **Resilience**: Gateway operates independently between syncs using cached configs
+  
+  **Security Benefit**: Continuous operation even during Control Plane disconnection
+</Accordion>
+
+<Accordion icon="chart-line" title="Analytics Flow (Gateway → Control Plane)">
+  The Gateway sends anonymized metrics to the Analytics Store:
+  
+  - **Data Sent**: Non-sensitive operational metrics (model used, token counts, response times)
+  - **Purpose**: Powers analytics dashboards for monitoring performance and costs
+  - **Example**: [View sample analytics data](#sample-files)
+  
+  **Security Benefit**: Provides insights without exposing sensitive information
+</Accordion>
+
+<Accordion icon="files" title="Log Management Options">
+  **Option A: Logs in Your VPC** (Recommended for high-security environments)
+  - Logs stored in your environment's Blob Store
+  - When viewing logs in Dashboard UI, Control Plane requests them from Gateway
+  
+  **Option B: Logs in Portkey Cloud**
+  - Gateway encrypts and sends logs to Portkey Log Store
+  - No connections required from Portkey to your environment for viewing logs
+  
+  **Security Benefit**: Flexibility to match your compliance requirements
+</Accordion>
+
+## Deployment Architecture
+
+Portkey AI Gateway is deployed as containerized workloads using Helm charts for Kubernetes environments, with flexible deployment options for various cloud providers.
+
+### Infrastructure Components
+
+| Component | Description | Configuration Options |
+|:----------|:------------|:----------------------|
+| **AI Gateway** | Core container running the routing logic | Deployed as stateless containers that can scale horizontally |
+| **Cache System** | Stores routing configs, virtual keys, and more | Redis (in-cluster, AWS ElastiCache, or custom endpoint) |
+| **Log Storage** | Persistence for request/response data | Multiple options (see below) |
+
+### Storage Options
+
+<Tabs>
+  <Tab title="Object Storage">
+    S3-compatible storage options including:
+    - AWS S3 (standard credentials or assumed roles)
+    - Google Cloud Storage (S3 compatible interoperability mode)
+    - Azure Blob Storage (key, managed identity, or Entra ID)
+    - Any S3-compatible Blob Storage
+  </Tab>
+  <Tab title="Document DB">
+    MongoDB/DocumentDB for structured log storage with options for:
+    - Direct connection string with username/password
+    - Certificate-based authentication (PEM)
+    - Connection pooling configurations
+  </Tab>
+
+</Tabs>
+
+### Authentication Methods
+
+<Tabs>
+  <Tab title="Cloud Provider IAM">
+    - IAM roles for service accounts (IRSA) in Kubernetes
+    - Instance Metadata Service (IMDS) for EC2/ECS
+    - Managed identities in Azure environments
+  </Tab>
+  <Tab title="Direct Authentication">
+    - Standard access/secret keys
+    - Certificate-based authentication
+    - JWT-based authentication
+  </Tab>
+</Tabs>
+
+```mermaid
+flowchart LR
+    subgraph "Customer VPC"
+        app["Customer Application"] --> gw["AI Gateway"]
+        gw <--> cache["Cache Store"]
+        gw --> logs["Log Storage"]
+        gw --> llm["LLM Providers"]
+    end
+    
+    subgraph "Portkey VPC"
+        cp["Control Plane"]
+    end
+    
+    gw -- "Config Sync\n(Outbound HTTPS)" --> cp
+    gw -- "Anonymous Metrics\n(Outbound HTTPS)" --> cp
+    cp -- "Fetch individual logs\n(Inbound HTTPS)" --> gw
+```
+
+### Infrastructure Requirements
+
+- **Kubernetes Cluster**: K8s 1.20+ with Helm 3.x
+- **Outbound Network**: HTTPS access to Control Plane endpoints
+- **Container Registry Access**: For pulling gateway container images
+- **Recommended Resource Requirements**: 
+  - CPU: 1-2 cores per gateway instance
+  - Memory: 2-4GB per gateway instance
+  - Storage: Dependent on logging configuration
+
+## Data Security & Encryption
+
+<Tabs>
+  <Tab title="Data Residency">
+    **Your Sensitive Data Stays in Your VPC**
+    - All prompt content and LLM responses remain within your network
+    - Only anonymized metrics data cross network boundaries
+    - Log storage location is configurable based on your requirements
+  </Tab>
+  <Tab title="Encryption Methods">
+    **Multi-layered Encryption Approach**
+    - All data in the Control Plane is encrypted at rest
+    - Communication between planes uses TLS 1.3 encryption in transit
+    - Sensitive data uses envelope encryption
+    - Optional BYOK (Bring Your Own Key) support with AWS KMS integration
+  </Tab>
+  <Tab title="Access Controls">
+    **Defense-in-Depth Security Model**
+    - Network-level controls limit Control Plane access to authorized IPs
+    - Role-based access control for administrative functions
+    - Audit logging of all administrative actions
+    - Access tokens are short-lived with automatic rotation
+  </Tab>
+</Tabs>
+
+## Advantages of Hybrid Architecture
+
+| Benefit | Technical Implementation | Business Value |
+|:--------|:------------------------|:---------------|
+| **Security & Compliance** | - Sensitive data never leaves VPC<br />- Configurable encryption methods<br />- Flexible authentication options | - Meets data residency requirements<br />- Supports regulated industries<br />- Simplifies security reviews |
+| **Operational Efficiency** | - No database management overhead<br />- Automatic model config updates<br />- Horizontally scalable architecture | - Low operational burden<br />- Always up-to-date with LLM ecosystem<br />- Scales with your traffic patterns |
+| **Deployment Flexibility** | - Kubernetes-native deployment<br />- Support for major cloud providers<br />- Multiple storage backend options | - Fits into existing infrastructure<br />- Avoids vendor lock-in<br />- Customizable to specific needs |
+| **Developer Experience** | - OpenAI-compatible API<br />- Simple integration patterns<br />- Comprehensive observability | - Minimal code changes needed<br />- Smooth developer onboarding<br />- Full visibility into system behavior |
+
+## Technical Rationale
+
+<Accordion title="Why Maintain Transaction DB in Control Plane?">
+  1. **Real-time Model Updates**: LLM providers frequently change model parameters, pricing, and availability. Centralizing this data ensures all gateways operate with current information.
+  
+  2. **Feature Velocity**: AI landscape evolves rapidly. Control Plane architecture allows Portkey to deliver new features multiple times per week without requiring customer-side deployments.
+  
+  3. **Operational Efficiency**: Eliminates need for customers to maintain complex database infrastructure solely for non-sensitive object management.
+</Accordion>
+
+<Accordion title="Why Cache Objects Locally?">
+  1. **Performance**: Eliminates network latency during LLM requests by having all routing and configs data available locally.
+  
+  2. **Resilience**: Gateway continues operating even if temporarily disconnected from Control Plane.
+  
+  3. **Security**: Reduces attack surface by minimizing runtime external dependencies.
+</Accordion>
+
+## Sample Files
+
+These samples demonstrate the typical data patterns flowing between systems:
+
+<CardGroup>
+  <Card title="Sample Log File (4KB)" href="https://github.com/Portkey-AI/docs-core/tree/main/images/enterprise/private-cloud-deployments/architecture/sample_log_file.json" icon="file-code"/>
+  <Card title="Sample Metric File (3KB)" href="https://github.com/Portkey-AI/docs-core/tree/main/images/enterprise/private-cloud-deployments/architecture/sample_metric_file.json" icon="chart-line"/>
 </CardGroup>
+
+## Resources & Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Helm Repository" href="https://github.com/Portkey-AI/helm" icon="github"/>
+  <Card title="Enterprise Changelog" href="/changelog/enterprise" icon="clock-rotate-left"/>
+  <Card title="AWS Deployment Guide" href="/product/enterprise-offering/private-cloud-deployments/aws" icon="aws"/>
+  <Card title="Azure Deployment Guide" href="/product/enterprise-offering/private-cloud-deployments/azure" icon="microsoft"/>
+</CardGroup>
+
+## Have Questions?
+
+Our solution architects are available to discuss your specific deployment requirements and security needs.
+
+<Card title="Schedule Architecture Discussion" icon="calendar-check" href="https://portkey.wiki/demo-27">
+  Book a personalized consultation with our enterprise team to explore how Portkey's architecture can be tailored to your organization's specific requirements.
+</Card>
