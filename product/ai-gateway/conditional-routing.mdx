@@ -138,7 +138,7 @@ Here's how a sample `conditional` config looks (along with its simpler, tree vie
 * `$and`: All conditions must be true
 * `$or`: At least one condition must be true
 
-#### Example Condition objects with Logical Operators
+** Example Condition objects with Logical Operators**
 
 <Tabs>
   <Tab title="AND">
@@ -190,30 +190,40 @@ Here's how a sample `conditional` config looks (along with its simpler, tree vie
 
 Based on the `conditions` and the Config structure described above, you can create your [Config in Portkey UI](https://app.portkey.ai/configs), and save it to get Config ID. The UI also helps you autofill and autoformat your Config.
 
-## 3. Using the Config ID in Requests
-
-Now, while instantiating your Portkey client or while sending headers, you just need to pass the Config ID and all your requests will start getting routed according to your conditions.
-
-Conditional routing happens on Portkey's on-the-edge stateless AI Gateway. We scan for the given query fields in your request body, apply the query conditions, and route to the specified target based on it.
 
 
 
+## 3. Implementing Conditional Routing
+
+Conditional routing is enabled through Portkey's [Gateway Configs](/product/ai-gateway/configs) by following these steps:
+
+1. Create a conditional config in Portkey UI ([app.portkey.ai/configs](https://app.portkey.ai/configs))
+2. Save the config to get a Config ID
+3. Use this Config ID in your requests
 
 
-<AccordionGroup>
+
+<CardGroup cols={2}>
+  <Card title="Parameter-Based Routing" href="#routing-based-on-request-parameters" icon="sliders">
+    Route requests based on the values of parameters like `model`, `temperature`, or `max_tokens`
+  </Card>
+  <Card title="Metadata-Based Routing" href="#routing-based-on-metadata" icon="tags">
+    Route requests based on custom metadata fields you include with your request
+  </Card>
+</CardGroup>
+You can also combine both approaches for [more sophisticated routing logic](#combined-routing-with-multiple-conditions)
 
 
-<Accordion title="Routing Based on Request Parameters">
+### Routing Based on Request Parameters
 
 
-## Routing Based on Request Parameters
 With conditional routing, you can route based on any parameter in your LLM request (`model`, `temperature`, `max_tokens`, etc.).
 
 <Note>
     Portkey only supports params routing for primitive types (string, number, boolean). Complex types like arrays and objects are not supported.
 </Note>
 
-### Example: Model Parameter Based Routing
+**Example: Model Parameter Based Routing**
 
 This example routes based on the `model` parameter, allowing you to use aliases instead of specific model names:
 
@@ -292,18 +302,21 @@ completion = client.chat.completions.create(
 When using parameter-based routing, make sure to include the parameter specified in your routing condition in your request. In the example above, you need to include `model` in your request for routing to work properly.
 </Info>
 
-  </Accordion>
-
-
-  <Accordion title="Routing Based on Metadata">
 
 
 
-## Routing Based on Metadata
+
+
+### Routing Based on Metadata
+
+
+
+
+
 
 Portkey support [metadata](/product/observability/metadata)-based routing, which requires sending custom metadata with your request.
 
-### Applying Conditional Routing Based on Metadata
+**Applying Conditional Routing Based on Metadata**
 
 
 
@@ -401,9 +414,6 @@ response = portkey.with_options(
 ```
 
 
-  </Accordion>
-</AccordionGroup>
-
 
 
 <Info>
@@ -412,6 +422,61 @@ You can combine both metadata and request parameters in your conditions. For exa
 
 
 
+
+### Combined Routing with Multiple Conditions
+
+You can combine metadata and parameter conditions for more sophisticated routing:
+
+```python
+from portkey_ai import Portkey
+
+client = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="combined-routing-config-id"
+)
+
+# Route based on both metadata and temperature parameter
+completion = client.with_options(
+    metadata={"user_tier": "enterprise"}
+).chat.completions.create(
+    temperature=0.9,  # High temperature will route to creative model
+    messages=[{"role": "user", "content": "Write a story about dragons"}]
+)
+```
+
+Config example for combined conditions:
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": {
+          "$and": [
+            { "metadata.user_tier": { "$eq": "enterprise" } },
+            { "params.temperature": { "$gte": 0.7 } }
+          ]
+        },
+        "then": "creative-premium-target"
+      }
+    ],
+    "default": "standard-target"
+  },
+  "targets": [
+    {
+      "name": "creative-premium-target",
+      "virtual_key": "anthropic-vk",
+      "override_params": { "model": "claude-3-opus" }
+    },
+    {
+      "name": "standard-target",
+      "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-3.5-turbo" }
+    }
+  ]
+}
+```
 
 
 
@@ -730,7 +795,7 @@ Control feature rollout with feature flags in metadata.
 
 
 
-## Important Notes
+## Important Note
 
 1. **Parameter Presence**: When routing based on request parameters, make sure the parameters specified in your conditions are included in your requests.
 
@@ -740,10 +805,13 @@ Control feature rollout with feature flags in metadata.
 
 4. **Error Handling**: If your condition references a parameter that doesn't exist in the request, the request will fail with an error.
 
-5. **Multiple Parameter Types**: You can create sophisticated routing rules by combining conditions on parameters, metadata, or a mix of both.
+5. **Multiple Parameter Types**: Portkey supports routing based on any parameter that can be sent in LLM requests including `model`, `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`, `max_tokens`, and many others.
+
+
+
+
+
 
 <Info>
-Portkey supports routing based on any parameter that can be sent in LLM requests including `model`, `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`, `max_tokens`, and many others.
-
 [Join us on Discord](https://portkey.wiki/chat) to share your thoughts on this feature or to get help with setting up advanced routing scenarios.
 </Info>
