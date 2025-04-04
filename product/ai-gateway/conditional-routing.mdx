@@ -1,6 +1,7 @@
 ---
 title: 'Conditional Routing'
 ---
+
 <Info>
 This feature is available on all Portkey [plans](https://portkey.ai/pricing).
 </Info>
@@ -8,12 +9,17 @@ This feature is available on all Portkey [plans](https://portkey.ai/pricing).
 Using Portkey Gateway, you can route your requests to different provider targets based on custom conditions you define. These can be conditions like:
 
 * If this user is on the `paid plan`, route their request to a `custom fine-tuned model`
+* If the model parameter is set to `fastest`, route to `gpt-4o-mini`, if `smartest`, route to `openai o1`
 * If this user is an `EU resident`, call an `EU hosted model`
-* If this user is a `beta tester`, send their request to the `preview model`
+* If the `temperature` parameter is above `0.7`, route to a more creative model
 * If the request is coming from `testing environment` with a `llm-pass-through` flag, route it to the `cheapest model`
 * ..and more!
 
-Using this strategy, you can set up various conditional checks on the `metadata` keys you're passing with your requests and route requests to the appropriate target — all happening very fast on the _gateway_, on _edge_.
+Using this strategy, you can set up sophisticated routing logic based on:
+1. **Metadata** - Custom key-value pairs you pass with your requests
+2. **Request Parameters** - Any parameter that you send in your original LLM request (like model, temperature, max_tokens)
+
+All routing happens very fast on the _gateway_, on _edge_.
 
 ## Enabling Conditional Routing
 
@@ -22,7 +28,6 @@ Conditional routing is one of the _strategies_ in Portkey's [Gateway Configs](/p
 1. You need to create a `conditional` config in Portkey UI.
 2. Save the Config and get an associated Config ID.
 3. And just pass the Config ID along with your requests using the `config` param.
-
 
 ## 1. Creating the `conditional` Config
 
@@ -72,7 +77,7 @@ Here's how a sample `conditional` config looks (along with its simpler, tree vie
 </Tabs>
 
 * `strategy.mode`: Set to `conditional`
-* `strategy.conditions`: Query conditions with rules applied on metadata values along with which target to call when the condition passes
+* `strategy.conditions`: Query conditions with rules applied on metadata values or request parameters along with which target to call when the condition passes
 * `strategy.default`: The default target name to call when none of the conditions pass
 * `targets`: Array of target objects with unique `names` and provider details. These target names are referenced in the `conditions` objects above.
 
@@ -84,14 +89,33 @@ Here's how a sample `conditional` config looks (along with its simpler, tree vie
 
 `conditions` are where you will actually write the routing rules. Here's a sample `condition` object:
 
+<Tabs>
+<Tab title="Metadata Based">
+
+```json
+  {
+    "query": { "metadata.user_plan": { "$eq": "paid" } },
+    "then": "finetuned-gpt4"
+  }
+```
+</Tab>
+
+<Tab title="Params Based">
+
 ```json
 {
-  "query": { "metadata.user_plan": { "$eq": "paid" } },
-  "then": "finetuned-gpt4"
+  "query": { "params.model": { "$eq": "smartest" } },
+  "then": "smartest-model-target"
 }
 ```
+</Tab>
+</Tabs>
 
-`query`: Write the exact rule for checking metadata values
+
+
+
+
+`query`: Write the exact rule for checking metadata values or request parameters
 
 `then`: Define which target to call if the query `PASSES`
 
@@ -114,7 +138,6 @@ Here's how a sample `conditional` config looks (along with its simpler, tree vie
 * `$and`: All conditions must be true
 * `$or`: At least one condition must be true
 
-
 #### Example Condition objects with Logical Operators
 
 <Tabs>
@@ -132,23 +155,23 @@ Here's how a sample `conditional` config looks (along with its simpler, tree vie
     ```json
     {
       "$or": [
-        { "metadata.user_type": { "$eq": "pro" } },
-        { "metadata.user_quota": { "$eq": "premium" } }
+        { "params.temperature": { "$gt": 0.7 } },
+        { "params.top_p": { "$lt": 0.8 } }
       ]
     }
     ```
   </Tab>
-  <Tab title="NESTING AND, OR">
+  <Tab title="MIXED Conditions">
     ```json
     {
       "$or": [
         {
           "$and": [
             { "metadata.user_type": { "$eq": "pro" } },
-            { "metadata.user_tier": { "$eq": "tier-1" } }
+            { "params.model": { "$eq": "gpt-4o" } }
           ]
         },
-        { "metadata.user_quota": { "$eq": "premium" } }
+        { "params.max_tokens": { "$gt": 1000 } }
       ]
     }
     ```
@@ -160,17 +183,135 @@ Here's how a sample `conditional` config looks (along with its simpler, tree vie
 2. When a condition is incorrect or it fails, Portkey moves on to the next condition until it finds a successful condition.
 3. If no conditions pass, then the `default` target name is called
 4. Since Portkey iterates through the queries sequentially, the order of your conditions is important
+5. When using parameter-based routing, the user must send the exact parameters expected in the conditions, or the request will give an error
 </Info>
-
 
 ## 2. Getting Config ID
 
 Based on the `conditions` and the Config structure described above, you can create your [Config in Portkey UI](https://app.portkey.ai/configs), and save it to get Config ID. The UI also helps you autofill and autoformat your Config.
 
-#### Adding the above sample condition to our final Config:
+## 3. Using the Config ID in Requests
+
+Now, while instantiating your Portkey client or while sending headers, you just need to pass the Config ID and all your requests will start getting routed according to your conditions.
+
+Conditional routing happens on Portkey's on-the-edge stateless AI Gateway. We scan for the given query fields in your request body, apply the query conditions, and route to the specified target based on it.
+
+
+
+
+
+<AccordionGroup>
+
+
+<Accordion title="Routing Based on Request Parameters">
+
+
+## Routing Based on Request Parameters
+With conditional routing, you can route based on any parameter in your LLM request (`model`, `temperature`, `max_tokens`, etc.).
+
+<Note>
+    Portkey only supports params routing for primitive types (string, number, boolean). Complex types like arrays and objects are not supported.
+</Note>
+
+### Example: Model Parameter Based Routing
+
+This example routes based on the `model` parameter, allowing you to use aliases instead of specific model names:
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": {
+          "params.model": {
+            "$eq": "fastest"
+          }
+        },
+        "then": "fastest-model-target"
+      },
+      {
+        "query": {
+          "params.model": {
+            "$eq": "smartest"
+          }
+        },
+        "then": "smartest-model-target"
+      }
+    ],
+    "default": "fastest-model-target"
+  },
+  "targets": [
+    {
+      "name": "smartest-model-target",
+      "virtual_key": "anthropic-vk",
+      "override_params": {
+        "model": "claude-3.5-sonnet"
+      }
+    },
+    {
+      "name": "fastest-model-target",
+      "virtual_key": "oai-vk",
+      "override_params": {
+        "model": "gpt-4o-mini"
+      }
+    }
+  ]
+}
+```
+
+Using the config:
+
+```python
+from portkey_ai import Portkey
+client = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="model-routing-config-id"
+)
+
+# This will use the "smartest" model (claude-3.5-sonnet)
+completion = client.chat.completions.create(
+  model="smartest",  # This value matches our conditional routing condition
+  messages=[
+    {"role": "developer", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Explain quantum computing to a 5-year-old"}
+  ]
+)
+
+# This will use the "fastest" model (gpt-4o-mini)
+completion = client.chat.completions.create(
+  model="fastest",  # This value matches our conditional routing condition
+  messages=[
+    {"role": "developer", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What's 2+2?"}
+  ]
+)
+```
+
+<Info>
+When using parameter-based routing, make sure to include the parameter specified in your routing condition in your request. In the example above, you need to include `model` in your request for routing to work properly.
+</Info>
+
+  </Accordion>
+
+
+  <Accordion title="Routing Based on Metadata">
+
+
+
+## Routing Based on Metadata
+
+Portkey support [metadata](/product/observability/metadata)-based routing, which requires sending custom metadata with your request.
+
+### Applying Conditional Routing Based on Metadata
+
+
 
 <Tabs>
   <Tab title="Simple Conditional Config">
+
+  In this example we are routing our request based on `user_plan` metadata sent along request. If the user is on a `paid` plan, we route to a `finetuned-gpt4` model, otherwise we route to a `base-gpt4` model.
+
     ```json
     {
       "strategy": {
@@ -238,56 +379,54 @@ Based on the `conditions` and the Config structure described above, you can crea
 </Tabs>
 
 
-## 3. Using the Config ID in Requests
 
-Now, while instantiating your Portkey client or while sending headers, you just need to pass the Config ID and all your requests will start getting routed according to your conditions.
+Using the config:
 
-Conditional routing happens on Portkey's on-the-edge stateless AI Gateway. We scan for the given query field in your request body, apply the query condition, and route to the specified target based on it.
+```python
+from portkey_ai import Portkey
 
-Currently, we support **Metadata based routing** — i.e. routing your requests based on the metadata values you're sending along with your request.
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="my-conditional-router-config"
+)
+
+response = portkey.with_options(
+    metadata = {
+        "user_plan": "free",
+        "environment": "production",
+        "session_id": "1729"
+}).chat.completions.create(
+    messages = [{ "role": 'user', "content": 'What is 1729' }]
+)
+```
 
 
-### Applying Conditional Routing Based on Metadata
+  </Accordion>
+</AccordionGroup>
 
-<Tabs>
-  <Tab title="Sample Full Request">
-    ```python
-    from portkey_ai import Portkey
 
-    portkey = Portkey(
-        api_key="PORTKEY_API_KEY",
-        config="my-conditional-router-config"
-    )
 
-    response = portkey.with_options(
-        metadata = {
-            "user_plan": "free",
-            "environment": "production",
-            "session_id": "1729"
-    }).chat.completions.create(
-        messages = [{ "role": 'user', "content": 'What is 1729' }]
-    )
-    ```
+<Info>
+You can combine both metadata and request parameters in your conditions. For example, you can route based on a combination of `metadata.user_plan` and `params.model`.
+</Info>
 
-    Here, we're using the following Config that we defined above.
-  </Tab>
-</Tabs>
+
+
+
+
+
 
 
 
 ## More Examples Using Conditional Routing
 
-Here are some examples on how you can leverage conditional routing to handle real-world scenarios like:
+Here are practical examples of how you can leverage conditional routing to handle real-world challenges in your LLM applications. These examples showcase common patterns that help optimize cost, performance, compliance, and feature deployment without changing your application code.
 
-* Data sensititvity or data residency requirements
-* Calling a model based on user's input lanuage
-* Handling feature flags for your app
-* Managing traffic better at peak usage times
-* ..and many more
-
+<AccordionGroup>
+<Accordion title="User-Based Routing">
 <Tabs>
-  <Tab title="Data Sensitivity">
-Route your requests to different models based on the `data sensitivity level` of the user.
+<Tab title="User Subscription Tier">
+Route premium users to advanced models and free users to cost-effective ones.
 
 ```json
 {
@@ -295,17 +434,73 @@ Route your requests to different models based on the `data sensitivity level` of
     "mode": "conditional",
     "conditions": [
       {
-        "query": {
-          "metadata.data_sensitivity": "high"
-        },
+        "query": { "metadata.user_tier": { "$eq": "premium" } },
+        "then": "premium-model"
+      },
+      {
+        "query": { "metadata.user_tier": { "$eq": "free" } },
+        "then": "basic-model"
+      }
+    ],
+    "default": "basic-model"
+  },
+  "targets": [
+    {
+      "name": "premium-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-4o" }
+    },
+    {
+      "name": "basic-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-3.5-turbo" }
+    }
+  ]
+}
+```
+</Tab>
+
+<Tab title="Regional Compliance">
+Ensure GDPR compliance by routing EU users to EU-compliant deployments.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "metadata.user_region": { "$eq": "EU" } },
+        "then": "eu-compliant"
+      }
+    ],
+    "default": "standard-model"
+  },
+  "targets": [
+    {
+      "name": "eu-compliant", "virtual_key": "azure-eu-vk",
+      "override_params": { "model": "gpt-4" }
+    },
+    {
+      "name": "standard-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-4o" }
+    }
+  ]
+}
+```
+</Tab>
+
+<Tab title="Data Sensitivity">
+Route requests to different models based on data sensitivity levels.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "metadata.data_sensitivity": { "$eq": "high" } },
         "then": "on-premises-model"
       },
       {
-        "query": {
-          "metadata.data_sensitivity": {
-            "$in": ["medium", "low"]
-          }
-        },
+        "query": { "metadata.data_sensitivity": { "$in": ["medium", "low"] } },
         "then": "cloud-model"
       }
     ],
@@ -313,23 +508,22 @@ Route your requests to different models based on the `data sensitivity level` of
   },
   "targets": [
     {
-      "name": "public-model",
-      "virtual_key": "..."
-    },
+      "name": "public-model", "virtual_key": "openai-vk" },
     {
-      "name": "on-premises-model",
-      "virtual_key": "..."
-    },
+      "name": "on-premises-model", "virtual_key": "private-vk" },
     {
-      "name": "cloud-model",
-      "virtual_key": "..."
-    }
+      "name": "cloud-model", "virtual_key": "azure-vk" }
   ]
 }
 ```
 </Tab>
-<Tab title="Feature Flags">
-Implement feature flags to gradually roll out new AI models.
+</Tabs>
+</Accordion>
+
+<Accordion title="Model Selection & Parameter Routing">
+<Tabs>
+<Tab title="Routing Based on Model Name Aliases">
+Use intuitive aliases instead of remembering specific model names.
 
 ```json
 {
@@ -337,42 +531,36 @@ Implement feature flags to gradually roll out new AI models.
     "mode": "conditional",
     "conditions": [
       {
-        "query": {
-          "metadata.user_id": {
-            "$in": ["beta-tester-1", "beta-tester-2", "beta-tester-3"]
-          }
-        },
-        "then": "new-experimental-model"
+        "query": { "params.model": { "$eq": "fastest" } },
+        "then": "fast-model"
       },
       {
-        "query": {
-          "metadata.feature_flags.new_model_enabled": true
-        },
-        "then": "new-stable-model"
+        "query": { "params.model": { "$eq": "smartest" } },
+        "then": "smart-model"
       }
     ],
-    "default": "current-production-model"
+    "default": "balanced-model"
   },
   "targets": [
     {
-      "name": "current-production-model",
-      "virtual_key": "..."
+      "name": "smart-model", "virtual_key": "anthropic-vk",
+      "override_params": { "model": "claude-3.5-sonnet" }
     },
     {
-      "name": "new-experimental-model",
-      "virtual_key": "..."
+      "name": "fast-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-4o-mini" }
     },
     {
-      "name": "new-stable-model",
-      "virtual_key": "..."
+      "name": "balanced-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-4o" }
     }
   ]
 }
 ```
-
 </Tab>
-<Tab title="Traffic Management">
-Route to different models based on `time of day` for optimal performance at peak usage times.
+
+<Tab title="Model Hyperparam Based Routing">
+Route creative vs factual requests to different optimized models.
 
 ```json
 {
@@ -380,81 +568,182 @@ Route to different models based on `time of day` for optimal performance at peak
     "mode": "conditional",
     "conditions": [
       {
-        "query": {
-          "metadata.request_time": {
-            "$gte": "09:00",
-            "$lt": "17:00"
-          }
-        },
-        "then": "high-capacity-model"
-      }
-    ],
-    "default": "standard-model"
-  },
-  "targets": [
-    {
-      "name": "high-capacity-model",
-      "virtual_key": "...",
-      "override_params": {"model":"gpt-4o-mini"}
-    },
-    {
-      "name": "standard-model",
-      "virtual_key": "...",
-      "override_params": {"model":"gpt-4o"}
-    }
-  ]
-}
-```
-
-</Tab>
-<Tab title="Input Language">
-Route requests to language-specific models based on `detected input language`.
-
-```json
-{
-  "strategy": {
-    "mode": "conditional",
-    "conditions": [
-      {
-        "query": {
-          "metadata.detected_language": {
-            "$in": ["en", "fr", "de"]
-          }
-        },
-        "then": "multilingual-model"
+        "query": { "params.temperature": { "$gte": 0.7 } },
+        "then": "creative-model"
       },
       {
-        "query": {
-          "metadata.detected_language": "zh"
-        },
-        "then": "chinese-specialized-model"
+        "query": { "params.temperature": { "$lt": 0.3 } },
+        "then": "factual-model"
       }
     ],
-    "default": "general-purpose-model"
+    "default": "balanced-model"
   },
   "targets": [
     {
-      "name": "multilingual-model",
-      "virtual_key": "..."
+      "name": "creative-model", "virtual_key": "anthropic-vk",
+      "override_params": { "model": "claude-3-sonnet" }
     },
     {
-      "name": "chinese-specialized-model",
-      "virtual_key": "..."
+      "name": "factual-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-4o" }
     },
     {
-      "name": "general-purpose-model",
-      "virtual_key": "..."
+      "name": "balanced-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-3.5-turbo" }
+    }
+  ]
+}
+```
+</Tab>
+
+<Tab title="Max Tokens Based Routing">
+Route high-token requests to models with larger context windows.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "params.max_tokens": { "$gt": 4000 } },
+        "then": "high-capacity"
+      }
+    ],
+    "default": "standard-capacity"
+  },
+  "targets": [
+    {
+      "name": "high-capacity", "virtual_key": "anthropic-vk",
+      "override_params": { "model": "claude-3-opus" }
+    },
+    {
+      "name": "standard-capacity", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-4o-mini" }
     }
   ]
 }
 ```
 </Tab>
 </Tabs>
+</Accordion>
+
+<Accordion title="Application Features & Testing">
+<Tabs>
+<Tab title="Task-Specific Routing">
+Route different tasks to specialized models for optimal results.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "metadata.task": { "$eq": "coding" } },
+        "then": "coding-model"
+      },
+      {
+        "query": { "metadata.task": { "$eq": "writing" } },
+        "then": "writing-model"
+      }
+    ],
+    "default": "general-model"
+  },
+  "targets": [
+    {
+      "name": "coding-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-4o" }
+    },
+    {
+      "name": "writing-model", "virtual_key": "anthropic-vk",
+      "override_params": { "model": "claude-3-opus" }
+    },
+    {
+      "name": "general-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-3.5-turbo" }
+    }
+  ]
+}
+```
+</Tab>
+
+<Tab title="A/B Testing">
+Test new models with specific user groups before full rollout.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "metadata.user_group": { "$eq": "beta" } },
+        "then": "new-model"
+      }
+    ],
+    "default": "current-model"
+  },
+  "targets": [
+    {
+      "name": "new-model", "virtual_key": "anthropic-vk",
+      "override_params": { "model": "claude-3.5-sonnet" }
+    },
+    {
+      "name": "current-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-3.5-turbo" }
+    }
+  ]
+}
+```
+</Tab>
+
+<Tab title="Feature Flags">
+Control feature rollout with feature flags in metadata.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "metadata.features.new_model_enabled": { "$eq": true } },
+        "then": "new-model-target"
+      }
+    ],
+    "default": "standard-model"
+  },
+  "targets": [
+    {
+      "name": "new-model-target", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-4o" }
+    },
+    {
+      "name": "standard-model", "virtual_key": "openai-vk",
+      "override_params": { "model": "gpt-3.5-turbo" }
+    }
+  ]
+}
+```
+</Tab>
+</Tabs>
+</Accordion>
+</AccordionGroup>
+
+
+
+
+## Important Notes
+
+1. **Parameter Presence**: When routing based on request parameters, make sure the parameters specified in your conditions are included in your requests.
+
+2. **Primitive Types Only**: Parameter-based routing works with primitive data types (strings, numbers, booleans) but not with arrays or nested objects.
+
+3. **Order Matters**: Conditions are evaluated in the order they're defined, so place more specific conditions before more general ones.
+
+4. **Error Handling**: If your condition references a parameter that doesn't exist in the request, the request will fail with an error.
+
+5. **Multiple Parameter Types**: You can create sophisticated routing rules by combining conditions on parameters, metadata, or a mix of both.
 
 <Info>
-Soon, Portkey will also support routing based on other critical parameters like `input character count`, `input token count`, `prompt type`, `tool support`, and more.
+Portkey supports routing based on any parameter that can be sent in LLM requests including `model`, `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`, `max_tokens`, and many others.
 
-Similarly, we will also add support for smart routing to wider targets, like `fastest`, `cheapest`, `highest uptime`, `lowest error rate`, etc.
-
-[Please join us on Discord](https://portkey.wiki/chat) to share your thoughts on this feature and get early access to more routing capabilities.
+[Join us on Discord](https://portkey.wiki/chat) to share your thoughts on this feature or to get help with setting up advanced routing scenarios.
 </Info>
