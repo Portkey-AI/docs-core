@@ -344,13 +344,18 @@ Portkey support [metadata](/product/observability/metadata)-based routing, which
       "targets": [
         {
           "name": "finetuned-gpt4",
-          "virtual_key":"xx"
+          "virtual_key":"xx",
+          "override_params": {
+              "model": "ft://gpt4-xxxxx"
+          }
         },
         {
           "name": "base-gpt4",
-          "virtual_key":"yy"
+          "virtual_key":"yy",
+          "override_params": {
+              "model": "gpt-4"
+          }
         }
-      ]
     }
     ```
   </Tab>
@@ -790,6 +795,140 @@ Control feature rollout with feature flags in metadata.
 </Tab>
 </Tabs>
 </Accordion>
+<Accordion title="Using Conditional Router with Guardrails">
+<Tabs>
+<Tab title="Input Guardrails">
+You can apply input guardrails to specific targets in your conditional routing configuration. This allows you to validate or transform the input before it's sent to the LLM:
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": {
+          "metadata.user_plan": { "$eq": "paid" }
+        },
+        "then": "premium-model"
+      },
+      {
+        "query": {
+          "metadata.user_plan": { "$eq": "free" }
+        },
+        "then": "standard-model"
+      }
+    ],
+    "default": "standard-model"
+  },
+  "targets": [
+    {
+      "name": "premium-model",
+      "virtual_key": "openai-vk-xxx",
+      "input_guardrails": ["pg-pii-detector-xxx", "pg-toxic-content-xxx"]
+    },
+    {
+      "name": "standard-model",
+      "virtual_key": "openai-vk-yyy"
+    }
+  ]
+}
+```
+
+In this example, when a user with the "paid" plan sends a request, it's routed to the premium model but first runs through two input guardrails: one for PII detection and another for toxic content filtering.
+</Tab>
+
+<Tab title="Output Guardrails">
+You can also apply output guardrails to validate or transform the LLM's response:
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": {
+          "params.temperature": { "$gte": 0.7 }
+        },
+        "then": "creative-model"
+      }
+    ],
+    "default": "standard-model"
+  },
+  "targets": [
+    {
+      "name": "creative-model",
+      "virtual_key": "anthropic-vk-xxx",
+      "output_guardrails": [
+        "pg-fact-checker-xxx",
+        "pg-content-moderator-xxx"
+      ]
+    },
+    {
+      "name": "standard-model",
+      "virtual_key": "openai-vk-xxx"
+    }
+  ]
+}
+```
+
+This configuration applies output guardrails to the "creative-model" target, which is used when the temperature parameter is high. The response from this model will be checked for factual accuracy and moderated for inappropriate content.
+</Tab>
+
+<Tab title="Both Input and Output Guardrails">
+For comprehensive protection, you can apply both input and output guardrails to your targets:
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": {
+          "metadata.user_plan": { "$eq": "paid" }
+        },
+        "then": "premium-model"
+      },
+      {
+        "query": {
+          "metadata.user_plan": { "$eq": "free" }
+        },
+        "then": "standard-model"
+      }
+    ],
+    "default": "standard-model"
+  },
+  "targets": [
+    {
+      "name": "premium-model",
+      "virtual_key": "openai-vk-xxx",
+      "input_guardrails": ["pg-pii-detector-xxx", "pg-toxic-content-xxx"],
+      "output_guardrails": ["pg-fact-checker-xxx", "pg-compliance-xxx"]
+    },
+    {
+      "name": "standard-model",
+      "virtual_key": "openai-vk-yyy",
+      "input_guardrails": ["pg-basic-filter-xxx"],
+      "output_guardrails": ["pg-basic-moderator-xxx"]
+    }
+  ]
+}
+```
+
+This configuration provides end-to-end protection by:
+1. First checking inputs with guardrails before sending to the LLM
+2. Then validating outputs with guardrails before returning to the user
+
+Each target can have its own set of guardrails, allowing you to apply different levels of protection based on your routing conditions.
+</Tab>
+</Tabs>
+
+<Info>
+Guardrails are referenced by their IDs in the configuration. You can create guardrails in the Portkey UI and then reference them in your conditional routing config.
+
+Learn more about [Portkey Guardrails](/product/guardrails) to understand how to create and manage different types of guardrails for your LLM applications.
+</Info>
+</Accordion>
+
 </AccordionGroup>
 
 
