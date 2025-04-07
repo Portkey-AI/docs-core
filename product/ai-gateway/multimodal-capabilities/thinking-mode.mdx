@@ -1,0 +1,538 @@
+---
+title: "Thinking Mode"
+---
+
+Thinking/Reasoning models represent a new generation of LLMs specifically trained to expose their internal reasoning process. Unlike traditional LLMs that only show final outputs, thinking models like Claude 3.7 Sonnet, OpenAI o1/o3, and Deepseek R1 are designed to "think out loud" - producing a detailed chain of thought before delivering their final response.
+
+These reasoning-optimized models are built to excel in tasks requiring complex analysis, multi-step problem solving, and structured logical thinking. Portkey makes these advanced models accessible through a unified API specification that works consistently across providers.
+
+## Supported Thinking Models
+
+Portkey currently supports Claude thinking-enabled models on the following providers:
+
+- **Anthropic**: `claude-3-7-sonnet-latest`
+- **Google Vertex AI**: `anthropic.claude-3-7-sonnet@20250219`
+- **Amazon Bedrock**: `claude-3-7-sonnet`
+
+<Note>
+More thinking models will be supported as they become available.
+</Note>
+
+## Using Thinking Mode
+
+1. You must set `strict_open_ai_compliance=False` in your headers or client configuration
+2. The thinking response is returned in a different format than standard completions
+3. For streaming responses, the thinking content is in `response_chunk.choices[0].delta.content_blocks`
+
+<Warning>
+Extended thinking API through Portkey is currently in beta.
+</Warning>
+
+
+### Basic Example
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    from portkey_ai import Portkey
+
+    # Initialize the Portkey client
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+        virtual_key="VIRTUAL_KEY",   # Add your provider's virtual key
+        strict_open_ai_compliance=False  # Required for thinking mode
+    )
+
+    # Create the request
+    response = portkey.chat.completions.create(
+      model="claude-3-7-sonnet-latest",
+      max_tokens=3000,
+      thinking={
+          "type": "enabled",
+          "budget_tokens": 2030  # Maximum tokens to use for thinking
+      },
+      stream=False,
+      messages=[
+          {
+              "role": "user",
+              "content": [
+                  {
+                      "type": "text",
+                      "text": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                  }
+              ]
+          }
+      ]
+    )
+    print(response)
+
+    # For streaming responses, handle content_blocks differently
+    # response = portkey.chat.completions.create(
+    #   ...same config as above but with stream=True
+    # )
+    # for chunk in response:
+    #     if chunk.choices[0].delta:
+    #         content_blocks = chunk.choices[0].delta.get("content_blocks")
+    #         if content_blocks is not None:
+    #             for content_block in content_blocks:
+    #                 print(content_block)
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ```javascript
+    import Portkey from 'portkey-ai';
+
+    // Initialize the Portkey client
+    const portkey = new Portkey({
+      apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
+      virtualKey: "VIRTUAL_KEY", // Add your provider's virtual key
+      strictOpenAiCompliance: false // Required for thinking mode
+    });
+
+    // Generate a chat completion
+    async function getChatCompletionWithThinking() {
+        const response = await portkey.chat.completions.create({
+          model: "claude-3-7-sonnet-latest",
+          max_tokens: 3000,
+          thinking: {
+              type: "enabled",
+              budget_tokens: 2030
+          },
+          stream: false,
+          messages: [
+              {
+                  role: "user",
+                  content: [
+                      {
+                          type: "text",
+                          text: "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                      }
+                  ]
+              }
+          ]
+        });
+        console.log(response);
+
+      // For streaming responses:
+      // const response = await portkey.chat.completions.create({
+      //   ...same config as above but with stream: true
+      // });
+      // for await (const chunk of response) {
+      //   if (chunk.choices[0].delta?.content_blocks) {
+      //     for (const contentBlock of chunk.choices[0].delta.content_blocks) {
+      //       console.log(contentBlock);
+      //     }
+      //   }
+      // }
+      }
+
+    // Call the function
+    getChatCompletionWithThinking();
+    ```
+  </Tab>
+  <Tab title="OpenAI SDK (JS)">
+    ```javascript
+    import OpenAI from 'openai'; // We're using the v4 SDK
+    import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+    const openai = new OpenAI({
+      apiKey: 'ANTHROPIC_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
+      baseURL: PORTKEY_GATEWAY_URL,
+      defaultHeaders: createHeaders({
+        provider: "anthropic",
+        apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+        strictOpenAiCompliance: false
+      })
+    });
+
+    // Generate a chat completion with thinking mode
+    async function getChatCompletionFunctions(){
+      const response = await openai.chat.completions.create({
+        model: "claude-3-7-sonnet-latest",
+        max_tokens: 3000,
+        thinking: {
+            type: "enabled",
+            budget_tokens: 2030
+        },
+        stream: false,
+        messages: [
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                    }
+                ]
+            }
+        ],
+      });
+
+      console.log(response)
+    }
+    await getChatCompletionFunctions();
+    ```
+  </Tab>
+  <Tab title="OpenAI SDK (Python)">
+    ```python
+    from openai import OpenAI
+    from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+    openai = OpenAI(
+        api_key='ANTHROPIC_API_KEY',
+        base_url=PORTKEY_GATEWAY_URL,
+        default_headers=createHeaders(
+            provider="anthropic",
+            api_key="PORTKEY_API_KEY",
+            strict_open_ai_compliance=False
+        )
+    )
+
+    response = openai.chat.completions.create(
+        model="claude-3-7-sonnet-latest",
+        max_tokens=3000,
+        thinking={
+            "type": "enabled",
+            "budget_tokens": 2030
+        },
+        stream=False,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                    }
+                ]
+            }
+        ]
+    )
+
+    print(response)
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```sh
+    curl "https://api.portkey.ai/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: anthropic" \
+      -H "x-api-key: $ANTHROPIC_API_KEY" \
+      -H "x-portkey-strict-open-ai-compliance: false" \
+      -d '{
+        "model": "claude-3-7-sonnet-latest",
+        "max_tokens": 3000,
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 2030
+        },
+        "stream": false,
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+              }
+            ]
+          }
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+## Multi-Turn Conversations
+
+For multi-turn conversations, include the previous thinking content in the conversation history:
+
+<CodeGroup>
+    ```py Python
+    from portkey_ai import Portkey
+
+    # Initialize the Portkey client
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+        virtual_key="VIRTUAL_KEY",   # Add your provider's virtual key
+        strict_open_ai_compliance=False
+    )
+
+    # Create the request
+    response = portkey.chat.completions.create(
+      model="claude-3-7-sonnet-latest",
+      max_tokens=3000,
+      thinking={
+          "type": "enabled",
+          "budget_tokens": 2030
+      },
+      stream=False,
+      messages=[
+          {
+              "role": "user",
+              "content": [
+                  {
+                      "type": "text",
+                      "text": "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                  }
+              ]
+          },
+          {
+              "role": "assistant",
+              "content": [
+                      {
+                          "type": "thinking",
+                          "thinking": "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
+                          "signature": "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
+                      }
+              ]
+          },
+          {
+              "role": "user",
+              "content": "thanks that's good to know, how about to chennai?"
+          }
+      ]
+    )
+    print(response)
+    ```
+    ```ts NodeJS
+    import Portkey from 'portkey-ai';
+
+    // Initialize the Portkey client
+    const portkey = new Portkey({
+      apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
+      virtualKey: "VIRTUAL_KEY", // Add your anthropic's virtual key
+      strictOpenAiCompliance: false
+    });
+
+    // Generate a chat completion
+    async function getChatCompletionFunctions() {
+        const response = await portkey.chat.completions.create({
+          model: "claude-3-7-sonnet-latest",
+          max_tokens: 3000,
+          thinking: {
+              type: "enabled",
+              budget_tokens: 2030
+          },
+          stream: false,
+          messages: [
+              {
+                  role: "user",
+                  content: [
+                      {
+                          type: "text",
+                          text: "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                      }
+                  ]
+              },
+              {
+                  role: "assistant",
+                  content: [
+                          {
+                              type: "thinking",
+                              thinking: "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
+                              signature: "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
+                          }
+                  ]
+              },
+              {
+                  role: "user",
+                  content: "thanks that's good to know, how about to chennai?"
+              }
+          ]
+        });
+        console.log(response);
+      }
+    // Call the function
+    getChatCompletionFunctions();
+    ```
+    ```js OpenAI NodeJS
+    import OpenAI from 'openai'; // We're using the v4 SDK
+    import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+    const openai = new OpenAI({
+      apiKey: 'ANTHROPIC_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
+      baseURL: PORTKEY_GATEWAY_URL,
+      defaultHeaders: createHeaders({
+        provider: "anthropic",
+        apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+        strict_open_ai_compliance: false
+      })
+    });
+
+    // Generate a chat completion with streaming
+    async function getChatCompletionFunctions(){
+      const response = await openai.chat.completions.create({
+        model: "claude-3-7-sonnet-latest",
+        max_tokens: 3000,
+        thinking: {
+            type: "enabled",
+            budget_tokens: 2030
+        },
+        stream: false,
+        messages: [
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                    }
+                ]
+            },
+            {
+                role: "assistant",
+                content: [
+                        {
+                            type: "thinking",
+                            thinking: "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
+                            signature: "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
+                        }
+                ]
+            },
+            {
+                role: "user",
+                content: "thanks that's good to know, how about to chennai?"
+            }
+        ],
+      });
+
+      console.log(response)
+
+    }
+    await getChatCompletionFunctions();
+    ```
+    ```py OpenAI Python
+    from openai import OpenAI
+    from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+    openai = OpenAI(
+        api_key='Anthropic_API_KEY',
+        base_url=PORTKEY_GATEWAY_URL,
+        default_headers=createHeaders(
+            provider="anthropic",
+            api_key="PORTKEY_API_KEY",
+            strict_open_ai_compliance=False
+        )
+    )
+
+
+    response = openai.chat.completions.create(
+        model="claude-3-7-sonnet-latest",
+        max_tokens=3000,
+        thinking={
+            "type": "enabled",
+            "budget_tokens": 2030
+        },
+        stream=False,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                    }
+                ]
+            },
+            {
+                "role": "assistant",
+                "content": [
+                        {
+                            "type": "thinking",
+                            "thinking": "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
+                            signature: "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
+                        }
+                ]
+            },
+            {
+                "role": "user",
+                "content": "thanks that's good to know, how about to chennai?"
+            }
+        ]
+    )
+
+    print(response)
+    ```
+    ```sh cURL
+    curl "https://api.portkey.ai/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: anthropic" \
+      -H "x-api-key: $ANTHROPIC_API_KEY" \
+      -H "x-portkey-strict-open-ai-compliance: false" \
+      -d '{
+        "model": "claude-3-7-sonnet-latest",
+        "max_tokens": 3000,
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 2030
+        },
+        "stream": false,
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+                    {
+                        "type": "thinking",
+                        "thinking": "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
+                        "signature": "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
+                    }
+            ]
+          },
+          {
+            "role": "user",
+            "content": "thanks that's good to know, how about to chennai?"
+          }
+        ]
+      }'
+    ```
+</CodeGroup>
+
+
+## Understanding Response Format
+
+When using thinking-enabled models, be aware of the special response format:
+
+<Note>
+The assistant's thinking response is returned in the `response_chunk.choices[0].delta.content_blocks` array, not the `response.choices[0].message.content` string.
+</Note>
+
+This is especially important for streaming responses, where you'll need to specifically parse and extract the thinking content from the content blocks.
+
+## When to Use Thinking Models
+
+Thinking models are particularly valuable in specific use cases:
+
+
+
+## FAQs
+
+<AccordionGroup>
+  <Accordion title="Can I use thinking mode with any model?">
+    No, thinking mode is only available on specific reasoning-optimized models. Currently, this includes Claude 3.7 Sonnet and will expand to other models as they become available.
+  </Accordion>
+
+  <Accordion title="Does thinking mode increase token usage?">
+    Yes, enabling thinking mode will increase your token usage since the model is generating additional content for its reasoning process. The `budget_tokens` parameter lets you control the maximum tokens allocated to thinking.
+  </Accordion>
+
+  <Accordion title="Do I need to handle the response differently for thinking mode?">
+    Yes, particularly for streaming responses. The thinking content is returned in the `content_blocks` array rather than the standard content field, so you'll need to adapt your response parsing logic.
+  </Accordion>
+
+  <Accordion title="Why do I need to set strict_open_ai_compliance to false?">
+    The thinking mode response format extends beyond the standard OpenAI completion schema. Setting `strict_open_ai_compliance` to false allows Portkey to return this extended format with the thinking content.
+  </Accordion>
+
+</AccordionGroup>
