@@ -1,3 +1,4 @@
+
 openapi: 3.0.0
 info:
   title: Portkey API
@@ -19,6 +20,14 @@ tags:
     description: Turn audio into text or text into audio.
   - name: Chat
     description: Given a list of messages comprising a conversation, the model will return a response.
+  - name: Collections
+    description: Create, List, Retrieve, Update, and Delete collections of prompts.
+  - name: Labels
+    description: Create, List, Retrieve, Update, and Delete labels.
+  - name: Prompt Collections
+    description: Create, List, Retrieve, Update, and Delete prompt collections.
+  - name: PromptPartials
+    description: Create, List, Retrieve, Update, and Delete prompt partials.
   - name: Prompts
     description: Given a prompt template ID and variables, will run the saved prompt template and return a response.
   - name: Completions
@@ -56,7 +65,9 @@ tags:
   - name: Api-Keys
     description: Create, List, Retrieve, Update, and Delete your Portkey Api keys.
   - name: Logs Export
-    description: Exports logs service .
+    description: Exports logs service.
+  - name: Audit Logs
+    description: Get audit logs for your Portkey account.
   - name: Analytics
     description: Get analytics over different data points like requests, costs, tokens, etc.
   - name: Analytics > Graphs
@@ -204,7 +215,7 @@ paths:
             });
 
             async function main() {
-              const response = await client.chat.completions.create({
+              const response = await portkey.chat.completions.create({
                 messages: [{ role: "system", content: "You are a helpful assistant." }],
                 model: "gpt-4o",
               });
@@ -225,7 +236,7 @@ paths:
             });
 
             async function main() {
-              const response = await client.chat.completions.create({
+              const response = await portkey.chat.completions.create({
                 messages: [{ role: "system", content: "You are a helpful assistant." }],
                 model: "gpt-4o",
               });
@@ -379,6 +390,1176 @@ paths:
                 "max_tokens": 7,
                 "temperature": 0
               }'
+
+  /collections:
+    post:
+      summary: Create a new collection
+      description: Creates a new collection in the specified workspace
+      tags:
+        - Collections
+      security:
+        - Portkey-Key: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workspace_id:
+                  type: string
+                  description: ID or slug of the workspace
+                name:
+                  type: string
+                  description: Name of the collection
+                parent_collection_id:
+                  type: string
+                  description: ID or slug of the parent collection (optional)
+              required:
+                - name
+      responses:
+        '200':
+          description: Collection created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: ID of the created collection
+                  slug:
+                    type: string
+                    description: Slug of the created collection
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Workspace or parent collection not found
+        '500':
+          description: Server error
+    
+    get:
+      summary: List collections
+      description: Lists all collections in the specified workspace
+      tags:
+        - Collections
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: workspace_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ID or slug of the workspace
+        - name: current_page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+          description: Page number for pagination (0-indexed)
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Number of items per page
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Search query to filter collections by name
+      responses:
+        '200':
+          description: List of collections
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    description: Total number of collections matching the criteria
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CollectionWithDetails'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Workspace not found
+        '500':
+          description: Server error
+  
+  /collections/{collectionId}:
+    parameters:
+      - name: collectionId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: ID or slug of the collection
+    
+    get:
+      summary: Get collection details
+      description: Retrieves details of a specific collection
+      tags:
+        - Collections
+      security:
+        - Portkey-Key: []
+      responses:
+        '200':
+          description: Collection details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionWithChildCollections'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Collection not found
+        '500':
+          description: Server error
+    
+    put:
+      summary: Update collection
+      description: Updates a collection's details
+      security:
+        - Portkey-Key: []
+      tags:
+        - Collections
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: New name for the collection
+              required:
+                - name
+      responses:
+        '200':
+          description: OK
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: application/json
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Collection not found
+        '500':
+          description: Server error
+    
+    delete:
+      summary: Delete collection
+      description: Deletes a collection
+      security:
+        - Portkey-Key: []
+      tags:
+        - Collections
+      responses:
+        '200':
+          description: OK
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: application/json
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Collection not found or trying to delete default collection
+        '500':
+          description: Server error
+
+  /labels:
+    post:
+      summary: Create a new label
+      description: Creates a new label in the system
+      operationId: createLabel
+      security:
+        - Portkey-Key: []
+      tags:
+        - Labels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLabelRequest'
+      responses:
+        '200':
+          description: Label created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateLabelResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '500':
+          description: Server error
+
+    get:
+      summary: List labels
+      description: Returns a list of labels based on filters
+      operationId: listLabels
+      security:
+        - Portkey-Key: []
+      tags:
+        - Labels
+      parameters:
+        - name: organisation_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: ID of the organisation
+        - name: workspace_id
+          in: query
+          schema:
+            type: string
+          description: ID or slug of the workspace
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search query to filter labels by name
+        - name: current_page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Page number for pagination
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: Number of items per page
+      responses:
+        '200':
+          description: List of labels
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListLabelsResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '500':
+          description: Server error
+
+  /labels/{labelId}:
+    get:
+      summary: Get a label by ID
+      description: Returns a specific label by its ID
+      operationId: getLabel
+      security:
+        - Portkey-Key: []
+      tags:
+        - Labels
+      parameters:
+        - name: labelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID of the label to retrieve
+        - name: organisation_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: ID of the organisation
+        - name: workspace_id
+          in: query
+          schema:
+            type: string
+          description: ID or slug of the workspace
+      responses:
+        '200':
+          description: Label details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Label'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Label not found
+        '500':
+          description: Server error
+
+    put:
+      summary: Update a label
+      description: Updates an existing label
+      operationId: updateLabel
+      security:
+        - Portkey-Key: []
+      tags:
+        - Labels
+      parameters:
+        - name: labelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID of the label to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLabelRequest'
+      responses:
+        '200':
+          description: OK
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: application/json
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Label not found
+        '500':
+          description: Server error
+
+    delete:
+      summary: Delete a label
+      description: Deletes a label (marks it as archived)
+      operationId: deleteLabel
+      security:
+        - Portkey-Key: []
+      tags:
+        - Labels
+      parameters:
+        - name: labelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID of the label to delete
+      responses:
+        '200':
+          description: OK
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: application/json
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Label not found
+        '500':
+          description: Server err
+
+  /prompts:
+    post:
+      summary: Create a new prompt
+      operationId: createPrompt
+      tags:
+        - Prompts
+      security:
+        - Portkey-Key: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - collection_id
+                - string
+                - parameters
+              properties:
+                name:
+                  type: string
+                collection_id:
+                  type: string
+                  description: UUID or slug of the collection
+                string:
+                  type: string
+                  description: Prompt template in string format
+                parameters:
+                  type: object
+                  description: Parameters for the prompt
+                functions:
+                  type: array
+                  description: Functions for the prompt
+                  items:
+                    type: object
+                tools:
+                  type: array
+                  description: Tools for the prompt
+                  items:
+                    type: object
+                tool_choice:
+                  type: object
+                  description: Tool Choice for the prompt
+                model:
+                  type: string
+                  description: The model to use for the prompt
+                virtual_key:
+                  type: string
+                  description: The virtual key to use for the prompt
+                version_description:
+                  type: string
+                  description: The description of the prompt version
+                template_metadata:
+                  type: object
+                  description: Metadata for the prompt
+      responses:
+        '200':
+          description: Prompt created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  slug:
+                    type: string
+                  version_id:
+                    type: string
+                    format: uuid
+                  object:
+                    type: string
+                    enum: ['prompt']
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '500':
+          description: Server error
+    
+    get:
+      summary: List prompts
+      operationId: listPrompts
+      tags:
+        - Prompts
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: collection_id
+          in: query
+          schema:
+            type: string
+        - name: workspace_id
+          in: query
+          schema:
+            type: string
+        - name: current_page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of prompts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PromptSummary'
+                  total:
+                    type: integer
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '500':
+          description: Server error
+  
+  /prompts/{promptId}:
+    get:
+      summary: Get a prompt by ID or slug
+      operationId: getPrompt
+      tags:
+        - Prompts
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Prompt details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prompt'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt not found
+        '500':
+          description: Server error
+    
+    put:
+      summary: Update a prompt
+      operationId: updatePrompt
+      tags:
+        - Prompts
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                collection_id:
+                  type: string
+                string:
+                  type: string
+                parameters:
+                  type: object
+                model:
+                  type: string
+                virtual_key:
+                  type: string
+                version_description:
+                  type: string
+                functions:
+                  type: array
+                  items:
+                    type: object
+                tools:
+                  type: array
+                  items:
+                    type: object
+                tool_choice:
+                  type: object
+                is_raw_template:
+                  type: integer
+                  enum: [0, 1]
+                prompt_metadata:
+                  type: object
+      responses:
+        '200':
+          description: Prompt updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  slug:
+                    type: string
+                  prompt_version_id:
+                    type: string
+                    format: uuid
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt not found
+        '500':
+          description: Server error
+    
+    delete:
+      summary: Delete a prompt
+      operationId: deletePrompt
+      tags:
+        - Prompts
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Prompt deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt not found
+        '500':
+          description: Server error
+  
+  /prompts/{promptId}/versions:
+    get:
+      summary: Get all versions of a prompt
+      operationId: getPromptVersions
+      tags:
+        - Prompts
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of prompt versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PromptVersionSummary'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt not found
+        '500':
+          description: Server error
+  
+  /prompts/{promptId}/versions/{versionId}:
+    get:
+      summary: Get a specific version of a prompt
+      operationId: getPromptByVersion
+      tags:
+        - Prompts
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Prompt version details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prompt'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt version not found
+        '500':
+          description: Server error
+    
+    put:
+      summary: Update a specific version of a prompt
+      operationId: updatePromptVersion
+      tags:
+        - Prompts
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Prompt version updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt version not found
+        '500':
+          description: Server error
+  
+  /prompts/{promptId}/makeDefault:
+    put:
+      summary: Set a version as the default for a prompt
+      operationId: updatePromptDefault
+      tags:
+        - Prompts
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+              properties:
+                version:
+                  type: number
+                  description: Version Number to set as default
+      responses:
+        '200':
+          description: Default version set successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt or version not found
+        '500':
+          description: Server error
+  
+  /prompts/partials:
+    post:
+      summary: Create a new prompt partial
+      operationId: createPromptPartial
+      tags:
+        - PromptPartials
+      security:
+        - Portkey-Key: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - string
+              properties:
+                workspace_id:
+                  type: string
+                  description: Required for Admin keys
+                name:
+                  type: string
+                string:
+                  type: string
+                  description: Prompt partial template in string format
+                version_description:
+                  type: string
+      responses:
+        '200':
+          description: Prompt partial created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  slug:
+                    type: string
+                  version_id:
+                    type: string
+                    format: uuid
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '500':
+          description: Server error
+    
+    get:
+      summary: List prompt partials
+      operationId: listPromptPartials
+      tags:
+        - PromptPartials
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: collection_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of prompt partials
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PromptPartialSummary'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+        '500':
+          description: Server error
+  
+  /prompts/partials/{promptPartialId}:
+    get:
+      summary: Get a prompt partial by ID or slug
+      operationId: getPromptPartial
+      tags:
+        - PromptPartials
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptPartialId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Prompt partial details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptPartial'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt partial not found
+        '500':
+          description: Server error
+    
+    put:
+      summary: Update a prompt partial
+      operationId: updatePromptPartial
+      tags:
+        - PromptPartials
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptPartialId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                string:
+                  type: string
+                description:
+                  type: string
+                status:
+                  type: string
+      responses:
+        '200':
+          description: Prompt partial updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prompt_partial_version_id:
+                    type: string
+                    format: uuid
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt partial not found
+        '500':
+          description: Server error
+    
+    delete:
+      summary: Delete a prompt partial
+      operationId: deletePromptPartial
+      tags:
+        - PromptPartials
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptPartialId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Prompt partial deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt partial not found
+        '500':
+          description: Server error
+  
+  /prompts/partials/{promptPartialId}/versions:
+    get:
+      summary: Get all versions of a prompt partial
+      operationId: getPromptPartialVersions
+      tags:
+        - PromptPartials
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptPartialId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of prompt partial versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PromptPartialVersion'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt partial not found
+        '500':
+          description: Server error
+  
+  /prompts/partials/{promptPartialId}/makeDefault:
+    put:
+      summary: Set a version as the default for a prompt partial
+      operationId: updatePromptPartialDefault
+      tags:
+        - PromptPartials
+      security:
+        - Portkey-Key: []
+      parameters:
+        - name: promptPartialId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+              properties:
+                version:
+                  type: number
+                  description: Version Number to set as default
+      responses:
+        '200':
+          description: Default version set successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Prompt partial or version not found
+        '500':
+          description: Server error
 
   /prompts/{promptId}/completions:
     post:
@@ -556,6 +1737,9 @@ paths:
 
   /prompts/{promptId}/render:
     post:
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: SELF_HOSTED_GATEWAY_URL/v1
       operationId: createPromptRender
       tags:
         - Prompts
@@ -603,6 +1787,7 @@ paths:
 
       x-code-samples:
         - lang: "cURL"
+          label: Default
           source: |
             curl -X POST "https://api.portkey.ai/v1/prompts/YOUR_PROMPT_ID/render" \
               -H "Content-Type: application/json" \
@@ -615,6 +1800,7 @@ paths:
                 "presence_penalty": 0.2
               }'
         - lang: Python
+          label: Default
           source: |
             from portkey_ai import Portkey
 
@@ -634,11 +1820,66 @@ paths:
             print(completion)
 
         - lang: "JavaScript"
+          label: Default
           source: |
             import Portkey from 'portkey-ai';
 
             const portkey = new Portkey({
               apiKey: 'PORTKEY_API_KEY'
+            });
+
+            const completion = await portkey.prompts.render({
+              promptId: "YOUR_PROMPT_ID",
+              variables: {
+                user_input: "Hello world"
+              },
+              max_tokens: 250,
+              presence_penalty: 0.2
+            });
+
+            console.log(completion);
+        - lang: "cURL"
+          label: Self-Hosted
+          source: |
+            curl -X POST "SELF_HOSTED_GATEWAY_URL/v1/prompts/YOUR_PROMPT_ID/render" \
+              -H "Content-Type: application/json" \
+              -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+              -d '{
+                "variables": {
+                  "user_input": "Hello world"
+                },
+                "max_tokens": 250,
+                "presence_penalty": 0.2
+              }'
+        - lang: Python
+          label: Self-Hosted
+          source: |
+            from portkey_ai import Portkey
+
+            client = Portkey(
+                api_key="PORTKEY_API_KEY",
+                base_url="SELF_HOSTED_GATEWAY_URL"
+            )
+
+            completion = client.prompts.render(
+                prompt_id="YOUR_PROMPT_ID",
+                variables={
+                    "user_input": "Hello world"
+                },
+                max_tokens=250,
+                presence_penalty=0.2
+            )
+
+            print(completion)
+
+        - lang: "JavaScript"
+          label: Self-Hosted
+          source: |
+            import Portkey from 'portkey-ai';
+
+            const portkey = new Portkey({
+              apiKey: 'PORTKEY_API_KEY',
+              baseUrl: 'SELF_HOSTED_GATEWAY_URL'
             });
 
             const completion = await portkey.prompts.render({
@@ -2640,14 +3881,6 @@ paths:
             curl https://api.portkey.ai/v1/fine_tuning/jobs/ftjob-abc123/checkpoints \
               -H "x-portkey-api-key: $PORTKEY_API_KEY" \
               -H "x-portkey-virtual-key: $PORTKEY_PROVIDER_VIRTUAL_KEY"
-        - lang: python
-          label: Default
-          source: |
-            Reach out to us on portkey.wiki/community
-        - lang: javascript
-          label: Default
-          source: |
-            Reach out to us on portkey.wiki/community
         - lang: curl
           label: Self-Hosted
           source: |
@@ -2655,13 +3888,63 @@ paths:
               -H "x-portkey-api-key: $PORTKEY_API_KEY" \
               -H "x-portkey-virtual-key: $PORTKEY_PROVIDER_VIRTUAL_KEY"
         - lang: python
+          label: Default
+          source: |
+            from portkey_ai import Portkey
+
+            client = Portkey(
+              api_key = "PORTKEY_API_KEY",
+              virtual_key = "PROVIDER_VIRTUAL_KEY"
+            )
+
+            checkpoints_list = client.fine_tuning.jobs.checkpoints.list(fine_tuning_job_id="<ft-job-id>")
+            print(checkpoints_list)
+        - lang: javascript
+          label: Default
+          source: |
+            import Portkey from 'portkey-ai';
+
+            const client = new Portkey({
+              apiKey: 'PORTKEY_API_KEY',
+              virtualKey: 'PROVIDER_VIRTUAL_KEY'
+            });
+
+            async function main() {
+              const checkpointsList = await client.fineTuning.jobs.checkpoints.list("<ft-job-id>")
+              console.log(checkpointsList)
+            }
+
+            main();
+        - lang: python
           label: Self-Hosted
           source: |
-            Reach out to us on portkey.wiki/community
+            from portkey_ai import Portkey
+
+            client = Portkey(
+              api_key = "PORTKEY_API_KEY",
+              virtual_key = "PROVIDER_VIRTUAL_KEY",
+              base_url = "SELF_HOSTED_GATEWAY_URL"
+            )
+
+            checkpoints_list = client.fine_tuning.jobs.checkpoints.list(fine_tuning_job_id="<ft-job-id>")
+            print(checkpoints_list)
         - lang: javascript
           label: Self-Hosted
           source: |
-            Reach out to us on portkey.wiki/community
+            import Portkey from 'portkey-ai';
+
+            const client = new Portkey({
+              apiKey: 'PORTKEY_API_KEY',
+              virtualKey: 'PROVIDER_VIRTUAL_KEY',
+              baseUrl: 'SELF_HOSTED_GATEWAY_URL'
+            });
+
+            async function main() {
+              const checkpointsList = await client.fineTuning.jobs.checkpoints.list("<ft-job-id>")
+              console.log(checkpointsList)
+            }
+
+            main();
 
   /models:
     get:
@@ -7789,6 +9072,80 @@ paths:
             console.log(config);
 
   /configs/{slug}:
+    delete:
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: SELF_HOSTED_CONTROL_PLANE_URL/v1
+      summary: Delete a config
+      tags:
+        - Configs
+      operationId: deleteConfig
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Config deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                example-1:
+                  value:
+                    {}
+      x-code-samples:
+        - lang: python
+          label: Default
+          source: |
+            portkey = Portkey(
+                api_key="PORTKEY_API_KEY",
+            )
+
+            portkey.configs.delete(
+                id="CONFIG_SLUG"
+            )
+        - lang: javascript
+          label: Default
+          source: |
+            import { Portkey } from "portkey-ai";
+
+            const portkey = new Portkey({
+                apiKey:"PORTKEY_API_KEY",
+            })
+
+            await portkey.configs.delete({
+                id:"CONFIG_SLUG"
+            })
+        - lang: python
+          label: Self-Hosted
+          source: |
+            from portkey_ai import Portkey
+
+            portkey = Portkey(
+                api_key="PORTKEY_API_KEY",
+                base_url="SELF_HOSTED_CONTROL_PLANE_URL"
+            )
+
+            portkey.configs.delete(
+                id="CONFIG_SLUG"
+            )
+        - lang: javascript
+          label: Self-Hosted
+          source: |
+            import { Portkey } from "portkey-ai";
+
+            const portkey = new Portkey({
+                apiKey:"PORTKEY_API_KEY",
+                baseUrl: "SELF_HOSTED_CONTROL_PLANE_URL"
+            })
+
+            await portkey.configs.delete({
+                id:"CONFIG_SLUG"
+            })
     get:
       servers:
         - url: https://api.portkey.ai/v1
@@ -8103,83 +9460,6 @@ paths:
             })
 
             console.log(config);
-    delete:
-      servers:
-        - url: https://api.portkey.ai/v1
-        - url: SELF_HOSTED_CONTROL_PLANE_URL/v1
-      summary: Delete a config
-      tags:
-        - Configs
-      operationId: deleteConfig
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Config deleted successfully
-          content:
-            application/json:
-              schema:
-                type: object
-              examples:
-                example-1:
-                  value:
-                    {}
-      x-code-samples:
-        - lang: python
-          label: Default
-          source: |
-            portkey = Portkey(
-                api_key="PORTKEY_API_KEY",
-            )
-
-            # Delete the configuration
-            portkey.configs.delete(
-                id="CONFIG_SLUG"
-            )
-        - lang: javascript
-          label: Default
-          source: |
-            import { Portkey } from "portkey-ai";
-
-            const portkey = new Portkey({
-                apiKey:"PORTKEY_API_KEY",
-            })
-
-            await portkey.configs.delete({
-                id: "CONFIG_SLUG"
-            })
-        - lang: python
-          label: Self-Hosted
-          source: |
-            from portkey_ai import Portkey
-
-            # Initialize the Portkey client
-            portkey = Portkey(
-                api_key="PORTKEY_API_KEY",
-                base_url="SELF_HOSTED_CONTROL_PLANE_URL"
-            )
-
-            # Delete the configuration
-            portkey.configs.delete(
-                id="CONFIG_SLUG"
-            )
-        - lang: javascript
-          label: Self-Hosted
-          source: |
-            import { Portkey } from "portkey-ai";
-
-            const portkey = new Portkey({
-                apiKey:"PORTKEY_API_KEY",
-                baseUrl: "SELF_HOSTED_CONTROL_PLANE_URL"
-            })
-
-            await portkey.configs.delete({
-                id: "CONFIG_SLUG"
-            })
 
   /feedback:
     post:
@@ -12574,6 +13854,124 @@ paths:
             }
 
             main()
+  
+  /audit-logs:
+    get:
+      servers:
+        - url: https://api.portkey.ai/v1
+        - url: SELF_HOSTED_CONTROL_PLANE_URL
+      tags:
+        - Audit Logs
+      summary: Get Audit Logs
+      parameters:
+        - name: start_time
+          in: query
+          required: true
+          description: Start time for filtering logs (ISO8601 format)
+          schema:
+            type: string
+        - name: end_time
+          in: query
+          required: true
+          description: End time for filtering logs (ISO8601 format)
+          schema:
+            type: string
+        - name: organisation_id
+          in: query
+          required: true
+          description: Organisation ID for filtering logs
+          schema:
+            type: string
+        - name: method
+          in: query
+          required: false
+          description: HTTP method for filtering logs
+          schema:
+            type: string
+            enum: [POST, PUT, DELETE]
+        - name: uri
+          in: query
+          required: false
+          description: URI path for filtering logs
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          required: false
+          description: Request ID for filtering logs
+          schema:
+            type: string
+        - name: user_id
+          in: query
+          required: false
+          description: User ID for filtering logs
+          schema:
+            type: string
+        - name: user_type
+          in: query
+          required: false
+          description: Type of user for filtering logs
+          schema:
+            type: string
+            enum: [user, api_key]
+        - name: workspace_id
+          in: query
+          required: false
+          description: Workspace ID for filtering logs
+          schema:
+            type: string
+        - name: response_status_code
+          in: query
+          required: false
+          description: HTTP response status code for filtering logs
+          schema:
+            type: integer
+        - name: resource_type
+          in: query
+          required: false
+          description: Resource type for filtering logs
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: false
+          description: Action type for filtering logs
+          schema:
+            type: string
+        - name: client_ip
+          in: query
+          required: false
+          description: Client IP address for filtering logs
+          schema:
+            type: string
+        - name: country
+          in: query
+          required: false
+          description: Country for filtering logs
+          schema:
+            type: string
+        - name: current_page
+          in: query
+          required: false
+          description: Current page number for pagination
+          schema:
+            type: integer
+            minimum: 0
+        - name: page_size
+          in: query
+          required: false
+          description: Number of items per page
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogObjectList"
 
   /api-keys/{type}/{sub-type}:
     post:
@@ -15940,6 +17338,7 @@ components:
     ChatCompletionRequestMessage:
       oneOf:
         - $ref: "#/components/schemas/ChatCompletionRequestSystemMessage"
+        - $ref: "#/components/schemas/ChatCompletionRequestDeveloperMessage"
         - $ref: "#/components/schemas/ChatCompletionRequestUserMessage"
         - $ref: "#/components/schemas/ChatCompletionRequestAssistantMessage"
         - $ref: "#/components/schemas/ChatCompletionRequestToolMessage"
@@ -15957,6 +17356,25 @@ components:
           type: string
           enum: ["system"]
           description: The role of the messages author, in this case `system`.
+        name:
+          type: string
+          description: An optional name for the participant. Provides the model information to differentiate between participants of the same role.
+      required:
+        - content
+        - role
+
+    ChatCompletionRequestDeveloperMessage:
+      type: object
+      title: Developer message
+      description: New role by OpenAI for select models. Must be explicitly used for models that support it. When used with incompatible models or providers, Portkey automatically converts it to a system role.
+      properties:
+        content:
+          description: The contents of the Developer message.
+          type: string
+        role:
+          type: string
+          enum: ["developer"]
+          description: The role of the messages author, in this case `Developer`.
         name:
           type: string
           description: An optional name for the participant. Provides the model information to differentiate between participants of the same role.
@@ -16512,6 +17930,27 @@ components:
           default: false
         stream_options:
           $ref: "#/components/schemas/ChatCompletionStreamOptions"
+        thinking:
+          type: object
+          nullable: true
+          description: |
+            View the thinking/reasoning tokens as part of your response. Thinking models produce a long internal chain of thought before generating a response. Supported only for specific Claude models on Anthropic, Google Vertex AI, and AWS Bedrock.  Requires setting `strict_openai_compliance = false` in your API call.
+          properties:
+            type:
+              type: string
+              enum: ["enabled", "disabled"]
+              description: Enables or disables the thinking mode capability.
+              default: "disabled"
+            budget_tokens:
+              type: integer
+              description: |
+                The maximum number of tokens to allocate for the thinking process.
+                A higher token budget allows for more thorough reasoning but may increase overall response time.
+              minimum: 1
+              example: 2030
+          required:
+            - type
+          example: { "type": "enabled", "budget_tokens": 2030 }
         temperature:
           type: number
           minimum: 0
@@ -22242,6 +23681,376 @@ components:
             type: object
             $ref: "#/components/schemas/WorkspaceMember"
 
+    Collection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        workspace_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        parent_collection_id:
+          type: string
+          format: uuid
+          nullable: true
+        is_default:
+          type: boolean
+        status:
+          type: string
+          enum: [active, archived]
+        created_at:
+          type: string
+          format: date-time
+        last_updated_at:
+          type: string
+          format: date-time
+    
+    CollectionDetails:
+      type: object
+      properties:
+        child_collections_count:
+          type: integer
+        prompts_count:
+          type: integer
+        child_collections_last_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        prompts_last_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+    
+    CollectionWithDetails:
+      allOf:
+        - $ref: '#/components/schemas/Collection'
+        - type: object
+          properties:
+            collection_details:
+              $ref: '#/components/schemas/CollectionDetails'
+    
+    ChildCollection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        last_updated_at:
+          type: string
+          format: date-time
+        collection_details:
+          $ref: '#/components/schemas/CollectionDetails'
+    
+    CollectionWithChildCollections:
+      allOf:
+        - $ref: '#/components/schemas/Collection'
+        - type: object
+          properties:
+            child_collections:
+              type: array
+              items:
+                $ref: '#/components/schemas/ChildCollection'
+
+    Label:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the label
+        name:
+          type: string
+          description: Name of the label
+        description:
+          type: string
+          description: Description of the label
+        color_code:
+          type: string
+          description: Color code for the label
+        organisation_id:
+          type: string
+          format: uuid
+          description: ID of the organisation the label belongs to
+        workspace_id:
+          type: string
+          format: uuid
+          description: ID of the workspace the label belongs to
+        is_universal:
+          type: boolean
+          description: Whether the label is universal
+        created_at:
+          type: string
+          format: date-time
+          description: When the label was created
+        last_updated_at:
+          type: string
+          format: date-time
+          description: When the label was last updated
+        status:
+          type: string
+          description: Status of the label
+
+    CreateLabelRequest:
+      type: object
+      required:
+        - name
+      properties:
+        organisation_id:
+          type: string
+          format: uuid
+          description: ID of the organisation
+        workspace_id:
+          type: string
+          description: ID or slug of the workspace
+        name:
+          type: string
+          description: Name of the label
+          pattern: ^(?!latest$)(?!default$)(?!\d+$)[a-zA-Z0-9_-]*[^@\s]?[a-zA-Z0-9_-]*$
+        description:
+          type: string
+          description: Description of the label
+        color_code:
+          type: string
+          description: Color code for the label
+
+    UpdateLabelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the label
+          pattern: ^(?!latest$)(?!default$)(?!\d+$)[a-zA-Z0-9_-]*[^@\s]?[a-zA-Z0-9_-]*$
+        description:
+          type: string
+          description: Description of the label
+        color_code:
+          type: string
+          description: Color code for the label
+
+    CreateLabelResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID of the created label
+
+    ListLabelsResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of labels
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Label'
+
+    PromptSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        collection_id:
+          type: string
+          format: uuid
+        model:
+          type: string
+          format: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_updated_at:
+          type: string
+          format: date-time
+        object:
+          type: string
+          enum: ["prompt"]
+    
+    Prompt:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        collection_id:
+          type: string
+          format: uuid
+        string:
+          type: string
+        parameters:
+          type: object
+        prompt_version:
+          type: number
+        prompt_version_id:
+          type: string
+          format: uuid
+        prompt_version_status:
+          type: string
+          enum: ["active", "archived"]
+        prompt_version_description:
+          type: string
+        prompt_version_label_id:
+          type: string
+          format: uuid
+        virtual_key:
+          type: string
+        model:
+          type: string
+        functions:
+          type: array
+          items:
+            type: object
+        tools:
+          type: array
+          items:
+            type: object
+        tool_choice:
+          type: object
+        template_metadata:
+          type: object
+        is_raw_template:
+          type: boolean
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_updated_at:
+          type: string
+          format: date-time
+    
+    PromptVersionSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        prompt_id:
+          type: string
+          format: uuid
+        prompt_template:
+          type: object
+        prompt_version:
+          type: number
+        prompt_description:
+          type: string
+        label_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: ["active", "archived"]
+        object:
+          type: string
+          enum: ["prompt"]
+    
+    PromptPartialSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        collection_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        last_updated_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: ["active", "archived"]
+        object:
+          type: string
+          enum: ["partial"]
+    
+    PromptPartial:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        collection_id:
+          type: string
+          format: uuid
+        string:
+          type: string
+        version:
+          type: number
+        version_description:
+          type: string
+        prompt_partial_version_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        last_updated_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: ["active"]
+    
+    PromptPartialVersion:
+      type: object
+      properties:
+        prompt_partial_id:
+          type: string
+          format: uuid
+        prompt_partial_version_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        version:
+          type: string
+        string:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        prompt_version_status:
+          type: string
+          enum: ["active", "archived"]
+        object:
+          type: string
+          enum: ["partial"]
+
     CustomLog:
       type: object
       properties:
@@ -22468,6 +24277,74 @@ components:
           - config
           - prompt_slug
           - metadata
+
+    AuditLogObjectList:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                description: Timestamp of when the action occurred
+              method:
+                type: string
+                enum: [POST, PUT, DELETE]
+                description: HTTP method used for the request
+              uri:
+                type: string
+                description: URI path that was accessed
+              request_id:
+                type: string
+                description: Unique ID of the request
+              request_body:
+                type: string
+                description: JSON string of the request body
+              query_params:
+                type: string
+                description: JSON string of the query parameters
+              request_headers:
+                type: string
+                description: JSON string of the request headers (partially masked)
+              user_id:
+                type: string
+                format: uuid
+                description: ID of the user who made the request
+              user_type:
+                type: string
+                enum: [user, api_key]
+                description: Type of user who made the request
+              organisation_id:
+                type: string
+                format: uuid
+                description: ID of the organisation the user belongs to
+              workspace_id:
+                type: string
+                description: ID of the workspace the resource belongs to
+              response_status_code:
+                type: integer
+                description: HTTP status code of the response
+              resource_type:
+                type: string
+                description: Type of resource that was accessed
+              action:
+                type: string
+                description: Action performed on the resource
+              client_ip:
+                type: string
+                description: IP address of the client
+              country:
+                type: string
+                description: Country of origin based on the IP address
+        total:
+          type: integer
+          description: Total number of records in the response
+        object:
+          type: string
+          description: The type of object being returned
+          enum: [analytics-graph]
 
     ApiKeyObject:
       type: object
