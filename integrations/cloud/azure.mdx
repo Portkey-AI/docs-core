@@ -1,0 +1,191 @@
+---
+title: "Microsoft Azure"
+description: "End-to-end support for Azure's entire platform and AI ecosystem, all through Portkey."
+---
+
+**Gen AI teams achieve 75% faster time-to-market Azure AI costs and 4× faster deployment** with Portkey's end-to-end Azure AI solution. Our dedicated platform bridges compliance and innovation gaps, bringing unified control to all your AI infrastructure while maintaining Azure's native security model.
+
+<CTABanner title="Ready to optimize your Azure AI investment?" buttonText="Schedule a 30-min strategy call" href="#enterprise-demo" />
+
+# Build Enterprise-Grade GenAI on Azure
+
+
+
+
+## What You Can Do Today
+
+<CardGroup cols={2}>
+<Card title="1-Click Azure Marketplace Deploy" icon="rocket" href="https://azuremarketplace.microsoft.com/en-in/marketplace/apps/portkey.enterprise-saas?tab=Overview">
+Spin up a managed Portkey instance directly inside your Azure subscription.
+</Card>
+<Card title="SSO & SCIM with Microsoft Entra" icon="user-lock" href="/product/enterprise-offering/org-management/sso">
+Enterprise-grade identity and automated user provisioning out of the box.
+</Card>
+<Card title="Unified Access to Azure OpenAI" icon="brain" href="/integrations/llms/azure-openai">
+Route chat, vision, function-calling and image requests through Portkey while retaining Azure compliance.
+</Card>
+<Card title="Azure AI Foundry Models" icon="flask" href="/integrations/llms/azure-foundry">
+Bring any model deployed via AI Foundry under the same gateway, with caching, retries & observability.
+</Card>
+<Card title="Azure Content Safety Guardrails" icon="shield-check" href="/product/guardrails/azure-guardrails">
+Apply robust content moderation & PII detection to every request — no code changes required.
+</Card>
+<Card title="OpenAI C# SDK & Semantic Kernel" icon="code">
+Keep using familiar Microsoft tooling while Portkey handles routing, cost attribution and guardrails.
+</Card>
+<Card title="Native Azure API Management" icon="plug">
+Expose Portkey configs as APIM endpoints for consistent governance across all your APIs.
+</Card>
+</CardGroup>
+
+## Why Enterprises Choose Portkey on Azure
+
+<Mermaid>
+graph LR
+A[All Azure AI Usage] --> B[Portkey Gateway]
+B --> C[Per-app Budgets & Cost Attribution]
+C --> D[Centralised Guardrails & Observability]
+D --> E[Actionable Insights & ROI]
+</Mermaid>
+
+1. **Full Cost Attribution** – Tag requests by application, environment or user and export detailed metrics to Azure Monitor or your data warehouse.  
+2. **Governance at Scale** – Enforce organisation-wide guardrails, rate limits and SSO policies across every workspace.  
+3. **Zero-Trust Security** – Secrets remain in Azure Key Vault; traffic never leaves Azure’s backbone when you deploy via Marketplace or Private Cloud.  
+4. **Faster Developer Velocity** – A single gateway layer means no more per-team Azure OpenAI subscriptions or duplicated infrastructure.
+
+## Get Started in Minutes
+
+1. **Deploy from the Azure Marketplace** and choose your subscription.  
+2. **Connect Entra SSO & SCIM** using our [SSO guide](/product/enterprise-offering/org-management/sso) and [Azure SCIM setup](/product/enterprise-offering/org-management/scim/azure-ad).  
+3. **Add Virtual Keys** for your Azure OpenAI or AI Foundry resources.  
+4. **Enable Azure Content Safety Guardrails** within your Portkey Config.  
+5. **Instrument your code** with the SDK of your choice.
+
+<Tabs>
+<Tab title="C#">
+```csharp
+using OpenAI;
+using OpenAI.Chat;
+using System;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+public static class PortkeyAzureClient
+{
+    private class PortkeyHeadersPolicy : PipelinePolicy
+    {
+        private readonly Dictionary<string, string> _headers;
+        public PortkeyHeadersPolicy(Dictionary<string, string> headers) => _headers = headers;
+
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            foreach (var header in _headers) message.Request.Headers.Set(header.Key, header.Value);
+            if (index < pipeline.Count) pipeline[index].Process(message, pipeline, index + 1);
+        }
+
+        public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
+        {
+            Process(message, pipeline, index);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    public static OpenAIClient CreateOpenAIClientWithPortkey(
+        Uri azureEndpoint,
+        string azureApiKey,
+        Dictionary<string, string> portkeyHeaders
+    )
+    {
+        var options = new OpenAIClientOptions
+        {
+            Endpoint = azureEndpoint, // Your Azure OpenAI endpoint
+        };
+        options.AddPolicy(new PortkeyHeadersPolicy(portkeyHeaders), PipelinePosition.PerCall);
+
+        return new OpenAIClient(new ApiKeyCredential(azureApiKey), options);
+    }
+}
+
+public class ExampleAzureIntegration
+{
+    public static async Task Main(string[] args)
+    {
+        // 1. Define Azure OpenAI credentials
+        var azureEndpoint = new Uri("YOUR_AZURE_OPENAI_ENDPOINT"); // Eg: https://<your-resource-name>.openai.azure.com/
+        var azureApiKey = "YOUR_AZURE_OPENAI_KEY"; 
+
+        // 2. Define Portkey headers
+        // Get your Portkey API Key from https://app.portkey.ai/settings
+        // Create a virtual key for your Azure OpenAI setup in Portkey: https://app.portkey.ai/virtual-keys
+        var portkeyHeaders = new Dictionary<string, string> 
+        {
+            { "x-portkey-api-key", "YOUR_PORTKEY_API_KEY" }, 
+            { "x-portkey-virtual-key", "YOUR_AZURE_OPENAI_VIRTUAL_KEY" } // Connects to your Azure setup
+            // Optional: { "x-portkey-trace-id", "my-azure-app-trace" },
+            // Optional: { "x-portkey-metadata", "{\"userId\": \"user-123\"}" }
+        };
+
+        // 3. Create Azure OpenAI client with Portkey integration
+        var openAIClient = PortkeyAzureClient.CreateOpenAIClientWithPortkey(
+            azureEndpoint,
+            azureApiKey,
+            portkeyHeaders
+        );
+
+        // 4. Get the ChatClient
+        // The model/deployment name for Azure OpenAI is specified here.
+        var chatClient = openAIClient.GetChatClient("YOUR_AZURE_DEPLOYMENT_NAME"); // Eg: gpt-4, gpt-35-turbo
+
+        // 5. Make a request
+        try
+        {
+            Console.WriteLine("Sending request to Azure OpenAI via Portkey...");
+            ChatCompletion completion = await chatClient.CompleteChatAsync(
+                new List<ChatMessage>
+                {
+                    new SystemChatMessage("You are an AI assistant that helps people find information."),
+                    new UserChatMessage("Give me 3 Azure best practices for cloud security.")
+                });
+
+            Console.WriteLine($"[ASSISTANT]: {completion.Content[0].Text}");
+        }
+        catch (ClientResultException ex)
+        {
+            Console.WriteLine($"API Call Error: {ex.Status}: {ex.Message}");
+            // For more details from Portkey, you can inspect ex.Content and ex.Headers
+            // if (ex.Headers.TryGetValue("x-portkey-error-details", out var errorDetails))
+            // {
+            //    Console.WriteLine($"Portkey Error Details: {string.Join(", ", errorDetails)}");
+            // }
+        }
+    }
+}
+```
+</Tab>
+</Tabs>
+
+## Book an Enterprise Demo
+<Frame>
+<iframe
+  src="https://portkey.sh/azure?hide_event_type_details=1&hide_gdpr_banner=1"
+  width="100%"
+  height="750" 
+  frameBorder="0"
+  allow="fullscreen; clipboard-write; encrypted-media; picture-in-picture"
+  allowFullScreen
+></iframe>
+</Frame>
+---
+
+### Additional Resources
+
+- [Azure OpenAI integration](/integrations/llms/azure-openai)
+- [Azure AI Foundry integration](/integrations/llms/azure-foundry)
+- [Azure Content Safety guardrails](/product/guardrails/azure-guardrails)
+- [Azure Private Cloud deployment guide](/product/enterprise-offering/private-cloud-deployments/azure)
+
+<Info>
+Need something bespoke? Reach out to our team for a tailored architecture review.
+</Info>
