@@ -1,26 +1,57 @@
 ---
 title: "OpenAI Agents SDK"
-description: The **Portkey x OpenAI Agents SDK** integration enables you to use any LLM provider with OpenAI Agents while gaining advanced **observability**, **reliability**, and **governance** capabilities.
+description: Use any LLM provider with OpenAI Agents while gaining advanced observability, reliability, and governance capabilities.
 ---
 
-Portkey makes it incredibly simple to use OpenAI Agents SDK with any LLM provider through our unified AI gateway. This integration allows you to:
+Portkey's OpenAI Agents SDK integration enables you to:
 
-- Use any Portkey-supported provider (AWS Bedrock, Vertex AI, Gemini, Mistral, etc.) with OpenAI Agents SDK
-- Gain comprehensive observability into your agent interactions
-- Apply cost and performance optimizations across your agent fleet
-- Make your agents reliable with production-grade fallbacks, loadbalancing, and routing capabilities
+- Use any Portkey-supported LLM (AWS Bedrock, Vertex AI, Gemini, Mistral, etc.) with OpenAI Agents
+- Monitor agent interactions with comprehensive observability tools
+- Optimize cost and performance across your agent fleet
+- Build reliable agents with production-grade fallbacks, load balancing, and routing
 
-## How the Integration Works
+<CardGroup cols="3">
+  <Card title="Observability Layer" icon="chart-mixed">
+    <p>Monitor every aspect of your agent interactions:</p>
+    <ul>
+      <li>Track request/response details, tokens, costs, and latency</li>
+      <li>Visualize agent execution paths with trace tracking</li>
+      <li>Receive alerts on anomalies and performance issues</li>
+    </ul>
+  </Card>
 
-The Portkey x OpenAI Agents integration combines simple UI configuration with minimal code changes:
+  <Card title="Reliability Layer" icon="shield-check">
+    <p>Make your agents enterprise-grade reliable:</p>
+    <ul>
+      <li>Implement fallbacks between models when primary options fail</li>
+      <li>Balance load across multiple API keys and instances</li>
+      <li>Automated retries with intelligent backoff</li>
+      <li>Request timeouts to prevent hanging requests</li>
+    </ul>
+  </Card>
+
+  <Card title="Governance Layer" icon="lock">
+    <p>Control and secure your agent operations:</p>
+    <ul>
+      <li>Set budget limits at organization/team/project levels</li>
+      <li>Implement guardrails to validate inputs and outputs</li>
+      <li>Define access permissions with role-based controls</li>
+      <li>Enforce compliance with model and usage policies</li>
+    </ul>
+  </Card>
+</CardGroup>
+
+## Integration
+
+The Portkey x OpenAI Agents integration requires minimal setup:
 
 <Steps>
-  <Step title="Configure your Provider in Portkey UI">
-    Create a Virtual Key in the [Portkey dashboard](https://app.portkey.ai) that contains your provider credentials (e.g., Anthropic, AWS Bedrock, Gemini, etc.)
+  <Step title="Configure Provider" icon="key">
+    Create a Virtual Key in the [Portkey dashboard](https://app.portkey.ai) with your provider credentials
   </Step>
   
-  <Step title="Create a Config with Parameters">
-    Build a Config in Portkey containing your Virtual Key and relevant model parameters:
+  <Step title="Create Config" icon="gear">
+    Build a Config in Portkey UI with your Virtual Key and model parameters like this:
     
     ```json
     {
@@ -28,38 +59,74 @@ The Portkey x OpenAI Agents integration combines simple UI configuration with mi
       "override_params": {
         "model": "claude-3-7-sonnet-latest",
         "max_tokens": 4096
-      },
-      "cache": {
-        "mode": "semantic"
       }
     }
     ```
   </Step>
   
-  <Step title="Attach Config to API Key">
-    Generate a Portkey API key with optional budget/rate limits and attach your Config as the default
+  <Step title="Generate API Key" icon="lock">
+    Create a Portkey API key with optional budget/rate limits and attach your Config
   </Step>
   
-  <Step title="Connect to OpenAI Agents SDK">
-    Use your Portkey API key with one of the three implementation approaches below
+  <Step title="Connect to OpenAI Agents" icon="plug">
+    There are 3 ways to integrate Portkey with OpenAI Agents: 
+    
+    1. Set a client that applies to all agents in your application
+    2. Use a custom provider for selective Portkey integration
+    3. Configure each agent individually
+    
+    See the [Quick Start Guide](#quick-start-guide) for more details.
   </Step>
 </Steps>
 
-## Getting Started
 
-### 1\. Install the required packages
+**First, install the dependencies**
 
 ```sh
 pip install -U openai-agents portkey-ai
 ```
 
-### 2\. Choose your Integration Approach
+### Minimal Working Example
 
-Portkey supports three different ways to integrate with OpenAI Agents SDK, each with different benefits. Choose the approach that best fits your needs:
+```python
+from agents import (
+    set_default_openai_client,
+    set_default_openai_api,
+    Agent, Runner
+)
+from openai import AsyncOpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+import os
+
+# Set up Portkey as the global client
+portkey = AsyncOpenAI(
+    base_url=PORTKEY_GATEWAY_URL,
+    api_key=os.environ["PORTKEY_API_KEY"],
+)
+
+# Register as the SDK-wide default
+set_default_openai_client(portkey, use_for_tracing=False)
+set_default_openai_api("chat_completions")  # Responses API → Chat
+
+# Create agent with any supported model
+agent = Agent(
+    name="Assistant",
+    instructions="You are a helpful assistant.",
+    model="claude-3-7-sonnet-latest"
+)
+
+# Run the agent
+result = Runner.run_sync(agent, "Tell me about quantum computing.")
+print(result.final_output)
+```
+
+### Integration Approaches
+
+You can integrate Portkey with OpenAI Agents using three officially supported approaches:
 
 <Tabs>
   <Tab title="Global Default Client">
-    Set a global default client that affects all agents in your application:
+    Set a global client that affects all agents in your application:
     
 ```python
 from agents import (
@@ -72,28 +139,28 @@ from openai import AsyncOpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL
 import os
 
-# 1️⃣ Build a Portkey-backed client
+# Build a Portkey-backed client
 portkey = AsyncOpenAI(
     base_url=PORTKEY_GATEWAY_URL,
     api_key=os.environ["PORTKEY_API_KEY"],
 )
 
-# 2️⃣ Register it as the SDK-wide default
+# Register it as the SDK-wide default
 set_default_openai_client(portkey, use_for_tracing=False)   # skip OpenAI tracing
 set_default_openai_api("chat_completions")                  # Responses API → Chat
 set_tracing_disabled(True)                                  # optional
 
-# 3️⃣ Regular agent code—just a model *name*
+# Regular agent code—just a model name
 agent = Agent(
     name="Haiku Writer",
     instructions="Respond only in haikus.",
-    model="claude-3-7-sonnet-latest",  # This will use the provider from your Portkey config
+    model="claude-3-7-sonnet-latest"
 )
 
 print(Runner.run_sync(agent, "Write a haiku on recursion.").final_output)
 ```
 
-**Best for**: Whole application migration to Portkey; simplest implementation with minimal code changes.
+**Best for**: Whole application migration to Portkey with minimal code changes
   </Tab>
   
   <Tab title="ModelProvider with RunConfig">
@@ -130,14 +197,14 @@ async def main():
     agent = Agent(name="Assistant", instructions="Haikus only.")
     run_cfg = RunConfig(model_provider=PORTKEY)
 
-    # ⬇️ Only this call uses Portkey
+    # Only this call uses Portkey
     out = await Runner.run(agent, "Weather in Tokyo?", run_config=run_cfg)
     print(out.final_output)
 
 asyncio.run(main())
 ```
 
-**Best for**: A/B testing, staged rollouts, or toggling between providers at runtime.
+**Best for**: A/B testing, staged rollouts, or toggling between providers at runtime
   </Tab>
   
   <Tab title="Per-Agent Model Object">
@@ -166,188 +233,145 @@ agent = Agent(
 print(Runner.run_sync(agent, "Recursion haiku.").final_output)
 ```
 
-**Best for**: Mixed agent environments where different agents need different providers or configurations.
+**Best for**: Mixed agent environments where different agents need different providers or configurations
   </Tab>
 </Tabs>
 
-## Implementation Comparison
+**Comparing the 3 approaches**
 
-| Strategy | Code Changes | Best For | Use Case |
-|----------|--------------|----------|----------|
-| **Global Client** | One-time setup at process start | Simple migration | Whole app uses Portkey |
-| **ModelProvider** | Provider class + RunConfig parameter | Selective usage | A/B tests, gradual rollout |
-| **Per-Agent Model** | Each agent declaration | Fine-grained control | Mixed fleet with different providers |
+| Strategy | Code Touchpoints | Best For |
+|----------|-----------------|----------|
+| **Global Client** via `set_default_openai_client` | One-time setup; agents need only model names | Whole app uses Portkey; simplest migration |
+| **ModelProvider in RunConfig** | Add a provider + pass `run_config` | Toggle Portkey per run; A/B tests, staged rollouts |
+| **Explicit Model per Agent** | Specify `OpenAIChatCompletionsModel` in agent | Mixed fleet: each agent can talk to a different provider |
 
-## Configuring Advanced Features in Portkey
 
-When using Portkey with OpenAI Agents SDK, you can leverage advanced configurations to optimize your agent's performance, reliability, and cost-efficiency.
+## Production Features
 
-### Creating a Config in Portkey
+Portkey transforms your OpenAI Agents into enterprise-grade AI applications with these key capabilities:
 
-Create configs in the [Portkey dashboard](https://app.portkey.ai) to customize your agents' behavior:
+### 1. [Multi-Provider Support](/product/ai-gateway/universal-api)
+
+Access 2,000+ LLMs through a single interface. Switch models by changing only your Portkey configuration:
 
 <Tabs>
-  <Tab title="Basic Config">
-```json
-{
-  "virtual_key": "anthropic-123abc",
-  "override_params": {
-    "model": "claude-3-7-sonnet-latest",
-    "max_tokens": 4096,
-    "temperature": 0.7
-  }
-}
+  <Tab title="Model Switching">
+```python
+# Your code stays the same
+from agents import Agent, Runner, set_default_openai_client
+from openai import AsyncOpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+portkey = AsyncOpenAI(
+    api_key=os.environ.get("PORTKEY_API_KEY"), # Contains provider config
+    base_url=PORTKEY_GATEWAY_URL
+)
+set_default_openai_client(portkey)
+
+# Just change the model name to switch providers
+agent = Agent(
+    name="Assistant",
+    instructions="You are a helpful assistant.",
+    model="claude-3-opus-20240229"  # Or "gemini-1.5-pro" or "anthropic.claude-v2"
+)
 ```
+
+Switch between any supported model by updating your Portkey config and using the appropriate model name - no code changes required.
   </Tab>
-  <Tab title="With Caching">
+</Tabs>
+
+### 2. [Reliability](/product/ai-gateway)
+
+Make your agents resilient against failures with:
+
+- **Fallbacks**: Automatic switching between models if your primary provider fails
+- **Load Balancing**: Distribute requests across multiple provider keys
+- **Retries**: Automatically retry failed requests with configurable backoff
+
 ```json
 {
-  "virtual_key": "anthropic-123abc",
-  "override_params": {
-    "model": "claude-3-7-sonnet-latest",
-    "max_tokens": 4096
-  },
-  "cache": {
-    "mode": "semantic",
-    "similarity_threshold": 0.85
-  }
-}
-```
-  </Tab>
-  <Tab title="With Fallbacks">
-```json
-{
-  "strategy": {
-    "mode": "fallback"
-  },
+  "retry": { "attempts": 3 },
+  "strategy": { "mode": "fallback" },
   "targets": [
-    {
-      "virtual_key": "anthropic-123abc",
-      "override_params": {
-        "model": "claude-3-7-sonnet-latest"
-      }
-    },
-    {
-      "virtual_key": "mistral-456def",
-      "override_params": {
-        "model": "mistral-large-latest"
-      }
-    }
+    { "virtual_key": "anthropic-primary" },
+    { "virtual_key": "mistral-backup" }
   ]
 }
 ```
-  </Tab>
-</Tabs>
 
-### Attaching Your Config to an API Key
+### 3. [Observability](/product/observability)
 
-Set your config as the default for your API key in the Portkey dashboard. This allows you to centralize configuration management:
+Gain comprehensive insights into your agent operations:
 
-1. Navigate to the API Keys section in Portkey
-2. Create a new API key or select an existing one
-3. Set your config as the default configuration
-4. Optionally, add budget limits or rate limits for cost control
+- **Metrics**: Track costs, tokens, latency, and success rates
+- **Logs**: View detailed records of every agent interaction
+- **Traces**: Visualize complex agent execution paths
 
-### Using Your Configured API Key
-
-After configuring your API key, your OpenAI Agents SDK code remains clean and simple:
+Implement agent-specific analytics with trace IDs or custom metadata attached to your API key directly:
 
 ```python
-import os
-from agents import Agent, Runner, OpenAIChatCompletionsModel, AsyncOpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL
+from portkey_ai import createHeaders
 
-# Initialize AsyncOpenAI client with your configured Portkey API key
 portkey = AsyncOpenAI(
-    api_key=os.environ.get("PORTKEY_API_KEY"),
-    base_url=PORTKEY_GATEWAY_URL
-)
-
-# Create your agent with Portkey as the OpenAI client
-agent = Agent(
-    name="Research Assistant",
-    instructions="You are a helpful research assistant that provides detailed information on topics.",
-    model=OpenAIChatCompletionsModel(
-        model="claude-3-7-sonnet-latest", # This will use settings from your Portkey config
-        openai_client=portkey
+    api_key=os.environ["PORTKEY_API_KEY"],
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        trace_id="support-agent-42",
+        metadata={"user_type": "enterprise"}
     )
 )
-
-# Run your agent
-result = Runner.run_sync(agent, "Explain the impact of quantum computing on cryptography.")
-print(result.final_output)
 ```
 
-## Production Features with Portkey + OpenAI Agents SDK
+### 4. Governance
 
-<CardGroup cols="2">
-  <Card title="Multi-Provider Support" href="/api-reference/features/interoperability">
-    <p>Use any provider (Anthropic, AWS Bedrock, Vertex AI, Mistral, etc.) with OpenAI Agents SDK without changing your application structure.</p>
-  </Card>
+Implement governance controls:
 
-  <Card title="Intelligent Caching" href="/api-reference/features/caching">
-    <p>Reduce costs by up to 70% and improve response times by caching agent responses with Portkey's semantic matching technology.</p>
-  </Card>
+- **[Budget Limits](/product/administration/enforce-budget-and-rate-limit)**: Set spending caps on API keys
+- **[Access Control](/product/enterprise-offering/access-control-management)**: Fine-grained permissions for team members
+- **[Guardrails](/product/administration/enforce-orgnization-level-guardrails)**: Validate inputs and outputs with customizable rules
 
-  <Card title="Enhanced Reliability" href="/api-reference/features/reliability">
-    <p>Configure automatic fallbacks between models or providers, set up retries with backoff, and establish request timeouts to ensure your agents remain operational.</p>
-  </Card>
+---
 
-  <Card title="Comprehensive Observability" href="/api-reference/features/observability">
-    <p>Gain real-time insights into your agents with detailed metrics, cost tracking, and performance analytics in the Portkey dashboard.</p>
-  </Card>
-</CardGroup>
+## Complete Example: Multi-Tool Agent
 
-## Example: Advanced Multi-Tool Agent
+Here's a practical example of an agent with tools that leverages Portkey's features:
 
-Here's an example of a multi-functional agent that leverages both tools and Portkey's advanced features:
-
-```python
-import os
-from agents import (
-    Agent, 
-    Runner, 
-    OpenAIChatCompletionsModel, 
-    AsyncOpenAI, 
-    Tool,
-    set_default_openai_client
-)
+```python [expandable]
+from agents import Agent, Runner, Tool, set_default_openai_client
+from openai import AsyncOpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL
+import os
 
-# Initialize AsyncOpenAI client with Portkey
+# Configure Portkey client
 portkey = AsyncOpenAI(
     api_key=os.environ.get("PORTKEY_API_KEY"),
     base_url=PORTKEY_GATEWAY_URL
 )
+set_default_openai_client(portkey)
 
-# Set as default for all agents in this application
-set_default_openai_client(portkey, use_for_tracing=False)
-
-# Define tools for your agent
+# Define agent tools
 def get_weather(location: str) -> str:
-    """Get the current weather for a location."""
     return f"Sunny and 75°F in {location}"
 
 def search_web(query: str) -> str:
-    """Search the web for information."""
     return f"Found results for: {query}"
 
 # Create agent with tools
 agent = Agent(
     name="Research Assistant",
-    instructions="You're a helpful assistant that can search for information and check the weather.",
-    model="claude-3-opus-20240229", # Using model name directly since we set the default client
+    instructions="Search for information and check weather.",
+    model="claude-3-sonnet-latest",  # Using configured provider
     tools=[
         Tool(
             name="get_weather",
-            description="Get the current weather for a location",
+            description="Get current weather for a location",
             input_schema={
                 "location": {
                     "type": "string",
-                    "description": "The city and state, e.g. San Francisco, CA",
+                    "description": "City and state, e.g. San Francisco, CA"
                 }
             },
-            callback=get_weather,
+            callback=get_weather
         ),
         Tool(
             name="search_web",
@@ -355,44 +379,56 @@ agent = Agent(
             input_schema={
                 "query": {
                     "type": "string",
-                    "description": "The search query",
+                    "description": "Search query"
                 }
             },
-            callback=search_web,
-        ),
+            callback=search_web
+        )
     ]
 )
 
 # Run the agent
 result = Runner.run_sync(
     agent, 
-    "What's the weather in San Francisco and find information about the Golden Gate Bridge?"
+    "What's the weather in San Francisco and find information about Golden Gate Bridge?"
 )
 print(result.final_output)
 ```
 
-## Real-World Use Case: Developing an AI Research Assistant
-
-Consider building a research assistant that helps users find and summarize information from multiple sources. By using Portkey's integration with OpenAI Agents SDK, you can:
-
-1. **Optimize for cost-efficiency**: Use semantic caching to avoid redundant queries about common topics
-2. **Ensure reliability**: Set up fallbacks between different LLM providers in case your primary model is unavailable
-3. **Monitor performance**: Track usage patterns, costs, and response quality through Portkey's dashboard
-4. **Scale with confidence**: Set rate limits and budgets to control spending as your user base grows
-
-## Additional Resources
+## Key Benefits
 
 <CardGroup cols="2">
-  <Card title="Portkey Documentation" href="/api-reference/features/observability">
-    <p>Learn about tracking and analyzing your agents' performance with Portkey</p>
+  <Card title="Multi-Provider Support" icon="globe" href="/product/ai-gateway/universal-api">
+    <p>Use any supported LLM provider with OpenAI Agents without code changes</p>
   </Card>
-  <Card title="OpenAI Agents SDK Docs" href="https://github.com/openai/openai-agent">
-    <p>Explore the full capabilities of OpenAI Agents SDK</p>
+
+  <Card title="Intelligent Caching" icon="database" href="/product/ai-gateway/cache-simple-and-semantic">
+    <p>Reduce costs by up to 70% and improve response times with semantic caching</p>
   </Card>
-  <Card title="Config Parameters" href="/api-reference/config-object">
-    <p>View all available configuration options for your Portkey configs</p>
+
+  <Card title="Enhanced Reliability" icon="shield-check" href="/product/ai-gateway">
+    <p>Ensure uptime with automatic fallbacks, retries, and load balancing</p>
   </Card>
-  <Card title="Book a Demo" href="https://cal.com/team/portkey/demo">
-    <p>Get personalized guidance on integrating Portkey with your agents</p>
+
+  <Card title="Observability" icon="chart-mixed" href="/product/observability">
+    <p>Monitor costs, performance, and usage with detailed analytics</p>
+  </Card>
+</CardGroup>
+
+
+## Resources
+
+<CardGroup cols="2">
+  
+  <Card title="OpenAI Agents Docs" href="https://openai.github.io/openai-agents-python/">
+    <p>Official OpenAI Agents SDK documentation</p>
+  </Card>
+  
+  <Card title="Agent Examples" href="https://github.com/openai/openai-agents-python/tree/main/examples">
+    <p>Example implementations for various use cases</p>
+  </Card>
+  
+  <Card title="Book a Demo" href="https://portkey.sh/openai-agents">
+    <p>Get personalized guidance on implementing this integration</p>
   </Card>
 </CardGroup>
