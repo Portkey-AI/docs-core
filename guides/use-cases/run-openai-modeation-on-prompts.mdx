@@ -1,0 +1,550 @@
+---
+title: "Scanning Prompts with OpenAI Moderations API"
+description: "Leverage Portkey with OpenAI's Computer Use tool for automated browser interactions with enterprise-grade observability and controls"
+---
+
+## Handling Common Errors
+
+When scanning prompts with Portkey and the OpenAI Moderations API, you may encounter several common errors:
+
+### 1. Validation Errors
+
+Some prompts may use floating-point values for parameters that require integers, resulting in errors like:
+
+```
+Error rendering prompt pp-test-ec1e51: 2 validation errors for PromptRender
+data.presence_penalty
+  Input should be a valid integer, got a number with a fractional part
+data.frequency_penalty
+  Input should be a valid integer, got a number with a fractional part
+```
+
+**Solution**: These errors indicate that the prompt was created with incompatible settings. You can either:
+- Skip these prompts in your scan
+- Edit the prompts in the Portkey dashboard to use integer values
+
+### 2. Missing Prompt Partials
+
+Some prompts may depend on other prompt partials that don't exist in your account:
+
+```
+Error rendering prompt pp-rag-prompt-6b452a: {"success":false,"data":{"message":"Missing prompt partials: pl-rulesf-477225"}}
+```
+
+**Solution**: These prompts reference other prompts that aren't available. You can:
+- Skip these prompts in your scan
+- Create the missing partials in your Portkey account
+- Fix the references in the prompt templates
+
+### 3. Missing Variables
+
+Some prompts may require variables that weren't provided:
+
+```
+Error rendering prompt pp-luka-test-9f35b6: {"success":false,"data":{"message":"Missing variable partials: partial, partial_2"}}
+```
+
+**Solution**: To handle prompts that require variables:
+- Identify the required variables from the error message
+- Provide default values for these variables
+- Skip prompts that need complex or context-specific variables
+
+### 4. Generic Errors
+
+You might see generic errors like:
+
+```
+Error rendering prompt pp-chatbot-05539e: {"success":false,"data":{"message":"Something went wrong. Please try again."}}
+```
+
+**Solution**: These are server-side issues that you typically can't fix directly. You can:
+- Retry the request after a short delay
+- Skip these prompts and note them for manual review
+
+### Error Handling Strategy
+
+The most practical approach is to implement robust error handling and logging:
+
+1. Log all errors and the prompts that caused them
+2. Continue processing other prompts even when errors occur
+3. Generate a summary of successful and failed scans
+4. Consider implementing retries with exponential backoff for transient errors
+
+By implementing these error handling strategies, you can create a more robust scanning process that works even with problematic prompts.# Portkey Cookbook: Scanning Prompts with OpenAI Moderations API
+
+This cookbook demonstrates how to scan your Portkey prompt library for potentially harmful content using the OpenAI Moderations API.
+
+## Prerequisites
+- A Portkey account with an API key
+- Prompts stored in your Portkey prompt library
+- Python 3.7+ installed
+- Required Python packages: `portkey_ai`, `pandas`, `requests`
+
+## Installation
+
+```bash
+pip install portkey_ai pandas requests
+```
+
+## Step 1: Set Up Your Portkey Client
+
+```python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client with your API key
+PORTKEY_API_KEY = "your_portkey_api_key"
+OPENAI_VIRTUAL_KEY = "your_openai_virtual_key"  # This is your virtual key for OpenAI services
+
+portkey = Portkey(api_key=PORTKEY_API_KEY)
+```
+
+## Step 2: Retrieve All Prompts from Your Library
+
+First, we'll get a list of all prompts in your Portkey prompt library:
+
+```python
+import requests
+
+def get_all_prompts(api_key):
+    """Retrieve all prompts from the Portkey prompt library."""
+    # Note: The correct endpoint is /prompts not /prompts/partials
+    url = "https://api.portkey.ai/v1/prompts"
+    headers = {"x-portkey-api-key": api_key}
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to retrieve prompts: {response.status_code} - {response.text}")
+
+# The response has this structure:
+# {
+#   "object": "list",
+#   "total": 28,
+#   "data": [
+#     {
+#       "id": "d4900459-1291-4458-a874-9eea4575c60b",
+#       "collection_id": "a97345b1-1b27-4ca0-b14e-d6149bf7993b",
+#       "slug": "pl-nbc-in-d251a2",
+#       "name": "NBC Instructions",
+#       "created_at": "2025-04-18T17:07:09.000Z",
+#       "last_updated_at": "2025-04-18T17:07:09.000Z",
+#       "status": "active",
+#       "object": "partial"
+#     },
+#     ...
+#   ]
+# }
+```
+
+## Step 3: Render Each Prompt to Get Its Content
+
+Next, we'll render each prompt to get its actual content:
+
+```python
+def render_prompt(portkey_client, prompt_slug, variables=None):
+    """Render a prompt to get its actual content.
+
+    Note: The API requires the prompt_slug (not prompt_id) for rendering.
+    """
+    if variables is None:
+        variables = {}
+
+    try:
+        render = portkey_client.prompts.render(
+            prompt_id=prompt_slug,  # The API expects the slug here, not the ID
+            variables=variables
+        )
+        return render.data
+    except Exception as e:
+        print(f"Error rendering prompt {prompt_slug}: {str(e)}")
+        # Common error patterns to provide more helpful information
+        if "validation error" in str(e) and "frequency_penalty" in str(e):
+            print("  Prompt has invalid floating point values for penalties. This is a known issue with some prompts.")
+        elif "Missing variable partials" in str(e):
+            print("  Prompt requires additional variables that weren't provided.")
+        elif "Missing prompt partials" in str(e):
+            print("  Prompt depends on other partials that may not exist in your account.")
+        return None
+```
+
+## Step 4: Check Each Prompt with the OpenAI Moderations API
+
+Now we'll run each prompt through the OpenAI Moderations API to check for harmful content:
+
+```python
+def check_moderation(portkey_client, text):
+    """Check text for harmful content using OpenAI's Moderation API."""
+    try:
+        # Initialize with your OpenAI virtual key
+        moderation_client = Portkey(
+            api_key=PORTKEY_API_KEY,
+            virtual_key="your_openai_virtual_key"  # Replace with your OpenAI virtual key
+        )
+
+        response = moderation_client.moderations.create(
+            model="omni-moderation-latest",
+            input=text
+        )
+        return response
+    except Exception as e:
+        print(f"Error in moderation check: {e}")
+        return None
+```
+
+## Step 5: Extract Text from Rendered Prompts
+
+We need to extract the text content from the rendered prompts to check for moderation:
+
+```python
+def extract_text_from_prompt(rendered_prompt):
+    """Extract text content from a rendered prompt."""
+    text = ""
+
+    # Check if the prompt uses the chat format with messages
+    if "messages" in rendered_prompt:
+        for message in rendered_prompt["messages"]:
+            if "content" in message and message["content"]:
+                text += message["content"] + "\n"
+    # Check if the prompt uses the completions format with prompt
+    elif "prompt" in rendered_prompt:
+        text += rendered_prompt["prompt"]
+
+    return text.strip()
+```
+
+## Step 6: Put It All Together
+
+Now let's combine all the steps into a complete workflow:
+
+```python
+import pandas as pd
+import json
+from datetime import datetime
+
+def scan_prompts_for_harmful_content(portkey_api_key, openai_virtual_key):
+    """
+    Scan all prompts in the Portkey library for potentially harmful content.
+    Returns a DataFrame with the results and saves to CSV.
+    """
+    # Initialize Portkey client
+    portkey = Portkey(api_key=portkey_api_key)
+
+    # Get all prompts
+    response = get_all_prompts(portkey_api_key)
+
+    # The API returns a structure with a 'data' field containing the prompts
+    prompts = response.get('data', [])
+
+    results = []
+
+    # Process each prompt
+    for prompt in prompts:
+        prompt_id = prompt['id']
+        prompt_name = prompt['name']
+        prompt_slug = prompt['slug']
+
+        # Render the prompt
+        rendered = render_prompt(portkey, prompt_id)
+        if not rendered:
+            continue
+
+        # Extract text from the rendered prompt
+        text = extract_text_from_prompt(rendered)
+        if not text:
+            continue
+
+        # Check moderation
+        mod_client = Portkey(
+            api_key=portkey_api_key,
+            virtual_key=openai_virtual_key
+        )
+
+        mod_response = mod_client.moderations.create(
+            model="omni-moderation-latest",
+            input=text
+        )
+
+        # Extract moderation results
+        if hasattr(mod_response, 'results') and mod_response.results:
+            flagged = mod_response.results[0].flagged
+            categories = mod_response.results[0].categories
+            category_scores = mod_response.results[0].category_scores
+
+            # Create a record for this prompt
+            record = {
+                'prompt_id': prompt_id,
+                'prompt_name': prompt_name,
+                'prompt_slug': prompt_slug,
+                'flagged': flagged,
+                'categories': json.dumps(categories),
+                'category_scores': json.dumps(category_scores),
+                'prompt_text': text
+            }
+
+            results.append(record)
+
+    # Create DataFrame from results
+    df = pd.DataFrame(results)
+
+    # Save to CSV
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_filename = f"portkey_moderation_results_{timestamp}.csv"
+    df.to_csv(csv_filename, index=False)
+
+    return df, csv_filename
+```
+
+## Step 7: Run the Scan
+
+Execute the scan and display a summary of the results:
+
+```python
+# Replace with your actual API keys
+PORTKEY_API_KEY = "your_portkey_api_key"
+OPENAI_VIRTUAL_KEY = "your_openai_virtual_key"
+
+# Run the scan
+results_df, csv_file = scan_prompts_for_harmful_content(PORTKEY_API_KEY, OPENAI_VIRTUAL_KEY)
+
+# Display summary
+print(f"\nScan complete! Results saved to {csv_file}")
+print(f"Total prompts scanned: {len(results_df)}")
+print(f"Prompts flagged for potential harmful content: {results_df['flagged'].sum()}")
+
+# Display flagged prompts
+if results_df['flagged'].sum() > 0:
+    print("\nFlagged prompts:")
+    flagged_df = results_df[results_df['flagged'] == True]
+    for _, row in flagged_df.iterrows():
+        print(f"- {row['prompt_name']} (ID: {row['prompt_id']})")
+        categories = json.loads(row['categories'])
+        flagged_categories = [cat for cat, flag in categories.items() if flag]
+        print(f"  Flagged categories: {', '.join(flagged_categories)}")
+```
+
+## Understanding the Results
+
+The CSV file contains the following columns:
+
+- **prompt_id**: The unique identifier for the prompt
+- **prompt_name**: The name of the prompt
+- **prompt_slug**: The slug of the prompt
+- **flagged**: Boolean indicating if the prompt was flagged for harmful content
+- **categories**: JSON string of categories that were flagged
+- **category_scores**: JSON string of scores for each category
+- **prompt_text**: The text content of the prompt
+
+The OpenAI Moderations API checks content against the following categories:
+
+- **harassment**: Content that expresses, incites, or promotes harassing language
+- **harassment/threatening**: Harassment content that involves violence or serious physical harm
+- **hate**: Content that expresses, incites, or promotes hate based on identity
+- **hate/threatening**: Hateful content that involves violence or serious physical harm
+- **self-harm**: Content that promotes, encourages, or depicts acts of self-harm
+- **self-harm/intent**: Content where the speaker expresses intent to engage in self-harm
+- **self-harm/instructions**: Content that encourages or instructs self-harm
+- **sexual**: Content meant to arouse sexual excitement, such as descriptions of sexual activity
+- **sexual/minors**: Sexual content that includes individuals under 18 years of age
+- **violence**: Content that promotes or glorifies violence or celebrates suffering
+- **violence/graphic**: Violent content that depicts death, violence, or serious physical injury
+
+## Best Practices
+
+1. **Regular Scanning**: Schedule regular scans of your prompt library as it grows.
+2. **Review Before Deployment**: Always scan new prompts before deploying them in production.
+3. **False Positives**: Carefully review flagged prompts as there may be false positives.
+4. **Context Matters**: The Moderations API analyzes text without context, so consider the actual use case when reviewing results.
+5. **Thresholds**: Consider setting custom thresholds for category scores based on your use case.
+
+## Complete Example Script
+
+Here's the complete script that combines all the steps:
+
+```python
+from portkey_ai import Portkey
+import requests
+import pandas as pd
+import json
+from datetime import datetime
+
+# Set your API keys
+PORTKEY_API_KEY = "your_portkey_api_key"
+OPENAI_VIRTUAL_KEY = "your_openai_virtual_key"
+
+def get_all_prompts(api_key):
+    """Retrieve all prompts from the Portkey prompt library."""
+    url = "https://api.portkey.ai/v1/prompts/partials"
+    headers = {"x-portkey-api-key": api_key}
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to retrieve prompts: {response.status_code} - {response.text}")
+
+def render_prompt(portkey_client, prompt_id, variables=None):
+    """Render a prompt to get its actual content."""
+    if variables is None:
+        variables = {}
+
+    try:
+        render = portkey_client.prompts.render(
+            prompt_id=prompt_id,
+            variables=variables
+        )
+        return render.data
+    except Exception as e:
+        print(f"Error rendering prompt {prompt_id}: {e}")
+        return None
+
+def extract_text_from_prompt(rendered_prompt):
+    """Extract text content from a rendered prompt."""
+    text = ""
+
+    # Check if the prompt uses the chat format with messages
+    if "messages" in rendered_prompt:
+        for message in rendered_prompt["messages"]:
+            if "content" in message and message["content"]:
+                text += message["content"] + "\n"
+    # Check if the prompt uses the completions format with prompt
+    elif "prompt" in rendered_prompt:
+        text += rendered_prompt["prompt"]
+
+    return text.strip()
+
+def scan_prompts_for_harmful_content(portkey_api_key, openai_virtual_key):
+    """
+    Scan all prompts in the Portkey library for potentially harmful content.
+    Returns a DataFrame with the results and saves to CSV.
+    """
+    # Initialize Portkey client
+    portkey = Portkey(api_key=portkey_api_key)
+
+    # Get all prompts
+    response = get_all_prompts(portkey_api_key)
+
+    # The API returns a structure with a 'data' field containing the prompts
+    prompts = response.get('data', [])
+
+    results = []
+
+    # Process each prompt
+    for prompt in prompts:
+        prompt_id = prompt['id']
+        prompt_name = prompt['name']
+        prompt_slug = prompt['slug']
+
+        print(f"Processing prompt: {prompt_name} (ID: {prompt_id}, Slug: {prompt_slug})")
+
+        # Render the prompt
+        rendered = render_prompt(portkey, prompt_id)
+        if not rendered:
+            print(f"  Could not render prompt {prompt_id}, skipping...")
+            continue
+
+        # Extract text from the rendered prompt
+        text = extract_text_from_prompt(rendered)
+        if not text:
+            print(f"  No text content found in prompt {prompt_id}, skipping...")
+            continue
+
+        # Check moderation using the OpenAI Moderations API
+        try:
+            # Initialize the Portkey client with OpenAI virtual key for moderation
+            mod_client = Portkey(
+                api_key=portkey_api_key,
+                virtual_key=openai_virtual_key
+            )
+
+            mod_response = mod_client.moderations.create(
+                model="omni-moderation-latest",
+                input=text
+            )
+
+            # Extract moderation results
+            if hasattr(mod_response, 'results') and mod_response.results:
+                flagged = mod_response.results[0].flagged
+                categories = mod_response.results[0].categories
+                category_scores = mod_response.results[0].category_scores
+
+                # Create a record for this prompt
+                record = {
+                    'prompt_id': prompt_id,
+                    'prompt_name': prompt_name,
+                    'prompt_slug': prompt_slug,
+                    'flagged': flagged,
+                    'categories': json.dumps(categories),
+                    'category_scores': json.dumps(category_scores),
+                    'prompt_text': text
+                }
+
+                results.append(record)
+                print(f"  Moderation check complete. Flagged: {flagged}")
+            else:
+                print(f"  No moderation results returned for prompt {prompt_id}")
+        except Exception as e:
+            print(f"  Error during moderation check for prompt {prompt_id}: {e}")
+
+    # Create DataFrame from results
+    df = pd.DataFrame(results)
+
+    # Save to CSV
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_filename = f"portkey_moderation_results_{timestamp}.csv"
+    df.to_csv(csv_filename, index=False)
+
+    return df, csv_filename
+
+# Run the scan
+def main():
+    print("Starting scan of Portkey prompt library for potentially harmful content...")
+
+    try:
+        results_df, csv_file = scan_prompts_for_harmful_content(PORTKEY_API_KEY, OPENAI_VIRTUAL_KEY)
+
+        # Display summary
+        if csv_file:
+            print(f"\nScan complete! Results saved to {csv_file}")
+            print(f"Total prompts successfully scanned: {len(results_df)}")
+
+            if 'flagged' in results_df.columns and not results_df.empty:
+                flagged_count = results_df['flagged'].sum()
+                print(f"Prompts flagged for potential harmful content: {flagged_count}")
+
+                # Display flagged prompts
+                if flagged_count > 0:
+                    print("\nFlagged prompts:")
+                    flagged_df = results_df[results_df['flagged'] == True]
+                    for _, row in flagged_df.iterrows():
+                        print(f"- {row['prompt_name']} (ID: {row['prompt_id']})")
+                        try:
+                            categories = json.loads(row['categories'])
+                            flagged_categories = [cat for cat, flag in categories.items() if flag]
+                            print(f"  Flagged categories: {', '.join(flagged_categories)}")
+                        except Exception as e:
+                            print(f"  Error parsing categories: {e}")
+            else:
+                print("No flagged prompts found.")
+        else:
+            print("No results were saved - all prompts may have failed to render.")
+
+    except Exception as e:
+        print(f"Error during prompt scanning: {e}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == "__main__":
+    main()
+```
+
+This script will:
+1. Retrieve all prompts from your Portkey library
+2. Render each prompt to get its content
+3. Check each prompt with the OpenAI Moderations API
+4. Save the results to a CSV file
+5. Display a summary of the results
+
+By regularly running this script, you can identify potentially harmful content in your prompt library and take appropriate action.
