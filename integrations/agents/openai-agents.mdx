@@ -819,6 +819,52 @@ Portkey provides access to over 200 LLMs through a unified interface, including:
   See the full list of LLM providers supported by Portkey
 </Card>
 
+### 8. Tracing
+
+Portkey provides an opentelemetry compatible backend to store and query your traces.
+
+You can trace your OpenAI Agents using any OpenTelemetry compatible tracing library.
+
+Here is an example of how to trace your OpenAI Agents using the [`logfire`](/integrations/tracing/logfire) library from Pydantic:
+
+```python Python
+import logfire
+from pydantic import BaseModel
+from agents import Agent, Runner, function_tool
+import asyncio
+import os
+
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] =  "https://api.portkeydev.com/v1/logs/otel"
+os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"x-portkey-api-key={YOUR_PORTKEY_API_KEY}"
+
+class Weather(BaseModel):
+    city: str
+    temperature_range: str
+    conditions: str
+
+@function_tool
+def get_weather(city: str) -> Weather:
+    return Weather(city=city, temperature_range="14-20C", conditions="Sunny with wind.")
+
+agent = Agent(
+    name="Hello world",
+    instructions="You are a helpful agent.",
+    tools=[get_weather]
+)
+
+async def main():
+    logfire.configure(
+        service_name='my_agent_service',
+        send_to_logfire=False,
+    )
+    logfire.instrument_openai_agents()
+    result = await Runner.run(agent, input="What's the weather in Tokyo?")    
+    print(result.final_output)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
 
 ## Tool Use in OpenAI Agents
 
