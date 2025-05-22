@@ -30,7 +30,7 @@ pip install -U crewai portkey-ai
 </Step>
 
 <Step title="Generate API Key" icon="lock">
-Create a Portkey API key with optional budget/rate limits from the [Portkey dashboard](https://app.portkey.ai/). You can attach configurations for reliability, caching, and more to this key.
+Create a Portkey API key with optional budget/rate limits from the [Portkey dashboard](https://app.portkey.ai/). You can also attach configurations for reliability, caching, and more to this key. More on this later.
 </Step>
 
 <Step title="Configure CrewAI with Portkey">
@@ -42,20 +42,27 @@ from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
 
 # Create an LLM instance with Portkey integration
 gpt_llm = LLM(
-    model="gpt-3.5-turbo",
-    max_tokens=100,
+    model="gpt-4o",
     base_url=PORTKEY_GATEWAY_URL,
     api_key="dummy",  # We are using a Virtual key, so this is a placeholder
     extra_headers=createHeaders(
         api_key="YOUR_PORTKEY_API_KEY",
         virtual_key="YOUR_LLM_VIRTUAL_KEY",
         trace_id="unique-trace-id",               # Optional, for request tracing
-        metadata={                                # Optional, for request segmentation
-            "app_env": "production",
-            "_user": "user_123"                   # Special _user field for user analytics
-        }
     )
 )
+
+#Use them in your Crew Agents like this:
+
+	@agent
+	def lead_market_analyst(self) -> Agent:
+		return Agent(
+			config=self.agents_config['lead_market_analyst'],
+			verbose=True,
+			memory=False,
+			llm=gpt_llm
+		)
+
 ```
 
 <Info>
@@ -82,7 +89,6 @@ Traces provide a hierarchical view of your crew's execution, showing the sequenc
 # Add trace_id to enable hierarchical tracing in Portkey
 portkey_llm = LLM(
     model="gpt-4o",
-    max_tokens=1000,
     base_url=PORTKEY_GATEWAY_URL,
     api_key="dummy",
     extra_headers=createHeaders(
@@ -134,7 +140,6 @@ Add custom metadata to your CrewAI LLM configuration to enable powerful filterin
 ```python
 portkey_llm = LLM(
     model="gpt-4o",
-    max_tokens=1000,
     base_url=PORTKEY_GATEWAY_URL,
     api_key="dummy",
     extra_headers=createHeaders(
@@ -246,18 +251,19 @@ from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL, Portkey
 portkey_admin = Portkey(api_key="YOUR_PORTKEY_API_KEY")
 
 # Retrieve prompt using the render API
-prompt_data = portkey_admin.prompts.render(
+prompt_data = portkey_client.prompts.render(
     prompt_id="YOUR_PROMPT_ID",
     variables={
         "agent_role": "Senior Research Scientist",
-        "agent_goal": "Discover groundbreaking insights"
     }
-).data.dict()
+)
+
+backstory_agent_prompt=prompt_data.data.messages[0]["content"]
+
 
 # Set up LLM with Portkey integration
 portkey_llm = LLM(
     model="gpt-4o",
-    max_tokens=1000,
     base_url=PORTKEY_GATEWAY_URL,
     api_key="dummy",
     extra_headers=createHeaders(
@@ -270,7 +276,7 @@ portkey_llm = LLM(
 researcher = Agent(
     role="Senior Research Scientist",
     goal="Discover groundbreaking insights about the assigned topic",
-    backstory=prompt_data["messages"][0]["content"],  # Use the rendered prompt
+    backstory=backstory_agent,  # Use the rendered prompt
     verbose=True,
     llm=portkey_llm
 )
@@ -352,7 +358,6 @@ from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
 # Create LLM with guardrails
 portkey_llm = LLM(
     model="gpt-4o",
-    max_tokens=1000,
     base_url=PORTKEY_GATEWAY_URL,
     api_key="dummy",
     extra_headers=createHeaders(
@@ -401,7 +406,6 @@ from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
 # Configure LLM with user tracking
 portkey_llm = LLM(
     model="gpt-4o",
-    max_tokens=1000,
     base_url=PORTKEY_GATEWAY_URL,
     api_key="dummy",
     extra_headers=createHeaders(
@@ -457,7 +461,6 @@ from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
 # Configure LLM with simple caching
 portkey_llm = LLM(
     model="gpt-4o",
-    max_tokens=1000,
     base_url=PORTKEY_GATEWAY_URL,
     api_key="dummy",
     extra_headers=createHeaders(
@@ -492,7 +495,6 @@ from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
 # Configure LLM with semantic caching
 portkey_llm = LLM(
     model="gpt-4o",
-    max_tokens=1000,
     base_url=PORTKEY_GATEWAY_URL,
     api_key="dummy",
     extra_headers=createHeaders(
@@ -814,11 +816,6 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
   <Card title="CrewAI Docs" icon="book" href="https://docs.crewai.com/">
     <p>Official CrewAI documentation</p>
   </Card>
-
-  <Card title="Portkey Docs" icon="book" href="https://portkey.ai/docs">
-    <p>Official Portkey documentation</p>
-  </Card>
-
   <Card title="Book a Demo" icon="calendar" href="https://calendly.com/portkey-ai">
     <p>Get personalized guidance on implementing this integration</p>
   </Card>
