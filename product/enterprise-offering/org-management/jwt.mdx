@@ -1,0 +1,334 @@
+---
+title: JWT Authentication
+description: Configure JWT-based authentication for your organization in Portkey
+---
+
+<Info>
+  This feature is available only on the [Enterprise Plan](/product/enterprise-offering) of Portkey.
+</Info>
+
+Portkey supports JWT-based authentication in addition to API Key authentication. Clients can authenticate API requests using a JWT token, which is validated against a configured JWKS (JSON Web Key Set). This guide explains the requirements and setup process for JWT authentication in Portkey.
+
+<Card href="/product/guardrails/list-of-guardrail-checks#basic-%E2%80%94-deterministic-guardrails" title="Validate JWT Token (Guardarail)">
+    Validate your JWT Token before making a LLM request using Portkey.
+</Card>
+
+## Configuring JWT Authentication
+
+JWT authentication can be configured under **Admin Settings** → **Organisation** → **Authentication**.
+
+<Frame>
+<img src="/images/product/jwt.png"></img>
+</Frame>
+
+
+
+### JWKS Configuration
+
+To validate JWTs, you must configure one of the following:
+
+- **JWKS URL**: A URL from which the public keys will be dynamically fetched.
+- **JWKS JSON**: A static JSON containing public keys.
+
+## JWT Requirements
+
+### Supported Algorithm
+
+- JWTs must be signed using **RS256** (RSA Signature with SHA-256).
+
+### Required Claims
+
+Your JWT payload must contain the following claims:
+
+| **Claim Key**                     | **Description**                          |
+|------------------------------------|------------------------------------------|
+| `portkey_oid` / `organisation_id` | Unique identifier for the organization.  |
+| `portkey_workspace` / `workspace_slug` | Identifier for the workspace.         |
+| `scope` / `scopes`                | Permissions granted by the token.        |
+
+### User Identification
+
+Portkey identifies users in the following order of precedence for logging and metrics:
+
+1. `email_id`
+2. `sub`
+3. `uid`
+
+## Authentication Process
+
+1. The client sends an HTTP request with the JWT in the `x-portkey-api-key` header:
+
+   ```http
+   x-portkey-api-key: <JWT_TOKEN>
+   ```
+
+2. The server validates the JWT:
+   - Verifies the signature using the JWKS.
+   - Checks if the token is expired.
+   - Ensures the required claims are present.
+
+3. If valid, the request is authenticated, and user details are extracted for authorization and logging.
+4. If invalid, the request is rejected with an HTTP **401 Unauthorized** response.
+
+## Authorization & Scopes
+
+Once the JWT is validated, the server checks for the required **scope**. Scopes can be provided in the JWT as either a single string or an array of strings using the `scope` or `scopes` claim.
+
+<Expandable title="Available Permission Scopes">
+  <Expandable title="Workspace Management">
+    <ParamField query="workspaces.read" type="string">
+      View workspace details
+    </ParamField>
+    <ParamField query="workspaces.update" type="string">
+      Modify workspace settings
+    </ParamField>
+    <ParamField query="workspaces.list" type="string">
+      List available workspaces
+    </ParamField>
+  </Expandable>
+
+  <Expandable title="Logs & Analytics">
+    <ParamField query="logs.export" type="string">
+      Export logs to external systems
+    </ParamField>
+    <ParamField query="logs.list" type="string">
+      List available logs
+    </ParamField>
+    <ParamField query="logs.view" type="string">
+      View log details
+    </ParamField>
+    <ParamField query="logs.write" type="string">
+      Create and modify logs
+    </ParamField>
+    <ParamField query="analytics.view" type="string">
+      Access analytics data
+    </ParamField>
+  </Expandable>
+
+  <Expandable title="Configurations">
+    <ParamField query="configs.create" type="string">
+      Create new configurations
+    </ParamField>
+    <ParamField query="configs.update" type="string">
+      Update existing configurations
+    </ParamField>
+    <ParamField query="configs.delete" type="string">
+      Delete configurations
+    </ParamField>
+    <ParamField query="configs.read" type="string">
+      View configuration details
+    </ParamField>
+    <ParamField query="configs.list" type="string">
+      List available configurations
+    </ParamField>
+  </Expandable>
+
+  <Expandable title="Virtual Keys">
+    <ParamField query="virtual_keys.create" type="string">
+      Create new virtual keys
+    </ParamField>
+    <ParamField query="virtual_keys.update" type="string">
+      Update existing virtual keys
+    </ParamField>
+    <ParamField query="virtual_keys.delete" type="string">
+      Delete virtual keys
+    </ParamField>
+    <ParamField query="virtual_keys.duplicate" type="string">
+      Duplicate existing virtual keys
+    </ParamField>
+    <ParamField query="virtual_keys.read" type="string">
+      View virtual key details
+    </ParamField>
+    <ParamField query="virtual_keys.list" type="string">
+      List available virtual keys
+    </ParamField>
+    <ParamField query="virtual_keys.copy" type="string">
+      Copy virtual keys between workspaces
+    </ParamField>
+  </Expandable>
+
+  <Expandable title="Workspace Users">
+    <ParamField query="workspace_users.create" type="string">
+      Create new workspace users
+    </ParamField>
+    <ParamField query="workspace_users.read" type="string">
+      View workspace user details
+    </ParamField>
+    <ParamField query="workspace_users.update" type="string">
+      Update workspace user settings
+    </ParamField>
+    <ParamField query="workspace_users.delete" type="string">
+      Remove users from workspace
+    </ParamField>
+    <ParamField query="workspace_users.list" type="string">
+      List workspace users
+    </ParamField>
+  </Expandable>
+
+  <Expandable title="Other">
+    <ParamField query="prompts.render" type="string">
+      Render prompt templates
+    </ParamField>
+    <ParamField query="completions.write" type="string">
+      Create and manage completions
+    </ParamField>
+  </Expandable>
+</Expandable>
+
+Scopes can also be prefixed with `portkey.` (e.g., `portkey.completions.write`).
+
+
+<Note>
+    JWT tokens with appropriate scopes function identically to workspace API keys, providing access to workspace-specific operations. They cannot be used as organization API keys, which have broader administrative permissions across all workspaces.
+</Note>
+
+## Example JWT Payload
+
+```json
+{
+  "portkey_oid" : "org_123456",
+  "portkey_workspace": "workspace_abc",
+  "scope": ["completions.write", "logs.view"],
+  "email_id": "user@example.com",
+  "sub": "user-123",
+  "exp": 1735689600
+}
+```
+
+## Making API Calls with JWT Authentication
+
+Once you have a valid JWT token, you can use it to authenticate your API calls to Portkey. Below are examples showing how to use JWT authentication with different SDKs.
+
+<Tabs>
+<Tab title="NodeJS">
+Install the Portkey SDK with npm
+```sh
+npm install portkey-ai
+```
+<CodeGroup>
+```ts Chat Completions
+import Portkey from 'portkey-ai';
+
+const client = new Portkey({
+  apiKey: '<JWT_TOKEN>', // Use JWT token instead of API key
+});
+
+async function main() {
+  const response = await client.chat.completions.create({
+    messages: [{ role: "user", content: "Hello, how are you today?" }],
+    model: "gpt-4o",
+  });
+
+  console.log(response.choices[0].message.content);
+}
+
+main();
+```
+</CodeGroup>
+</Tab>
+<Tab title="Python">
+Install the Portkey SDK with pip
+```sh
+pip install portkey-ai
+```
+<CodeGroup>
+```py Chat Completions
+from portkey_ai import Portkey
+
+client = Portkey(
+  api_key = "<JWT_TOKEN>" # Use JWT token instead of API key
+)
+
+response = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+
+print(response.choices[0].message)
+```
+</CodeGroup>
+</Tab>
+<Tab title="cURL">
+<CodeGroup>
+```sh Chat Completions
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: <JWT_TOKEN>" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "user", "content": "Hello!" }
+    ]
+  }'
+```
+</CodeGroup>
+</Tab>
+<Tab title="OpenAI Python SDK">
+Install the OpenAI & Portkey SDKs with pip
+```sh
+pip install openai portkey-ai
+```
+<CodeGroup>
+```py Chat Completions
+from openai import OpenAI
+from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="xx",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        api_key="<JWT_TOKEN>" # Use JWT token instead of API key
+    )
+)
+
+completion = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+
+print(completion.choices[0].message)
+```
+</CodeGroup>
+</Tab>
+<Tab title="OpenAI NodeJS SDK">
+Install the OpenAI & Portkey SDKs with npm
+```sh
+npm install openai portkey-ai
+```
+<CodeGroup>
+```ts Chat Completions
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'xx',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "<JWT_TOKEN>" // Use JWT token instead of API key
+  })
+});
+
+async function main() {
+  const completion = await openai.chat.completions.create({
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: 'gpt-4o',
+  });
+
+  console.log(completion.choices[0].message);
+}
+
+main();
+```
+</CodeGroup>
+</Tab>
+</Tabs>
+
+## Caching & Token Revocation
+
+- JWTs are cached until they expire to reduce validation overhead.

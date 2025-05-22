@@ -148,6 +148,66 @@ Use the Portkey SDK to invoke chat completions from your Ollama model, just as y
     </Tab>
   </Tabs>
 
+
+
+## [Using Virtual Keys](https://app.portkey.ai/virtual-keys)
+
+Virtual Keys serve as Portkey's unified authentication system for all LLM interactions, simplifying the use of multiple providers and Portkey features within your application. For self-hosted LLMs, you can configure custom authentication requirements including authorization keys, bearer tokens, or any other headers needed to access your model:
+
+<Frame>
+  <img src="/images/private-llm.png"/>
+</Frame>
+
+1. Navigate to [Virtual Keys](https://app.portkey.ai/virtual-keys) in your Portkey dashboard
+2. Click **"Add Key"** and enable the **"Local/Privately hosted provider"** toggle
+3. Configure your deployment:
+   - Select the matching provider API specification (typically `OpenAI`)
+   - Enter your model's base URL in the `Custom Host` field
+   - Add required authentication headers and their values
+4. Click **"Create"** to generate your virtual key
+
+You can now use this virtual key in your requests:
+
+<Tabs>
+  <Tab title="NodeJS">
+  ```js
+  const portkey = new Portkey({
+      apiKey: "PORTKEY_API_KEY",
+      virtualKey: "YOUR_SELF_HOSTED_LLM_VIRTUAL_KEY"
+
+  async function main() {
+    const response = await client.chat.completions.create({
+      messages: [{ role: "user", content: "Bob the builder.." }],
+      model: "your-self-hosted-model-name",
+    });
+
+  console.log(response.choices[0].message.content);
+  })
+  ```
+  </Tab>
+  <Tab title="Python">
+  ```python
+  portkey = Portkey(
+      api_key="PORTKEY_API_KEY",
+      virtual_key="YOUR_SELF_HOSTED_LLM_VIRTUAL_KEY"
+  )
+
+  response = portkey.chat.completions.create(
+    model="your-self-hosted-model-name",
+    messages=[
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Hello!"}
+    ]
+
+  print(response)
+  )
+  ```
+  </Tab>
+</Tabs>
+
+For more information about managing self-hosted LLMs with Portkey, see [Bring Your Own LLM](/integrations/llms/byollm).
+
+
 ## Local Setup (npm or docker)
 
 First, install the Gateway locally:
@@ -281,6 +341,117 @@ async function main() {
 main();
 ```
 </CodeGroup>
+
+
+
+### Ollama Tool Calling
+Tool calling feature lets models trigger external tools based on conversation context. You define available functions, the model chooses when to use them, and your application executes them and returns results.
+
+Portkey supports Ollama Tool Calling and makes it interoperable across multiple providers. With Portkey Prompts, you can templatize various your prompts & tool schemas as well.
+
+<Card title="Supported Ollama Models with Tool Calling" href="https://ollama.com/search?c=tools">
+
+</Card>
+
+<Tabs>
+<Tab title="Node.js">
+```javascript Get Weather Tool
+let tools = [{
+    type: "function",
+    function: {
+        name: "getWeather",
+        description: "Get the current weather",
+        parameters: {
+            type: "object",
+            properties: {
+                location: { type: "string", description: "City and state" },
+                unit: { type: "string", enum: ["celsius", "fahrenheit"] }
+            },
+            required: ["location"]
+        }
+    }
+}];
+
+let response = await portkey.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "What's the weather like in Delhi - respond in JSON" }
+    ],
+    tools,
+    tool_choice: "auto",
+});
+
+console.log(response.choices[0].finish_reason);
+```
+</Tab>
+<Tab title="Python">
+```python Get Weather Tool
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "getWeather",
+        "description": "Get the current weather",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City and state"},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+            },
+            "required": ["location"]
+        }
+    }
+}]
+
+response = portkey.chat.completions.create(
+    model="llama-3.3-70b-versatile",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What's the weather like in Delhi - respond in JSON"}
+    ],
+    tools=tools,
+    tool_choice="auto"
+)
+
+print(response.choices[0].finish_reason)
+```
+</Tab>
+<Tab title="cURL">
+```sh Get Weather Tool
+curl -X POST "https://api.portkey.ai/v1/chat/completions" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -d '{
+       "model": "llama-3.3-70b-versatile",
+       "messages": [
+         {"role": "system", "content": "You are a helpful assistant."},
+         {"role": "user", "content": "What'\''s the weather like in Delhi - respond in JSON"}
+       ],
+       "tools": [{
+         "type": "function",
+         "function": {
+           "name": "getWeather",
+           "description": "Get the current weather",
+           "parameters": {
+             "type": "object",
+             "properties": {
+               "location": {"type": "string", "description": "City and state"},
+               "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+             },
+             "required": ["location"]
+           }
+         }
+       }],
+       "tool_choice": "auto"
+     }'
+```
+</Tab>
+<Tab title="Portkey Prompts">
+    Checkout [Prompt Engineering Studio](/product/prompt-engineering-studio/prompt-playground)
+</Tab>
+</Tabs>
+
+
 
 
 ## Next Steps

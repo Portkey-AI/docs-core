@@ -1,0 +1,250 @@
+---
+title: "AWS Bedrock Guardrails"
+description: "Secure your AI applications with AWS Bedrock's guardrail capabilities through Portkey."
+---
+
+[AWS Bedrock Guardrails](https://aws.amazon.com/bedrock/) provides a comprehensive solution for securing your LLM applications, including content filtering, PII detection and redaction, and more.
+
+To get started with AWS Bedrock Guardrails, visit their documentation:
+
+<Card title="Get Started with AWS Bedrock Guardrails" href="https://aws.amazon.com/bedrock/"/>
+
+## Using AWS Bedrock Guardrails with Portkey
+
+
+### 1. Create a guardrail on AWS Bedrock
+
+* Navigate to `AWS Bedrock` -> `Guardrails` -> `Create guardrail`
+* Configure the guardrail according to your requirements
+* For `PII redaction`, we recommend setting the Guardrail behavior as **BLOCK** for the required entity types. This is necessary because Bedrock does not apply PII checks on input (request message) if the behavior is set to MASK
+* Once the guardrail is created, note the **ID** and **version** displayed on the console - you'll need these to enable the guardrail in Portkey
+
+
+### 2. Enable Bedrock Plugin on Portkey
+* Navigate to the `Integration` page under `Sidebar`
+* Click on the edit button for the Bedrock integration
+* Add your Bedrock `Region`, `AwsAuthType`, `Role ARN` & `External ID`credentials (refer to [Bedrock's documentation](https://pangea.cloud/docs/ai-guard) for how to obtain these credentials)
+
+
+### 3. Create a Guardrail on Portkey
+
+* Navigate to the `Guardrails` page and click the `Create` button
+* Search for `Apply bedrock guardrail` and click `Add`
+* Enter the Guardrials ID and version of the guardrail you created in step 1
+* Enable or disable the `Redact PII` toggle as needed
+* Set any actions you want on your guardrail check, and click `Create`
+
+<Note>
+    Guardrail Actions allow you to orchestrate your guardrails logic. You can learn them [here](/product/guardrails#there-are-6-types-of-guardrail-actions)
+</Note>
+
+
+### 4. Add Guardrail ID to a Config and Make Your Request
+
+* When you save a Guardrail, you'll get an associated Guardrail ID - add this ID to the `before_request_hooks` or `after_request_hooks` params in your Portkey Config
+* Create these Configs in Portkey UI, save them, and get an associated Config ID to attach to your requests. [More here](/product/ai-gateway/configs).
+
+
+Here's an example configuration:
+
+```json
+{
+  "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
+  "output_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"]
+}
+```
+
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***" // Supports a string config id or a config object
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***" # Supports a string config id or a config object
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+
+```js
+const openai = new OpenAI({
+  apiKey: 'OPENAI_API_KEY',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    config: "CONFIG_ID"
+  })
+});
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```py
+client = OpenAI(
+    api_key="OPENAI_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+        config="CONFIG_ID"
+    )
+)
+```
+  </Tab>
+<Tab title="cURL">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [{
+        "role": "user",
+        "content": "Hello!"
+      }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+For more, refer to the [Config documentation](/product/ai-gateway/configs).
+
+## Using AWS Bedrock Guardrails - Scenarios
+
+After setting up your guardrails, there are different ways to use them depending on your security requirements:
+
+### Only Detect PII, Harmful Content, etc.
+
+To simply detect but not redact content:
+- Keep the `Redact PII` flag disabled when creating the guardrail on Portkey
+- If any filters are triggered, the response status code will be 246 (instead of 200)
+- The response will include a `hook_results` object with details for all checks
+
+### Redact PII and Detect Other Filters
+
+To automatically redact PII while still checking for other issues:
+- Enable the `Redact PII` flag when creating the guardrail on Portkey
+- If PII is detected, it will be automatically redacted and the status code will be 200
+- If other issues (like harmful content) are detected, the response code will be 246
+- The response will include a `hook_results` object with all check details
+- If PII was redacted, the results will have a flag named `transformed` set to `true`
+
+### Deny Requests with Policy Violations
+
+To completely block requests that violate your policies:
+- Enable the `Deny` option in the guardrails action tab
+- If any filters are detected, the request will fail with response status code 446
+- However, if only PII is detected and redaction is enabled, the request will still be processed (since the issue was automatically resolved)
+
+
+
+
+## Using Raw Guardrails with AWS Bedrock
+
+You can define AWS Bedrock guardrails directly in your code for more programmatic control without using the Portkey UI. This "raw guardrails" approach lets you dynamically configure guardrails based on your application's needs.
+
+<Note>
+    We recommend creating guardrails using the Portkey UI whenever possible. Raw guardrails are more complex and require you to manage credentials and configurations directly in your code.
+</Note>
+
+<Accordion title="Raw Guardrails Configuration Example">
+
+### Available AWS Bedrock Guardrails
+
+| Guardrail Name | ID | Description | Parameters |
+| -------------- | -- | ----------- | ---------- |
+| Apply bedrock guardrail | `bedrock.guard` | Applies AWS Bedrock guardrail checks for LLM requests/responses | `guardrailId` (string), `guardrailVersion` (string), `redact` (boolean), `timeout` (number) |
+
+### Key Configuration Properties
+
+- **`type`**: Always set to `"guardrail"` for guardrail checks
+- **`id`**: A unique identifier for your guardrail
+- **`credentials`**: Authentication details for AWS Bedrock (if using assumedRole)
+- **`checks`**: Array of guardrail checks to run
+  - `id`: The specific guardrail ID - in this case, `bedrock.guard`
+  - `parameters`: Configuration options for the guardrail
+- **`deny`**: Whether to block the request if guardrail fails (true/false)
+- **`async`**: Whether to run guardrail asynchronously (true/false)
+- **`on_success`/`on_fail`**: Optional callbacks for success/failure scenarios
+  - `feedback`: Data for logging and analytics
+  -  `weight`: Importance of this feedback (0-1)
+  -  `value`: Feedback score (-10 to 10)
+
+### Implementation Example
+
+```json
+{
+  "before_request_hooks": [
+    {
+      "type": "guardrail",
+      "id": "bedrock-guardrail",
+      "credentials": {
+        // You can choose EITHER set of credentials for bedrock
+        "awsAccessKeyId": "string",
+        "awsSecretAccessKey": "string",
+        "awsSessionToken": "string", //(optional)
+        "awsRegion": "string",
+        // OR
+        "awsAuthType": "assumedRole",
+        "awsRoleArn": "string",
+        "awsExternalId": "string",
+        "awsRegion": "string",
+      },
+      "checks": [
+        {
+          "id": "bedrock.guard",
+          "parameters": {
+            "guardrailId": "YOUR_GUARDRAIL_ID",
+            "guardrailVersion": "GUARDRAIL_VERSION",
+            "redact": true, // or false
+            "timeout": 5000 // timeout in ms
+          }
+        }
+      ],
+      "deny": true,
+      "async": false,
+      "on_success": {
+        "feedback": {
+          "weight": 1,
+          "value": 1,
+          "metadata": {
+            "user": "user_xyz"
+          }
+        }
+      },
+      "on_fail": {
+        "feedback": {
+          "weight": 1,
+          "value": -1,
+          "metadata": {
+            "user": "user_xyz"
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+<Note>
+When using raw guardrails, you must provide valid credentials for AWS Bedrock directly in your config. Make sure to handle these credentials securely and consider using environment variables or secrets management.
+</Note>
+</Accordion>
+
+
+## Get Support
+
+If you face any issues with the AWS Bedrock Guardrails integration, just ping us on the [community forum](https://discord.gg/portkey-llms-in-prod-1143393887742861333).

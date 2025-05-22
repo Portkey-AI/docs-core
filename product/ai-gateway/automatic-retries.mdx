@@ -9,6 +9,93 @@ description: "LLM APIs often have inexplicable failures. With Portkey, you can r
 
 * Automatic retries are triggered **up to 5 times**
 * Retries can also be triggered only on **specific error codes**
+* Each subsequent retry attempt follows **exponential backoff strategy** to prevent network overload
+* Optionally respects provider's `Retry-After` headers for rate-limited requests
+
+## Enabling Retries
+
+To enable retry, just add the `retry` param to your [config object](/api-reference/config-object).
+
+### Retry with 5 attempts
+
+```JSON
+{
+    "retry": {
+        "attempts": 5
+    },
+    "virtual_key": "virtual-key-xxx"
+}
+```
+
+### Retry only on specific error codes
+
+By default, Portkey triggers retries on the following error codes: **\[429, 500, 502, 503, 504\]**
+
+You can change this behaviour by setting the optional `on_status_codes` param in your retry config and manually inputting the error codes on which retry will be triggered.
+
+
+```JSON
+{
+  "retry": {
+    "attempts": 3,
+    "on_status_codes": [ 408, 429, 401 ]
+  },
+  "virtual_key": "virtual-key-xxx"
+}
+```
+
+<Info>
+  If the `on_status_codes` param is present, retries will be triggered **only** on the error codes specified in that Config and not on Portkey's default error codes for retries (i.e. \[429, 500, 502, 503, 504\])
+</Info>
+
+### Respecting provider's retry headers
+
+Portkey can respect the provider's `retry-after-ms`, `x-ms-retry-after-ms` and `retry-after`response headers when encountering rate limits. This enables more intelligent retry timing based on the provider's response headers rather than using the default exponential backoff strategy.
+
+To enable this feature, add the `use_retry_after_headers` parameter to your retry config. By default this behaviour is disabled, and `use_retry_after_headers` is set to `false`.
+
+```JSON
+{
+  "retry": {
+    "attempts": 3,
+    "on_status_codes": [ 429 ],
+    "use_retry_after_headers": true
+  },
+  "virtual_key": "virtual-key-xxx"
+}
+```
+
+<Info>
+When `use_retry_after_headers` is set to `true` and the provider includes `Retry-After` or `Retry-After-ms` headers in their response, Portkey will use these values to determine the wait time before the next retry attempt, overriding the exponential backoff strategy.
+
+If the provider doesn't include these headers in the response, Portkey will fall back to the standard exponential backoff strategy.
+
+The cumulative retry wait time for a single request is capped at 60 seconds. For example, if the first retry has a wait time of 20 seconds, and the second retry response includes a Retry-After value of 50 seconds, the request will fail since the total wait time (20+50=70) exceeds the 60-second cap. Similarly, if any single Retry-After value exceeds 60 seconds, the request will fail immediately.
+
+</Info>
+
+### Exponential backoff strategy
+
+When not using provider retry headers (or when they're not available), Portkey triggers retries following this exponential backoff strategy:
+
+| Attempt           | Time out between requests |
+| ----------------- | ------------------------- |
+| Initial Call      | Immediately               |
+| Retry 1st attempt | 1 second                  |
+| Retry 2nd attempt | 2 seconds                 |
+| Retry 3rd attempt | 4 seconds                 |
+| Retry 4th attempt | 8 seconds                 |
+| Retry 5th attempt | 16 seconds                |
+
+
+
+
+<Info>
+  This feature is available on all Portkey [plans](https://portkey.ai/pricing).
+</Info>
+
+* Automatic retries are triggered **up to 5 times**
+* Retries can also be triggered only on **specific error codes**
 * And each subsequent retry attempt follows **exponential backoff strategy** to prevent network overload
 
 ## Enabling Retries
@@ -59,3 +146,15 @@ Here's how Portkey triggers retries following exponential backoff:
 | Retry 3rd attempt | 4 seconds                 |
 | Retry 4th attempt | 8 seconds                 |
 | Retry 5th attempt | 16 seconds                |
+
+### Understanding the Retry Attempt Header
+
+In the response from Portkey, you can find the `x-portkey-retry-attempt-count` header which provides information about retry attempts:
+
+- If the value is `-1`: This means that Portkey exhausted all the retry attempts and the request was unsuccessful
+- If the value is `0`: This means that there were no retries configured
+- If the value is `>0`: This means that Portkey attempted retries and this is the exact number at which the request was successful
+
+<Note>
+Currently, Portkey does not log all the retry attempts individually in the logs dashboard. Instead, the response times from all retry attempts are summed up in the single log entry.
+</Note>
