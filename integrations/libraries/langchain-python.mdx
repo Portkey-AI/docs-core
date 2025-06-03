@@ -1,327 +1,420 @@
 ---
 title: "Langchain (Python)"
-description: "Portkey adds core production capabilities to any Langchain app."
+description: "Supercharge Langchain apps with Portkey: Multi-LLM, observability, caching, reliability, and prompt management."
 ---
 
 <Info>
-This guide covers the integration for the **Python** flavour of Langchain. Docs for the JS Langchain integration are [here](/integrations/libraries/langchain-js).
+This guide covers Langchain **Python**. For JS, see [Langchain JS](/integrations/libraries/langchain-js).
 </Info>
-**LangChain** is a framework for developing applications powered by language models. It enables applications that:
 
-* **Are context-aware**: connect a language model to sources of context (prompt instructions, few shot examples, content to ground its response in, etc.)
-* **Reason**: rely on a language model to reason (about how to answer based on provided context, what actions to take, etc.)
+Portkey extends Langchain's `ChatOpenAI` to effortlessly work with **200+ LLMs** (Anthropic, Gemini, Mistral, etc.) without needing different SDKs. Portkey enhances your Langchain apps with interoperability, reliability, speed, cost-efficiency, and deep observability.
 
-You can find more information about it [here](https://python.langchain.com/docs/get%5Fstarted/quickstart).
+## Getting Started
 
-When using Langchain, **Portkey can help take it to production** by adding a fast AI gateway, observability, prompt management and more to your Langchain app.
+Integrate Portkey into Langchain easily.
 
-## Quick Start Integration
-
-Install the Portkey and Langchain Python SDKs to get started.
+### 1. Install Packages
 
 ```sh
-pip install -U langchain-core portkey_ai langchain-openai
+pip install -U langchain-openai portkey-ai
 ```
 
 <Info>
-
-We installed `langchain-core` to skip the optional dependencies. You can also install `langchain` if you prefer.
-
-Since Portkey is fully compatible with the OpenAI signature, you can connect to the Portkey Ai Gateway through the ChatOpenAI interface.
-
-* Set the `base_url` as `PORTKEY_GATEWAY_URL`
-* Add `default_headers` to consume the headers needed by Portkey using the `createHeaders` helper method.
-
-We can now initialise the model and update the model to use Portkey's AI gateway
+`langchain-openai` includes `langchain-core`. Install `langchain` or other specific packages if you need more components.
 </Info>
 
-```py
+### 2. Basic Setup: `ChatOpenAI` with Portkey
+
+Configure `ChatOpenAI` to route requests via Portkey using your Portkey API Key and `createHeaders` method.
+
+```python
 from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+import os
 
-PORTKEY_API_KEY = "..."
-PROVIDER_API_KEY = "..." # Add the API key of the AI provider being used
+# Use environment variables for API keys
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+PROVIDER_API_KEY = os.environ.get("OPENAI_API_KEY") # Example: OpenAI API Key
 
-portkey_headers = createHeaders(api_key=PORTKEY_API_KEY,provider="openai")
+# Configure Portkey headers
+portkey_headers = createHeaders(
+    api_key=PORTKEY_API_KEY,
+    provider="openai" # Specify target LLM provider
+)
 
-llm = ChatOpenAI(api_key=PROVIDER_API_KEY, base_url=PORTKEY_GATEWAY_URL, default_headers=portkey_headers)
+llm = ChatOpenAI(
+    api_key=PROVIDER_API_KEY,       # Provider's API key
+    base_url=PORTKEY_GATEWAY_URL, # Route via Portkey
+    default_headers=portkey_headers, # Portkey specific headers
+    model="gpt-4o"               # Specify provider model
+)
 
-print(llm.invoke("What is the meaning of life, universe and everything?"))
+# response = llm.invoke("Tell me a joke about AI.")
+# print(response.content)
 ```
 
-Response
+**Key `ChatOpenAI` Parameters:**
 
-```py
-AIMessage(content='The meaning of life, universe, and everything is a question that has puzzled humanity for centuries. In the book "The Hitchhiker\'s Guide to the Galaxy" by Douglas Adams, the answer to this ultimate question is humorously given as "42." This has since become a popular meme and cultural reference.\n\nIn a more philosophical sense, the meaning of life, universe, and everything is subjective and can vary greatly from person to person. Some may find meaning in religious beliefs, others in personal relationships, achievements, or experiences. Ultimately, it is up to each individual to find their own meaning and purpose in life.', response_metadata={'token_usage': {'completion_tokens': 124, 'prompt_tokens': 18, 'total_tokens': 142}, 'model_name': 'gpt-3.5-turbo', 'system_fingerprint': 'fp_c2295e73ad', 'finish_reason': 'stop', 'logprobs': None}, id='run-d2b790be-589b-4c72-add8-a36e098ab277-0')
-```
+*   `api_key`: The underlying provider's API key.
+*   `base_url`: Set to `PORTKEY_GATEWAY_URL` to route via Portkey.
+*   `default_headers`: Uses `createHeaders` for your `PORTKEY_API_KEY`. Can also include a `virtual_key` (for provider credentials) or a `config` ID (for advanced routing).
 
-The call and the corresponding prompt will also be visible on the Portkey logs tab.
+All LLM calls via this `llm` instance now use Portkey, starting with observability.
 
-<Frame>
+<Frame caption="Langchain requests now appear in Portkey Logs">
     <img src="/images/libraries/langchain-logs.gif"/>
 </Frame>
 
-## Using Virtual Keys for Multiple Models
+This setup enables Portkey's advanced features for Langchain.
 
-Portkey supports [Virtual Keys](/product/ai-gateway/virtual-keys) which are an easy way to store and manage API keys in a secure vault. Lets try using a Virtual Key to make LLM calls.
+## Key Portkey Features for Langchain
 
-#### 1\. Create a Virtual Key in your Portkey account and  the id
+Routing Langchain requests via Portkey's `ChatOpenAI` interface unlocks powerful capabilities:
 
-Let's try creating a new Virtual Key for Mistral like this
+<CardGroup cols={2}>
+  <Card title="Multi-LLM Integration" href="#1-multi-llm-integration">
+    <p>Use `ChatOpenAI` for OpenAI, Anthropic, Gemini, Mistral, and more. Switch providers easily with Virtual Keys or Configs.</p>
+  </Card>
+  <Card title="Advanced Caching" href="#2-advanced-caching">
+    <p>Reduce latency and costs with Portkey's Simple, Semantic, or Hybrid caching, enabled via Configs.</p>
+  </Card>
+  <Card title="Enhanced Reliability" href="#3-enhanced-reliability">
+    <p>Build robust apps with retries, timeouts, fallbacks, and load balancing, configured in Portkey.</p>
+  </Card>
+  <Card title="Full Observability" href="#4-full-observability">
+    <p>Get deep insights: LLM usage, costs, latency, and errors are automatically logged in Portkey.</p>
+  </Card>
+  <Card title="Prompt Management" href="#5-prompt-management">
+    <p>Manage, version, and use prompts from Portkey's Prompt Library within Langchain.</p>
+  </Card>
+  <Card title="Secure Virtual Keys" href="#6-secure-virtual-keys">
+    <p>Securely manage LLM provider API keys using Portkey Virtual Keys in your Langchain setup.</p>
+  </Card>
+</CardGroup>
 
-<Frame>
-    <img src="/images/libraries/create_virtual_key.gif"/>
-</Frame>
+---
 
-#### 2\. Use Virtual Keys in the Portkey Headers
+## 1. Multi-LLM Integration
 
-The `virtual_key` parameter sets the authentication and provider for the AI provider being used. In our case we're using the Mistral Virtual key.
+Portkey simplifies using different LLM providers. `ChatOpenAI` becomes your universal client for numerous models.
 
-<Info>
-Notice that the `api_key` can be left blank as that authentication won't be used.
-</Info>
+**Mechanism: Portkey Headers with Virtual Keys**
 
+Switch LLMs by changing the `virtual_key` in `createHeaders` and the `model` in `ChatOpenAI`. Portkey manages provider specifics.
 
-```py
-from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
+### Example: Anthropic (Claude)
 
-PORTKEY_API_KEY = "..."
-VIRTUAL_KEY = "..." # Mistral's virtual key we copied above
+1.  **Create Anthropic Virtual Key:** In Portkey, add your Anthropic API key and get the Virtual Key ID.
 
-portkey_headers = createHeaders(api_key=PORTKEY_API_KEY,virtual_key=VIRTUAL_KEY)
+2.  **Update Langchain code:**
 
-llm = ChatOpenAI(api_key="X", base_url=PORTKEY_GATEWAY_URL, default_headers=portkey_headers, model="mistral-large-latest")
-
-print(llm.invoke("What is the meaning of life, universe and everything?"))
-```
-
-The Portkey AI gateway will authenticate the API request to Mistral and get the response back in the OpenAI format for you to consume.
-
-The AI gateway extends Langchain's `ChatOpenAI` class making it a single interface to call any provider and any model.
-
-## Embeddings
-
-Embeddings in Langchain through Portkey work the same way as the Chat Models using the `OpenAIEmbeddings` class. Let's try to create an embedding using OpenAI's embedding model
-
-
-```py
-from langchain_openai import OpenAIEmbeddings
-
-PORTKEY_API_KEY = "..."
-VIRTUAL_KEY = "..." # Add OpenAI's Virtual Key created in Portkey
-
-portkey_headers = createHeaders(api_key=PORTKEY_API_KEY,virtual_key=VIRTUAL_KEY)
-
-embeddings_model = OpenAIEmbeddings(api_key="X", base_url=PORTKEY_GATEWAY_URL, default_headers=portkey_headers)
-embeddings = embeddings_model.embed_documents(["Hi there!"])
-len(embeddings[0])
-```
-
-<Info>
-    Only OpenAI is supported as an embedding provider for Langchain because internally, Langchain converts the texts into tokens which are then sent as input to the API. This method of embedding tokens instead of strings via the API is ONLY supported by OpenAI.
-
-If you plan to use any other embedding model, we recommend using the Portkey SDK directly to make embedding calls.
-</Info>
-
-## Chains & Prompts
-
-[Chains](https://python.langchain.com/docs/modules/chains/) enable the integration of various Langchain concepts for simultaneous execution while Langchain supports [Prompt Templates](https://python.langchain.com/docs/modules/model%5Fio/prompts/) to construct inputs for language models. Lets see how this would work with Portkey
-
-
-```py
-from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-from langchain_core.prompts import ChatPromptTemplate
-
-PORTKEY_API_KEY = "..."
-VIRTUAL_KEY = "..." # Add the OpenAI Virtual key
-
-portkey_headers = createHeaders(api_key=PORTKEY_API_KEY,provider="openai")
-
-chat = ChatOpenAI(api_key=PROVIDER_API_KEY, base_url=PORTKEY_GATEWAY_URL, default_headers=portkey_headers)
-
-prompt = ChatPromptTemplate.from_messages([
-	("system", "You are world class technical documentation writer."),
-	("user", "{input}")
-])
-
-chain = prompt | chat
-print(chain.invoke({"input": "Explain the concept of an API"}))
-```
-
-We'd be able to view the exact prompt that was used to make the call to OpenAI in the Portkey logs dashboards.
-
-## Using Portkey Prompt Templates with Langchain
-
-Portkey features an advanced Prompts platform tailor-made for better prompt engineering. With Portkey, you can:
-
-* **Store Prompts with Access Control and Version Control:** Keep all your prompts organized in a centralized location, easily track changes over time, and manage edit/view permissions for your team.
-* **Parameterize Prompts**: Define variables and [mustache-approved tags](/product/prompt-library/prompt-templates#templating-engine) within your prompts, allowing for dynamic value insertion when calling LLMs. This enables greater flexibility and reusability of your prompts.
-* **Experiment in a Sandbox Environment**: Quickly iterate on different LLMs and parameters to find the optimal combination for your use case, without modifying your Langchain code.
-
-#### Here's how you can leverage Portkey's Prompt Management in your Langchain app:
-
-1. Save your provider keys on Portkey vault to get associated virtual keys
-2. Create your prompt template on the Portkey app, and save it to get an associated `Prompt ID`
-4. Before making a Langchain request, render the prompt template using the Portkey SDK
-4. Transform the retrieved prompt to be compatible with Langchain and send the request!
-
-#### Example: Using a Portkey Prompt Template in Langchain
-
-```py
-import json
-import os
-from langchain_openai import ChatOpenAI
-from langchain_core.messages.chat import ChatMessage
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL, Portkey
-
-###  Initialize Portkey client with API key
-
-client = Portkey(api_key=os.environ.get("PORTKEY_API_KEY"))
-
-### Render the prompt template with your prompt ID and variables
-
-prompt_template = client.prompts.render(
-    prompt_id="pp-movie-xxx",
-    variables={ "movie":"Fight Club" }
-).data.dict()
-
-config = {
-    "virtual_key":"openai-xxxx", # You need to send the virtual key separately
-    "override_params":{
-        "model":prompt_template["model"], # Set the model name based on the value in the prompt template
-        "temperature":prompt_template["temperature"] # Similarly, you can also set other model params
-    }
-}
-
-portkey = ChatOpenAI(
-    api_key="xx", # Pass any dummy value here
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        api_key=os.environ.get("PORTKEY_API_KEY"),
-        config=config
-    )
-)
-
-messages = [ChatMessage(content=msg["content"], role=msg["role"]) for msg in prompt_template["messages"]]
-
-print(portkey.invoke(messages).content)
-```
-
-## Using Advanced Routing
-
-The Portkey AI Gateway brings capabilities like load-balancing, fallbacks, experimentation and canary testing to Langchain through a configuration-first approach.
-
-Let's take an **example** where we might want to split traffic between gpt-4 and claude-opus 50:50 to test the two large models. The gateway configuration for this would look like the following:
-
-```py
-config = {
-    "strategy": {
-         "mode": "loadbalance"
-    },
-    "targets": [{
-        "virtual_key": "openai-25654", # OpenAI's virtual key
-        "override_params": {"model": "gpt4"},
-        "weight": 0.5
-    }, {
-        "virtual_key": "anthropic-25654", # Anthropic's virtual key
-        "override_params": {"model": "claude-3-opus-20240229"},
-        "weight": 0.5
-    }]
-}
-```
-
-We can then use this config in our requests being made from langchain.
-
-
-
-```py
-portkey_headers = createHeaders(
-    api_key=PORTKEY_API_KEY,
-    config=config
-)
-
-llm = ChatOpenAI(api_key="X", base_url=PORTKEY_GATEWAY_URL, default_headers=portkey_headers)
-
-print(llm.invoke("What is the meaning of life, universe and everything?"))
-```
-
-When the LLM is invoked, Portkey will distribute the requests to `gpt-4` and `claude-3-opus-20240229` in the ratio of the defined weights.
-
-You can find more config examples [here](/api-reference/config-object#examples).
-
-## Agents & Tracing
-
-A powerful capability of Langchain is creating Agents. The challenge with agentic workflows is that prompts are often abstracted out and it's hard to get a visibility into what the agent is doing. This also makes debugging harder.
-
-Portkey's Langchain integration gives you full visibility into the running of an agent. Let's take an example of a [popular agentic workflow](https://python.langchain.com/docs/use%5Fcases/tool%5Fuse/quickstart/#agents).
-
-
-
-```py
-"""
-Libraries:
-    pip install langchain langchain-openai langchainhub portkey-ai
-"""
-
-import os
-
-from langchain import hub
-from langchain.agents import AgentExecutor, create_openai_tools_agent, tool
+```python
 from langchain_openai import ChatOpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+import os
 
-prompt = hub.pull("hwchase17/openai-tools-agent")
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+ANTHROPIC_VIRTUAL_KEY = os.environ.get("ANTHROPIC_VIRTUAL_KEY") 
 
-portkey_headers = createHeaders(
-    api_key=os.getenv("PORTKEY_API_KEY"),
-    config="your config id",
-    trace_id="uuid-uuid-uuid-uuid",
+portkey_anthropic_headers = createHeaders(
+    api_key=PORTKEY_API_KEY,
+    virtual_key=ANTHROPIC_VIRTUAL_KEY
 )
 
-
-@tool
-def add(first_int: int, second_int: int) -> int:
-    return first_int + second_int
-
-
-@tool
-def multiply(first_int: int, second_int: int) -> int:
-    return first_int * second_int
-
-
-@tool
-def exponentiate(base: int, exponent: int) -> int:
-    return base**exponent
-
-
-tools = [multiply, add, exponentiate]
-
-model = ChatOpenAI(
-    api_key="ignore",  # type: ignore
+llm_claude = ChatOpenAI(
+    api_key="placeholder_anthropic_key", # Placeholder; Portkey uses Virtual Key
     base_url=PORTKEY_GATEWAY_URL,
-    default_headers=portkey_headers,
-    temperature=0,
+    default_headers=portkey_anthropic_headers,
+    model="claude-3-5-sonnet-latest" # Anthropic model
 )
 
-# Construct the OpenAI Tools agent
-agent = create_openai_tools_agent(model, tools, prompt)  # type: ignore
-
-# Create an agent executor by passing in the agent and tools
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)  # type: ignore
-
-print(agent_executor.invoke(
-    {
-        "input": "Take 3 to the fifth power and multiply that by the sum of twelve and three, then square the whole result"
-    }
-))
+# response_claude = llm_claude.invoke("Haiku principles?")
+# print(response_claude.content)
 ```
 
-Running this would yield the following logs in Portkey.
+### Example: Vertex (Gemini)
 
-<Frame>
-    <img src="/images/libraries/agent_tracing.gif"/>
+1.  **Create Google Virtual Key:** In Portkey, add your [Vertex AI credentials](/integrations/llms/vertex-ai#how-to-find-your-google-vertex-project-details) and get the Virtual Key ID.
+
+2.  **Update Langchain code:**
+
+```python
+from langchain_openai import ChatOpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+import os
+
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+GOOGLE_VIRTUAL_KEY = os.environ.get("GOOGLE_VIRTUAL_KEY") 
+
+portkey_gemini_headers = createHeaders(
+    api_key=PORTKEY_API_KEY,
+    virtual_key=GOOGLE_VIRTUAL_KEY
+)
+
+llm_gemini = ChatOpenAI(
+    api_key="placeholder_google_key", # Placeholder; Portkey uses Virtual Key
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=portkey_gemini_headers,
+    model="gemini-2.5-pro-preview" # Gemini model
+)
+
+# response_gemini = llm_gemini.invoke("Zero-knowledge proofs?")
+# print(response_gemini.content)
+```
+
+Core `ChatOpenAI` structure remains. Only `virtual_key` and `model` change. Portkey maps responses to the OpenAI format Langchain expects. This extends to Mistral, Cohere, Azure, Bedrock via their Virtual Keys.
+
+---
+
+## 2. Advanced Caching
+
+Portkey's caching reduces latency and LLM costs. Enable it via a Portkey [Config object](/api-reference/config-object) or a saved Config ID in `createHeaders`.
+
+A Portkey Config can specify `mode` (`simple`, `semantic`, `hybrid`) and `max_age` (cache duration).
+
+### Example: Semantic Caching
+
+1.  **Define/Save Portkey Config:** Create a Config in Portkey (e.g., `langchain-semantic-cache`) specifying caching strategy.
+
+    ```json
+    // Example Portkey Config JSON for semantic cache
+    {
+      "cache": { "mode": "semantic", "max_age": "2h" },
+      "virtual_key": "your_openai_virtual_key_id",
+      "override_params": { "model": "gpt-4o" }
+    }
+    ```
+    Assume saved Config ID is `cfg_semantic_cache_123`.
+
+2.  **Use Config ID in `createHeaders`:**
+
+```python
+from langchain_openai import ChatOpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+import os
+
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+PORTKEY_CONFIG_ID = "cfg_semantic_cache_123" 
+
+portkey_cached_headers = createHeaders(
+    api_key=PORTKEY_API_KEY,
+    config=PORTKEY_CONFIG_ID
+)
+
+llm_cached = ChatOpenAI(
+    api_key="placeholder_key", # Config can handle auth via virtual_key
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=portkey_cached_headers
+)
+
+# response1 = llm_cached.invoke("Capital of France?")
+# response2 = llm_cached.invoke("Tell me France's capital.") 
+```
+
+Similar requests can now hit the cache. Monitor cache performance in your Portkey dashboard.
+
+---
+
+## 3. Enhanced Reliability
+
+Portkey improves Langchain app resilience via Configs:
+
+*   **Retries:** Auto-retry failed LLM requests.
+*   **Fallbacks:** Define backup LLMs if a primary fails.
+*   **Load Balancing:** Distribute requests across keys or models.
+*   **Timeouts:** Set max request durations.
+
+### Example: Fallbacks with Retries
+
+1.  **Define/Save Portkey Config:** Create a Config for retries and fallbacks (e.g., `gpt-4o` then `claude-3-sonnet`).
+
+    ```json
+    // Example Portkey Config for reliability
+    {
+      "strategy": { "mode": "fallback" },
+      "targets": [
+        { "override_params": {"model": "gpt-4o"}, "virtual_key": "vk_openai", "retry": {"count": 2} },
+        { "override_params": {"model": "claude-3-sonnet-20240229"}, "virtual_key": "vk_anthropic" }
+      ]
+    }
+    ```
+    Assume saved Config ID is `cfg_reliable_123`.
+
+2.  **Use Config ID in `createHeaders`:**
+
+```python
+from langchain_openai import ChatOpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+import os
+
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+PORTKEY_RELIABLE_CONFIG_ID = "cfg_reliable_123"
+
+portkey_reliable_headers = createHeaders(
+    api_key=PORTKEY_API_KEY,
+    config=PORTKEY_RELIABLE_CONFIG_ID
+)
+
+llm_reliable = ChatOpenAI(
+    api_key="placeholder_key", 
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=portkey_reliable_headers
+)
+
+# response = llm_reliable.invoke("Poem on resilient AI.")
+```
+
+Offload complex logic to Portkey Configs, keeping Langchain code clean.
+
+---
+
+## 4. Full Observability
+
+Routing Langchain `ChatOpenAI` via Portkey provides instant, comprehensive observability:
+
+*   **Logged Requests:** Detailed logs of requests, responses, latencies, costs.
+*   **Tracing:** Understand call lifecycles.
+*   **Performance Analytics:** Monitor metrics, track usage.
+*   **Debugging:** Pinpoint errors quickly.
+
+This is crucial for monitoring and optimizing production Langchain apps.
+
+<Frame caption="Langchain requests are automatically logged in Portkey">
+    <img src="/images/libraries/langchain-logs.gif"/>
 </Frame>
 
-This is extremely powerful since you gain control and visibility over the agent flows so you can identify problems and make updates as needed.
+---
+
+## 5. Prompt Management
+
+Portkey's Prompt Library helps manage prompts effectively:
+
+*   **Version Control:** Store and track prompt changes.
+*   **Parameterized Prompts:** Use variables with [mustache templating](/product/prompt-library/prompt-templates#templating-engine).
+*   **Sandbox:** Test prompts with different LLMs in Portkey.
+
+### Using Portkey Prompts in Langchain
+
+1.  Create prompt in Portkey, get `Prompt ID`.
+2.  Use Portkey SDK to render prompt with variables.
+3.  Transform rendered prompt to Langchain message format.
+4.  Pass messages to Portkey-configured `ChatOpenAI`.
+
+```python
+import os
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders, Portkey
+
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+client = Portkey(api_key=PORTKEY_API_KEY)
+
+PROMPT_ID = "pp-story-generator" # Your Portkey Prompt ID
+
+rendered_prompt = client.prompts.render(
+    prompt_id=PROMPT_ID,
+    variables={"character": "brave knight", "object": "magic sword"}
+).data
+
+langchain_messages = []
+if rendered_prompt and rendered_prompt.prompt:
+    for msg in rendered_prompt.prompt:
+        if msg.get("role") == "user": langchain_messages.append(HumanMessage(content=msg.get("content")))
+        elif msg.get("role") == "system": langchain_messages.append(SystemMessage(content=msg.get("content")))
+
+OPENAI_VIRTUAL_KEY = os.environ.get("OPENAI_VIRTUAL_KEY") 
+portkey_headers = createHeaders(api_key=PORTKEY_API_KEY, virtual_key=OPENAI_VIRTUAL_KEY)
+
+llm_portkey_prompt = ChatOpenAI(
+    api_key="placeholder_key",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=portkey_headers,
+    model=rendered_prompt.model if rendered_prompt and rendered_prompt.model else "gpt-4o"
+)
+
+# if langchain_messages: response = llm_portkey_prompt.invoke(langchain_messages)
+```
+
+Manage prompts centrally in Portkey for versioning and collaboration.
+
+---
+
+## 6. Secure Virtual Keys
+
+Portkey's [Virtual Keys](/product/ai-gateway/virtual-keys) are vital for secure, flexible LLM ops with Langchain.
+
+**Benefits:**
+*   **Secure Credentials:** Store provider API keys in Portkey's vault. Code uses Virtual Key IDs.
+*   **Easy Configuration:** Switch providers/keys by changing `virtual_key` in `createHeaders`.
+*   **Access Control:** Manage Virtual Key permissions in Portkey.
+*   **Auditability:** Track usage via Portkey logs.
+
+Using Virtual Keys boosts security and simplifies config management.
+
+---
+
+## Langchain Embeddings
+
+Create embeddings with `OpenAIEmbeddings` via Portkey.
+
+```python
+from langchain_openai import OpenAIEmbeddings
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+import os
+
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+OPENAI_EMBEDDINGS_VIRTUAL_KEY = os.environ.get("OPENAI_EMBEDDINGS_VIRTUAL_KEY") 
+
+portkey_headers = createHeaders(api_key=PORTKEY_API_KEY, virtual_key=OPENAI_EMBEDDINGS_VIRTUAL_KEY)
+
+embeddings_model = OpenAIEmbeddings(
+    api_key="placeholder_key",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=portkey_headers,
+    model="text-embedding-3-small"
+)
+
+# embeddings = embeddings_model.embed_documents(["Hello world!", "Test."])
+```
+
+<Info>
+Portkey supports OpenAI embeddings via Langchain's `OpenAIEmbeddings`. For other providers (Cohere, Gemini), use the **Portkey SDK directly** ([docs](/api-reference/create-embeddings)).
+</Info>
+
+---
+
+## Langchain Chains & Prompts
+
+Standard Langchain [Chains](https://python.langchain.com/docs/modules/chains/) and [PromptTemplates](https://python.langchain.com/docs/modules/model_io/prompts/) work seamlessly with Portkey-configured `ChatOpenAI` instances. Portkey features (logging, caching) apply automatically.
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+import os
+
+PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
+OPENAI_VIRTUAL_KEY = os.environ.get("OPENAI_VIRTUAL_KEY") 
+
+portkey_headers = createHeaders(api_key=PORTKEY_API_KEY, virtual_key=OPENAI_VIRTUAL_KEY)
+
+chat_llm = ChatOpenAI(
+    api_key="placeholder_key",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=portkey_headers,
+    model="gpt-4o"
+)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a world-class technical writer."),
+    ("user", "{input}")
+])
+
+chain = prompt | chat_llm
+
+# response = chain.invoke({"input": "Explain API gateways simply."})
+```
+
+All chain requests via `chat_llm` are processed by Portkey.
+
+This concludes the main features. Redundant examples have been removed for clarity.

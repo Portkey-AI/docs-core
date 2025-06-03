@@ -1,80 +1,276 @@
 ---
-title: "LangGraph Agents"
-description: "Use Portkey with LangGraph to take your AI Agents to production"
+title: "LangGraph"
+description: "Use Portkey with LangGraph to take your AI agent workflows to production"
 ---
+
+## Introduction
+
+LangGraph is a library for building stateful, multi-actor applications with LLMs, designed to make developing complex agent workflows easier. It provides a flexible framework to create directed graphs where nodes process information and edges define the flow between them.
+
+Portkey enhances LangGraph with production-readiness features, turning your experimental agent workflows into robust systems by providing:
+
+- **Complete observability** of every agent step, tool use, and state transition
+- **Built-in reliability** with fallbacks, retries, and load balancing
+- **Cost tracking and optimization** to manage your AI spend
+- **Access to 200+ LLMs** through a single integration
+- **Guardrails** to keep agent behavior safe and compliant
+- **Version-controlled prompts** for consistent agent performance
+
+<Card title="LangGraph Official Documentation" icon="arrow-up-right-from-square" href="https://langchain-ai.github.io/langgraph/">
+  Learn more about LangGraph's core concepts and features
+</Card>
+
+### Installation & Setup
 
 <Steps>
 <Step title="Install the required packages">
-<Tabs>
-    <Tab title="Python">
-```sh
-pip install -U langgraph langchain_openai portkey-ai
+```bash
+pip install -U langgraph langchain langchain_openai portkey-ai
 ```
-    </Tab>
-    <Tab title="JavaScript">
-```sh
-npm i @langchain/langgraph @langchain/openai portkey-ai
-```
-    </Tab>
-</Tabs>
+
+Depending on your use case, you may also need additional packages:
+- For search capabilities: `pip install langchain_community`
+- For memory functionality: `pip install langgraph[checkpoint]`
 </Step>
-<Step title="Configure The ChatOpenAI Object with Portkey Settings">
-<Tabs>
-    <Tab title="Python">
+
+<Step title="Generate API Key" icon="lock">
+Create a Portkey API key with optional budget/rate limits from the [Portkey dashboard](https://app.portkey.ai/). You can attach configurations for reliability, caching, and more to this key.
+</Step>
+
+<Step title="Configure LangChain with Portkey">
+For a simple setup, configure a LangChain ChatOpenAI instance to use Portkey:
+
 ```python
 from langchain_openai import ChatOpenAI
 from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
 
+# Set up LangChain model with Portkey
 llm = ChatOpenAI(
-    api_key="dummy", # We'll pass a dummy API key here
-    base_url=PORTKEY_GATEWAY_URL,
+    api_key="dummy",  # This is just a placeholder
+    base_url="https://api.portkey.ai/v1",
     default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        virtual_key="YOUR_LLM_PROVIDER_VIRTUAL_KEY" # Pass your virtual key saved on Portkey for any provider you'd like (Anthropic, OpenAI, Groq, etc.)
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_PROVIDER_VIRTUAL_KEY",
+        trace_id="unique-trace-id",               # Optional, for request tracing
+        metadata={                                # Optional, for request segmentation
+            "app_env": "production",
+            "_user": "user_123"                   # Optional Special _user field for user analytics
+        }
     )
 )
 ```
-    </Tab>
-    <Tab title="JavaScript">
-```javascript
-import { ChatOpenAI } from "@langchain/openai";
-import { createHeaders, PORTKEY_GATEWAY_URL } from "portkey-ai";
 
-// Configure Portkey settings
-const portkeyConf = {
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    apiKey: "PORTKEY_API_KEY",
-    virtualKey: "OPENAI_VIRTUAL_KEY"
-  })
-};
-
-// Initialize the LLM with Portkey configuration
-const llm = dummy", #  We'll pass a dummy API key here
-  configuration: portkeyConf,
-  model: "gpt-4o" // or your preferred model
-});
-```
-    </Tab>
-</Tabs>
-
-The rest of your LangGraph implementation remains the same! Execute your agent and visit your [Portkey dashboard](https://app.portkey.ai) to observe your Agent is performing.
+<Info>
+**What are Virtual Keys?** Virtual keys in Portkey securely store your LLM provider API keys (OpenAI, Anthropic, etc.) in an encrypted vault. They allow for easier key rotation and budget management. [Learn more about virtual keys here](/product/ai-gateway/virtual-keys).
+</Info>
 </Step>
 </Steps>
-### End-to-End Example
-Here's a minimal working example of building a LangGraph agent with Portkey:
-<Tabs>
-    <Tab title="Python">
 
-We'll first create a simple chatbot using LangGraph and Portkey. This chatbot will respond directly to user messages. Though simple, it will illustrate the core concepts of building with LangGraph.
+## Basic Agent Implementation
 
+Let's create a simple LangGraph chatbot using Portkey. This example shows how to set up a basic conversational agent:
 
 ```python
 from typing import Annotated
 from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
 from typing_extensions import TypedDict
+from portkey_ai import createHeaders
+from langgraph.graph import StateGraph
+from langgraph.graph.message import add_messages
+
+# Define state structure with message history
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
+
+# Initialize graph builder
+graph_builder = StateGraph(State)
+
+# Set up LLM with Portkey
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_PROVIDER_VIRTUAL_KEY",
+        trace_id="chat-session-123"  # Optional
+    )
+)
+
+# Define chatbot node function
+def chatbot(state: State):
+    return {"messages": [llm.invoke(state["messages"])]}
+
+# Add node to graph and set entry/exit points
+graph_builder.add_node("chatbot", chatbot)
+graph_builder.set_entry_point("chatbot")
+graph_builder.set_finish_point("chatbot")
+graph = graph_builder.compile()
+
+# Function to handle streaming updates
+def stream_graph_updates(user_input: str):
+    for event in graph.stream({"messages": [{"role": "user", "content": user_input}]}):
+        for value in event.values():
+            print("Assistant:", value["messages"][-1].content)
+
+# Interactive chat loop
+while True:
+    try:
+        user_input = input("User: ")
+        if user_input.lower() in ["quit", "exit", "q"]:
+            print("Goodbye!")
+            break
+        stream_graph_updates(user_input)
+    except Exception as e:
+        print(f"Error: {e}")
+        break
+```
+
+This basic implementation:
+1. Creates a state graph with a message history
+2. Configures a ChatOpenAI model with Portkey
+3. Defines a simple chatbot node that processes messages with the LLM
+4. Compiles the graph and provides a streaming interface for chat
+
+## Advanced Features
+
+### 1. Adding Tools to Your Agent
+
+LangGraph can be enhanced with tools to allow your agent to perform actions. Here's how to add the Tavily search tool:
+
+```python [expandable]
+from langgraph.prebuilt import ToolNode, tools_condition
+from typing import Annotated
+from langchain_openai import ChatOpenAI
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph
+from langgraph.graph.message import add_messages
+from portkey_ai import createHeaders
+from langchain_community.tools.tavily_search import TavilySearchResults
+
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
+
+graph_builder = StateGraph(State)
+
+# Initialize the Tavily search tool
+# Note: Requires TAVILY_API_KEY environment variable or passed as argument
+tool = TavilySearchResults(max_results=2)
+tools = [tool]
+
+# Set up LLM with Portkey
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_PROVIDER_VIRTUAL_KEY",
+        trace_id="search-agent-session"  # Optional
+    )
+)
+# Bind tools to the LLM
+llm_with_tools = llm.bind_tools(tools)
+
+def chatbot(state: State):
+    return {"messages": [llm_with_tools.invoke(state["messages"])]}
+
+graph_builder.add_node("chatbot", chatbot)
+
+# Add tool node to handle tool execution
+tool_node = ToolNode(tools=[tool])
+graph_builder.add_node("tools", tool_node)
+
+# Add conditional routing based on tool usage
+graph_builder.add_conditional_edges(
+    "chatbot",
+    tools_condition,
+)
+# Return to chatbot after tool execution
+graph_builder.add_edge("tools", "chatbot")
+graph_builder.set_entry_point("chatbot")
+graph = graph_builder.compile()
+```
+
+<Info>
+This example requires a Tavily API key for the search functionality. You can sign up for one at [Tavily's website](https://tavily.com/).
+</Info>
+
+### 2. Creating Custom Tools
+
+You can create custom tools for your agents using the `@tool` decorator. Here's how to create a simple multiplication tool:
+
+```python [expandable]
+from langchain_core.tools import tool
+from pydantic import BaseModel, Field
+from langgraph.prebuilt import ToolNode, tools_condition
+from typing import Annotated
+from langchain_openai import ChatOpenAI
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph
+from langgraph.graph.message import add_messages
+from portkey_ai import createHeaders
+
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
+
+# Define input schema for the tool
+class MultiplyInputSchema(BaseModel):
+    """Multiply two numbers"""
+    a: int = Field(description="First operand")
+    b: int = Field(description="Second operand")
+
+# Create the tool
+@tool("multiply_tool", args_schema=MultiplyInputSchema)
+def multiply(a: int, b: int) -> int:
+   return a * b
+
+graph_builder = StateGraph(State)
+
+tools = [multiply]
+
+# Set up LLM with Portkey
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_PROVIDER_VIRTUAL_KEY",
+    )
+)
+llm_with_tools = llm.bind_tools(tools)
+
+def chatbot(state: State):
+    return {"messages": [llm_with_tools.invoke(state["messages"])]}
+
+graph_builder.add_node("chatbot", chatbot)
+tool_node = ToolNode(tools=tools)
+graph_builder.add_node("tools", tool_node)
+
+graph_builder.add_conditional_edges(
+    "chatbot",
+    tools_condition,
+)
+graph_builder.add_edge("tools", "chatbot")
+graph_builder.set_entry_point("chatbot")
+graph = graph_builder.compile()
+```
+
+This example:
+1. Defines a Pydantic model for the tool's input schema
+2. Creates a custom multiplication tool with the `@tool` decorator
+3. Integrates it into LangGraph with a tool node
+
+### 3. Adding Memory to Your Agent
+
+For persistent conversations, you can add memory to your LangGraph agents:
+
+```python [expandable]
+from typing import Annotated
+from langchain_openai import ChatOpenAI
+from langchain_community.tools.tavily_search import TavilySearchResults
+from typing_extensions import TypedDict
+from portkey_ai import createHeaders
+from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 
@@ -83,329 +279,744 @@ class State(TypedDict):
 
 graph_builder = StateGraph(State)
 
+# Set up tools and LLM with Portkey
+tool = TavilySearchResults(max_results=2)
+tools = [tool]
 llm = ChatOpenAI(
-    api_key="OpenAI_API_Key",
-    base_url=PORTKEY_GATEWAY_URL,
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
     default_headers=createHeaders(
-        provider="openai",
-        api_key="PORTKEY_API_KEY"
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_PROVIDER_VIRTUAL_KEY",
+        trace_id="memory-agent-session"  # Optional
     )
 )
+llm_with_tools = llm.bind_tools(tools)
 
 def chatbot(state: State):
-    return {"messages": [llm.invoke(state["messages"])]}
+    return {"messages": [llm_with_tools.invoke(state["messages"])]}
 
 graph_builder.add_node("chatbot", chatbot)
+tool_node = ToolNode(tools=[tool])
+graph_builder.add_node("tools", tool_node)
+
+graph_builder.add_conditional_edges(
+    "chatbot",
+    tools_condition,
+)
+graph_builder.add_edge("tools", "chatbot")
 graph_builder.set_entry_point("chatbot")
-graph_builder.set_finish_point("chatbot")
-graph = graph_builder.compile()
 
+# Initialize memory saver for persistent state
+memory = MemorySaver()
+graph = graph_builder.compile(checkpointer=memory)
+
+# Configuration for memory thread id
+config = {"configurable": {"thread_id": "1"}}
+
+# Function to handle streaming updates with memory
 def stream_graph_updates(user_input: str):
-    for event in graph.stream({"messages": [("user", user_input)]}):
-        for value in event.values():
-            print("Assistant:", value["messages"][-1].content)
-
-while True:
-    try:
-        user_input = input("User: ")
-        if user_input.lower() in ["quit", "exit", "q"]:
-            print("Goodbye!")
-            break
-        stream_graph_updates(user_input)
-    except:
-        user_input = "What do you know about LangGraph?"
-        print("User: " + user_input)
-        stream_graph_updates(user_input)
-        break
+    events = graph.stream(
+        {"messages": [{"role": "user", "content": user_input}]},
+        config,
+        stream_mode="values",
+    )
+    for event in events:
+        if "messages" in event:
+            # Use pretty_print method for better formatting
+            event["messages"][-1].pretty_print()
 ```
-    </Tab>
-    <Tab title="JavaScript">
 
-This code sets up a simple chatbot that can respond to user queries about the weather using LangGraph and Portkey in JS.
+<Info>
+The `thread_id` in the config allows you to maintain separate conversation threads for different users or contexts.
+</Info>
 
+## Production Features
 
-```javascript
-// agent.ts
-import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
-import { ChatOpenAI } from "@langchain/openai";
-import { MemorySaver } from "@langchain/langgraph";
-import { HumanMessage } from "@langchain/core/messages";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
+### 1. Enhanced Observability
 
-// Configure Portkey settings
-const portkeyConf = {
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    apiKey: PORTKEY_API_KEY,
-    virtualKey: "openaiVirtualKey"
-  })
-};
-
-// Define the tools for the agent to use
-const agentTools = [new TavilySearchResults({ maxResults: 3 })];
-const agentModel = new ChatOpenAI({
-  apiKey: "OPENAI_API_KEY",
-  configuration: portkeyConf,
-  model: "gpt-4"
-});
-
-// Initialize memory to persist state between graph runs
-const agentCheckpointer = new MemorySaver();
-const agent = createReactAgent({
-  llm: agentModel,
-  tools: agentTools,
-  checkpointSaver: agentCheckpointer,
-});
-
-// Example usage with async/await
-async function runAgent() {
-  // First interaction
-  const agentFinalState = await agent.invoke(
-    { messages: [new HumanMessage("what is the current weather in sf")] },
-    { configurable: { thread_id: "42" } },
-  );
-
-  console.log(
-    agentFinalState.messages[agentFinalState.messages.length - 1].content,
-  );
-
-  // Follow-up interaction using the same thread
-  const agentNextState = await agent.invoke(
-    { messages: [new HumanMessage("what about ny")] },
-    { configurable: { thread_id: "42" } },
-  );
-
-  console.log(
-    agentNextState.messages[agentNextState.messages.length - 1].content,
-  );
-}
-
-// Run the agent
-runAgent().catch(console.error);
-```
-    </Tab>
-</Tabs>
-
-
-## Integration Guide
-
-
-Here's a simple Google Colab notebook that demonstrates LangGraph with Portkey integration
-
-<Card title="Google Colab" href="https://colab.research.google.com/drive/110VGsUPf_58opYp3E4qmjZ9ytapC1gPG?usp=sharing">
-LangGraph Cookbook
-</Card>
-
-
-
-## Make your agents Production-ready with Portkey
-
-Portkey makes your LangGraph agents reliable, robust, and production-grade with its observability suite and AI Gateway. Seamlessly integrate 200+ LLMs with your LangGraph agents using Portkey. Implement fallbacks, gain granular insights into agent performance and costs, and continuously optimize your AI operations—all with just 2 lines of code.
-
-Let's dive deep! Let's go through each of the use cases!
-
-### 1\. [Interoperability](/product/ai-gateway/universal-api)
-
-Easily switch between 200+ LLMs. Call various LLMs such as Anthropic, Gemini, Mistral, Azure OpenAI, Google Vertex AI, AWS Bedrock, and many more by simply changing the `provider` and `API key` in the `ChatOpenAI` object.
+Portkey provides comprehensive observability for your LangGraph agents, helping you understand exactly what's happening during each execution.
 
 <Tabs>
-    <Tab title="OpenAI to Azure OpenAI">
-If you are using OpenAI with LangGraph, your code would look like this:
-
-```py
-llm = ChatOpenAI(
-    api_key="OpenAI_API_Key",
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="openai", #choose your provider
-        api_key="PORTKEY_API_KEY"
-    )
-)
-```
-
-To switch to Azure as your provider, add your Azure details to Portley vault ([here's how](/integrations/llms/azure-openai)) and use Azure OpenAI using virtual keys
-
-
-```py
-llm = ChatOpenAI(
-    api_key="api-key",
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="azure-openai", #choose your provider
-        api_key="PORTKEY_API_KEY",
-        virtual_key="AZURE_VIRTUAL_KEY"   # Replace with your virtual key for Azure
-    )
-)
-```
-</Tab>
-    <Tab title="Anthropic to AWS Bedrock">
-If you are using Anthropic with LangGraph, your code would look like this:
-
-```py
-llm = ChatOpenAI(
-    api_key="ANTHROPIC_API_KEY",
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="anthropic", #choose your provider
-        api_key="PORTKEY_API_KEY"
-    )
-)
-```
-To switch to AWS Bedrock as your provider, add your AWS Bedrock details to Portley vault ([here's how](/integrations/llms/aws-bedrock)) and use AWS Bedrock using virtual keys,
-```py
-llm = ChatOpenAI(
-    api_key="api-key",
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="bedrock", #choose your provider
-        api_key="PORTKEY_API_KEY",
-        virtual_key="AWS_Bedrock_VIRTUAL_KEY"   # Replace with your virtual key for Bedrock
-    )
-)
-```
-    </Tab>
-  </Tabs>
-
-### 2\. [Reliability](/product/ai-gateway)
-
-Agents are _brittle_. Long agentic pipelines with multiple steps can fail at any stage, disrupting the entire process. Portkey solves this by offering built-in **fallbacks** between different LLMs or providers, **load-balancing** across multiple instances or API keys, and implementing automatic **retries** and request **timeouts**. This makes your agents more reliable and resilient.
-
-Here's how you can implement these features using Portkey's config
-
-```py
-{
-  "retry": {
-    "attempts": 5
-  },
-  "strategy": {
-    "mode": "loadbalance" // Choose between "loadbalance" or "fallback"
-  },
-  "targets": [
-    {
-      "provider": "openai",
-      "api_key": "OpenAI_API_Key"
-    },
-    {
-      "provider": "anthropic",
-      "api_key": "Anthropic_API_Key"
-    }
-  ]
-}
-```
-
-### 3\. [Metrics](/product/observability)
-
-Agent runs can be costly. Tracking agent metrics is crucial for understanding the performance and reliability of your AI agents. Metrics help identify issues, optimize runs, and ensure that your agents meet their intended goals.
-
-Portkey automatically logs comprehensive metrics for your AI agents, including **cost**, **tokens used**, **latency**, etc. Whether you need a broad overview or granular insights into your agent runs, Portkey's customizable filters provide the metrics you need. For agent-specific observability, add `Trace-id` to the request headers for each agent.
-
-
-
-```py
-llm = ChatOpenAI(
-    api_key="Anthropic_API_Key",
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        provider="anthropic",
-        trace_id="research_agent1" #Add individual trace-id for your agent analytics
-    )
-)
-```
-
-### 4\. [Logs](/product/observability/logs)
-
-Agent runs are complex. Logs are essential for diagnosing issues, understanding agent behavior, and improving performance. They provide a detailed record of agent activities and tool use, which is crucial for debugging and optimizing processes.
-
-Portkey offers comprehensive logging features that capture detailed information about every action and decision made by your AI agents. Access a dedicated section to view records of agent executions, including parameters, outcomes, function calls, and errors. Filter logs based on multiple parameters such as trace ID, model, tokens used, and metadata.
-
-#### Auto-Instrumentation
-
-Portkey also supports auto-instrumentation for LangGraph. This allows you to trace and log your Agents execution with minimal code changes.
-
-Add the following to the top of your code execution to start tracing and logging your Agents execution to Portkey:
-
-```python
-from portkey import Portkey
-
-Portkey(api_key="{{PORTKEY_API_KEY}}", instrumentation=True)
-```
-
+  <Tab title="Traces">
 <Frame>
-  <img src="/images/autogen/autogen-4.gif"/>
+    <img src="/images/product/product-11-1.webp"/>
 </Frame>
 
-### 5\. [Traces](/product/observability/traces)
+Traces provide a hierarchical view of your agent's execution, showing the sequence of LLM calls, tool invocations, and state transitions.
 
-With traces, you can see each agent run granularly on Portkey. Tracing your LangGraph agent runs helps in debugging, performance optimzation, and visualizing how exactly your agents are running.
+```python
+# Add trace_id to enable hierarchical tracing in Portkey
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_LLM_PROVIDER_VIRTUAL_KEY",
+        trace_id="unique-session-id",  # Add unique trace ID
+        metadata={"request_type": "user_query"}
+    )
+)
+```
 
-#### Using Traces in LangGraph Agents
+LangGraph also offers its own tracing via LangSmith, which can be used alongside Portkey for even more detailed workflow insights.
+  </Tab>
 
-<Steps>
-<Step title="Import & Initialize the Portkey Langchain Callback Handler">
+  <Tab title="Logs">
+<Frame>
+    <img src="/images/product/product-2.avif"/>
+</Frame>
 
-```py
-from portkey_ai.langchain import LangchainCallbackHandler
+Portkey logs every interaction with LLMs, including:
 
-portkey_handler = LangchainCallbackHandler(
-    api_key="YOUR_PORTKEY_API_KEY",
-    metadata={
-        "session_id": "session_1",  # Use consistent metadata across your application
-        "agent_id": "research_agent_1",  # Specific to the current agent
+- Complete request and response payloads
+- Latency and token usage metrics
+- Cost calculations
+- Tool calls and function executions
+
+All logs can be filtered by metadata, trace IDs, models, and more, making it easy to debug specific agent runs.
+  </Tab>
+
+  <Tab title="Metrics & Dashboards">
+<Frame>
+    <img src="/images/product/dashboard.png"/>
+</Frame>
+
+Portkey provides built-in dashboards that help you:
+
+- Track cost and token usage across all agent runs
+- Analyze performance metrics like latency and success rates
+- Identify bottlenecks in your agent workflows
+- Compare different agent configurations and LLMs
+
+You can filter and segment all metrics by custom metadata to analyze specific agent types, user groups, or use cases.
+  </Tab>
+
+  <Tab title="Metadata Filtering">
+<Frame>
+  <img src="/images/metadata.png" alt="Analytics with metadata filters" />
+</Frame>
+
+Add custom metadata to your LangGraph agent calls to enable powerful filtering and segmentation:
+
+```python
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_LLM_PROVIDER_VIRTUAL_KEY",
+        metadata={
+            "agent_type": "search_agent",
+            "environment": "production",
+            "_user": "user_123",   # Special _user field for user analytics
+            "graph_id": "complex_workflow"
+        }
+    )
+)
+```
+
+This metadata can be used to filter logs, traces, and metrics on the Portkey dashboard, allowing you to analyze specific agent runs, users, or environments.
+  </Tab>
+</Tabs>
+
+### 2. Reliability - Keep Your Agents Running Smoothly
+
+When running agents in production, things can go wrong - API rate limits, network issues, or provider outages. Portkey's reliability features ensure your agents keep running smoothly even when problems occur.
+
+Enable fallback in your LangGraph agents by using a Portkey Config:
+
+```python
+from portkey_ai import createHeaders
+
+# Create LLM with fallback configuration
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        config={
+            "strategy": {
+                "mode": "fallback"
+            },
+            "targets": [
+                {
+                    "virtual_key": "YOUR_OPENAI_VIRTUAL_API_KEY",
+                    "override_params": {"model": "gpt-4o"}
+                },
+                {
+                    "virtual_key": "YOUR_ANTHROPIC_VIRTUAL_API_KEY",
+                    "override_params": {"model": "claude-3-opus-20240229"}
+                }
+            ]
+        }
+    )
+)
+```
+
+This configuration will automatically try Claude if the GPT-4o request fails, ensuring your agent can continue operating.
+
+<CardGroup cols="2">
+  <Card title="Automatic Retries" icon="rotate" href="../../product/ai-gateway/automatic-retries">
+    Handles temporary failures automatically. If an LLM call fails, Portkey will retry the same request for the specified number of times - perfect for rate limits or network blips.
+  </Card>
+  <Card title="Request Timeouts" icon="clock" href="../../product/ai-gateway/request-timeouts">
+    Prevent your agents from hanging. Set timeouts to ensure you get responses (or can fail gracefully) within your required timeframes.
+  </Card>
+  <Card title="Conditional Routing" icon="route" href="../../product/ai-gateway/conditional-routing">
+    Send different requests to different providers. Route complex reasoning to GPT-4, creative tasks to Claude, and quick responses to Gemini based on your needs.
+  </Card>
+  <Card title="Fallbacks" icon="shield" href="../../product/ai-gateway/fallbacks">
+    Keep running even if your primary provider fails. Automatically switch to backup providers to maintain availability.
+  </Card>
+  <Card title="Load Balancing" icon="scale-balanced" href="../../product/ai-gateway/load-balancing">
+    Spread requests across multiple API keys or providers. Great for high-volume agent operations and staying within rate limits.
+  </Card>
+</CardGroup>
+
+### 3. Prompting in LangGraph
+
+Portkey's Prompt Engineering Studio helps you create, manage, and optimize the prompts used in your LangGraph agents. Instead of hardcoding prompts or instructions, use Portkey's prompt rendering API to dynamically fetch and apply your versioned prompts.
+
+<Frame caption="Manage prompts in Portkey's Prompt Library">
+![Prompt Playground Interface](/images/product/ai-gateway/ai-20.webp)
+</Frame>
+
+<Tabs>
+  <Tab title="Prompt Playground">
+Prompt Playground is a place to compare, test and deploy perfect prompts for your AI application. It's where you experiment with different models, test variables, compare outputs, and refine your prompt engineering strategy before deploying to production. It allows you to:
+
+1. Iteratively develop prompts before using them in your agents
+2. Test prompts with different variables and models
+3. Compare outputs between different prompt versions
+4. Collaborate with team members on prompt development
+
+This visual environment makes it easier to craft effective prompts for each step in your LangGraph agent's workflow.
+  </Tab>
+
+  <Tab title="Using Prompt Templates">
+The Prompt Render API retrieves your prompt templates with all parameters configured:
+
+```python
+from portkey_ai import Portkey
+from langchain_openai import ChatOpenAI
+from portkey_ai import createHeaders
+
+# Initialize Portkey clients
+portkey_admin = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+# Retrieve prompt using the render API
+prompt_data = portkey_admin.prompts.render(
+    prompt_id="YOUR_PROMPT_ID",
+    variables={
+        "user_input": "Tell me about artificial intelligence"
+    }
+).data.dict()
+
+# Set up LLM with rendered system prompt
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_OPENAI_VIRTUAL_KEY",
+    )
+)
+
+# Define chatbot node with the rendered system prompt
+def chatbot(state):
+    messages = state["messages"]
+    # Add the system prompt from Portkey to the beginning of the conversation
+    all_messages = [
+        {"role": "system", "content": prompt_data["messages"][0]["content"]},
+        *messages
+    ]
+    return {"messages": [llm.invoke(all_messages)]}
+```
+  </Tab>
+
+  <Tab title="Prompt Versioning">
+You can:
+- Create multiple versions of the same prompt
+- Compare performance between versions
+- Roll back to previous versions if needed
+- Specify which version to use in your code:
+
+```python
+# Use a specific prompt version
+prompt_data = portkey_admin.prompts.render(
+    prompt_id="YOUR_PROMPT_ID@version_number",
+    variables={
+        "user_input": "Tell me about quantum computing"
     }
 )
 ```
-</Step>
-<Step title="Configure Your LLM with the Portkey Callback">
+  </Tab>
 
-```py
-from langchain.chat_models import ChatOpenAI
+  <Tab title="Mustache Templating for variables">
+Portkey prompts use Mustache-style templating for easy variable substitution:
 
+```
+You are an AI assistant specialized in {{agent_role}}.
+
+User question: {{user_input}}
+
+Please respond in a {{tone}} tone and include {{required_elements}}.
+```
+
+When rendering, simply pass the variables:
+
+```python
+prompt_data = portkey_admin.prompts.render(
+    prompt_id="YOUR_PROMPT_ID",
+    variables={
+        "agent_role": "search navigator",
+        "user_input": "Find information about climate change",
+        "tone": "informative",
+        "required_elements": "recent scientific findings"
+    }
+)
+```
+  </Tab>
+</Tabs>
+
+<Card title="Prompt Engineering Studio" icon="wand-magic-sparkles" href="/product/prompt-library">
+  Learn more about Portkey's prompt management features
+</Card>
+
+### 4. Guardrails for Safe Agents
+
+Guardrails ensure your LangGraph agents operate safely and respond appropriately in all situations.
+
+**Why Use Guardrails?**
+
+LangGraph agents can experience various failure modes:
+- Generating harmful or inappropriate content
+- Leaking sensitive information like PII
+- Hallucinating incorrect information
+- Generating outputs in incorrect formats
+
+Portkey's guardrails add protection for both inputs and outputs.
+
+**Implementing Guardrails**
+
+```python
+from langchain_openai import ChatOpenAI
+from portkey_ai import createHeaders
+
+# Create LLM with guardrails
 llm = ChatOpenAI(
-    api_key="YOUR_OPENAI_API_KEY_HERE",
-    callbacks=[portkey_handler],
-    # ... other parameters
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_OPENAI_VIRTUAL_KEY",
+        config={
+            "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
+            "output_guardrails": ["guardrails-id-zzz"]
+        }
+    )
+)
+```
+
+Portkey's guardrails can:
+- Detect and redact PII in both inputs and outputs
+- Filter harmful or inappropriate content
+- Validate response formats against schemas
+- Check for hallucinations against ground truth
+- Apply custom business logic and rules
+
+<Card title="Learn More About Guardrails" icon="shield-check" href="/product/guardrails">
+  Explore Portkey's guardrail features to enhance agent safety
+</Card>
+
+### 5. User Tracking with Metadata
+
+Track individual users through your LangGraph agents using Portkey's metadata system.
+
+**What is Metadata in Portkey?**
+
+Metadata allows you to associate custom data with each request, enabling filtering, segmentation, and analytics. The special `_user` field is specifically designed for user tracking.
+
+```python
+from langchain_openai import ChatOpenAI
+from portkey_ai import createHeaders
+
+# Configure LLM with user tracking
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_OPENAI_VIRTUAL_KEY",
+        metadata={
+            "_user": "user_123",  # Special _user field for user analytics
+            "user_tier": "premium",
+            "user_company": "Acme Corp",
+            "session_id": "abc-123",
+            "graph_id": "search_workflow"
+        }
+    )
+)
+```
+
+**Filter Analytics by User**
+
+With metadata in place, you can filter analytics by user and analyze performance metrics on a per-user basis:
+
+<Frame caption="Filter analytics by user">
+  <img src="/images/metadata-filters.png"/>
+</Frame>
+
+This enables:
+- Per-user cost tracking and budgeting
+- Personalized user analytics
+- Team or organization-level metrics
+- Environment-specific monitoring (staging vs. production)
+
+<Card title="Learn More About Metadata" icon="tags" href="/product/observability/metadata">
+  Explore how to use custom metadata to enhance your analytics
+</Card>
+
+### 6. Caching for Efficient Agents
+
+Implement caching to make your LangGraph agents more efficient and cost-effective:
+
+<Tabs>
+  <Tab title="Simple Caching">
+```python
+from langchain_openai import ChatOpenAI
+from portkey_ai import createHeaders
+
+# Configure LLM with simple caching
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_OPENAI_VIRTUAL_KEY",
+        config={
+            "cache": {
+                "mode": "simple"
+            }
+        }
+    )
+)
+```
+
+Simple caching performs exact matches on input prompts, caching identical requests to avoid redundant model executions.
+  </Tab>
+
+  <Tab title="Semantic Caching">
+```python
+from langchain_openai import ChatOpenAI
+from portkey_ai import createHeaders
+
+# Configure LLM with semantic caching
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_OPENAI_VIRTUAL_KEY",
+        config={
+            "cache": {
+                "mode": "semantic"
+            }
+        }
+    )
+)
+```
+
+Semantic caching considers the contextual similarity between input requests, caching responses for semantically similar inputs.
+  </Tab>
+</Tabs>
+
+### 7. Model Interoperability
+
+LangGraph works with multiple LLM providers, and Portkey extends this capability by providing access to over 200 LLMs through a unified interface. You can easily switch between different models without changing your core agent logic:
+
+```python
+from langchain_openai import ChatOpenAI
+from portkey_ai import createHeaders
+
+# OpenAI configuration
+openai_llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_OPENAI_VIRTUAL_KEY"
+    )
+)
+
+# Anthropic configuration
+anthropic_llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_ANTHROPIC_VIRTUAL_KEY"
+    )
+)
+
+# Choose which LLM to use based on your needs
+active_llm = openai_llm  # or anthropic_llm
+
+# Use in your LangGraph nodes
+def chatbot(state):
+    return {"messages": [active_llm.invoke(state["messages"])]}
+```
+
+Portkey provides access to LLMs from providers including:
+
+- OpenAI (GPT-4o, GPT-4 Turbo, etc.)
+- Anthropic (Claude 3.5 Sonnet, Claude 3 Opus, etc.)
+- Mistral AI (Mistral Large, Mistral Medium, etc.)
+- Google Vertex AI (Gemini 1.5 Pro, etc.)
+- Cohere (Command, Command-R, etc.)
+- AWS Bedrock (Claude, Titan, etc.)
+- Local/Private Models
+
+<Card title="Supported Providers" icon="server" href="/integrations/llms">
+  See the full list of LLM providers supported by Portkey
+</Card>
+
+## Set Up Enterprise Governance for LangGraph
+
+**Why Enterprise Governance?**
+If you are using LangGraph inside your organization, you need to consider several governance aspects:
+- **Cost Management**: Controlling and tracking AI spending across teams
+- **Access Control**: Managing which teams can use specific models
+- **Usage Analytics**: Understanding how AI is being used across the organization
+- **Security & Compliance**: Maintaining enterprise security standards
+- **Reliability**: Ensuring consistent service across all users
+
+Portkey adds a comprehensive governance layer to address these enterprise needs. Let's implement these controls step by step.
+
+<Steps>
+<Step title="Create Virtual Key">
+Virtual Keys are Portkey's secure way to manage your LLM provider API keys. They provide essential controls like:
+- Budget limits for API usage
+- Rate limiting capabilities
+- Secure API key storage
+
+To create a virtual key:
+Go to [Virtual Keys](https://app.portkey.ai/virtual-keys) in the Portkey App. Save and copy the virtual key ID
+
+<Frame>
+<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
+</Frame>
+
+<Note>
+Save your virtual key ID - you'll need it for the next step.
+</Note>
+</Step>
+
+<Step title="Create Default Config">
+Configs in Portkey define how your requests are routed, with features like advanced routing, fallbacks, and retries.
+
+To create your config:
+1. Go to [Configs](https://app.portkey.ai/configs) in Portkey dashboard
+2. Create new config with:
+    ```json
+    {
+        "virtual_key": "YOUR_VIRTUAL_KEY_FROM_STEP1",
+       	"override_params": {
+          "model": "gpt-4o" // Your preferred model name
+        }
+    }
+    ```
+3. Save and note the Config name for the next step
+
+<Frame>
+<img src="/images/integrations/config.png" width="500"/>
+</Frame>
+</Step>
+
+<Step title="Configure Portkey API Key">
+Now create a Portkey API key and attach the config you created in Step 2:
+
+1. Go to [API Keys](https://app.portkey.ai/api-keys) in Portkey and Create new API key
+2. Select your config from `Step 2`
+3. Generate and save your API key
+
+<Frame>
+<img src="/images/integrations/api-key.png" width="500"/>
+</Frame>
+</Step>
+
+<Step title="Connect to LangGraph">
+After setting up your Portkey API key with the attached config, connect it to your LangGraph agents:
+
+```python
+from langchain_openai import ChatOpenAI
+from portkey_ai import createHeaders
+
+# Configure LLM with your Portkey API key
+llm = ChatOpenAI(
+    api_key="dummy",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY"  # The API key with attached config from step 3
+    )
 )
 ```
 </Step>
 </Steps>
-With Portkey tracing, you can encapsulate the complete execution of your agent workflow.
+
+<AccordionGroup>
+  <Accordion title="Step 1: Implement Budget Controls & Rate Limits">
+### Step 1: Implement Budget Controls & Rate Limits
+
+Virtual Keys enable granular control over LLM access at the team/department level. This helps you:
+- Set up [budget limits](/product/ai-gateway/virtual-keys/budget-limits)
+- Prevent unexpected usage spikes using Rate limits
+- Track departmental spending
+
+#### Setting Up Department-Specific Controls:
+1. Navigate to [Virtual Keys](https://app.portkey.ai/virtual-keys) in Portkey dashboard
+2. Create new Virtual Key for each department with budget limits and rate limits
+3. Configure department-specific limits
+
 <Frame>
-   <img src="/images/autogen/Portkey-Traces.png"/>
+<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
 </Frame>
+  </Accordion>
 
-### 6\. [Guardrails](/product/guardrails)
+  <Accordion title="Step 2: Define Model Access Rules">
+### Step 2: Define Model Access Rules
 
-LLMs are brittle - not just in API uptimes or their inexplicable `400`/`500` errors, but also in their core behavior. You can get a response with a `200` status code that completely errors out for your app's pipeline due to mismatched output. With Portkey's Guardrails, we now help you enforce LLM behavior in real-time with our _Guardrails on the Gateway_ pattern.
+As your AI usage scales, controlling which teams can access specific models becomes crucial. Portkey Configs provide this control layer with features like:
 
-Using Portkey's Guardrail platform, you can now verify your LLM inputs AND outputs to be adhering to your specifed checks; and since Guardrails are built on top of our [Gateway](https://github.com/portkey-ai/gateway), you can orchestrate your request exactly the way you want - with actions ranging from _denying the request_, _logging the guardrail result_, _creating an evals dataset_, _falling back to another LLM or prompt_, _retrying the request_, and more.
+#### Access Control Features:
+- **Model Restrictions**: Limit access to specific models
+- **Data Protection**: Implement guardrails for sensitive data
+- **Reliability Controls**: Add fallbacks and retry logic
 
-### 7\. [Continuous Improvement](/product/observability/feedback)
-
-Improve your Agent runs by capturing qualitative & quantitative user feedback on your requests. Portkey's Feedback APIs provide a simple way to get weighted feedback from customers on any request you served, at any stage in your app. You can capture this feedback on a request or conversation level and analyze it by adding meta data to the relevant request.
-
-### 8\. [Caching](/product/ai-gateway/cache-simple-and-semantic)
-
-Agent runs are time-consuming and expensive due to their complex pipelines. Caching can significantly reduce these costs by storing frequently used data and responses. Portkey offers a built-in caching system that stores past responses, reducing the need for agent calls saving both time and money.
-
-
+#### Example Configuration:
+Here's a basic configuration to route requests to OpenAI, specifically using GPT-4o:
 
 ```json
 {
- "cache": {
-    "mode": "semantic" // Choose between "simple" or "semantic"
- }
+	"strategy": {
+		"mode": "single"
+	},
+	"targets": [
+		{
+			"virtual_key": "YOUR_OPENAI_VIRTUAL_KEY",
+			"override_params": {
+				"model": "gpt-4o"
+			}
+		}
+	]
 }
 ```
 
-### 9\. [Security & Compliance](/product/enterprise-offering/security-portkey)
+  Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard.
 
-Set budget limits on provider API keys and implement fine-grained user roles and permissions for both the app and the Portkey APIs.
+    <Note>
+    Configs can be updated anytime to adjust controls without affecting running applications.
+    </Note>
+  </Accordion>
 
----
+  <Accordion title="Step 3: Implement Access Controls">
+    ### Step 3: Implement Access Controls
 
-## [Portkey Config](/product/ai-gateway/configs)
+    Create User-specific API keys that automatically:
+    - Track usage per user/team with the help of virtual keys
+    - Apply appropriate configs to route requests
+    - Collect relevant metadata to filter logs
+    - Enforce access permissions
 
-Many of these features are driven by Portkey's Config architecture. The Portkey app simplifies creating, managing, and versioning your Configs.
+    Create API keys through:
+    - [Portkey App](https://app.portkey.ai/)
+    - [API Key Management API](/api-reference/admin-api/control-plane/api-keys/create-api-key)
 
-For more information on using these features and setting up your Config, please refer to the [Portkey documentation](https://docs.portkey.ai).
+    Example using Python SDK:
+    ```python
+    from portkey_ai import Portkey
+
+    portkey = Portkey(api_key="YOUR_ADMIN_API_KEY")
+
+    api_key = portkey.api_keys.create(
+        name="engineering-team",
+        type="organisation",
+        workspace_id="YOUR_WORKSPACE_ID",
+        defaults={
+            "config_id": "your-config-id",
+            "metadata": {
+                "environment": "production",
+                "department": "engineering"
+            }
+        },
+        scopes=["logs.view", "configs.read"]
+    )
+    ```
+
+    For detailed key management instructions, see our [API Keys documentation](/api-reference/admin-api/control-plane/api-keys/create-api-key).
+  </Accordion>
+
+  <Accordion title="Step 4: Deploy & Monitor">
+    ### Step 4: Deploy & Monitor
+    After distributing API keys to your team members, your enterprise-ready LangGraph setup is ready to go. Each team member can now use their designated API keys with appropriate access levels and budget controls.
+
+    Monitor usage in Portkey dashboard:
+    - Cost tracking by department
+    - Model usage patterns
+    - Request volumes
+    - Error rates
+  </Accordion>
+
+</AccordionGroup>
+
+<Note>
+### Enterprise Features Now Available
+**Your LangGraph integration now has:**
+- Departmental budget controls
+- Model access governance
+- Usage tracking & attribution
+- Security guardrails
+- Reliability features
+</Note>
+
+## Frequently Asked Questions
+
+<AccordionGroup>
+  <Accordion title="How does Portkey enhance LangGraph?">
+    Portkey adds production-readiness to LangGraph through comprehensive observability (traces, logs, metrics), reliability features (fallbacks, retries, caching), and access to 200+ LLMs through a unified interface. This makes it easier to debug, optimize, and scale your agent workflows.
+  </Accordion>
+
+  <Accordion title="Can I use Portkey with existing LangGraph applications?">
+    Yes! Portkey integrates seamlessly with existing LangGraph applications. You just need to replace your LLM initialization code with the Portkey-enabled version. The rest of your graph code remains unchanged.
+  </Accordion>
+
+  <Accordion title="Does Portkey work with all LangGraph features?">
+    Portkey supports all LangGraph features, including tools, memory, conditional routing, and complex multi-node workflows. It adds observability and reliability without limiting any of the framework's functionality.
+  </Accordion>
+
+  <Accordion title="How do I filter logs and traces for specific graph runs?">
+    Portkey allows you to add custom metadata and trace IDs to your LLM calls, which you can then use for filtering. Add fields like `graph_id`, `workflow_type`, or `session_id` to easily find and analyze specific graph executions.
+  </Accordion>
+
+  <Accordion title="Can I use LangGraph's memory features with Portkey?">
+    Yes! The examples in this documentation show how to use LangGraph's `MemorySaver` checkpointer with Portkey-enabled LLMs. All the memory and state management features work seamlessly with Portkey.
+  </Accordion>
+
+</AccordionGroup>
+
+## Resources
+
+<CardGroup cols="3">
+  <Card title="LangGraph Docs" icon="book" href="https://langchain-ai.github.io/langgraph/">
+    <p>Official LangGraph documentation</p>
+  </Card>
+
+  <Card title="Portkey Docs" icon="book" href="https://portkey.ai/docs">
+    <p>Official Portkey documentation</p>
+  </Card>
+
+  <Card title="Book a Demo" icon="calendar" href="https://calendly.com/portkey-ai">
+    <p>Get personalized guidance on implementing this integration</p>
+  </Card>
+</CardGroup>
