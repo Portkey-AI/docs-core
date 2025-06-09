@@ -1,0 +1,670 @@
+---
+title: "Running Model Evaluations with Portkey"
+---
+
+This guide walks you through setting up and running comprehensive model evaluations using Portkey's prompt templates, guardrails, and batch processing capabilities. We'll build a sentiment analysis evaluation system that classifies Amazon product reviews while ensuring output quality and data privacy.
+
+## What You'll Build
+
+By the end of this guide, you'll have:
+- A prompt template for sentiment analysis with variable substitution
+- Guardrails that validate output format and check for PII
+- An automated feedback system that scores model performance
+- A batch evaluation pipeline to process multiple reviews at scale
+- Analytics to measure and improve your model's accuracy
+
+
+
+## Creating the Evaluation Prompt
+
+### Understanding Portkey's Prompt Library
+
+Portkey's Prompt Library is a centralized platform for managing, versioning, and deploying prompts across your AI applications. It provides:
+
+- **Version Control**: Track changes and rollback to previous versions
+- **Variable Substitution**: Use mustache-style templates (`{{variable}}`) for dynamic content
+- **Model Configuration**: Set provider, model, and parameters in one place
+- **Team Collaboration**: Share and manage prompts across your organization
+
+### Setting Up the Sentiment Analysis Prompt
+
+Navigate to the Prompts section in your Portkey dashboard and create a new prompt template:
+
+<Steps>
+<Step title="Create New Prompt Template">
+Click on "Create Prompt" and give it a descriptive name like "Amazon Review Sentiment Analysis"
+</Step>
+
+<Step title="Add your Task Instructions">
+In the system message field, add:
+
+```
+You're a helpful assistant.
+```
+
+Add the following prompt template in the user message:
+
+``` [expandable]
+Your task is to perform Sentiment Analysis on Amazon product reviews.
+Given a user review, classify it into one of the following sentiment categories:
+"positive"
+"negative"
+"neutral"
+
+{     "categories": ["positive" | "negative" | "neutral"] }
+Each review must have only one category.
+Use lowercase strings only.
+Classify based on the clearest and most obvious sentiment in the review.
+Ignore subtle tone or ambiguity — keep it simple and direct.
+
+Example 1 – Positive
+Input: "This charger works perfectly and charges my phone super fast. Totally worth the money."
+Output:
+{"categories": ["positive"]}
+
+Example 2 – Neutral
+Input: "The product is okay, nothing special. It does what it's supposed to do, but I wouldn't buy it again."
+Output:
+{"categories": ["neutral"]}
+
+Example 3 – Negative
+Input: "This is the worst purchase I've made on Amazon. It broke within a week and customer service was unhelpful."
+Output:
+{"categories": ["negative"]}
+
+Now here's the review that you need to analyze:
+
+{{amazon_review}}
+```
+
+<Note>
+The `{{amazon_review}}` variable will be replaced with actual review text during evaluation runs.
+</Note>
+</Step>
+
+<Step title="Configure Model Settings">
+- Select your preferred AI provider (e.g., OpenAI, Anthropic)
+- Choose the model (e.g., gpt-4, claude-3)
+- Set temperature to 0 for consistent outputs
+- Configure other parameters as needed
+</Step>
+
+<Step title="Save and Get Prompt ID">
+Save the prompt template and copy the generated Prompt ID for later use.
+</Step>
+</Steps>
+
+## Part 2: Setting Up Evaluation Guardrails
+
+### Understanding Portkey Guardrails
+
+Guardrails are programmable checks that run before or after your LLM calls to ensure quality, safety, and compliance. They can:
+
+- **Validate Output Format**: Ensure responses match expected schemas
+- **Filter Content**: Block inappropriate or sensitive information
+- **Trigger Actions**: Automatically score responses or route to different models
+- **Monitor Quality**: Track metrics and alert on anomalies
+
+Portkey offers several guardrail types:
+- **JSON Schema Validator**: Validates output structure
+- **Contains/Regex Filters**: Check for specific content patterns
+- **PII Detection**: Identify and block personal information
+- **Toxicity Filters**: Prevent harmful content
+- **Custom Logic**: Build your own validation rules
+
+### Creating the Output Validation Guardrail
+
+<Steps>
+<Step title="Navigate to Guardrails">
+Go to the Guardrails section in your Portkey dashboard
+</Step>
+
+<Step title="Create JSON Schema Validator">
+Create a new guardrail named "Sentiment Output Validator" with:
+- **Type**: JSON Schema Validator
+- **Position**: After (validates the model's response)
+- **Schema**:
+
+```json
+{
+  "type": "object",
+  "required": ["categories"],
+  "properties": {
+    "categories": {
+      "type": "array",
+      "items": {
+        "enum": ["positive", "negative", "neutral"],
+        "type": "string"
+      },
+      "minItems": 1,
+      "maxItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
+```
+</Step>
+
+<Step title="Add Feedback Action">
+In the Actions section of the guardrail:
+- Enable "Add Feedback on Success/Failure"
+- Configure feedback scoring:
+  - If output contains "positive": Score = +10 [Success]
+  - If output contains "negative": Score = -10 [Fail]
+  - If output contains "neutral": Score = -10 [Fail]
+
+This automated feedback helps track model accuracy across your evaluation dataset.
+</Step>
+
+<Step title="Save Guardrail">
+Save and copy the Guardrail ID
+</Step>
+</Steps>
+
+### Creating the PII Protection Guardrail
+
+<Steps>
+<Step title="Create PII Detector">
+Create another guardrail named "PII Input Check":
+- **Type**: PII Detector (Portkey Pro feature)
+- **Position**: Before (checks input before sending to model)
+- **Action on Detection**: Block request or redact PII
+</Step>
+
+<Step title="Configure Detection Settings">
+Enable detection for:
+- Email addresses
+- Phone numbers
+- Credit card numbers
+- Social Security numbers
+- Physical addresses
+- Names (optional, may affect review analysis)
+</Step>
+
+<Step title="Save and Get ID">
+Save the guardrail and copy its ID
+</Step>
+</Steps>
+
+## Part 3: Combining Everything in a Config
+
+Portkey Configs orchestrate how your requests flow through guardrails, models, and other features.
+
+<Steps>
+<Step title="Navigate to Configs">
+Go to the Configs section in your dashboard
+</Step>
+
+<Step title="Create New Config">
+Create a config named "Amazon Review Eval Config"
+</Step>
+
+<Step title="Attach Guardrails">
+- **Before Request**: Add the PII Input Check guardrail
+- **After Request**: Add the Sentiment Output Validator guardrail
+</Step>
+
+<Step title="Save Config">
+Save the configuration and copy the Config ID
+</Step>
+</Steps>
+
+## Summary of Part 1
+
+You now have the foundation for your evaluation system:
+
+- **Prompt ID**: For your sentiment analysis template
+- **Config ID**: Combining input/output guardrails
+- **Portkey API Key**: For authentication
+
+
+
+## Part 2: Running Batch Evaluations
+
+Now that we have our prompt template and guardrails configured, let's run evaluations at scale using Portkey's batch processing capabilities. Batch processing allows you to evaluate hundreds or thousands of examples efficiently and cost-effectively.
+
+### Why Batch Processing for Evaluations?
+
+Batch processing offers several advantages for model evaluations:
+
+- **Cost Efficiency**: Often 50% cheaper than real-time API calls
+- **Higher Rate Limits**: Process more requests without hitting rate limits
+- **Asynchronous Processing**: Submit jobs and retrieve results later
+- **Better for Large Datasets**: Ideal for processing evaluation datasets
+- **Consistent Results**: All requests use the same model version
+
+### Setting Up the Evaluation Pipeline
+
+Let's build a complete pipeline that:
+1. Fetches real Amazon reviews from Hugging Face
+2. Formats them for batch processing
+3. Runs them through our configured prompt
+4. Collects results with automatic scoring
+
+First, install the required dependencies:
+
+```bash
+pip install requests pandas
+```
+
+Now, let's walk through the complete batch evaluation script:
+
+```python
+"""
+Portkey Batch Evaluation Pipeline
+This script demonstrates how to:
+1. Fetch Amazon reviews from Hugging Face
+2. Create JSONL file with proper format
+3. Upload to Portkey
+4. Create and monitor batch job
+5. Retrieve results and save to CSV
+"""
+
+import requests
+import json
+import pandas as pd
+import time
+
+# Configuration
+PORTKEY_API_KEY = "YOUR_PORTKEY_API_KEY"  # Replace with your API key
+PROMPT_ID = "YOUR_PROMPT_ID"  # Replace with your prompt ID from Part 1
+BASE_URL = "https://api.portkey.ai/v1"
+```
+
+### Step 1: Fetch Amazon Reviews
+
+We'll use the Hugging Face datasets API to fetch real Amazon product reviews:
+
+```python
+# Step 1: Fetch Amazon reviews from Hugging Face
+print("\n=== Step 1: Fetching Amazon reviews ===")
+url = "https://datasets-server.huggingface.co/rows"
+params = {
+    "dataset": "sentence-transformers/amazon-reviews",
+    "config": "pair",
+    "split": "train",
+    "offset": 0,
+    "length": 10  # Start with 10 reviews for testing
+}
+
+response = requests.get(url, params=params)
+data = response.json()
+
+reviews = []
+for row in data['rows']:
+    if 'row' in row and 'review' in row['row']:
+        reviews.append(row['row']['review'])
+
+print(f"Fetched {len(reviews)} reviews")
+```
+
+<Note>
+You can increase the `length` parameter to evaluate more reviews. For production evaluations, you might process hundreds or thousands of reviews.
+</Note>
+
+### Step 2: Create JSONL File
+
+Portkey's batch API expects a JSONL (JSON Lines) file where each line is a separate request:
+
+```python
+# Step 2: Create JSONL file
+print("\n=== Step 2: Creating JSONL file ===")
+jsonl_entries = []
+
+for idx, review in enumerate(reviews, 1):
+    entry = {
+        "custom_id": f"request-{idx}",
+        "method": "POST",
+        "url": f"/v1/prompts/{PROMPT_ID}/completions",
+        "body": {
+            "variables": {
+                "amazon_review": review  # This replaces {{amazon_review}} in prompt
+            }
+        }
+    }
+    jsonl_entries.append(entry)
+
+filename = "amazon_reviews_batch.jsonl"
+with open(filename, 'w') as file:
+    for entry in jsonl_entries:
+        file.write(json.dumps(entry) + '\n')
+
+print(f"Created {filename} with {len(jsonl_entries)} entries")
+```
+
+### Step 3: Upload File to Portkey
+
+```python
+# Step 3: Upload file to Portkey
+print("\n=== Step 3: Uploading file to Portkey ===")
+upload_url = f"{BASE_URL}/files"
+headers = {"x-portkey-api-key": PORTKEY_API_KEY}
+
+with open(filename, 'rb') as file:
+    files = {'file': (filename, file, 'application/jsonl')}
+    data = {'purpose': 'batch'}
+    response = requests.post(upload_url, headers=headers, files=files, data=data)
+
+file_data = response.json()
+file_id = file_data['id']
+print(f"File uploaded. File ID: {file_id}")
+```
+
+### Step 4: Create Batch Job
+
+Now we create the batch job, specifying our config ID to apply guardrails:
+
+```python
+# Step 4: Create batch job
+print("\n=== Step 4: Creating batch job ===")
+batch_url = f"{BASE_URL}/batches"
+headers = {
+    "x-portkey-api-key": PORTKEY_API_KEY,
+    "Content-Type": "application/json"
+}
+
+batch_data = {
+    "input_file_id": file_id,
+    "endpoint": f"/v1/prompts/{PROMPT_ID}/completions",
+    "completion_window": "immediate",
+    "metadata": {
+        "evaluation_name": "amazon_sentiment_eval_v1"
+    },
+    "config": "YOUR_CONFIG_ID"  # Add your config ID from Part 1
+}
+
+response = requests.post(batch_url, headers=headers, json=batch_data)
+batch_response = response.json()
+batch_id = batch_response['id']
+print(f"Batch created. Batch ID: {batch_id}")
+```
+
+<Warning>
+Don't forget to add your Config ID to the batch request. This ensures your guardrails (PII check, output validation, and feedback scoring) are applied to every request in the batch.
+</Warning>
+
+### Step 5: Monitor Batch Status
+
+```python
+# Step 5: Check batch status
+print("\n=== Step 5: Checking batch status ===")
+status_url = f"{BASE_URL}/batches/{batch_id}"
+headers = {"x-portkey-api-key": PORTKEY_API_KEY}
+
+while True:
+    response = requests.get(status_url, headers=headers)
+    status_data = response.json()
+
+    status = status_data.get('status')
+    request_counts = status_data.get('request_counts', {})
+
+    print(f"Status: {status} | Completed: {request_counts.get('completed', 0)}/{request_counts.get('total', 0)}")
+
+    if status == 'completed':
+        break
+    elif status == 'failed':
+        print("Batch failed!")
+        break
+
+    time.sleep(2)
+```
+
+### Step 6: Retrieve and Process Results
+
+```python
+# Step 6: Get batch output
+print("\n=== Step 6: Getting batch output ===")
+output_url = f"{BASE_URL}/batches/{batch_id}/output"
+response = requests.get(output_url, headers=headers)
+
+# Parse JSONL response
+results = []
+for line in response.text.strip().split('\n'):
+    if line:
+        results.append(json.loads(line))
+
+print(f"Retrieved {len(results)} results")
+
+# Step 7: Save to CSV
+print("\n=== Step 7: Saving results to CSV ===")
+csv_data = []
+
+for result in results:
+    custom_id = result.get('custom_id', '')
+
+    # Get original review
+    idx = int(custom_id.split('-')[1]) - 1
+    original_review = reviews[idx] if idx < len(reviews) else ""
+
+    # Extract response
+    response_body = result.get('response', {}).get('body', {})
+    choices = response_body.get('choices', [])
+
+    if choices:
+        assistant_response = choices[0].get('message', {}).get('content', '')
+        # Parse the JSON response to get sentiment
+        try:
+            sentiment_data = json.loads(assistant_response)
+            sentiment = sentiment_data.get('categories', ['unknown'])[0]
+        except:
+            sentiment = 'parse_error'
+    else:
+        assistant_response = "No response"
+        sentiment = 'no_response'
+
+    status_code = result.get('response', {}).get('status_code', '')
+
+    csv_data.append({
+        'custom_id': custom_id,
+        'original_review': original_review,
+        'sentiment': sentiment,
+        'full_response': assistant_response,
+        'status_code': status_code
+    })
+
+# Create DataFrame and save
+df = pd.DataFrame(csv_data)
+output_filename = "batch_evaluation_results.csv"
+df.to_csv(output_filename, index=False)
+print(f"Results saved to {output_filename}")
+
+# Display summary
+print(f"\nSummary:")
+print(f"Total requests: {len(results)}")
+print(f"Successful: {len(df[df['status_code'] == 200])}")
+
+# Show sentiment distribution
+print("\nSentiment Distribution:")
+print(df['sentiment'].value_counts())
+```
+
+### Understanding the Results
+
+After running the batch evaluation, you'll have:
+
+1. **CSV File**: Contains all reviews, predicted sentiments, and status codes
+2. **Automatic Feedback Scores**: Each request has been scored based on your guardrail configuration:
+   - Positive sentiments: +10
+   - Negative sentiments: -10
+   - Neutral sentiments: 0
+3. **Validation Results**: The JSON schema validator ensures all outputs match the expected format
+
+### Complete Script
+
+Here's the complete script you can save and run:
+
+<Accordion title="View Complete Batch Evaluation Script">
+```python
+import requests
+import json
+import pandas as pd
+import time
+
+# Configuration
+PORTKEY_API_KEY = "YOUR_PORTKEY_API_KEY"  # Replace with your API key
+PROMPT_ID = "YOUR_PROMPT_ID"  # Replace with your prompt ID
+CONFIG_ID = "YOUR_CONFIG_ID"  # Replace with your config ID
+BASE_URL = "https://api.portkey.ai/v1"
+
+# Step 1: Fetch Amazon reviews from Hugging Face
+print("\n=== Step 1: Fetching Amazon reviews ===")
+url = "https://datasets-server.huggingface.co/rows"
+params = {
+    "dataset": "sentence-transformers/amazon-reviews",
+    "config": "pair",
+    "split": "train",
+    "offset": 0,
+    "length": 10
+}
+
+response = requests.get(url, params=params)
+data = response.json()
+
+reviews = []
+for row in data['rows']:
+    if 'row' in row and 'review' in row['row']:
+        reviews.append(row['row']['review'])
+
+print(f"Fetched {len(reviews)} reviews")
+
+# Step 2: Create JSONL file
+print("\n=== Step 2: Creating JSONL file ===")
+jsonl_entries = []
+
+for idx, review in enumerate(reviews, 1):
+    entry = {
+        "custom_id": f"request-{idx}",
+        "method": "POST",
+        "url": f"/v1/prompts/{PROMPT_ID}/completions",
+        "body": {
+            "variables": {
+                "amazon_review": review
+            }
+        }
+    }
+    jsonl_entries.append(entry)
+
+filename = "amazon_reviews_batch.jsonl"
+with open(filename, 'w') as file:
+    for entry in jsonl_entries:
+        file.write(json.dumps(entry) + '\n')
+
+print(f"Created {filename} with {len(jsonl_entries)} entries")
+
+# Step 3: Upload file to Portkey
+print("\n=== Step 3: Uploading file to Portkey ===")
+upload_url = f"{BASE_URL}/files"
+headers = {"x-portkey-api-key": PORTKEY_API_KEY}
+
+with open(filename, 'rb') as file:
+    files = {'file': (filename, file, 'application/jsonl')}
+    data = {'purpose': 'batch'}
+    response = requests.post(upload_url, headers=headers, files=files, data=data)
+
+file_data = response.json()
+file_id = file_data['id']
+print(f"File uploaded. File ID: {file_id}")
+
+# Step 4: Create batch job with config
+print("\n=== Step 4: Creating batch job ===")
+batch_url = f"{BASE_URL}/batches"
+headers = {
+    "x-portkey-api-key": PORTKEY_API_KEY,
+    "Content-Type": "application/json"
+}
+
+batch_data = {
+    "input_file_id": file_id,
+    "endpoint": f"/v1/prompts/{PROMPT_ID}/completions",
+    "completion_window": "immediate",
+    "metadata": {
+        "evaluation_name": "amazon_sentiment_eval_v1"
+    },
+    "config": CONFIG_ID
+}
+
+response = requests.post(batch_url, headers=headers, json=batch_data)
+batch_response = response.json()
+batch_id = batch_response['id']
+print(f"Batch created. Batch ID: {batch_id}")
+
+# Step 5: Check batch status
+print("\n=== Step 5: Checking batch status ===")
+status_url = f"{BASE_URL}/batches/{batch_id}"
+headers = {"x-portkey-api-key": PORTKEY_API_KEY}
+
+while True:
+    response = requests.get(status_url, headers=headers)
+    status_data = response.json()
+
+    status = status_data.get('status')
+    request_counts = status_data.get('request_counts', {})
+
+    print(f"Status: {status} | Completed: {request_counts.get('completed', 0)}/{request_counts.get('total', 0)}")
+
+    if status in ['completed', 'failed']:
+        break
+
+    time.sleep(2)
+
+# Step 6: Get batch output
+print("\n=== Step 6: Getting batch output ===")
+output_url = f"{BASE_URL}/batches/{batch_id}/output"
+response = requests.get(output_url, headers=headers)
+
+# Parse JSONL response
+results = []
+for line in response.text.strip().split('\n'):
+    if line:
+        results.append(json.loads(line))
+
+print(f"Retrieved {len(results)} results")
+
+# Step 7: Save to CSV
+print("\n=== Step 7: Saving results to CSV ===")
+csv_data = []
+
+for result in results:
+    custom_id = result.get('custom_id', '')
+    idx = int(custom_id.split('-')[1]) - 1
+    original_review = reviews[idx] if idx < len(reviews) else ""
+
+    response_body = result.get('response', {}).get('body', {})
+    choices = response_body.get('choices', [])
+
+    if choices:
+        assistant_response = choices[0].get('message', {}).get('content', '')
+        try:
+            sentiment_data = json.loads(assistant_response)
+            sentiment = sentiment_data.get('categories', ['unknown'])[0]
+        except:
+            sentiment = 'parse_error'
+    else:
+        assistant_response = "No response"
+        sentiment = 'no_response'
+
+    status_code = result.get('response', {}).get('status_code', '')
+
+    csv_data.append({
+        'custom_id': custom_id,
+        'original_review': original_review,
+        'sentiment': sentiment,
+        'full_response': assistant_response,
+        'status_code': status_code
+    })
+
+df = pd.DataFrame(csv_data)
+output_filename = "batch_evaluation_results.csv"
+df.to_csv(output_filename, index=False)
+
+print(f"Results saved to {output_filename}")
+print(f"\nSummary:")
+print(f"Total requests: {len(results)}")
+print(f"Successful: {len(df[df['status_code'] == 200])}")
+print("\nSentiment Distribution:")
+print(df['sentiment'].value_counts())
+```
+</Accordion>
+
+Next, we'll explore how to analyze these results in the Portkey dashboard to gain insights into your model's performance.
