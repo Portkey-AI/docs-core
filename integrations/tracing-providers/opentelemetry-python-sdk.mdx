@@ -1,0 +1,213 @@
+---
+title: "OpenTelemetry Python SDK"
+description: "Direct OpenTelemetry instrumentation with full control over traces and intelligent gateway routing"
+---
+
+The [OpenTelemetry SDK](https://opentelemetry.io/docs/languages/python/) provides direct, fine-grained control over instrumentation in your LLM applications. Unlike automatic instrumentation libraries, the SDK allows you to manually create spans and set attributes exactly where and how you need them.
+
+<Info>
+Using the OpenTelemetry SDK directly with Portkey gives you complete control over what gets traced while benefiting from Portkey's intelligent gateway features like caching, fallbacks, and load balancing.
+</Info>
+
+## Why OpenTelemetry SDK + Portkey?
+
+<CardGroup cols={2}>
+<Card title="Full Control" icon="sliders">
+Manually instrument exactly what you need with custom spans and attributes
+</Card>
+<Card title="Production Ready" icon="rocket">
+Battle-tested OpenTelemetry standard used by enterprises worldwide
+</Card>
+<Card title="Custom Attributes" icon="tags">
+Add any metadata you need to traces for debugging and analysis
+</Card>
+<Card title="Gateway Intelligence" icon="brain">
+Portkey adds routing optimization and resilience to your LLM calls
+</Card>
+</CardGroup>
+
+## Quick Start
+
+### Prerequisites
+
+- Python
+- Portkey account with API key
+- OpenAI API key (or use Portkey's virtual keys)
+
+### Step 1: Install Dependencies
+
+Install the required packages:
+
+```bash
+pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http openai portkey-ai
+```
+
+### Step 2: Configure OpenTelemetry
+
+Set up the tracer provider and OTLP exporter:
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+# Setup tracer provider
+provider = TracerProvider()
+trace.set_tracer_provider(provider)
+
+# Configure OTLP exporter to send to Portkey
+otlp_exporter = OTLPSpanExporter(
+    endpoint="https://api.portkey.ai/v1/logs/otel/v1/traces",
+    headers={
+        "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+    }
+)
+
+# Add batch span processor (recommended for production)
+span_processor = BatchSpanProcessor(otlp_exporter)
+provider.add_span_processor(span_processor)
+
+# Get tracer
+tracer = trace.get_tracer(__name__)
+```
+
+### Step 3: Configure Portkey Gateway
+
+Set up the OpenAI client with Portkey's gateway:
+
+```python
+from openai import OpenAI
+from portkey_ai import createHeaders
+
+# Use Portkey's gateway for intelligent routing
+client = OpenAI(
+    api_key="YOUR_OPENAI_API_KEY",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_VIRTUAL_KEY"  # Optional: Use Portkey's secure key management
+    )
+)
+```
+
+### Step 4: Create Instrumented Functions
+
+Manually instrument your LLM calls with custom spans:
+
+```python
+def generate_ai_response(input_text):
+    with tracer.start_as_current_span("OpenAI-Chat-Completion") as span:
+        # Add input attributes
+        span.set_attribute("input.value", input_text)
+        span.set_attribute("model.name", "gpt-4")
+        span.set_attribute("temperature", 0.7)
+        span.set_attribute("gen_ai.prompt.0.role", "user")
+        span.set_attribute("gen_ai.prompt.0.content", input_text)
+
+        # Make the API call
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": input_text}],
+            model="gpt-4",
+            temperature=0.7,
+        )
+
+        # Add response attributes
+        output_content = response.choices[0].message.content
+        span.set_attribute("output.value", output_content)
+        span.set_attribute("gen_ai.completion.0.role", "assistant")
+        span.set_attribute("gen_ai.completion.0.content", output_content)
+
+        return output_content
+```
+
+## Complete Example
+
+Here's a full working example:
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from openai import OpenAI
+from portkey_ai import createHeaders
+
+# Step 1: Setup OpenTelemetry
+provider = TracerProvider()
+trace.set_tracer_provider(provider)
+
+otlp_exporter = OTLPSpanExporter(
+    endpoint="https://api.portkey.ai/v1/logs/otel/v1/traces",
+    headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"}
+)
+
+span_processor = BatchSpanProcessor(otlp_exporter)
+provider.add_span_processor(span_processor)
+
+tracer = trace.get_tracer(__name__)
+
+# Step 2: Configure Portkey Gateway
+client = OpenAI(
+    api_key="YOUR_OPENAI_API_KEY",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_VIRTUAL_KEY"
+    )
+)
+
+# Step 3: Create instrumented function
+def generate_ai_response(input_text):
+    with tracer.start_as_current_span("OpenAI-Chat-Completion") as span:
+        # Set input attributes
+        span.set_attribute("input.value", input_text)
+        span.set_attribute("model.name", "gpt-4")
+        span.set_attribute("temperature", 0.7)
+
+        # Make API call
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": input_text}],
+            model="gpt-4",
+            temperature=0.7,
+        )
+
+        # Set output attributes
+        output_content = response.choices[0].message.content
+        span.set_attribute("output.value", output_content)
+
+        return output_content
+
+# Step 4: Use the instrumented function
+if __name__ == "__main__":
+    input_text = "Explain the concept of AI in 50 words"
+    response = generate_ai_response(input_text)
+    print(response)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+<Card title="Configure Gateway" icon="gear" href="/product/ai-gateway/configs">
+Set up intelligent routing, fallbacks, and caching
+</Card>
+<Card title="Explore Virtual Keys" icon="key" href="/product/ai-gateway/virtual-keys">
+Secure your API keys with Portkey's vault
+</Card>
+<Card title="View Analytics" icon="chart-line" href="/product/observability/analytics">
+Analyze costs, performance, and usage patterns
+</Card>
+<Card title="Set Up Alerts" icon="bell" href="/product/observability/alerts">
+Configure alerts for anomalies and performance issues
+</Card>
+</CardGroup>
+
+---
+
+## See Your Traces in Action
+
+Once configured, navigate to the [Portkey dashboard](https://app.portkey.ai/logs) to see your custom OpenTelemetry traces enhanced with gateway intelligence:
+
+<Frame>
+  <img src="/images/product/opentelemetry.png" alt="OpenTelemetry traces in Portkey" />
+</Frame>

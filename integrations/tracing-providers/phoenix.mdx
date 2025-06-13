@@ -1,0 +1,258 @@
+---
+title: "Phoenix(Arize) Open-Telemetry"
+description: "AI observability and debugging platform with OpenInference instrumentation and intelligent gateway routing"
+---
+
+[Arize Phoenix](https://phoenix.arize.com/) is an open-source AI observability platform designed to help developers debug, monitor, and evaluate LLM applications. Phoenix provides powerful visualization tools and uses OpenInference instrumentation to automatically capture detailed traces of your AI system's behavior.
+
+<Info>
+Phoenix's OpenInference instrumentation combined with Portkey's intelligent gateway provides comprehensive debugging capabilities with automatic trace collection, while adding routing optimization and resilience features to your LLM calls.
+</Info>
+
+## Why Arize Phoenix + Portkey?
+
+<CardGroup cols={2}>
+<Card title="Visual Debugging" icon="magnifying-glass">
+Powerful UI for exploring traces, spans, and debugging LLM behavior
+</Card>
+<Card title="OpenInference Standard" icon="code-branch">
+Industry-standard semantic conventions for AI/LLM observability
+</Card>
+<Card title="Evaluation Tools" icon="chart-column">
+Built-in tools for evaluating model performance and behavior
+</Card>
+<Card title="Gateway Intelligence" icon="brain">
+Portkey adds caching, fallbacks, and load balancing to every request
+</Card>
+</CardGroup>
+
+## Quick Start
+
+### Prerequisites
+
+- Python
+- Portkey account with API key
+- OpenAI API key (or use Portkey's virtual keys)
+
+### Step 1: Install Dependencies
+
+Install the required packages for Phoenix and Portkey integration:
+
+```bash
+pip install arize-phoenix-otel openai openinference-instrumentation-openai portkey-ai
+```
+
+### Step 2: Configure OpenTelemetry Export
+
+Set up the environment variables to send traces to Portkey:
+
+```python
+import os
+
+# Configure Portkey endpoint and authentication
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "https://api.portkey.ai/v1/logs/otel"
+os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = "x-portkey-api-key=YOUR_PORTKEY_API_KEY"
+```
+
+### Step 3: Register Phoenix and Instrument OpenAI
+
+Initialize Phoenix and enable OpenAI instrumentation:
+
+```python
+from phoenix.otel import register
+from openinference.instrumentation.openai import OpenAIInstrumentor
+
+# Configure Phoenix tracer
+register(set_global_tracer_provider=False)
+
+# Instrument OpenAI
+OpenAIInstrumentor().instrument()
+```
+
+### Step 4: Configure Portkey Gateway
+
+Set up the OpenAI client with Portkey's gateway:
+
+```python
+from openai import OpenAI
+from portkey_ai import createHeaders
+
+# Use Portkey's gateway for intelligent routing
+client = OpenAI(
+    api_key="YOUR_OPENAI_API_KEY",  # Or use a dummy value with virtual keys
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_VIRTUAL_KEY"  # Optional: Use Portkey's secure key management
+    )
+)
+```
+
+### Step 5: Make Instrumented LLM Calls
+
+Your LLM calls are now automatically traced by Phoenix and enhanced by Portkey:
+
+```python
+# Make calls with automatic tracing
+response = client.chat.completions.create(
+    messages=[
+        {
+            "role": "user",
+            "content": "How does Phoenix help with AI debugging?",
+        }
+    ],
+    model="gpt-4",
+    temperature=0.7
+)
+
+print(response.choices[0].message.content)
+
+# Phoenix captures:
+# - Input/output pairs
+# - Token usage
+# - Latency metrics
+# - Model parameters
+#
+# Portkey adds:
+# - Gateway routing decisions
+# - Cache hit/miss data
+# - Fallback information
+```
+
+## Complete Example
+
+Here's a full working example:
+
+```python
+from phoenix.otel import register
+from openinference.instrumentation.openai import OpenAIInstrumentor
+import os
+from openai import OpenAI
+from portkey_ai import createHeaders
+
+# Step 1: Configure Portkey endpoint
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "https://api.portkey.ai/v1/logs/otel"
+os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = "x-portkey-api-key=YOUR_PORTKEY_API_KEY"
+
+# Step 2: Register Phoenix and instrument OpenAI
+register(set_global_tracer_provider=False)
+OpenAIInstrumentor().instrument()
+
+# Step 3: Configure Portkey Gateway
+client = OpenAI(
+    api_key="YOUR_OPENAI_API_KEY",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders(
+        api_key="YOUR_PORTKEY_API_KEY",
+        virtual_key="YOUR_VIRTUAL_KEY"
+    )
+)
+
+# Step 4: Make instrumented calls
+response = client.chat.completions.create(
+    messages=[
+        {"role": "system", "content": "You are a helpful AI assistant."},
+        {"role": "user", "content": "Explain how observability helps in production AI systems"}
+    ],
+    model="gpt-4",
+    temperature=0.7
+)
+
+print(response.choices[0].message.content)
+```
+
+## OpenInference Instrumentation
+
+Phoenix uses OpenInference semantic conventions for AI observability:
+
+### Automatic Capture
+- **Messages**: Full conversation history with roles and content
+- **Model Info**: Model name, temperature, and other parameters
+- **Token Usage**: Input/output token counts for cost tracking
+- **Errors**: Detailed error information when requests fail
+- **Latency**: End-to-end request timing
+
+### Supported Providers
+Phoenix can instrument multiple LLM providers:
+- OpenAI
+- Anthropic
+- Bedrock
+- Vertex AI
+- Azure OpenAI
+- And more through OpenInference instrumentors
+
+## Configuration Options
+
+### Custom Span Attributes
+
+Add custom attributes to your traces:
+
+```python
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("custom_operation") as span:
+    span.set_attribute("user.id", "user123")
+    span.set_attribute("session.id", "session456")
+
+    # Your LLM call here
+    response = client.chat.completions.create(...)
+```
+
+### Sampling Configuration
+
+Control trace sampling for production environments:
+
+```python
+from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
+
+# Sample 10% of traces
+register(
+    set_global_tracer_provider=False,
+    sampler=TraceIdRatioBased(0.1)
+)
+```
+
+## Troubleshooting
+
+### Common Issues
+
+<AccordionGroup>
+<Accordion title="Traces not appearing in Portkey">
+Ensure both OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS are correctly set
+</Accordion>
+<Accordion title="Missing instrumentation data">
+Make sure to call OpenAIInstrumentor().instrument() before creating your OpenAI client
+</Accordion>
+<Accordion title="Phoenix UI not showing traces">
+If using Phoenix UI locally, ensure Phoenix is running and properly configured
+</Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+<Card title="Configure Gateway" icon="gear" href="/product/ai-gateway/configs">
+Set up intelligent routing, fallbacks, and caching
+</Card>
+<Card title="Explore Virtual Keys" icon="key" href="/product/ai-gateway/virtual-keys">
+Secure your API keys with Portkey's vault
+</Card>
+<Card title="View Analytics" icon="chart-line" href="/product/observability/analytics">
+Analyze costs, performance, and usage patterns
+</Card>
+<Card title="Set Up Evaluations" icon="clipboard-check" href="/product/observability/evaluations">
+Create custom evaluations for your AI system
+</Card>
+</CardGroup>
+
+---
+
+## See Your Traces in Action
+
+Once configured, navigate to the [Portkey dashboard](https://app.portkey.ai/logs) to see your Phoenix instrumentation combined with gateway intelligence:
+
+<Frame>
+  <img src="/images/product/opentelemetry.png" alt="OpenTelemetry traces in Portkey" />
+</Frame>
