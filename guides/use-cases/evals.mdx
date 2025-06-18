@@ -1,0 +1,284 @@
+---
+title: "Run Evals on Portkey"
+---
+
+## Overview
+Evaluations are a crucial component of building any production-level AI application. With LLM models becoming increasingly commoditized, the real value comes from building the right orchestration for your AI pipeline. What many developers don't realize is how important a good quality evaluation system is for ensuring your AI application performs reliably.
+
+You should understand the behavior you want from the model. Here are some questions you should be able to answer:
+- What kind of output do I want the model to generate?
+- What kinds of inputs should the model be able to handle?
+- How could I tell whether or not my model output is accurate?
+
+The answers to these questions will dictate how you build your eval, and what kind of data you need to assemble before you can evaluate model performance. Let's make this more concrete with a real example.
+
+In this guide, we'll walk through how to implement evaluations on the Portkey platform.
+
+## What We're Building
+We'll create an AI evaluation system for your application that combines two powerful evaluation methods:
+1. **LLM-based evaluations**: Using another LLM to judge the quality of responses
+2. **Deterministic checks**: Applying specific rules to validate outputs
+
+This approach gives you both nuanced quality assessment and reliable pass/fail checks.
+
+**Example objective - sentiment analysis of movie reviews**
+
+Let's say you are building an LLM application to perform sentiment analysis on movie reviews from IMDB. You'd like to give the model the text of a movie review, and have it output a value indicating sentiment: +5 for positive reviews, and -5 for negative reviews.
+
+## Getting the test data
+We'll be using an open source dataset from Hugging Face. The IMDB dataset provides a great collection of movie reviews that are already labeled as positive or negative.
+
+```python
+from datasets import load_dataset
+import pandas as pd
+
+ds = load_dataset("stanfordnlp/imdb")
+df = pd.DataFrame(ds['train'][:25])  # Select first 25 items for our example
+df.head()
+```
+
+This dataset contains the text of reviews and labels indicating whether they're positive (1) or negative (0). For our evaluation, we'll use these labels as our ground truth.
+
+<Note>
+The complete IMDB dataset is balanced with approximately 50% positive (1) and 50% negative (0) reviews. However, since we're only using the first 25 items in this example, it's possible that these samples may not maintain this balance. In a production evaluation scenario, you would want to ensure a representative sample by either shuffling the dataset before selecting examples or explicitly selecting a balanced subset.
+</Note>
+## Setting Up Your Environment
+
+To get started with Portkey evaluations, you'll need to set up your development environment with the necessary libraries.
+
+### Install Required Libraries
+
+First, install the Portkey SDK and other dependencies:
+
+```python
+pip install portkey-ai
+pip install datasets futures pydantic
+```
+
+### Initialize the Portkey Client
+
+Set up your Portkey client with your API key and virtual key:
+
+```python
+from portkey_ai import Portkey
+from pydantic import BaseModel
+import json
+
+client = Portkey(
+    api_key = "YOUR_API_KEY",  # Replace with your Portkey API key
+    virtual_key = "YOUR_VIRTUAL_KEY",  # Replace with your virtual key
+    trace_id = "evals-trace"  # This helps you identify this evaluation run
+)
+```
+
+## Method 1: LLM-Based Evaluation
+
+Let's first implement an LLM-based evaluation approach for our sentiment analysis task. We'll use a structured output approach to get consistent responses from the model.
+
+### Define Response Structure
+
+```python
+# Using structured output for consistent evaluation
+class Eval(BaseModel):
+    evaluation: int
+```
+
+### Create the Evaluation Prompt
+
+```python
+system_prompt = """
+You are a sentiment analyzer for movie reviews.
+Analyze the movie review and determine if it's positive or negative.
+Return +5 for positive sentiment and -5 for negative sentiment.
+"""
+```
+
+### Implement the Evaluation Function
+
+```python
+from tqdm import tqdm
+
+# Function to process a single review
+def evaluate_review(review, actual_label):
+    try:
+        # Get sentiment prediction from LLM
+        completion = client.beta.chat.completions.parse(
+            model="gpt-4o",  # You can use other models as well
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": review}
+            ],
+            response_format=Eval,
+        )
+
+        # Parse the response
+        parsed_data = json.loads(completion.choices[0].message.content)
+        predicted_sentiment = parsed_data["evaluation"]
+
+        # Log feedback to Portkey
+        client.feedback.create(
+            trace_id="evals-trace",
+            value=predicted_sentiment
+        )
+
+        return {
+            "predicted": predicted_sentiment,
+        }
+
+    except Exception as e:
+        return {"error": str(e), "review": review[:50] + "..."}
+
+# Process each review
+for _, row in tqdm(df.iterrows(), total=len(df), desc="Evaluating reviews"):
+    evaluate_review(row['text'], row['label'])
+
+print("Evaluation complete. Check Portkey UI for results.")
+```
+
+This code processes each review, sends it to the model for sentiment analysis, and logs the predicted sentiment as feedback in Portkey. The feedback system allows you to track how your model performs across different inputs.
+
+## Method 2: Adding Deterministic Evals
+
+In addition to LLM-based evaluation, Portkey enables you to implement deterministic evals using guardrails. These serve as automated evaluators for your application.
+
+For our example, we'll use a guardrail that evaluates if the word count of reviews falls within an acceptable range (5-250 words). This helps identify potentially problematic inputs.
+
+### Creating Guardrails in Portkey
+
+<Card title="Guardrails" icon="link" href="/product/guardrails">
+</Card>
+
+#### 1. Create a New Guardrail & Add Evaluators
+
+On the `Guardrails` page in the Portkey dashboard, click on `Create` and add your preferred Guardrail checks from the right sidebar.
+
+
+Each Guardrail Check has custom input fields based on its use case:
+- **Word Count**: Set minimum and maximum word counts for input validation
+- **PII Detection**: Check for personally identifiable information
+- **Content Moderation**: Filter harmful or inappropriate content
+- **Regex Pattern**: Match specific patterns in text
+- **And more**: Portkey offers numerous checks for different validation needs
+
+You can add multiple checks to a single Guardrail to create comprehensive validation rules.
+
+#### 2. Add Guardrail Actions
+
+After creating checks, define the orchestration logic for your Guardrail:
+
+- **Run this guardrail asynchronously**: Determines if guardrail checks run in parallel with the main request
+- **Deny the request if guardrail fails**: Blocks requests that fail your validation checks
+- **Add a feedback score**: Allows you to assign numerical values for success or failure cases:
+  - Set values between -10 and 10
+  - Define weights (0 to 1) to control their impact on overall evaluation scores
+
+For our example, we'll create a guardrail with a simple word count check that validates if reviews contain between 5 and 250 words. We'll configure it to:
+- Add a feedback score of +5 on `success` with weight 1
+- Add a feedback score of -5 on `failure` with weight 1
+
+### Implementing your Evals in Your Code
+
+Once you've created a guardrail in the Portkey dashboard, you can easily integrate it into your evaluation code:
+
+```python
+# Add guardrails configuration
+portkey_config = {
+    "input_guardrails": ["my-gd-1", "my-gd-2"],
+    "output_guardrails": ["my-guardrails-id-1", "my-guardrails-id-2"],
+}  # Replace with your guardrail ID
+
+client = Portkey(
+    api_key = "YOUR_API_KEY",
+    virtual_key = "YOUR_VIRTUAL_KEY",
+    trace_id = "evals-trace",
+    config = portkey_config  # Include guardrails configuration
+)
+
+# The evaluation function remains the same
+def evaluate_review(review, actual_label):
+    # Same implementation as before
+    # ...
+
+# Process each review
+for _, row in tqdm(df.iterrows(), total=len(df), desc="Evaluating reviews"):
+    evaluate_review(row['text'], row['label'])
+```
+
+With this setup, every review will be automatically checked against your guardrail criteria before being processed by the model, giving you two distinct evaluation layers.
+
+---
+
+## Understanding Feedback in Portkey
+
+Portkey's feedback system is designed to help you track and analyze the performance of your models. When you send feedback using `client.feedback.create()`, you're logging evaluation data that can be visualized and analyzed in the Portkey dashboard.
+
+The feedback value you provide can represent any metric relevant to your application:
+- In our sentiment analysis example, we're using the predicted sentiment value (+5 or -5)
+- You could also use binary values (1 for correct predictions, 0 for incorrect)
+- Or custom scoring schemes based on your evaluation criteria
+
+Portkey aggregates these feedback values and provides valuable insights through its dashboard.
+
+## Analyzing Your Eval Results in the Portkey Dashboard
+
+After running your evaluations, you can analyze the results in the Portkey dashboard:
+
+<Frame>
+<img src="/images/guides/feedback-dashboard.png"></img>
+</Frame>
+
+### Evaluation Feedback Distribution
+The dashboard shows the distribution of feedback values, helping you understand how your model is performing:
+- Count of value: +5 (positive sentiment predictions)
+- Count of value: -5 (negative sentiment predictions)
+- Distribution of other feedback values
+
+### Eval Metric: Weighted Avg Feedback
+This is perhaps the most critical metric - it represents the final evaluation score for your model. The weighted average combines all feedback values to give you a single performance indicator.
+
+
+For our sentiment analysis example:
+- A weighted average near zero might indicate balanced positive and negative predictions
+- A significantly positive average suggests a bias toward positive sentiment detection
+- A significantly negative average suggests a bias toward negative sentiment detection
+
+The Weighted Avg Feedback combines:
+- Direct LLM evaluation scores from your code
+- Automatic feedback scores from guardrail checks
+- Any additional feedback sources you implement
+
+This single metric helps you quickly assess how well your model is performing overall and track improvements over time as you refine your prompts, models, or guardrails.
+
+### Trending Data
+The dashboard provides trending data showing how your model's performance changes over time. This helps you identify:
+- Performance degradation
+- Improvements after prompt or model changes
+- Patterns in user feedback
+
+## Best Practices for Portkey Evaluations
+
+1. **Start Small**: Begin with a small dataset to test your evaluation setup before scaling.
+
+2. **Use Diverse Test Data**: Ensure your test data covers a wide range of scenarios your model will encounter.
+
+3. **Combine Evaluation Methods**: Use both LLM-based evaluations and deterministic checks for comprehensive assessment.
+
+4. **Track Changes Over Time**: Re-run evaluations after making changes to prompts or models to measure improvements.
+
+5. **Use Meaningful Feedback Values**: Choose feedback values that provide meaningful insights for your specific use case.
+
+6. **Leverage Guardrails**: Create custom guardrails for your specific application requirements.
+
+7. **Analyze Failures**: Pay special attention to cases where your model performs poorly to identify improvement opportunities.
+
+## Conclusion
+
+Implementing a robust evaluation system is essential for ensuring your AI applications perform reliably and meet quality standards. By using Portkey's evaluation capabilities, you can:
+
+1. Continuously monitor LLM response quality
+2. Compare performance across different models
+3. Identify patterns in poor-performing responses
+4. Collect and analyze user feedback
+5. Make data-driven decisions for improving your AI systems
+
+Start with simple evaluations and gradually build up to more sophisticated pipelines as you learn what metrics matter most for your specific use case.
