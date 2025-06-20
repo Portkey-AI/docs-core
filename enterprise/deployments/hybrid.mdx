@@ -1,0 +1,103 @@
+---
+title: "Data Plane Deployment (Hybrid)"
+description: "Step-by-step instructions to deploy the Portkey data plane inside your infrastructure."
+---
+
+<Frame caption="Hybrid Deployment Overview">
+  <img src="/images/hybrid-deployment.png" alt="Portkey Hybrid Deployment – Data Plane in customer VPC, Control Plane in Portkey VPC" />
+</Frame>
+
+## Deploy a Hybrid Data Plane in 4 Steps
+
+### Step 1: Prepare Your Environment
+
+#### 1.1 Environment readiness
+
+| Requirement | Notes |
+|-------------|-------|
+| **Kubernetes** | v1.24+ (Helm 3.x) |
+| **Outbound HTTPS** | Gateway must reach `control.portkey.ai` |
+| **Container Registry Access** | Docker Hub / Portkey ECR for gateway image |
+| **Resource Sizing** | CPU 1–2 cores, RAM 2–4 GB per Gateway |
+| **Storage** | Depends on log retention (object storage or Mongo) |
+
+#### 1.2 Dependencies
+
+| Component | Option A (auto) | Option B (bring-your-own) |
+|-----------|-----------------|---------------------------|
+| Cache | Redis installed via Helm chart | External Redis/ElastiCache |
+| Log Store | S3-compatible bucket (AWS S3, Wasabi, MinIO, GCS, NetApp) | MongoDB / DocumentDB |
+
+### Step 2: Obtain Credentials and Helm Repo
+
+1. **Docker credentials** – you’ll receive a 1Password link with `<docker-user>` and `<docker-pwd>`.
+2. **Helm repo** – add Portkey charts and create the registry secret:
+
+```sh Shell
+helm repo add portkey https://portkey-ai.github.io/helm
+helm repo update
+# Registry secret in kube-system (adjust namespace if needed)
+
+kubectl create secret docker-registry portkeyenterpriseregistrycredentials \
+  --docker-server=https://index.docker.io/v1/ \
+  --docker-username=<docker-user> \
+  --docker-password=<docker-pwd>
+```
+
+### Step 3: Configure `values.yaml`
+
+Only a handful of parameters are required for a first-run. Start from the minimal template below and expand as needed.
+
+```yaml values.yaml (minimal)
+image:
+  repository: portkey/enterprise-gateway
+  tag: "1.10.24"
+imageCredentials:
+- name: portkeyenterpriseregistrycredentials
+  create: false  # already created above
+
+environment:
+  data:
+    SERVICE_NAME: polar-gateway
+    CACHE_STORE: redis
+    REDIS_MODE: standalone
+    LOG_STORE: wasabi  # s3 | gcs | mongo | netapp | s3_assume
+    LOG_STORE_REGION: us-east-1
+    LOG_STORE_GENERATIONS_BUCKET: polar-pk-logs
+    LOG_STORE_ACCESS_KEY: <access-key>
+    LOG_STORE_SECRET_KEY: <secret-key>
+    PORTKEY_CLIENT_AUTH: <client-jwt>
+```
+
+### Step 4: Install and Validate the Gateway
+
+```bash
+helm upgrade --install portkey-gateway portkey/gateway \
+  -n portkey --create-namespace \
+  -f values.yaml
+```
+
+Watch pods until health probes pass:
+
+```bash
+kubectl -n portkey get pods
+kubectl -n portkey logs -f deploy/portkey-gateway
+```
+
+Validate the Gateway:
+
+```bash
+export GATEWAY=http://$(kubectl -n portkey get svc portkey-gateway -o jsonpath='{.spec.clusterIP}'):7000
+curl "$GATEWAY/v1/health"
+```
+
+---
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Helm Repo" icon="github" href="https://github.com/Portkey-AI/helm"/>
+  <Card title="Architecture Deep-Dive" icon="sitemap" href="/product/enterprise-offering/private-cloud-deployments/architecture"/>
+  <Card title="Book Deployment Workshop" icon="calendar-check" href="https://portkey.wiki/demo-27"/>
+  <Card title="Enterprise Changelog" icon="clock-rotate-left" href="/changelog/enterprise"/>
+</CardGroup>
