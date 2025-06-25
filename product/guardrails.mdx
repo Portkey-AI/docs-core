@@ -330,6 +330,308 @@ Portkey will also show the feedback object logged for each request
 
 ---
 
+
+
+
+
+
+
+
+## Understanding Guardrail Response Structure
+
+When Guardrails are enabled and configured to run synchronously (`async=false`), Portkey adds a `hook_results` object to your API responses. This object provides detailed information about the guardrail checks that were performed and their outcomes.
+
+### Hook Results Structure
+
+The `hook_results` object contains two main sections:
+
+```json
+"hook_results": {
+  "before_request_hooks": [...],  // Guardrails applied to the input
+  "after_request_hooks": [...]    // Guardrails applied to the output
+}
+```
+
+Each section contains an array of guardrail execution results, structured as follows:
+
+<Expandable title="Hook Result Object Structure">
+  <ResponseField name="verdict" type="boolean">
+    Overall verdict of this guardrail (true = passed, false = failed). Only true if all checks within this guardrail passed.
+  </ResponseField>
+  <ResponseField name="id" type="string">
+    The ID of the guardrail that was executed (e.g., "pg-check-cfa540")
+  </ResponseField>
+  <ResponseField name="transformed" type="boolean">
+    Indicates if the guardrail modified the request or response (e.g., PII redaction)
+  </ResponseField>
+  <ResponseField name="checks" type="array">
+    An array of individual check results within this guardrail
+    <Expandable title="Check Object Structure">
+      <ResponseField name="data" type="object">
+        Check-specific data that varies based on the guardrail type (e.g., for wordCount it includes counts and thresholds)
+      </ResponseField>
+      <ResponseField name="verdict" type="boolean">
+        Result of this specific check (true = passed, false = failed)
+      </ResponseField>
+      <ResponseField name="id" type="string">
+        Identifier of the specific check (e.g., "default.sentenceCount", "default.wordCount")
+      </ResponseField>
+      <ResponseField name="execution_time" type="number">
+        Time taken to execute this check in milliseconds
+      </ResponseField>
+      <ResponseField name="transformed" type="boolean">
+        Whether this check modified the content
+      </ResponseField>
+      <ResponseField name="created_at" type="string">
+        Timestamp when the check was executed
+      </ResponseField>
+      <ResponseField name="log" type="string|null">
+        Additional logging information (if available)
+      </ResponseField>
+      <ResponseField name="error" type="string|object">
+        Error message or object if the guardrail encountered an error
+      </ResponseField>
+    </Expandable>
+  </ResponseField>
+  <ResponseField name="feedback" type="object">
+    Feedback information configured in the guardrail
+    <Expandable title="Feedback Object Structure">
+      <ResponseField name="value" type="number">
+        The numerical feedback value
+      </ResponseField>
+      <ResponseField name="weight" type="number">
+        The weight assigned to this feedback
+      </ResponseField>
+      <ResponseField name="metadata" type="object">
+        Additional metadata including which checks succeeded or failed
+        <ResponseField name="successfulChecks" type="string">
+          Comma-separated list of checks that passed
+        </ResponseField>
+        <ResponseField name="failedChecks" type="string">
+          Comma-separated list of checks that failed
+        </ResponseField>
+        <ResponseField name="erroredChecks" type="string">
+          Comma-separated list of checks that encountered errors
+        </ResponseField>
+      </ResponseField>
+    </Expandable>
+  </ResponseField>
+  <ResponseField name="execution_time" type="number">
+    Total execution time for the guardrail in milliseconds
+  </ResponseField>
+  <ResponseField name="async" type="boolean">
+    Whether the guardrail was run asynchronously
+  </ResponseField>
+  <ResponseField name="type" type="string">
+    Always "guardrail" for guardrail hooks
+  </ResponseField>
+  <ResponseField name="created_at" type="string">
+    Timestamp when the guardrail was executed
+  </ResponseField>
+  <ResponseField name="deny" type="boolean">
+    Whether failed checks should deny the request/response
+  </ResponseField>
+</Expandable>
+
+### Example Hook Results
+
+Here's a simplified example of what the `hook_results` might look like in a response:
+
+```json [expandable]
+"hook_results": {
+    "before_request_hooks": [
+        {
+            "verdict": true,
+            "id": "sentence_and_word_check_guardrail",
+            "transformed": false,
+            "checks": [
+                {
+                    "data": {
+                        "sentenceCount": 1,
+                        "minCount": 1,
+                        "maxCount": 99999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The sentence count (1) is within the specified range of 1 to 99999.",
+                        "textExcerpt": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number,..."
+                    },
+                    "verdict": true,
+                    "id": "default.sentenceCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:00:59.492Z",
+                    "log": null
+                },
+                {
+                    "data": {
+                        "wordCount": 24,
+                        "minWords": 1,
+                        "maxWords": 99999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The text contains 24 words, which is within the specified range of 1-99999 words.",
+                        "textExcerpt": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number,..."
+                    },
+                    "verdict": true,
+                    "id": "default.wordCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:00:59.492Z",
+                    "log": null
+                }
+            ],
+            "feedback": {
+                "value": 5,
+                "weight": 1,
+                "metadata": {
+                    "successfulChecks": "default.sentenceCount, default.wordCount",
+                    "failedChecks": "",
+                    "erroredChecks": ""
+                }
+            },
+            "execution_time": 0,
+            "async": false,
+            "type": "guardrail",
+            "created_at": "2025-05-20T08:00:59.492Z",
+            "deny": false
+        },
+        {
+            "verdict": true,
+            "id": "character_check_guardrai",
+            "transformed": false,
+            "checks": [
+                {
+                    "data": {
+                        "characterCount": 130,
+                        "minCharacters": 1,
+                        "maxCharacters": 9999999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The text contains 130 characters, which is within the specified range of 1-9999999 characters.",
+                        "textExcerpt": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number,..."
+                    },
+                    "verdict": true,
+                    "id": "default.characterCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:00:59.492Z",
+                    "log": null
+                }
+            ],
+            "feedback": {
+                "value": 5,
+                "weight": 1,
+                "metadata": {
+                    "successfulChecks": "default.characterCount",
+                    "failedChecks": "",
+                    "erroredChecks": ""
+                }
+            },
+            "execution_time": 0,
+            "async": false,
+            "type": "guardrail",
+            "created_at": "2025-05-20T08:00:59.492Z",
+            "deny": false
+        }
+    ],
+    "after_request_hooks": [
+        {
+            "verdict": true,
+            "id": "sentence_and_word_check_guardrail",
+            "transformed": false,
+            "checks": [
+                {
+                    "data": {
+                        "sentenceCount": 2,
+                        "minCount": 1,
+                        "maxCount": 99999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The sentence count (2) is within the specified range of 1 to 99999.",
+                        "textExcerpt": "I'm unable to provide real-time flight information, such as specific flight times, numbers, or bagga..."
+                    },
+                    "verdict": true,
+                    "id": "default.sentenceCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:01:02.229Z",
+                    "log": null
+                },
+                {
+                    "data": {
+                        "wordCount": 46,
+                        "minWords": 1,
+                        "maxWords": 99999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The text contains 46 words, which is within the specified range of 1-99999 words.",
+                        "textExcerpt": "I'm unable to provide real-time flight information, such as specific flight times, numbers, or bagga..."
+                    },
+                    "verdict": true,
+                    "id": "default.wordCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:01:02.229Z",
+                    "log": null
+                }
+            ],
+            "feedback": {
+                "value": 5,
+                "weight": 1,
+                "metadata": {
+                    "successfulChecks": "default.sentenceCount, default.wordCount",
+                    "failedChecks": "",
+                    "erroredChecks": ""
+                }
+            },
+            "execution_time": 0,
+            "async": false,
+            "type": "guardrail",
+            "created_at": "2025-05-20T08:01:02.229Z",
+            "deny": false
+        }
+    ]
+}
+}
+```
+This example corresponds to a `config` like:
+```json
+{
+  "input_guardrails": [
+    "sentence_and_word_check_guardrail",  // Contains sentenceCount and wordCount checks
+    "characer_check_guardrail"  // Contains characterCount check
+  ],
+  "output_guardrails": [
+    "sentence_and_word_check_guardrail"   // The same guardrail can be used for both input and output
+  ]
+}
+```
+### Important Notes
+
+- If a guardrail is configured to run asynchronously (`async=true`), the `hook_results` will not appear in the API response. The results will only be available in the Portkey logs.
+- The `data` field varies based on the type of guardrail check being performed. Each guardrail type returns different information relevant to its function.
+- The overall `verdict` for a guardrail is `true` only if all individual checks pass. If any check fails, the verdict will be `false`.
+- When `transformed` is `true`, it indicates that the guardrail has modified the content (such as redacting PII).
+- If `deny` is `true` and the verdict is `false`, the request will be denied with a 446 status code.
+
+### Special Fields
+
+- **Check-specific data**: Each guardrail type provides different data in the `data` field. For example, a sentence count check provides information about the number of sentences, while a PII check might provide information about detected PII entities.
+- **Feedback metadata**: The `metadata` object within `feedback` keeps track of which checks were successful, failed, or encountered errors.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## Defining Guardrails Directly in JSON
 
 On Portkey, you can also create the Guardrails in code and add them to your Configs. Read more about this here:
@@ -337,6 +639,8 @@ On Portkey, you can also create the Guardrails in code and add them to your Conf
 <Card title="Creating Raw Guardrails (in JSON" href="/product/guardrails/creating-raw-guardrails-in-json"/>
 
 ---
+
+
 
 ## Bring Your Own Guardrails
 
