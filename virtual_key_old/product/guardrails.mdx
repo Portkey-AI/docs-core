@@ -1,0 +1,665 @@
+---
+title: "Guardrails"
+description: "Ship to production confidently with Portkey Guardrails on your requests & responses"
+---
+
+<Info>
+This feature is available on all plans.
+* **Developer**: Access to `BASIC` Guardrails
+* **Production**: Access to `BASIC`, `PARTNER`, `PRO` Guardrails.
+* **Enterprise**: Access to **all** Guardrails plus `custom` Guardrails.
+</Info>
+
+LLMs are brittle - not just in API uptimes or their inexplicable `400`/`500` errors, but also in their core behavior. You can get a response with a `200` status code that completely errors out for your app's pipeline due to mismatched output. With Portkey's Guardrails, we now help you enforce LLM behavior in real-time with our _Guardrails on the Gateway_ pattern.
+
+Use Portkey's Guardrails to verify your LLM inputs AND outputs, adhering to your specifed checks. Since Guardrails are built on top of our [Gateway](https://github.com/portkey-ai/gateway), you can orchestrate your request - with actions ranging from _denying the request_, _logging the guardrail result_, _creating an evals dataset_, _falling back to another LLM or prompt_, _retrying the request_, and more.
+
+#### Examples of Guardrails Portkey offers:
+
+* **Regex match** \- Check if the request or response text matches a regex pattern
+* **JSON Schema** \- Check if the response JSON matches a JSON schema
+* **Contains Code** \- Checks if the content contains code of format SQL, Python, TypeScript, etc.
+* **Custom guardrail** \- If you are running a custom guardrail currently, you can also integrate it with Portkey
+* ...and many more.
+
+Portkey currently offers 20+ deterministic guardrails like the ones described above as well as LLM-based guardrails like `Detect Gibberish`, `Scan for prompt injection`, and more. These guardrails serve as protective barriers that help mitigate risks associated with Gen AI, ensuring its responsible and ethical deployment within organizations.
+
+<Card title="List of supported Guardrail checks here" href="/product/guardrails/list-of-guardrail-checks"/>
+
+<Info>
+	Portkey also integrates with your favourite Guardrail platforms like [Aporia](https://www.aporia.com/), [SydeLabs](https://sydelabs.ai/), [Pillar Security](https://www.pillar.security/) and more. Just add their API keys to Portkey and you can enable their guardrails policies on your Portkey calls! [More details on Guardrail Partners here.](/product/guardrails/list-of-guardrail-checks)
+</Info>
+
+---
+
+## Using Guardrails
+
+Putting Portkey Guardrails in production is just a 4-step process:
+
+1. Create Guardrail Checks
+2. Create Guardrail Actions
+3. Enable Guardrail through Configs
+4. Attach the Config to a Request
+
+This flowchart shows how Portkey processes a Guardrails request:
+<img src="/images/guardrails/flow.webp" / >
+
+Let's see in detail below:
+
+<Note>
+  Portkey only evaluates the last message in the request body when running guardrails checks.
+</Note>
+---
+
+## 1\. Create a New Guardrail & Add Checks
+
+On the `Guardrails` page, click on `Create` and add your preferred Guardrail checks from the right sidebar.
+
+<Info>
+
+	On Portkey, you can configure Guardrails to be run on either the `INPUT` (i.e. `PROMPT`) or the `OUTPUT`. Hence, for the Guardrail you create, make sure your Guardrail is only validating **ONLY ONE OF** the **Input** or the **Output**.
+</Info>
+
+<Frame>
+  <img src="/images/product/ai-gateway/ai-32.gif"/>
+</Frame>
+
+Each Guardrail Check has a custom input field based on its usecase — just add the relevant details to the form and save your check.
+
+<Info>
+
+* You can add as many checks as you want to a single Guardrail.
+* A check ONLY returns a boolean (`Yes`/`No`) verdict.
+</Info>
+
+<Card title="List of Guardrail checks" href="/product/guardrails/list-of-guardrail-checks"/>
+
+---
+
+## 2\. Add Guardrail Actions
+
+Define a basic orchestration logic for your Guardrail here.
+
+<Info>
+	Guardrail is created to validate **ONLY ONE OF** the `Input` or the `Output`. The Actions set here will also apply only to either the `request` or the `response`.
+</Info>
+
+<Frame>
+  <img src="/images/product/ai-gateway/ai-33.png"/>
+</Frame>
+
+### There are 6 Types of Guardrail Actions
+
+| Action         | State                                  | Description                                                                                                                                                                                                                                         | Impact                                                                                                                                                                                      |
+|:-------------- |:-------------------------------------- |:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Async**      | **TRUE** This is the **default** state  | Run the Guardrail checks **asynchronously** along with the LLM request.                                                                                                                                                                             | Will add no latency to your requestUseful when you only want to log guardrail checks without affecting the request                                                                          |
+| **Async**      | **FALSE**                              | **On Request** Run the Guardrail check **BEFORE** sending the request to the **LLM** **On Response** Run the Guardrail check **BEFORE** sending the response to the **user**                                                                          | Will add latency to the requestUseful when your Guardrail critical and you want more orchestration over your request based on the Guardrail result                                          |
+| **Deny**       | **TRUE**                               | **On Request & Response** If any of the Guardrail checks **FAIL**, the request will be killed with a **446** status code. If all of the Guardrail checks **SUCCEED**, the request/response will be sent further with a **200** status code.          | This is useful when your Guardrails are critical and upon them failing, you can not run the requestWe would advice running this action on a subset of your requests to first see the impact |
+| **Deny**       | **FALSE** This is the **default** state | **On Request & Response** If any of the Guardrail checks **FAIL**, the request will STILL be sent, but with a **246** status code. If all of the Guardrail checks **SUCCEED**, the request/response will be sent further with a **200** status code. | This is useful when you want to log the Guardrail result but do not want it to affect your result                                                                                           |
+| **On Success** | **Send Feedback**                      | If **all of the** Guardrail checks **PASS**, append your custom defined feedback to the request                                                                                                                                                     | We recommend setting up this actionThis will help you build an "Evals dataset" of Guardrail results on your requests over time                                                              |
+| **On Failure** | **Send Feedback**                      | If **any of the** Guardrail checks **FAIL**, append your custom feedback to the request                                                                                                                                                             | We recommend setting up this actionThis will help you build an "Evals dataset" of Guardrail results on your requests over time                                                              |
+
+Set the relevant actions you want with your checks, name your Guardrail and save it! When you save the Guardrail, you will get an associated `$Guardrail_ID` that you can then add to your request.
+
+---
+
+## 3\. "Enable" the Guardrails through Configs
+
+This is where Portkey's magic comes into play. The Guardrail you created above is yet not an `Active` guardrail because it is not attached to any request.
+
+Configs is one of Portkey's most powerful features and is used to define all kinds of request orchestration - everything from caching, retries, fallbacks, timeouts, to load balancing.
+
+<Info>
+
+	Now, you can use Configs to add **Guardrail checks** & **actions** to your request.
+</Info>
+
+
+
+
+### Option 1: Direct Guardrail Configuration (Recommended)
+
+Portkey now offers a more intuitive way to add guardrails to your configurations:
+
+| Config Key           | Value                                 | Description                                                      |
+|:---------------------|:--------------------------------------|:-----------------------------------------------------------------|
+| **input_guardrails** | `["guardrails-id-xxx", "guardrails-id-yyy"]` | Apply these guardrails to the **INPUT** before sending to LLM |
+| **output_guardrails**| `["guardrails-id-xxx", "guardrails-id-yyy"]` | Apply these guardrails to the **OUTPUT** from the LLM       |
+
+```json
+{
+  "retry": {
+    "attempts": 3
+  },
+  "cache": {
+    "mode": "simple"
+  },
+  "virtual_key": "openai-xxx",
+  "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
+  "output_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"]
+}
+```
+
+### Option 2: Hook-Based Configuration (For Creating [Raw Guardrails](/product/guardrails/creating-raw-guardrails-in-json))
+
+You can also continue to use the original hook-based approach:
+
+| Type                | Config Key                | Value                       | Description                                                           |
+|:------------------- |:--------------------------|:----------------------------|:----------------------------------------------------------------------|
+| Before Request Hook | **before_request_hooks**  | `[{"id":"$guardrail_id"}]`  | These hooks run on the **INPUT** before sending to the LLM            |
+| After Request Hook  | **after_request_hooks**   | `[{"id":"$guardrail_id"}]`  | These hooks run on the **OUTPUT** after receiving from the LLM        |
+
+
+```json
+{
+  "retry": {
+    "attempts": 3
+  },
+  "cache": {
+    "mode": "simple"
+  },
+  "virtual_key": "openai-xxx",
+  "before_request_hooks": [{
+    "id": "input-guardrail-id-xx"
+  }],
+  "after_request_hooks": [{
+    "id": "output-guardrail-id-xx"
+  }]
+}
+```
+
+<Note>
+Both configuration approaches work identically - choose whichever is more intuitive for your team. The simplified `input_guardrails` and `output_guardrails` fields are recommended for better readability.
+</Note>
+
+### Guardrail Behaviour on the Gateway
+
+For **asynchronous** guardrails (`async= TRUE`), Portkey returns the standard, default status codes from the LLM providers — this is because the Guardrails verdict is not affecting how you orchestrate your requests. Portkey will only log the Guardrail result for you.
+
+But for **synchronous** requests (`async= FALSE`), Portkey can orchestrate your requests based on the Guardrail verdict. The behaviour is dependent on the following:
+
+* Guardrail Check Verdict (`PASS` or `FAIL`) AND
+* Guardrail Action — DENY Setting (`TRUE` or `FALSE`)
+
+Portkey sends different `request status codes` corresponding to your set Guardrail behaviour.
+
+For requests where `async= FALSE`:
+
+| Guardrail Verdict | DENY Setting | Returned Status Code | Description                                                                                                                              |
+| :----------------- | :------------ | :-------------------- | :---------------------------------------------------------------------------------------------------------------------------------------- |
+| **PASS**          | **FALSE**    | **200**              | Guardrails have **passed**, request will be processed regardless                                                                         |
+| **PASS**          | **TRUE**     | **200**              | Guardrails have **passed**, request will be processed regardless                                                                         |
+| **FAIL**          | **FALSE**    | **246**              | Guardrails have **failed**, but the request should still **be processed.**Portkey introduces a new Status code to indicate this state.   |
+| **FAIL**          | **TRUE**     | **446**              | Guardrails have **failed**, and the request should **not** **be processed.**Portkey introduces a new Status code to indicate this state. |
+
+### Example Config Using the New `246` & `446` Status Codes
+
+
+<Tabs>
+  <Tab title="Fallback to Another Model on Guardrail Fail">
+```json
+{
+  "strategy": {
+    "mode": "fallback",
+    "on_status_codes": [246, 446]
+  },
+  "targets": [
+    {"virtual_key": "openai-key-xxx"},
+    {"virtual_key": "anthropic-key-xxx"}
+  ],
+  "input_guardrails": ["guardrails-id-xxx"]
+}
+```
+  </Tab>
+  <Tab title="Retry on Guardrail Fail (Simplified)">
+```json
+{
+  "retry": {
+    "on_status_codes": [246],
+    "attempts": 5
+  },
+  "output_guardrails": ["guardrails-id-xxx"]
+}
+```
+  </Tab>
+</Tabs>
+
+
+Create these Configs in Portkey UI, save them, and get an associated Config ID to attach to your requests. [More here](/product/ai-gateway/configs).
+
+## 4\. Final Step - Attach Config to Request
+
+Now, while instantiating your Portkey client or while sending headers, just pass the Config ID.
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***" // Supports a string config id or a config object
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***" # Supports a string config id or a config object
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+
+```js
+const openai = new OpenAI({
+  apiKey: 'OPENAI_API_KEY',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    config: "CONFIG_ID"
+  })
+});
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```py
+client = OpenAI(
+    api_key="OPENAI_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+        config="CONFIG_ID"
+    )
+)
+```
+  </Tab>
+<Tab title="cURL">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [{
+        "role": "user",
+        "content": "Hello!"
+      }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+For more, refer to the [Config documentation](/product/ai-gateway/configs).
+
+---
+
+##  Viewing Guardrail Results in Portkey Logs
+
+Portkey Logs will show you detailed information about Guardrail results for each request.
+
+### On the `Feedback & Guardrails` tab on the log drawer, you can see
+
+#### Guardrail Details
+
+* **Overview**: How many checks `passed` and how many `failed`
+* **Verdict**: Guardrail verdict for each of the checks in your Guardrail
+* **Latency**: Round trip time for each check in your Guardrail
+
+#### Feedback Details
+
+Portkey will also show the feedback object logged for each request
+
+* `Value`:** The numerical feedback value you passed
+* `Weight`: The numerical feedback weight
+* `Metadata Key & Value`:** Any custom metadata sent with the feedback
+* `successfulChecks`: Which checks associated with this request `passed`
+* `failedChecks`: Which checks associated with this request `failed`
+* `erroredChecks`: If there were any checks that errored out along the way
+
+<Frame>
+  <img src="/images/product/ai-gateway/ai-34.gif"/>
+</Frame>
+
+
+---
+
+
+
+
+
+
+
+
+## Understanding Guardrail Response Structure
+
+When Guardrails are enabled and configured to run synchronously (`async=false`), Portkey adds a `hook_results` object to your API responses. This object provides detailed information about the guardrail checks that were performed and their outcomes.
+
+### Hook Results Structure
+
+The `hook_results` object contains two main sections:
+
+```json
+"hook_results": {
+  "before_request_hooks": [...],  // Guardrails applied to the input
+  "after_request_hooks": [...]    // Guardrails applied to the output
+}
+```
+
+Each section contains an array of guardrail execution results, structured as follows:
+
+<Expandable title="Hook Result Object Structure">
+  <ResponseField name="verdict" type="boolean">
+    Overall verdict of this guardrail (true = passed, false = failed). Only true if all checks within this guardrail passed.
+  </ResponseField>
+  <ResponseField name="id" type="string">
+    The ID of the guardrail that was executed (e.g., "pg-check-cfa540")
+  </ResponseField>
+  <ResponseField name="transformed" type="boolean">
+    Indicates if the guardrail modified the request or response (e.g., PII redaction)
+  </ResponseField>
+  <ResponseField name="checks" type="array">
+    An array of individual check results within this guardrail
+    <Expandable title="Check Object Structure">
+      <ResponseField name="data" type="object">
+        Check-specific data that varies based on the guardrail type (e.g., for wordCount it includes counts and thresholds)
+      </ResponseField>
+      <ResponseField name="verdict" type="boolean">
+        Result of this specific check (true = passed, false = failed)
+      </ResponseField>
+      <ResponseField name="id" type="string">
+        Identifier of the specific check (e.g., "default.sentenceCount", "default.wordCount")
+      </ResponseField>
+      <ResponseField name="execution_time" type="number">
+        Time taken to execute this check in milliseconds
+      </ResponseField>
+      <ResponseField name="transformed" type="boolean">
+        Whether this check modified the content
+      </ResponseField>
+      <ResponseField name="created_at" type="string">
+        Timestamp when the check was executed
+      </ResponseField>
+      <ResponseField name="log" type="string|null">
+        Additional logging information (if available)
+      </ResponseField>
+      <ResponseField name="error" type="string|object">
+        Error message or object if the guardrail encountered an error
+      </ResponseField>
+    </Expandable>
+  </ResponseField>
+  <ResponseField name="feedback" type="object">
+    Feedback information configured in the guardrail
+    <Expandable title="Feedback Object Structure">
+      <ResponseField name="value" type="number">
+        The numerical feedback value
+      </ResponseField>
+      <ResponseField name="weight" type="number">
+        The weight assigned to this feedback
+      </ResponseField>
+      <ResponseField name="metadata" type="object">
+        Additional metadata including which checks succeeded or failed
+        <ResponseField name="successfulChecks" type="string">
+          Comma-separated list of checks that passed
+        </ResponseField>
+        <ResponseField name="failedChecks" type="string">
+          Comma-separated list of checks that failed
+        </ResponseField>
+        <ResponseField name="erroredChecks" type="string">
+          Comma-separated list of checks that encountered errors
+        </ResponseField>
+      </ResponseField>
+    </Expandable>
+  </ResponseField>
+  <ResponseField name="execution_time" type="number">
+    Total execution time for the guardrail in milliseconds
+  </ResponseField>
+  <ResponseField name="async" type="boolean">
+    Whether the guardrail was run asynchronously
+  </ResponseField>
+  <ResponseField name="type" type="string">
+    Always "guardrail" for guardrail hooks
+  </ResponseField>
+  <ResponseField name="created_at" type="string">
+    Timestamp when the guardrail was executed
+  </ResponseField>
+  <ResponseField name="deny" type="boolean">
+    Whether failed checks should deny the request/response
+  </ResponseField>
+</Expandable>
+
+### Example Hook Results
+
+Here's a simplified example of what the `hook_results` might look like in a response:
+
+```json [expandable]
+"hook_results": {
+    "before_request_hooks": [
+        {
+            "verdict": true,
+            "id": "sentence_and_word_check_guardrail",
+            "transformed": false,
+            "checks": [
+                {
+                    "data": {
+                        "sentenceCount": 1,
+                        "minCount": 1,
+                        "maxCount": 99999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The sentence count (1) is within the specified range of 1 to 99999.",
+                        "textExcerpt": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number,..."
+                    },
+                    "verdict": true,
+                    "id": "default.sentenceCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:00:59.492Z",
+                    "log": null
+                },
+                {
+                    "data": {
+                        "wordCount": 24,
+                        "minWords": 1,
+                        "maxWords": 99999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The text contains 24 words, which is within the specified range of 1-99999 words.",
+                        "textExcerpt": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number,..."
+                    },
+                    "verdict": true,
+                    "id": "default.wordCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:00:59.492Z",
+                    "log": null
+                }
+            ],
+            "feedback": {
+                "value": 5,
+                "weight": 1,
+                "metadata": {
+                    "successfulChecks": "default.sentenceCount, default.wordCount",
+                    "failedChecks": "",
+                    "erroredChecks": ""
+                }
+            },
+            "execution_time": 0,
+            "async": false,
+            "type": "guardrail",
+            "created_at": "2025-05-20T08:00:59.492Z",
+            "deny": false
+        },
+        {
+            "verdict": true,
+            "id": "character_check_guardrai",
+            "transformed": false,
+            "checks": [
+                {
+                    "data": {
+                        "characterCount": 130,
+                        "minCharacters": 1,
+                        "maxCharacters": 9999999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The text contains 130 characters, which is within the specified range of 1-9999999 characters.",
+                        "textExcerpt": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number,..."
+                    },
+                    "verdict": true,
+                    "id": "default.characterCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:00:59.492Z",
+                    "log": null
+                }
+            ],
+            "feedback": {
+                "value": 5,
+                "weight": 1,
+                "metadata": {
+                    "successfulChecks": "default.characterCount",
+                    "failedChecks": "",
+                    "erroredChecks": ""
+                }
+            },
+            "execution_time": 0,
+            "async": false,
+            "type": "guardrail",
+            "created_at": "2025-05-20T08:00:59.492Z",
+            "deny": false
+        }
+    ],
+    "after_request_hooks": [
+        {
+            "verdict": true,
+            "id": "sentence_and_word_check_guardrail",
+            "transformed": false,
+            "checks": [
+                {
+                    "data": {
+                        "sentenceCount": 2,
+                        "minCount": 1,
+                        "maxCount": 99999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The sentence count (2) is within the specified range of 1 to 99999.",
+                        "textExcerpt": "I'm unable to provide real-time flight information, such as specific flight times, numbers, or bagga..."
+                    },
+                    "verdict": true,
+                    "id": "default.sentenceCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:01:02.229Z",
+                    "log": null
+                },
+                {
+                    "data": {
+                        "wordCount": 46,
+                        "minWords": 1,
+                        "maxWords": 99999,
+                        "not": false,
+                        "verdict": true,
+                        "explanation": "The text contains 46 words, which is within the specified range of 1-99999 words.",
+                        "textExcerpt": "I'm unable to provide real-time flight information, such as specific flight times, numbers, or bagga..."
+                    },
+                    "verdict": true,
+                    "id": "default.wordCount",
+                    "execution_time": 0,
+                    "transformed": false,
+                    "created_at": "2025-05-20T08:01:02.229Z",
+                    "log": null
+                }
+            ],
+            "feedback": {
+                "value": 5,
+                "weight": 1,
+                "metadata": {
+                    "successfulChecks": "default.sentenceCount, default.wordCount",
+                    "failedChecks": "",
+                    "erroredChecks": ""
+                }
+            },
+            "execution_time": 0,
+            "async": false,
+            "type": "guardrail",
+            "created_at": "2025-05-20T08:01:02.229Z",
+            "deny": false
+        }
+    ]
+}
+}
+```
+This example corresponds to a `config` like:
+```json
+{
+  "input_guardrails": [
+    "sentence_and_word_check_guardrail",  // Contains sentenceCount and wordCount checks
+    "characer_check_guardrail"  // Contains characterCount check
+  ],
+  "output_guardrails": [
+    "sentence_and_word_check_guardrail"   // The same guardrail can be used for both input and output
+  ]
+}
+```
+### Important Notes
+
+- If a guardrail is configured to run asynchronously (`async=true`), the `hook_results` will not appear in the API response. The results will only be available in the Portkey logs.
+- The `data` field varies based on the type of guardrail check being performed. Each guardrail type returns different information relevant to its function.
+- The overall `verdict` for a guardrail is `true` only if all individual checks pass. If any check fails, the verdict will be `false`.
+- When `transformed` is `true`, it indicates that the guardrail has modified the content (such as redacting PII).
+- If `deny` is `true` and the verdict is `false`, the request will be denied with a 446 status code.
+
+### Special Fields
+
+- **Check-specific data**: Each guardrail type provides different data in the `data` field. For example, a sentence count check provides information about the number of sentences, while a PII check might provide information about detected PII entities.
+- **Feedback metadata**: The `metadata` object within `feedback` keeps track of which checks were successful, failed, or encountered errors.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Defining Guardrails Directly in JSON
+
+On Portkey, you can also create the Guardrails in code and add them to your Configs. Read more about this here:
+
+<Card title="Creating Raw Guardrails (in JSON" href="/product/guardrails/creating-raw-guardrails-in-json"/>
+
+---
+
+
+
+## Bring Your Own Guardrails
+
+If you already have a custom guardrail pipeline where you send your inputs/outputs for evaluation, you can integrate it with Portkey using a modular, custom webhook! Read more here:
+
+<Card title="Bring Your Own Guardrails" href="/product/guardrails/list-of-guardrail-checks/bring-your-own-guardrails"/>
+
+---
+
+## Examples of When to Deny Requests with Guardrails
+
+1. **Prompt Injection Checks**: Preventing inputs that could alter the behavior of the AI model or manipulate its responses.
+2. **Moderation Checks**: Ensuring responses do not contain offensive, harmful, or inappropriate content.
+3. **Compliance Checks**: Verifying that inputs and outputs comply with regulatory requirements or organizational policies.
+4. **Security Checks**: Blocking requests that contain potentially harmful content, such as SQL injection attempts or cross-site scripting (XSS) payloads.
+
+By appropriately configuring Guardrail Actions, you can maintain the integrity and reliability of your AI app, ensuring that only safe and compliant requests are processed.
+
+
+To enable Guardrails for your org, ping us on the [Portkey Discord](https://portkey.ai/community)
+
+---

@@ -1,0 +1,484 @@
+---
+title: 'LiveKit'
+description: "Build production-ready voice AI agents with Portkey's enterprise features"
+---
+
+<Note>
+**Realtime API support is coming soon!** Join our [Discord community](https://portkey.sh/discord) to be the first to know when LiveKit's realtime model integration with Portkey is available.
+</Note>
+
+LiveKit is a powerful platform for building real-time voice and video applications. When combined with Portkey, you get enterprise-grade features that make your LiveKit voice agents production-ready:
+
+- **Unified AI Gateway** - Single interface for 250+ LLMs with API key management
+- **Centralized AI observability**: Real-time usage tracking for 40+ key metrics and logs for every request
+- **Governance** - Real-time spend tracking, set budget limits and RBAC in your LiveKit agents
+- **Security Guardrails** - PII detection, content filtering, and compliance controls
+
+This guide will walk you through integrating Portkey with LiveKit's STT-LLM-TTS pipeline to build enterprise-ready voice AI agents.
+
+<Note>
+  If you are an enterprise looking to deploy LiveKit agents in production, [check out this section](#3-set-up-enterprise-governance-for-livekit).
+</Note>
+
+# 1. Setting up Portkey
+Portkey allows you to use 250+ LLMs with your LiveKit agents, with minimal configuration required. Let's set up the core components in Portkey that you'll need for integration.
+
+<Steps>
+<Step title="Create Virtual Key">
+Virtual Keys are Portkey's secure way to manage your LLM provider API keys. For LiveKit integration, you'll need to create a virtual key for OpenAI (or any other LLM provider you prefer).
+
+To create a virtual key:
+1. Go to [Virtual Keys](https://app.portkey.ai/virtual-keys) in the Portkey App
+2. Click "Add Virtual Key" and select OpenAI as the provider
+3. Add your OpenAI API key
+4. Save and copy the virtual key ID
+
+<Frame>
+<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
+</Frame>
+
+<Note>
+Save your virtual key ID - you'll need it for the next step.
+</Note>
+</Step>
+
+<Step title="Create Default Config">
+
+Configs in Portkey define how your requests are routed and can enable features like fallbacks, caching, and more.
+
+To create your config:
+1. Go to [Configs](https://app.portkey.ai/configs) in Portkey dashboard
+2. Create new config with:
+    ```json
+    {
+        "virtual_key": "YOUR_VIRTUAL_KEY_FROM_STEP1"
+    }
+    ```
+3. Save and note the Config ID for the next step
+
+<Frame>
+<img src="/images/integrations/config.png" width="500"/>
+</Frame>
+
+<Note>
+This basic config connects to your virtual key. You can add advanced features like caching, fallbacks, and guardrails later.
+</Note>
+</Step>
+
+<Step title="Configure Portkey API Key">
+
+Now create a Portkey API key and attach the config you created:
+
+1. Go to [API Keys](https://app.portkey.ai/api-keys) in Portkey
+2. Create new API key
+3. Select your config from Step 2
+4. Generate and save your API key
+
+<Frame>
+<img src="/images/integrations/api-key.png" width="500"/>
+</Frame>
+
+<Note>
+Save your API key securely - you'll need it for LiveKit integration.
+</Note>
+</Step>
+</Steps>
+
+# 2. Integrate Portkey with LiveKit
+
+Now that you have your Portkey components set up, let's integrate them with LiveKit agents.
+
+## Installation
+
+Install the required packages:
+
+```bash
+pip install \
+  "livekit-agents[openai]~=1.0"
+```
+
+## Configuration
+
+```python
+llm=openai.LLM(model="gpt-4o", # your preferred model
+               api_key="YOUR_PORTKEY_API_KEY", # you can also set OPENAI_API_KEY=<Your Portkey API key> in .env
+               base_url="https://api.portkey.ai/v1", # Portkey Base Url
+               ),
+```
+
+<Warning>
+Make sure your Portkey virtual key has sufficient budget and rate limits for your expected usage.
+</Warning>
+
+
+
+
+## End-to-End Example using Portkey and LiveKit
+Build a simple voice assistant with Python in less than 10 minutes.
+
+
+<Steps>
+
+  <Step title="Setup">
+    ```bash
+      pip install \
+        "livekit-agents[deepgram,openai,cartesia,silero,turn-detector]~=1.0" \
+        "livekit-plugins-noise-cancellation~=0.2" \
+        "python-dotenv"
+    ```
+  </Step>
+
+  <Step title="Add your .env file">
+        ```bash
+        DEEPGRAM_API_KEY=<Your Deepgram API Key>
+        OPENAI_API_KEY=<Your PORTKEY API Key>
+        CARTESIA_API_KEY=<Your Cartesia API Key>
+        LIVEKIT_API_KEY=<your API Key>
+        LIVEKIT_API_SECRET=<your API Secret>
+        LIVEKIT_URL=<your LiveKit server URL>
+        ```
+    </Step>
+
+  <Step title="Full STT-to-TTS agent code">
+      ```py
+      from dotenv import load_dotenv
+
+      from livekit import agents
+      from livekit.agents import AgentSession, Agent, RoomInputOptions
+      from livekit.plugins import (
+          openai,
+          cartesia,
+          deepgram,
+          noise_cancellation,
+          silero,
+      )
+      from livekit.plugins.turn_detector.multilingual import MultilingualModel
+
+      load_dotenv()
+
+
+      class Assistant(Agent):
+          def __init__(self) -> None:
+              super().__init__(instructions="You are a helpful voice AI assistant.")
+
+
+      async def entrypoint(ctx: agents.JobContext):
+          session = AgentSession(
+              stt=deepgram.STT(model="nova-3", language="multi"),
+              llm=openai.LLM(model="gpt-4o",
+                          api_key="YOUR_PORTKEY_API_KEY",
+                          base_url="https://api.portkey.ai/v1",
+                          ),
+              tts=cartesia.TTS(),
+              vad=silero.VAD.load(),
+              turn_detection=MultilingualModel(),
+          )
+
+          await session.start(
+              room=ctx.room,
+              agent=Assistant(),
+              room_input_options=RoomInputOptions(
+                  # LiveKit Cloud enhanced noise cancellation
+                  # - If self-hosting, omit this parameter
+                  # - For telephony applications, use `BVCTelephony` for best results
+                  noise_cancellation=noise_cancellation.BVC(),
+              ),
+          )
+
+          await ctx.connect()
+
+          await session.generate_reply(
+              instructions="Greet the user and offer your assistance."
+          )
+
+
+      if __name__ == "__main__":
+          agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+      ```
+  </Step>
+
+
+
+</Steps>
+
+
+
+# 3. Set Up Enterprise Governance for Livekit
+
+**Why Enterprise Governance?**
+If you are using Livekit inside your orgnaization, you need to consider several governance aspects:
+- **Cost Management**: Controlling and tracking AI spending across teams
+- **Access Control**: Managing which teams can use specific models
+- **Usage Analytics**: Understanding how AI is being used across the organization
+- **Security & Compliance**: Maintaining enterprise security standards
+- **Reliability**: Ensuring consistent service across all users
+
+Portkey adds a comprehensive governance layer to address these enterprise needs. Let's implement these controls step by step.
+
+**Enterprise Implementation Guide**
+
+<AccordionGroup>
+  <Accordion title="Step 1: Implement Budget Controls & Rate Limits">
+### Step 1: Implement Budget Controls & Rate Limits
+
+Virtual Keys enable granular control over LLM access at the team/department level. This helps you:
+- Set up [budget limits](/product/ai-gateway/virtual-keys/budget-limits)
+- Prevent unexpected usage spikes using Rate limits
+- Track departmental spending
+
+#### Setting Up Department-Specific Controls:
+1. Navigate to [Virtual Keys](https://app.portkey.ai/virtual-keys) in Portkey dashboard
+2. Create new Virtual Key for each department with budget limits and rate limits
+3. Configure department-specific limits
+
+<Frame>
+<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
+</Frame>
+
+  </Accordion>
+
+  <Accordion title="Step 2: Define Model Access Rules">
+### Step 2: Define Model Access Rules
+
+As your AI usage scales, controlling which teams can access specific models becomes crucial. Portkey Configs provide this control layer with features like:
+
+#### Access Control Features:
+- **Model Restrictions**: Limit access to specific models
+- **Data Protection**: Implement guardrails for sensitive data
+- **Reliability Controls**: Add fallbacks and retry logic
+
+#### Example Configuration:
+Here's a basic configuration to route requests to OpenAI, specifically using GPT-4o:
+
+```json
+{
+	"strategy": {
+		"mode": "single"
+	},
+	"targets": [
+		{
+			"virtual_key": "YOUR_OPENAI_VIRTUAL_KEY",
+			"override_params": {
+				"model": "gpt-4o"
+			}
+		}
+	]
+}
+```
+
+Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard. You'll need the config ID for connecting to Livekit's setup.
+
+
+<Note>
+Configs can be updated anytime to adjust controls without affecting running applications.
+</Note>
+  </Accordion>
+
+  <Accordion title="Step 3: Implement Access Controls">
+### Step 3: Implement Access Controls
+
+Create User-specific API keys that automatically:
+- Track usage per user/team with the help of virtual keys
+- Apply appropriate configs to route requests
+- Collect relevant metadata to filter logs
+- Enforce access permissions
+
+
+Create API keys through:
+- [Portkey App](https://app.portkey.ai/)
+- [API Key Management API](/api-reference/admin-api/control-plane/api-keys/create-api-key)
+
+
+Example using Python SDK:
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_ADMIN_API_KEY")
+
+api_key = portkey.api_keys.create(
+    name="engineering-team",
+    type="organisation",
+    workspace_id="YOUR_WORKSPACE_ID",
+    defaults={
+        "config_id": "your-config-id",
+        "metadata": {
+            "environment": "production",
+            "department": "engineering"
+        }
+    },
+    scopes=["logs.view", "configs.read"]
+)
+```
+
+For detailed key management instructions, see our [API Keys documentation](/api-reference/admin-api/control-plane/api-keys/create-api-key).
+  </Accordion>
+
+  <Accordion title="Step 4: Deploy & Monitor">
+### Step 4: Deploy & Monitor
+After distributing API keys to your team members, your enterprise-ready Livekit setup is ready to go. Each team member can now use their designated API keys with appropriate access levels and budget controls.
+Apply your governance setup using the integration steps from earlier sections
+Monitor usage in Portkey dashboard:
+- Cost tracking by department
+- Model usage patterns
+- Request volumes
+- Error rates
+</Accordion>
+
+</AccordionGroup>
+
+<Check>
+### Enterprise Features Now Available
+**Livekit now has:**
+
+- Departmental budget controls
+- Model access governance
+- Usage tracking & attribution
+- Security guardrails
+- Reliability features
+
+</Check>
+
+
+
+
+# Portkey Features
+Now that you have enterprise-grade Livekit setup, let's explore the comprehensive features Portkey provides to ensure secure, efficient, and cost-effective AI operations.
+
+### 1. Comprehensive Metrics
+Using Portkey you can track 40+ key metrics including cost, token usage, response time, and performance across all your LLM providers in real time. You can also filter these metrics based on custom metadata that you can set in your configs. Learn more about metadata here.
+
+<Frame>
+  <img src="/images/integrations/observability.png" width="600"/>
+</Frame>
+
+### 2. Advanced Logs
+Portkey's logging dashboard provides detailed logs for every request made to your LLMs. These logs include:
+- Complete request and response tracking
+- Metadata tags for filtering
+- Cost attribution and much more...
+
+<Frame>
+<img src="/images/llms/openai/logs.png"></img>
+</Frame>
+
+
+
+
+### 3. Unified Access to 1600+ LLMs
+
+You can easily switch between 1600+ LLMs. Call various LLMs such as Anthropic, Gemini, Mistral, Azure OpenAI, Google Vertex AI, AWS Bedrock, and many more by simply changing the `virtual key` in your default `config` object.
+
+
+### 4. Advanced Metadata Tracking
+Using Portkey, you can add custom metadata to your LLM requests for detailed tracking and analytics. Use metadata tags to filter logs, track usage, and attribute costs across departments and teams.
+
+<Card title="Custom Metata" icon="coins" href="/docs/product/ai-gateway/metadata">
+</Card>
+
+
+
+### 5. Enterprise Access Management
+
+<CardGroup cols={2}>
+<Card title="Budget Controls" icon="coins" href="/docs/product/ai-gateway/virtual-keys/budget-limits">
+Set and manage spending limits across teams and departments. Control costs with granular budget limits and usage tracking.
+</Card>
+
+<Card title="Single Sign-On (SSO)" icon="key" href="/docs/product/enterprise-offering/org-management/sso">
+Enterprise-grade SSO integration with support for SAML 2.0, Okta, Azure AD, and custom providers for secure authentication.
+</Card>
+
+<Card title="Organization Management" icon="building" href="/docs/product/enterprise-offering/org-management">
+Hierarchical organization structure with workspaces, teams, and role-based access control for enterprise-scale deployments.
+</Card>
+
+<Card title="Access Rules & Audit Logs" icon="shield-check" href="/docs/product/enterprise-offering/access-control-management#audit-logs">
+Comprehensive access control rules and detailed audit logging for security compliance and usage tracking.
+</Card>
+</CardGroup>
+
+
+### 6. Reliability Features
+<CardGroup cols={3}>
+  <Card title="Fallbacks" icon="life-ring" href="/product/ai-gateway/fallbacks">
+    Automatically switch to backup targets if the primary target fails.
+  </Card>
+  <Card title="Conditional Routing" icon="route" href="/product/ai-gateway/conditional-routing">
+    Route requests to different targets based on specified conditions.
+  </Card>
+  <Card title="Load Balancing" icon="key" href="/docs/product/ai-gateway/load-balancing">
+      Distribute requests across multiple targets based on defined weights.
+  </Card>
+  <Card title="Caching" icon="database" href="/product/ai-gateway/caching">
+    Enable caching of responses to improve performance and reduce costs.
+  </Card>
+  <Card title="Smart Retries" icon="database" href="/product/ai-gateway/retries">
+Automatic retry handling with exponential backoff for failed requests
+</Card>
+<Card title="Budget Limits" icon="shield-check" href="/product/ai-gateway/virtual-keys/budget-limits">
+    Set and manage budget limits across teams and departments. Control costs with granular budget limits and usage tracking.
+</Card>
+</CardGroup>
+
+
+
+### 7. Advanced Guardrails
+
+Protect your Project's data and enhance reliability with real-time checks on LLM inputs and outputs. Leverage guardrails to:
+- Prevent sensitive data leaks
+- Enforce compliance with organizational policies
+- PII detection and masking
+- Content filtering
+- Custom security rules
+- Data compliance checks
+
+<Card title="Guardrails" icon="shield-check" href="/docs/product/guardrails">
+Implement real-time protection for your LLM interactions with automatic detection and filtering of sensitive content, PII, and custom security rules. Enable comprehensive data protection while maintaining compliance with organizational policies.
+</Card>
+
+
+# FAQs
+<AccordionGroup>
+    <Accordion title="Can I use models other than OpenAI with LiveKit through Portkey?">
+    Yes! Portkey supports 250+ LLMs. Simply create a virtual key for your preferred provider (Anthropic, Google, Cohere, etc.) and update your config accordingly. The LiveKit OpenAI client will work seamlessly with any provider through Portkey.
+    </Accordion>
+
+    <Accordion title="How do I track costs for different voice agents?">
+    Use metadata tags when creating Portkey headers to segment costs:
+    - Add `agent_type`, `department`, or `customer_id` tags
+    - View costs filtered by these tags in the Portkey dashboard
+    - Set up separate virtual keys with budget limits for each use case
+    </Accordion>
+
+    <Accordion title="What happens if my primary LLM provider goes down?">
+    Configure fallbacks in your Portkey config to automatically switch to backup providers. Your LiveKit agents will continue working without any code changes or downtime.
+    </Accordion>
+
+    <Accordion title="Can I implement custom business logic for my agents?">
+    Yes! Use Portkey's hooks and guardrails to:
+    - Filter sensitive information
+    - Add custom headers or modify requests
+    - Implement business-specific validation
+    - Route requests based on custom logic
+    </Accordion>
+
+    <Accordion title="How do I migrate existing LiveKit agents to use Portkey?">
+    Migration is simple:
+    1. Create virtual keys and configs in Portkey
+    2. Update the OpenAI client initialization to use Portkey's base URL
+    3. Add Portkey headers with your API key and config
+    4. No other code changes needed!
+    </Accordion>
+</AccordionGroup>
+
+# Next Steps
+
+**Ready to build production voice AI?**
+- [Join our Discord](https://portkey.sh/discord) for support and updates
+- [Explore more integrations](/integrations/libraries)
+- [Read about advanced configs](/product/ai-gateway/configs)
+- [Learn about guardrails](/product/guardrails)
+
+<Note>
+For enterprise support and custom features for your LiveKit deployment, contact our [enterprise team](https://calendly.com/portkey-ai).
+</Note>
