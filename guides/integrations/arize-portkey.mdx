@@ -1,0 +1,241 @@
+---
+title: "Arize with Portkey: Multi-LLM Debate with Traces & Evals"
+---
+
+Learn how to use Portkey's Universal API to orchestrate multiple LLMs in a structured debate while tracking performance and evaluating outputs with Arize.
+
+
+<Card title="Google Collab Link" href="https://colab.research.google.com/drive/16Wj7uM_3QZkGA11x1r0bcRFWEzc16Xdz?usp=sharing">
+</Card>
+
+## Overview
+
+This guide demonstrates how to:
+- Use Portkey's Universal API to seamlessly switch between different LLMs (GPT-4, Claude, Gemini)
+- Implement distributed tracing with Arize and OpenTelemetry
+- Build a multi-agent debate system where LLMs take different roles
+- Export traces and run toxicity evaluations on outputs
+
+## Prerequisites
+
+Before starting, you'll need:
+- [Portkey API key](https://app.portkey.ai/signup)
+- [Arize API key and Space ID](https://app.arize.com/)
+- Virtual keys for OpenAI, Anthropic, and Google Gemini set up in Portkey
+
+## Installation
+
+Install the required packages:
+
+```bash
+pip install portkey-ai openinference-instrumentation-portkey arize-otel arize-phoenix "arize[Tracing]>=7.1.0"
+```
+
+## Setting Up Tracing
+
+First, configure Arize tracing with Portkey's instrumentor to capture all LLM calls:
+
+```python
+from arize.otel import register
+from openinference.instrumentation.portkey import PortkeyInstrumentor
+
+# Setup OpenTelemetry with Arize
+tracer_provider = register(
+    space_id = os.getenv("ARIZE_SPACE_ID"),
+    api_key = os.getenv("ARIZE_API_KEY"),
+    project_name = "portkey-debate",
+)
+
+# Enable Portkey instrumentation
+PortkeyInstrumentor().instrument(tracer_provider=tracer_provider)
+```
+
+## Implementing the Multi-LLM Debate
+
+Here's how to set up different LLMs for different roles using Portkey's Universal API:
+
+```python
+from portkey_ai import Portkey
+import os
+
+# Initialize each LLM client with Portkey
+PORTKEY_API_KEY = os.getenv("PORTKEY_API_KEY")
+
+# GPT-4 for "against" arguments
+openai = Portkey(
+    api_key = PORTKEY_API_KEY,
+    virtual_key = os.getenv("OPENAI_VIRTUAL_KEY")
+)
+
+# Claude for "pro" arguments
+claude = Portkey(
+    api_key = PORTKEY_API_KEY,
+    virtual_key = os.getenv("CLAUDE_VIRTUAL_KEY")
+)
+
+# Gemini for moderation & prompt refinement
+gemini = Portkey(
+    api_key = PORTKEY_API_KEY,
+    virtual_key = os.getenv("GEMINI_VIRTUAL_KEY")
+)
+```
+
+### Debate Round Function
+
+Create a function that orchestrates a single debate round:
+
+```python
+def debate_round(topic: str, debate_prompt: str) -> dict:
+    """
+    Runs one debate round:
+    1. Claude makes the PRO argument
+    2. GPT-4 makes the CON argument
+    3. Gemini scores both and suggests a refined prompt
+    """
+
+    # PRO side (Claude)
+    pro_resp = claude.chat.completions.create(
+        messages = [{
+            "role": "user",
+            "content": f"Argue in favor of: {topic}\n\nContext: {debate_prompt}"
+        }],
+        model = "claude-3-opus-20240229",
+        max_tokens = 250
+    )
+    pro_text = pro_resp["choices"][0]["message"]["content"]
+
+    # CON side (GPT-4)
+    con_resp = openai.chat.completions.create(
+        model = "gpt-4",
+        messages = [{
+            "role": "user",
+            "content": f"Argue against: {topic}\n\nContext: {debate_prompt}"
+        }]
+    )
+    con_text = con_resp["choices"][0]["message"]["content"]
+
+    # Moderator (Gemini)
+    mod_resp = gemini.chat.completions.create(
+        model = "gemini-1.5-pro",
+        messages = [{
+            "role": "user",
+            "content": f"""You are a debate moderator. Evaluate these arguments on "{topic}":
+
+            PRO: {pro_text}
+            CON: {con_text}
+
+            Suggest an improved debate prompt for more balanced arguments."""
+        }]
+    )
+    new_prompt = mod_resp["choices"][0]["message"]["content"].strip()
+
+    return {"pro": pro_text, "con": con_text, "new_prompt": new_prompt}
+```
+
+### Running Multiple Rounds
+
+Execute the debate across multiple rounds with progressively refined prompts:
+
+```python
+topic = "Implementing a nationwide four-day workweek"
+initial_prompt = "Debate the pros and cons of a four-day workweek."
+rounds = 3
+
+prompt = initial_prompt
+for i in range(1, rounds + 1):
+    result = debate_round(topic, prompt)
+    print(f"\n── Round {i} ──")
+    print("🔵 PRO:", result["pro"])
+    print("\n🔴 CON:", result["con"])
+    print("\n🛠️ Suggested New Prompt:", result["new_prompt"])
+    prompt = result["new_prompt"]
+```
+
+## Adding Evaluations
+
+After running the debate, evaluate outputs for toxicity using Arize evals:
+
+### Export Traces to Dataset
+
+```python
+from arize.exporter import ArizeExportClient
+from arize.utils.types import Environments
+from datetime import datetime
+
+client = ArizeExportClient()
+
+# Export traces from Arize
+primary_df = client.export_model_to_df(
+    space_id='YOUR_SPACE_ID',
+    model_id='portkey-debate',
+    environment=Environments.TRACING,
+    start_time=datetime.fromisoformat('2025-06-19T07:00:00.000+00:00'),
+    end_time=datetime.fromisoformat('2025-06-28T06:59:59.999+00:00')
+)
+
+primary_df["input"] = primary_df["attributes.input.value"]
+primary_df["output"] = primary_df["attributes.output.value"]
+```
+
+### Run Toxicity Evaluation
+
+```python
+from phoenix.evals import (
+    TOXICITY_PROMPT_RAILS_MAP,
+    TOXICITY_PROMPT_TEMPLATE,
+    OpenAIModel,
+    llm_classify,
+)
+
+# Configure evaluation model
+model = OpenAIModel(
+    model_name="gpt-4",
+    temperature=0.0,
+)
+
+# Run toxicity classification
+rails = list(TOXICITY_PROMPT_RAILS_MAP.values())
+toxic_classifications = llm_classify(
+    dataframe=primary_df,
+    template=TOXICITY_PROMPT_TEMPLATE,
+    model=model,
+    rails=rails,
+    provide_explanation=True,
+)
+```
+
+### Send Results Back to Arize
+
+```python
+from arize.pandas.logger import Client
+
+arize_client = Client(
+    space_id=os.getenv("ARIZE_SPACE_ID"),
+    api_key=os.getenv("ARIZE_API_KEY")
+)
+
+# Log evaluation results
+arize_client.log_evaluations_sync(toxic_classifications, 'portkey-debate')
+```
+
+## Benefits of This Approach
+
+1. **Unified API**: Use the same interface for all LLMs, making it easy to switch providers
+2. **Automatic Tracing**: All LLM calls are automatically traced without modifying your code
+3. **Multi-Agent Orchestration**: Different LLMs can play different roles based on their strengths
+4. **Comprehensive Observability**: Monitor latency, costs, and outputs across all providers
+5. **Quality Assurance**: Automated evaluations ensure outputs meet safety standards
+
+## Next Steps
+
+- Try different LLM combinations for various roles
+- Add more evaluation criteria beyond toxicity
+- Implement fallback strategies using Portkey's gateway features
+- Set up alerts in Arize for performance degradation
+
+## Related Resources
+
+- [Portkey Universal API Documentation](../ai-gateway/universal-api.md)
+- [Arize Integration Guide](https://docs.arize.com/arize/)
+- [OpenTelemetry Tracing](../observability/traces.md)
+- [Multi-Model Strategies](../use-cases/comparing-top10-lmsys-models-with-portkey.md)
