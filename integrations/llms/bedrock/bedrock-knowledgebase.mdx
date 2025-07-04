@@ -5,148 +5,185 @@ description: 'Connect your LLMs to organizational data using AWS Bedrock Knowled
 
 AWS Bedrock Knowledge Bases enables you to give foundation models access to your company's private data sources, delivering more relevant, accurate, and customized responses through Retrieval Augmented Generation (RAG).
 
-With Portkey's integration, you can seamlessly connect to AWS Bedrock Knowledge Bases while gaining enterprise features like observability, caching, and reliability - all through a unified API.
+With Portkey's integration, you can seamlessly connect to AWS Bedrock Knowledge Bases while gaining enterprise features like observability, caching, and reliability - all through a unified API that simplifies authentication.
 
 ## What is AWS Bedrock Knowledge Bases?
 
 AWS Bedrock Knowledge Bases is a fully managed service that implements the entire RAG workflow - from data ingestion to retrieval and prompt augmentation. It allows you to:
 
-- **Connect to Multiple Data Sources**: Automatically fetch data from Amazon S3, Confluence, Salesforce, SharePoint, and more
-- **Managed Vector Storage**: Store embeddings in supported vector databases like Amazon Aurora, OpenSearch, Neptune, MongoDB, Pinecone, or Redis
-- **Advanced Retrieval**: Use semantic search, GraphRAG, and reranking for accurate information retrieval
-- **Source Attribution**: All retrieved information includes citations to improve transparency and minimize hallucinations
+- **Connect to Multiple Data Sources**: Automatically fetch data from Amazon S3, Confluence, Salesforce, SharePoint, and more.
+- **Managed Vector Storage**: Store embeddings in supported vector databases like Amazon Aurora, OpenSearch, Neptune, MongoDB, Pinecone, or Redis.
+- **Advanced Retrieval**: Use semantic search and filtering for accurate information retrieval.
+- **Source Attribution**: All retrieved information includes citations to improve transparency and minimize hallucinations.
 
 ## Prerequisites
 
 Before integrating AWS Bedrock Knowledge Bases with Portkey, ensure you have:
 
-1. **AWS Account** with Bedrock access enabled
-2. **AWS Bedrock Knowledge Base** created and configured
-3. **Portkey Account** with API key
-4. **AWS Credentials** with appropriate permissions
+1.  **AWS Account** with Bedrock access enabled.
+2.  **AWS Bedrock Knowledge Base** created and configured in a supported region.
+3.  **Portkey Account** with an API key.
+4.  **AWS Credentials** with permissions to access Bedrock Knowledge Bases, configured in Portkey.
 
 ## Setup Guide
 
 ### Step 1: Create AWS Bedrock Knowledge Base
 
-First, set up your knowledge base in AWS:
-
-1. Navigate to AWS Bedrock console
-2. Go to Knowledge Bases section
-3. Create a new knowledge base
-4. Configure your data source (S3, Confluence, etc.)
-5. Select your vector database
-6. Complete the setup and note your **Knowledge Base ID**
+First, set up your knowledge base in the AWS console and note down your **Knowledge Base ID** (e.g., `ABC123XYZ`). You will need this for API calls.
 
 ### Step 2: Configure AWS Credentials in Portkey
+
+You need to connect your AWS account to Portkey. This allows Portkey to make authenticated requests to AWS on your behalf.
 
 <Steps>
 <Step title="Create an Integration">
 Navigate to the [Integrations](https://app.portkey.ai/integrations) section on Portkey's Sidebar. This is where you'll connect your LLM providers.
 
-1. Find your Bedrock
-2. Click **Connect** on the provider card
-3. In the "Create New Integration" window:
-   - Enter a **Name** for reference
-   - Enter a **Slug** for the integration
-   - Enter your **API Key and other AWS bedrock specific details** for the provider
-4. Click **Next Step**
+1. Find **Bedrock** and click **Connect**.
+2. In the "Create New Integration" window:
+   - Enter a **Name** for reference (e.g., `aws-bedrock-prod`).
+   - Enter a **Slug** for the integration (e.g., `aws-bedrock-prod`).
+   - Enter your **AWS Access Key ID**, **Secret Access Key**, and **Default Region**.
+3. Click **Next Step**.
 
 <Frame>
 <img src="/images/product/model-catalog/integrations-page.png" width="500"/>
 </Frame>
 
 <Note>
-In your next step you'll see workspace provisioning options. You can select the default "Shared Team Workspace" if this is your first time OR chose your current one.
+The **Slug** you create here will be used as the `virtual_key` in your Portkey client initialization.
 </Note>
 </Step>
 
 <Step title="Configure Models">
 
 On the model provisioning page:
-- Leave all models selected (or customize)
-- Toggle Automatically enable new models if desired
+- Leave all models selected (or customize).
+- Toggle "Automatically enable new models" if desired.
 
-Click **Create Integration** to complete the integration
-
-<Frame>
-<img src="/images/product/model-catalog/model-provisioning-page.png" width="500"/>
-</Frame>
-
+Click **Create Integration** to complete the integration.
 
 </Step>
-
-
-<Step title="Copy the Provider Slug">
-Once your Integration is created:
-
-1. Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **AI Providers** tab
-2. Find your integration
-3. Copy the **slug** (e.g., `openai-dev`)
-
-<Frame>
-<img src="/images/product/model-catalog/model-catalog.png" width="500"/>
-</Frame>
-
-<Note>
-This slug is your provider's unique identifier - you'll need it for the next step.
-</Note>
-
-
-</Step>
-
-
 </Steps>
 
-### Step 3: Using Knowledge Bases with Portkey
+### Step 3: Querying Your Knowledge Base with Portkey
 
-Here's how to query your AWS Bedrock Knowledge Base through Portkey:
+To query an AWS Bedrock Knowledge Base, you use Portkey's `post` method. This acts as a proxy, sending a signed request directly to the AWS `retrieve` API endpoint. Portkey handles the complex AWS Signature Version 4 authentication process for you.
+
+The target AWS API endpoint for retrieval is `POST /knowledgebases/{knowledgeBaseId}/retrieve`.
+
+#### 1. Initialize the Portkey Client
+
+You must initialize the client with your Portkey API Key and the `virtual_key`, which is the slug of the Bedrock AI Provider you configured in Step 2.
+
+<Tabs>
+<Tab title="Python SDK">
+```python
+from portkey_ai import Portkey
+
+# Initialize the client
+# The virtual_key points to your AWS Bedrock provider configured in Portkey
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    virtual_key="your-bedrock-provider-slug" # e.g., "aws-bedrock-prod"
+)
+```
+</Tab>
+<Tab title="NodeJS SDK">
+```javascript
+import Portkey from 'portkey-ai';
+
+// Initialize the client
+// The virtualKey points to your AWS Bedrock provider configured in Portkey
+const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY",
+    virtualKey: "your-bedrock-provider-slug" // e.g., "aws-bedrock-prod"
+});
+```
+</Tab>
+</Tabs>
+
+#### 2. Make the Retrieval Request
+
+Now, use the `post` method to make a request to the Bedrock Knowledge Base `retrieve` endpoint. You need to provide the `path` and the `body` of the request.
+
+<Tabs>
+<Tab title="Python SDK">
 
 ```python
 from portkey_ai import Portkey
 
-# Initialize Portkey client
 portkey = Portkey(
     api_key="YOUR_PORTKEY_API_KEY",
+    virtual_key="your-bedrock-provider-slug"
+    custom_host="your-bedrock-agent-runtime-url"
 )
 
-# Query your knowledge base
-response = portkey.chat.completions.create(
-    model="@your-aws-bedrock-provider-slug/your-aws-bedrock-model-name",
-    messages=[
-        {
-            "role": "user",
-            "content": "What is our company's remote work policy?"
+# Your Knowledge Base ID from the AWS console
+knowledge_base_id = "YOUR_KNOWLEDGE_BASE_ID"
+query = "What is our company's remote work policy?"
+
+
+response = portkey.post(
+    url=f"/knowledgebases/{knowledge_base_id}/retrieve",
+    body={
+        "retrievalQuery": {
+            "text": query
         }
-    ],
-    tools=[
-        {
-            "type": "file_search",
-            "vector_store_ids": ["YOUR_KNOWLEDGE_BASE_ID"]
-        }
-    ]
+    }
 )
 
-print(response.choices[0].message.content)
+print(response)
 ```
 
-## Supported Models
+</Tab>
+<Tab title="NodeJS SDK">
 
-You can use any AWS Bedrock supported model with Knowledge Bases. Common models include:
+```javascript
+import Portkey from 'portkey-ai';
 
-- `@aws-bedrock/anthropic.claude-3-sonnet-20240229-v1:0`
-- `@aws-bedrock/anthropic.claude-3-haiku-20240307-v1:0`
-- `@aws-bedrock/amazon.titan-text-express-v1`
-- `@aws-bedrock/meta.llama3-70b-instruct-v1:0`
+const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY",
+    virtualKey: "your-bedrock-provider-slug",
+    customHost: "your-bedrock-agent-runtime-url"
+});
 
+async function queryKnowledgeBase() {
+    // Your Knowledge Base ID from the AWS console
+    const knowledgeBaseId = "YOUR_KNOWLEDGE_BASE_ID";
+    const query = "What is our company's remote work policy?";
+
+    try {
+        // Construct the API path and request body
+        const response = portkey.post(
+            url=`/knowledgebases/${knowledge_base_id}/retrieve`,
+            body={
+                "retrievalQuery": {
+                    "text": query
+                }
+            }
+        )
+
+        // The response contains the retrieved chunks
+        console.log(response);
+
+    }
+}
+
+queryKnowledgeBase();
+```
+
+</Tab>
+</Tabs>
 
 ## Next Steps
 
-- Explore [Portkey Observability](/product/observability) to monitor your RAG pipeline
-- Set up [Guardrails](/product/guardrails) to ensure safe responses
-- Implement [Prompt Management](/product/prompt-library) for your RAG prompts
-- Configure [Fallbacks](/product/ai-gateway/fallbacks) for high availability
+Now that you can retrieve data from your knowledge base, you can build a full RAG application.
+- Explore [Portkey Observability](/product/observability) to monitor your RAG pipeline.
+- Set up [Guardrails](/product/guardrails) to ensure safe and compliant responses.
+- Implement [Prompt Management](/product/prompt-library) for your RAG prompts.
+- Configure [Fallbacks](/product/ai-gateway/fallbacks) for high availability.
 
 <Note>
-For enterprise support with AWS Bedrock Knowledge Bases integration, contact our [enterprise team](https://calendly.com/portkey-ai).
+For enterprise support with your AWS Bedrock integration, contact our [enterprise team](https://calendly.com/portkey-ai).
 </Note>
