@@ -1,11 +1,11 @@
 ---
 title: 'AWS Bedrock Knowledge Bases'
-description: 'Connect your LLMs to organizational data using AWS Bedrock Knowledge Bases through Portkey'
+description: 'Create, manage, and connect your LLMs to organizational data using AWS Bedrock Knowledge Bases through Portkey.'
 ---
 
 AWS Bedrock Knowledge Bases enables you to give foundation models access to your company's private data sources, delivering more relevant, accurate, and customized responses through Retrieval Augmented Generation (RAG).
 
-With Portkey's integration, you can seamlessly connect to AWS Bedrock Knowledge Bases while gaining enterprise features like observability, caching, and reliability - all through a unified API that simplifies authentication.
+With Portkey's integration, you can seamlessly create and connect to AWS Bedrock Knowledge Bases while gaining enterprise features like observability, caching, and reliability - all through a unified API that simplifies authentication.
 
 ## What is AWS Bedrock Knowledge Bases?
 
@@ -21,22 +21,19 @@ AWS Bedrock Knowledge Bases is a fully managed service that implements the entir
 Before integrating AWS Bedrock Knowledge Bases with Portkey, ensure you have:
 
 1.  **AWS Account** with Bedrock access enabled.
-2.  **AWS Bedrock Knowledge Base** created and configured in a supported region.
+2.  **AWS Credentials** with permissions to create and access Bedrock Knowledge Bases, configured in Portkey.
 3.  **Portkey Account** with an API key.
-4.  **AWS Credentials** with permissions to access Bedrock Knowledge Bases, configured in Portkey.
+4.  An **IAM Role** with the necessary permissions for Bedrock to access your data sources.
+5.  A **Vector Store** (like Amazon OpenSearch Serverless) to store the indexed data.
 
 ## Setup Guide
 
-### Step 1: Create AWS Bedrock Knowledge Base
-
-First, set up your knowledge base in the AWS console and note down your **Knowledge Base ID** (e.g., `ABC123XYZ`). You will need this for API calls.
-
-### Step 2: Configure AWS Credentials in Portkey
+### Step 1: Create an AWS Integration in Portkey
 
 You need to connect your AWS account to Portkey. This allows Portkey to make authenticated requests to AWS on your behalf.
 
 <Steps>
-<Step title="Create an Integration">
+<Step title="Navigate to Integrations">
 Navigate to the [Integrations](https://app.portkey.ai/integrations) section on Portkey's Sidebar. This is where you'll connect your LLM providers.
 
 1. Find **Bedrock** and click **Connect**.
@@ -66,46 +63,208 @@ Click **Create Integration** to complete the integration.
 </Step>
 </Steps>
 
-### Step 3: Querying Your Knowledge Base with Portkey
+### Step 2: Create a Knowledge Base
 
-To query an AWS Bedrock Knowledge Base, you use Portkey's `post` method. This acts as a proxy, sending a signed request directly to the AWS `retrieve` API endpoint. Portkey handles the complex AWS Signature Version 4 authentication process for you.
+To create an AWS Bedrock Knowledge Base, you use Portkey's `put` method. This acts as a proxy, sending a signed request directly to the AWS `PUT /knowledgebases/` API endpoint. Portkey handles the complex AWS Signature Version 4 authentication process for you.
 
-The target AWS API endpoint for retrieval is `POST /knowledgebases/{knowledgeBaseId}/retrieve`.
+When initializing the Portkey client, you must provide a `custom_host` that points to the AWS Bedrock Agent API endpoint for your region.
 
-#### 1. Initialize the Portkey Client
 
-You must initialize the client with your Portkey API Key and the `virtual_key`, which is the slug of the Bedrock AI Provider you configured in Step 2.
+<Card href="http://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-create.html" title="AWS Bedrock Docs to create Knowledgebase">
+</Card>
 
 <Tabs>
 <Tab title="Python SDK">
 ```python
 from portkey_ai import Portkey
 
-# Initialize the client
-# The virtual_key points to your AWS Bedrock provider configured in Portkey
+# The virtual_key is the slug of your Bedrock provider in Portkey
+# The custom_host is the Bedrock Agent API endpoint for your region
 portkey = Portkey(
     api_key="YOUR_PORTKEY_API_KEY",
-    virtual_key="your-bedrock-provider-slug" # e.g., "aws-bedrock-prod"
+    virtual_key="your-bedrock-provider-slug",
+    custom_host="https://bedrock-agent.us-east-1.amazonaws.com"
 )
+
+# The body for the request to create a new Knowledge Base
+# Replace placeholders with your actual resource ARNs and names
+kb_body = {
+   "name": "MyKB",
+   "description": "My knowledge base",
+   "roleArn": "arn:aws:iam::111122223333:role/service-role/AmazonBedrockExecutionRoleForKnowledgeBase_123",
+   "knowledgeBaseConfiguration": {
+      "type": "VECTOR",
+      "vectorKnowledgeBaseConfiguration": {
+         "embeddingModelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0",
+         "embeddingModelConfiguration": {
+            "bedrockEmbeddingModelConfiguration": {
+               "dimensions": 1024,
+               "embeddingDataType": "BINARY"
+            }
+         },
+         "supplementalDataStorageConfiguration": {
+            "storageLocations": [
+               {
+                  "s3Location": {
+                     "uri": "arn:aws:s3:::MyBucket"
+                  },
+                  "type": "S3"
+               }
+            ]
+         }
+      }
+   },
+   "storageConfiguration": {
+      "opensearchServerlessConfiguration": {
+         "collectionArn": "arn:aws:aoss:us-east-1:111122223333:collection/abcdefghij1234567890",
+         "fieldMapping": {
+            "metadataField": "metadata",
+            "textField": "text",
+            "vectorField": "vector"
+         },
+         "vectorIndexName": "MyVectorIndex"
+      }
+   }
+}
+
+# Make the PUT request to create the knowledge base
+response = portkey.put(
+    path='/knowledgebases/',
+    body=kb_body
+)
+print(response.json())
 ```
 </Tab>
+
 <Tab title="NodeJS SDK">
 ```javascript
-import Portkey from 'portkey-ai';
+import { Portkey } from 'portkey-ai';
 
-// Initialize the client
-// The virtualKey points to your AWS Bedrock provider configured in Portkey
+// The virtualKey is the slug of your Bedrock provider in Portkey
+// The customHost is the Bedrock Agent API endpoint for your region
 const portkey = new Portkey({
     apiKey: "YOUR_PORTKEY_API_KEY",
-    virtualKey: "your-bedrock-provider-slug" // e.g., "aws-bedrock-prod"
+    virtualKey: "your-bedrock-provider-slug",
+    customHost: "https://bedrock-agent.us-east-1.amazonaws.com"
 });
+
+async function createKnowledgeBase() {
+    // The body for the request to create a new Knowledge Base
+    // Replace placeholders with your actual resource ARNs and names
+    const kbBody = {
+       "name": "MyKB",
+       "description": "My knowledge base",
+       "roleArn": "arn:aws:iam::111122223333:role/service-role/AmazonBedrockExecutionRoleForKnowledgeBase_123",
+       "knowledgeBaseConfiguration": {
+          "type": "VECTOR",
+          "vectorKnowledgeBaseConfiguration": {
+             "embeddingModelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0",
+             "embeddingModelConfiguration": {
+                "bedrockEmbeddingModelConfiguration": {
+                   "dimensions": 1024,
+                   "embeddingDataType": "BINARY"
+                }
+             },
+             "supplementalDataStorageConfiguration": {
+                "storageLocations": [
+                   {
+                      "s3Location": {
+                         "uri": "arn:aws:s3:::MyBucket"
+                      },
+                      "type": "S3"
+                   }
+                ]
+             }
+          }
+       },
+       "storageConfiguration": {
+          "opensearchServerlessConfiguration": {
+             "collectionArn": "arn:aws:aoss:us-east-1:111122223333:collection/abcdefghij1234567890",
+             "fieldMapping": {
+                "metadataField": "metadata",
+                "textField": "text",
+                "vectorField": "vector"
+             },
+             "vectorIndexName": "MyVectorIndex"
+          }
+       }
+    };
+
+    try {
+        const response = await portkey.put('/knowledgebases/', kbBody);
+        console.log(response);
+    } catch (error) {
+        console.error('Error creating knowledge base:', error);
+    }
+}
+
+createKnowledgeBase();
+```
+</Tab>
+<Tab title="cURL">
+```bash
+curl --request PUT \
+  --url https://api.portkey.ai/v1/knowledgebases/ \
+  --header 'Content-Type: application/json' \
+  --header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+  --header 'x-portkey-virtual-key: your-bedrock-provider-slug' \
+  --header 'x-portkey-custom-host: https://bedrock-agent.us-east-1.amazonaws.com' \
+  --data '{
+     "name": "MyKB",
+     "description": "My knowledge base",
+     "roleArn": "arn:aws:iam::111122223333:role/service-role/AmazonBedrockExecutionRoleForKnowledgeBase_123",
+     "knowledgeBaseConfiguration": {
+        "type": "VECTOR",
+        "vectorKnowledgeBaseConfiguration": {
+           "embeddingModelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0",
+           "embeddingModelConfiguration": {
+              "bedrockEmbeddingModelConfiguration": {
+                 "dimensions": 1024,
+                 "embeddingDataType": "BINARY"
+              }
+           },
+           "supplementalDataStorageConfiguration": {
+              "storageLocations": [
+                 {
+                    "s3Location": {
+                       "uri": "arn:aws:s3:::MyBucket"
+                    },
+                    "type": "S3"
+                 }
+              ]
+           }
+        }
+     },
+     "storageConfiguration": {
+        "opensearchServerlessConfiguration": {
+           "collectionArn": "arn:aws:aoss:us-east-1:111122223333:collection/abcdefghij1234567890",
+           "fieldMapping": {
+              "metadataField": "metadata",
+              "textField": "text",
+              "vectorField": "vector"
+           },
+           "vectorIndexName": "MyVectorIndex"
+        }
+     }
+  }'
 ```
 </Tab>
 </Tabs>
 
-#### 2. Make the Retrieval Request
+### Step 3: Retrieve from a Knowledge Base
 
-Now, use the `post` method to make a request to the Bedrock Knowledge Base `retrieve` endpoint. You need to provide the `path` and the `body` of the request.
+Once your knowledge base is created and has finished syncing, you can query it using Portkey's `post` method. This request is sent to the AWS `retrieve` API endpoint: `POST /knowledgebases/{knowledgeBaseId}/retrieve`.
+
+
+<Card href="http://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-create.html" title="AWS Bedrock Docs to create Knowledgebase">
+</Card>
+
+
+
+
+<Note>
+**Important:** For retrieval, the `custom_host` URL is different. You must use the **Bedrock Agent Runtime** endpoint for your region (e.g., `bedrock-agent-runtime.us-east-1.amazonaws.com`).
+</Note>
 
 <Tabs>
 <Tab title="Python SDK">
@@ -113,16 +272,16 @@ Now, use the `post` method to make a request to the Bedrock Knowledge Base `retr
 ```python
 from portkey_ai import Portkey
 
+# For retrieval, use the Bedrock Agent Runtime URL
 portkey = Portkey(
     api_key="YOUR_PORTKEY_API_KEY",
     virtual_key="your-bedrock-provider-slug",
-    custom_host="your-bedrock-agent-runtime-url"
+    custom_host="bedrock-agent-runtime.us-east-1.amazonaws.com"
 )
 
 # Your Knowledge Base ID from the AWS console
 knowledge_base_id = "YOUR_KNOWLEDGE_BASE_ID"
 query = "What is our company's remote work policy?"
-
 
 response = portkey.post(
     url=f"/knowledgebases/{knowledge_base_id}/retrieve",
@@ -130,20 +289,21 @@ response = portkey.post(
         "text": query
     }
 )
-    # The response contains the retrieved chunks
-print(response)
+# The response contains the retrieved chunks
+print(response.json())
 ```
 
 </Tab>
 <Tab title="NodeJS SDK">
 
 ```javascript
-import Portkey from 'portkey-ai';
+import { Portkey } from 'portkey-ai';
 
+// For retrieval, use the Bedrock Agent Runtime URL
 const portkey = new Portkey({
     apiKey: "YOUR_PORTKEY_API_KEY",
     virtualKey: "your-bedrock-provider-slug",
-    customHost: "your-bedrock-agent-runtime-url"
+    customHost: "bedrock-agent-runtime.us-east-1.amazonaws.com"
 });
 
 async function queryKnowledgeBase() {
@@ -153,14 +313,14 @@ async function queryKnowledgeBase() {
 
     try {
         // Construct the API path and request body
-        const response = portkey.post(
+        const response = await portkey.post(
             `/knowledgebases/${knowledgeBaseId}/retrieve`,
             {
                 retrievalQuery: {
                     text: query
                 }
             }
-        )
+        );
 
         // The response contains the retrieved chunks
         console.log(response);
@@ -177,9 +337,10 @@ queryKnowledgeBase();
 </Tab>
 </Tabs>
 
+
 ## Next Steps
 
-Now that you can retrieve data from your knowledge base, you can build a full RAG application.
+Now that you can create and retrieve data from your knowledge base, you can build a full RAG application.
 - Explore [Portkey Observability](/product/observability) to monitor your RAG pipeline.
 - Set up [Guardrails](/product/guardrails) to ensure safe and compliant responses.
 - Implement [Prompt Management](/product/prompt-library) for your RAG prompts.
