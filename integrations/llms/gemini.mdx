@@ -106,24 +106,41 @@ Portkey supports function calling mode on Google's Gemini Models. Explore this <
 
 [Function Calling](/guides/getting-started/function-calling)
 
-## Document, Video, Audio Processing with Gemini
-Gemini supports attaching `mp4`, `pdf`, `jpg`, `mp3`, `wav`, etc. file types to your messages.
 
-<Info>
-Gemini Docs:
-* [Document Processing](https://ai.google.dev/gemini-api/docs/document-processing?lang=python)
-* [Video & Image Processing](https://ai.google.dev/gemini-api/docs/vision?lang=python)
-* [Audio Processing](https://ai.google.dev/gemini-api/docs/audio?lang=python)
-</Info>
 
-Using Portkey, here's how you can send these media files:
+
+
+
+## Advanced Multimodal Capabilities with Gemini
+
+Gemini models are inherently multimodal, capable of processing and understanding content from a wide array of file types. Portkey streamlines the integration of these powerful features by providing a unified, OpenAI-compatible API.
+
+<Note>
+  **The Portkey Advantage: A Unified Format for All Media**
+
+  To simplify development, Portkey uses a consistent format for all multimodal requests. Whether you're sending an image, audio, video, or document, you will use an object with `type: 'image_url'` within the user message's `content` array.
+
+  Portkey's AI Gateway intelligently interprets your request—based on the URL or data URI you provide—and translates it into the precise format required by the Google Gemini API. This means you only need to learn one structure for all your media processing needs.
+</Note>
+
+### Image Processing
+
+Gemini can analyze images to describe their content, answer visual questions, or identify objects.
+
+<Card href="https://ai.google.dev/gemini-api/docs/image-understanding" title="Gemini Image Understanding Docs">
+</Card>
+
+#### Method 1: Sending an Image via a Public URL
+
+This is the recommended approach for images hosted online. The URL must be publicly accessible.
 
 <CodeGroup>
-```javascript JavaScript
+```javascript NodeJS
 const chatCompletion = await portkey.chat.completions.create({
-    messages: [
-        { role: 'system', content: 'You are a helpful assistant' },
-        { role: 'user', content: [
+    model: 'gemini-1.5-pro',
+    messages: [{
+        role: 'user',
+        content: [
             {
                 type: 'image_url',
                 image_url: {
@@ -132,92 +149,517 @@ const chatCompletion = await portkey.chat.completions.create({
             },
             {
                 type: 'text',
-                text: 'Describe the image'
+                text: 'Describe this image in detail.'
             }
-        ]}
-    ],
-    model: 'gemini-1.5-pro',
-    max_tokens: 200
+        ]
+    }],
 });
+console.log(chatCompletion.choices[0].message.content);
 ```
-
 ```python Python
 completion = portkey.chat.completions.create(
-    messages=[
-        {
-            "role": "system",
-            "content": "You are a helpful assistant"
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"
-                    }
-                },
-                {
-                    "type": "text",
-                    "text": "Describe the image"
-                }
-            ]
-        }
-    ],
     model='gemini-1.5-pro',
-    max_tokens=200
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"
+                }
+            },
+            {
+                "type": "text",
+                "text": "Describe this image in detail."
+            }
+        ]
+    }],
 )
-print(completion)
+print(completion.choices[0].message.content)
 ```
-
 ```sh cURL
 curl --location 'https://api.portkey.ai/v1/chat/completions' \
---header 'x-portkey-provider: vertex-ai' \
---header 'x-portkey-vertex-region: us-central1' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
 --header 'Content-Type: application/json' \
---header 'x-portkey-api-key: PORTKEY_API_KEY' \
---header 'Authorization: GEMINI_API_KEY' \
 --data '{
     "model": "gemini-1.5-pro",
-    "max_tokens": 200,
-    "stream": false,
-    "messages": [
-        {
-            "role": "system",
-            "content": "You are a helpful assistant"
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"
-                    }
-                },
-                {
-                    "type": "text",
-                    "text": "describe this image"
-                }
-            ]
-        }
-    ]
+    "messages": [{
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "Describe this image in detail."
+            },
+            {
+                "type": "image_url",
+                "image_url": { "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg" }
+            }
+        ]
+    }]
 }'
 ```
 </CodeGroup>
 
-This same message format also works for all other media types — just send your media file in the `url` field, like `"url": "gs://cloud-samples-data/video/animals.mp4"`.
+#### Method 2: Sending a Local Image as Base64 Data
 
-<Note>
-Your URL should have the file extension, this is used for inferring `MIME_TYPE` which is a required parameter for prompting Gemini models with files.
-</Note>
+Use this method for local image files. The file is encoded into a Base64 string and sent as a data URI. This is ideal when you don't have a public URL.
 
-### Sending base64 Image
-Here, you can send the `base64` image data along with the `url` field too:
+The data URI format is: `data:<MIME_TYPE>;base64,<YOUR_BASE64_DATA>`
 
-```json
-"url": "data:image/png;base64,UklGRkacAABXRUJQVlA4IDqcAAC....."
+<CodeGroup>
+```javascript NodeJS
+import fs from 'fs';
+
+const imageBytes = fs.readFileSync('local-image.png');
+const base64Image = imageBytes.toString('base64');
+const imageUri = `data:image/png;base64,${base64Image}`;
+
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-1.5-pro',
+    messages: [{
+        role: 'user',
+        content: [
+            { type: 'image_url', image_url: { url: imageUri }},
+            { type: 'text', text: 'What is in this picture?' }
+        ]
+    }],
+});
 ```
+```python Python
+import base64
+
+with open("local-image.png", "rb") as image_file:
+    image_bytes = image_file.read()
+
+base64_image = base64.b64encode(image_bytes).decode('utf-8')
+image_uri = f"data:image/png;base64,{base64_image}"
+
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            { "type": "image_url", "image_url": { "url": image_uri }},
+            { "type": "text", "text": "What is in this picture?" }
+        ]
+    }],
+)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is in this picture?"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,<YOUR_BASE64_IMAGE_DATA>"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Info>Supported Image MIME types: `image/png`, `image/jpeg`, `image/webp`, `image/heic`, `image/heif`</Info>
+
+---
+
+### Audio Processing
+
+Gemini can transcribe speech, summarize audio content, or answer questions about sounds.
+
+
+<Card href="https://ai.google.dev/gemini-api/docs/audio" title="Gemini Audio Understanding Docs">
+</Card>
+
+
+#### Method 1: Sending Audio via a Public URL
+
+Provide a direct Google Files link to an audio file.
+
+<CodeGroup>
+```python Python
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://storage.googleapis.com/public-samples/voice.mp3"
+                }
+            },
+            { "type": "text", "text": "Please transcribe the speech in this audio." }
+        ]
+    }],
+)
+```
+</CodeGroup>
+
+#### Method 2: Sending Local Audio as Base64 Data
+
+This is the standard way to process local audio files through the API.
+
+<CodeGroup>
+```javascript NodeJS
+import fs from 'fs';
+
+const audioBytes = fs.readFileSync('audio-example.mp3');
+const base64Audio = audioBytes.toString('base64');
+const audioUri = `data:audio/mp3;base64,${base64Audio}`;
+
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-1.5-pro',
+    messages: [{
+        role: 'user',
+        content: [
+            { type: 'image_url', image_url: { url: audioUri }},
+            { type: 'text', text: 'Describe this audio' }
+        ]
+    }],
+});
+```
+```python Python
+import base64
+
+with open('audio-example.mp3', 'rb') as audio_file:
+    audio_bytes = audio_file.read()
+
+base64_audio = base64.b64encode(audio_bytes).decode('utf-8')
+audio_uri = f"data:audio/mp3;base64,{base64_audio}"
+
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            { "type": "image_url", "image_url": { "url": audio_uri }},
+            { "type": "text", "text": "Describe this audio" }
+        ]
+    }],
+)
+```
+```sh cURL
+# You would first encode your audio file to base64
+# For example: base64 audio-example.mp3 > audio.b64
+# Then paste the content into the request
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this audio"},
+            {"type": "image_url", "image_url": {"url": "data:audio/mp3;base64,<YOUR_BASE64_AUDIO_DATA>"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Info>Supported Audio MIME types: `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac`</Info>
+
+---
+
+### Video Processing
+
+Gemini can summarize videos, answer questions about specific events, and describe scenes.
+
+<Card href="https://ai.google.dev/gemini-api/docs/video-understanding#inline-video" title="Gemini Video Understanding Docs">
+</Card>
+
+
+#### Method 1: Sending a Video via YouTube URL
+
+This is the only supported method for video. You can use a direct link to a YouTube video. Base64 encoding for videos is generally not feasible due to large file sizes.
+
+<CodeGroup>
+```javascript NodeJS
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-1.5-pro',
+    messages: [{
+        role: 'user',
+        content: [
+            {
+                type: 'text',
+                text: 'Describe this video in 3 sentences.'
+            },
+            {
+                type: 'image_url',
+                image_url: {
+                    url: 'https://www.youtube.com/watch?v=9hE5-98ZeCg'
+                }
+            }
+        ]
+    }],
+});
+```
+```python Python
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "Describe this video in 3 sentences."
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://www.youtube.com/watch?v=9hE5-98ZeCg"
+                }
+            }
+        ]
+    }],
+)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this video in 3 sentences."},
+            {"type": "image_url", "image_url": {"url": "https://www.youtube.com/watch?v=9hE5-98ZeCg"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+
+
+
+#### Method 2: Sending Local Video as Base64 Data
+
+This is the standard way to process local video files through the API.
+
+<CodeGroup>
+```javascript NodeJS
+import fs from 'fs';
+
+const videoBytes = fs.readFileSync('video-example.mp4');
+const base64Video = videoBytes.toString('base64');
+const videoUri = `data:video/mp4;base64,${base64Video}`;
+
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-1.5-pro',
+    messages: [{
+        role: 'user',
+        content: [
+            { type: 'image_url', image_url: { url: videoUri }},
+            { type: 'text', text: 'Describe this' }
+        ]
+    }],
+});
+```
+```python Python
+import base64
+
+with open('video-example.mp4', 'rb') as video_file:
+    video_bytes = video_file.read()
+
+base64_video = base64.b64encode(video_bytes).decode('utf-8')
+video_uri = f"data:video/mp4;base64,{base64_video}"
+
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            { "type": "image_url", "image_url": { "url": video_uri }},
+            { "type": "text", "text": "Describe this" }
+        ]
+    }],
+)
+```
+```sh cURL
+# You would first encode your video file to base64
+# For example: base64 video-example.mp3 > video.b64
+# Then paste the content into the request
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this video"},
+            {"type": "image_url", "image_url": {"url": "data:video/mp4;base64,<YOUR_BASE64_VIDEO_DATA>"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+
+<Info>Supported Video MIME types: `video/mp4`, `video/mpeg`, `video/mov`, `video/avi`, `video/webm`, `video/wmv`</Info>
+
+
+
+
+#### Method 3: Sending Video via a Public URL
+
+Provide a direct Google Files link to an audio file.
+
+<CodeGroup>
+```python Python
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://storage.googleapis.com/public-samples/voice.mp4"
+                }
+            },
+            { "type": "text", "text": "Please transcribe the speech in this." }
+        ]
+    }],
+)
+```
+</CodeGroup>
+
+
+
+---
+
+### Document Processing (PDF)
+
+Gemini's vision capabilities excel at understanding the content of PDF documents, including text, tables, and images.
+
+
+<Card href="https://ai.google.dev/gemini-api/docs/document-processing" title="Gemini Documents Understanding Docs">
+</Card>
+
+
+#### Method 1: Sending a Document via a Google Files URL
+
+
+<CodeGroup>
+```python Python
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://arxiv.org/pdf/2312.11805"
+                }
+            },
+            { "type": "text", "text": "Summarize the key findings of this research paper." }
+        ]
+    }],
+)
+```
+</CodeGroup>
+
+#### Method 2: Sending a Local Document as Base64 Data
+
+This is suitable for smaller, local PDF files.
+
+<CodeGroup>
+```python Python
+import base64
+
+with open("whitepaper.pdf", "rb") as pdf_file:
+    pdf_bytes = pdf_file.read()
+
+base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+pdf_uri = f"data:application/pdf;base64,{base64_pdf}"
+
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            { "type": "image_url", "image_url": { "url": pdf_uri }},
+            { "type": "text", "text": "What is the main conclusion of this document?" }
+        ]
+    }],
+)
+```
+</CodeGroup>
+
+<Note>While you can send other document types like `.txt` or `.html`, they will be treated as plain text. Gemini's native document vision capabilities are optimized for the `application/pdf` MIME type.</Note>
+
+---
+
+## Code Execution Tool
+
+Gemini can use a built-in code interpreter tool to solve complex computational problems, perform calculations, and generate code. To enable this, simply include the `code_execution` tool in your request. The model will automatically decide when to invoke it.
+
+<CodeGroup>
+```javascript NodeJS
+const response = await portkey.chat.completions.create({
+    model: "gemini-1.5-pro",
+    messages: [{
+        "role": "user",
+        "content": "Calculate the 20th Fibonacci number. Then find the nearest palindrome to it."
+    }],
+    tools: [{ "type": "code_execution" }]
+});
+
+console.log(response.choices[0].message.content);
+```
+```python Python
+response = portkey.chat.completions.create(
+    model="gemini-1.5-pro",
+    messages=[{
+        "role": "user",
+        "content": "Calculate the 20th Fibonacci number. Then find the nearest palindrome to it."
+    }],
+    tools=[{ "type": "code_execution" }]
+)
+
+print(response.choices[0].message.content)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-1.5-pro",
+    "messages": [
+        {
+            "role": "user",
+            "content": "Calculate the 20th Fibonacci number. Then find the nearest palindrome to it."
+        }
+    ],
+    "tools": [{ "type": "code_execution" }]
+}'
+```
+</CodeGroup>
+
+
+
+
 
 ## Grounding with Google Search
 
@@ -258,7 +700,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     # Initialize the Portkey client
     portkey = Portkey(
         api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        provider="@PROVIDER",   
+        provider="@PROVIDER",
         strict_open_ai_compliance=False
     )
 
