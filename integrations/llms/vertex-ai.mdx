@@ -5,6 +5,7 @@ title: "Google Vertex AI"
 Portkey provides a robust and secure gateway to facilitate the integration of various Large Language Models (LLMs), and embedding models into your apps, including [Google Vertex AI](https://cloud.google.com/vertex-ai?hl=en).
 
 With Portkey, you can take advantage of features like fast AI gateway access, observability, prompt management, and more, all while ensuring the secure management of your Vertex auth through a [virtual key](/product/ai-gateway/virtual-keys/) system
+
 <Note>
 Provider Slug. `vertex-ai`
 </Note>
@@ -260,6 +261,151 @@ curl --location 'https://api.portkey.ai/v1/chat/completions' \
 ```
 </CodeGroup>
 
+
+
+
+### Document Processing (PDF)
+
+Gemini's vision capabilities excel at understanding the content of PDF documents, including text, tables, and images.
+
+<Card href="https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/document-understanding#googlegenaisdk_textgen_with_pdf-python_genai_sdk" title="Gemini Documents Understanding Docs">
+</Card>
+
+**Method 1: Sending a Document via Google Files URL**
+
+Upload your PDF using the Files API to get a Google Files URL.
+
+<CodeGroup>
+```javascript NodeJS
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-1.5-pro',
+    messages: [{
+        role: 'user',
+        content: [
+            {
+                type: 'image_url',
+                image_url: {
+                    url: 'https://generativelanguage.googleapis.com/v1beta/files/your-pdf-file-id'
+                }
+            },
+            { type: 'text', text: 'Summarize the key findings of this research paper.' }
+        ]
+    }],
+});
+console.log(chatCompletion.choices[0].message.content);
+```
+```python Python
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://generativelanguage.googleapis.com/v1beta/files/your-pdf-file-id"
+                }
+            },
+            { "type": "text", "text": "Summarize the key findings of this research paper." }
+        ]
+    }],
+)
+print(completion.choices[0].message.content)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Summarize the key findings of this research paper."},
+            {"type": "image_url", "image_url": {"url": "https://generativelanguage.googleapis.com/v1beta/files/your-pdf-file-id"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+**Method 2: Sending a Local Document as Base64 Data**
+
+This is suitable for smaller, local PDF files.
+
+<CodeGroup>
+```javascript NodeJS
+import fs from 'fs';
+
+const pdfBytes = fs.readFileSync('whitepaper.pdf');
+const base64Pdf = pdfBytes.toString('base64');
+const pdfUri = `data:application/pdf;base64,${base64Pdf}`;
+
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-1.5-pro',
+    messages: [{
+        role: 'user',
+        content: [
+            { type: 'image_url', image_url: { url: pdfUri }},
+            { type: 'text', text: 'What is the main conclusion of this document?' }
+        ]
+    }],
+});
+console.log(chatCompletion.choices[0].message.content);
+```
+```python Python
+import base64
+
+with open("whitepaper.pdf", "rb") as pdf_file:
+    pdf_bytes = pdf_file.read()
+
+base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+pdf_uri = f"data:application/pdf;base64,{base64_pdf}"
+
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            { "type": "image_url", "image_url": { "url": pdf_uri }},
+            { "type": "text", "text": "What is the main conclusion of this document?" }
+        ]
+    }],
+)
+print(completion.choices[0].message.content)
+```
+```sh cURL
+# First, encode your PDF file to base64
+# For example: base64 -i whitepaper.pdf -o pdf.b64
+# Then use the encoded content in the request
+
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is the main conclusion of this document?"},
+            {"type": "image_url", "image_url": {"url": "data:application/pdf;base64,YOUR_BASE64_PDF_DATA"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Note>While you can send other document types like `.txt` or `.html`, they will be treated as plain text. Gemini's native document vision capabilities are optimized for the `application/pdf` MIME type.</Note>
+
+---
+
+
+
+
 ## Extended Thinking (Reasoning Models) (Beta)
 
 <Note>
@@ -281,7 +427,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     # Initialize the Portkey client
     portkey = Portkey(
         api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        provider="@PROVIDER",   
+        provider="@PROVIDER",
         strict_open_ai_compliance=False
     )
 
@@ -505,7 +651,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     # Initialize the Portkey client
     portkey = Portkey(
         api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        provider="@PROVIDER",   
+        provider="@PROVIDER",
         strict_open_ai_compliance=False
     )
 
