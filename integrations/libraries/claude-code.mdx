@@ -9,66 +9,128 @@ With Portkey integration, you can enhance Claude Code with enterprise features:
 
 - **Unified AI Gateway** - Route Claude Code through multiple providers (Anthropic, Bedrock, Vertex AI)
 - **Centralized Logs** - Track all Claude Code interactions
-- **Security & Governance** - Set rate limits, implement access controls, and audit all AI usage
+- **Unified AI Gateway** - Single interface for 250+ LLMs with API key management
+- **Centralized AI observability**: Real-time usage tracking for 40+ key metrics and logs for every request
+- **Governance** - Real-time spend tracking, set budget limits and RBAC in your Claude Code setup
 
-<Note>
-    This integration uses Portkey's Gateway Passthrough feature. Advanced Portkey capabilities - such as cost calculation, reliability features, and more are not supported yet.
-</Note>
 
 # 1. Setting up Portkey
-
-Before integrating with Claude Code, you'll need to set up the core Portkey components.
+Portkey allows you to use 1600+ LLMs with your Claude Code setup, with minimal configuration required. Let's set up the core components in Portkey that you'll need for integration.
 
 <Steps>
-<Step title="Create Virtual Key">
-Virtual Keys securely manage your LLM provider API keys with built-in controls:
-- Budget limits and rate limiting
-- Secure credential storage
-- Provider switching without code changes
+<Step title="Create an Integration">
+Navigate to the [Integrations](https://app.portkey.ai/integrations) section on Portkey's Sidebar. This is where you'll connect your LLM providers.
 
-To create a virtual key:
-1. Go to [Virtual Keys](https://app.portkey.ai/virtual-keys) in Portkey
-2. Add your provider (Anthropic, Bedrock, or Vertex AI) credentials
-3. Save and copy the virtual key ID
+1. Find your preferred provider (Anthropic, Bedrock and Vertex AI)
+2. Click **Connect** on the provider card
+3. In the "Create New Integration" window:
+   - Enter a **Name** for reference
+   - Enter a **Slug** for the integration
+   - Enter your **API Key and other provider specific details** for the provider
+4. Click **Next Step**
 
 <Frame>
-<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
+<img src="/images/product/model-catalog/integrations-page.png" width="500"/>
 </Frame>
 
 <Note>
-Save your virtual key ID - you'll need it for Claude Code configuration.
+In your next step you'll see workspace provisioning options. You can select the default "Shared Team Workspace" if this is your first time OR chose your current one.
 </Note>
 </Step>
 
-<Step title="Create Config (Optional)">
-Configs enable advanced routing features. You can either use a virtual key directly or create a config for more control.
+<Step title="Configure Models">
 
-To create a config:
-1. Go to [Configs](https://app.portkey.ai/configs) in Portkey
-2. Create new config:
+On the model provisioning page:
+- Leave all models selected (or customize)
+- Toggle Automatically enable new models if desired
+
+Click **Create Integration** to complete the integration
+
+
+<Note>
+    Make sure you enable the models that work with Claude Code
+</Note>
+<Frame>
+<img src="/images/product/model-catalog/model-provisioning-page.png" width="500"/>
+</Frame>
+
+
+</Step>
+
+
+
+<Step title="Copy the Provider Slug">
+Once your Integration is created:
+
+1. Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **Models** tab
+2. Find and click on you your model button (if your model is not visible, you need to edit your integration from the last step). Make Sure  you use Claude models that are supported by Claude Code: sonnet 4/3.7, opus 4, etc.
+3. Copy the **slug** (e.g., `@anthropic-claude-code/claude-4-sonnet-latest`)
+
+<Note>
+  We recommend clicking the `Run Test Request` button on this step to verify your integration. If you see the error: `You do not have enough permissions to execute this request`, you’ll need to create a **User API Key** for this step to work properly. Create one [here](https://app.portkey.ai/api-keys).
+
+
+</Note>
+
+<Frame>
+<img src="/images/product/model-catalog/model-integration-model-box.png" width="500"/>
+</Frame>
+
+<Note>
+This is your unique identifier - you'll need it for the next step. This slug is basically `@your-provider-slug/your-model-name`
+</Note>
+
+
+</Step>
+
+<Step title="Create Default Config">
+
+Portkey's [config](/product/ai-gateway/configs) is a JSON object used to define routing rules for requests to your gateway. You can create these configs in the Portkey app and reference them in requests via the config ID. For this setup, we’ll create a simple config using your provider (Anthropic) and model (claude-sonnet-latest).
+
+1. Go to [Configs](https://app.portkey.ai/configs) in Portkey dashboard
+2. Create new config with:
     ```json
     {
-        "provider":"@YOUR_PROVIDER_ID",
         "override_params": {
-            "model": "us.anthropic.claude-sonnet-4-20250514-v1:0"
+          "model": "@YOUR_SLUG-FROM-LAST_STEP" // example: @Anthropic-test/claude-sonnet-latest-mini
         }
     }
     ```
-3. Save and note the Config ID
+3. Save and note the Config ID & Name for the next step
 
-<Note>
-Configs are optional but recommended for production deployments with fallbacks and load balancing.
-</Note>
+<Frame>
+<img src="/images/product/model-catalog/default-config-model-catalog.png" width="600"/>
+</Frame>
 </Step>
 
-<Step title="Get Your Portkey API Key">
+
+<Step title="Configure Portkey API Key">
+Finally, create a Portkey API key:
+
 1. Go to [API Keys](https://app.portkey.ai/api-keys) in Portkey
-2. Create or copy your existing API key
-3. Keep it ready for the next steps
+2. Create new API key
+3. Select the config that you create from previous step
+4. Generate and save your API key
+
+<Frame>
+<img src="/images/integrations/api-key.png" width="300"/>
+</Frame>
+
+<Note>
+Save your API key securely - you'll need it for Claude Code integration.
+</Note>
+
 </Step>
 </Steps>
 
-# 2. Integrate Portkey with Claude Code
+<Check>
+🎉 Voila, Setup complete! You now have everything needed to integrate Portkey with your application.
+</Check>
+
+
+
+
+## 2. Integrate Portkey with Claude Code
 
 Claude Code uses a `settings.json` file for configuration. You'll need to modify the environment variables to route requests through Portkey.
 
@@ -76,267 +138,277 @@ Claude Code uses a `settings.json` file for configuration. You'll need to modify
 For more details on Claude Code proxy configuration, see [Anthropic's documentation](https://docs.anthropic.com/en/docs/claude-code/bedrock-vertex-proxies).
 </Info>
 
-<Tabs>
-<Tab title="Amazon Bedrock">
+
 Edit your Claude Code settings file (`~/.claude/settings.json` for global or `.claude/settings.json` in your project):
 
 ```json
 {
   "env": {
-    "ANTHROPIC_BEDROCK_BASE_URL": "https://api.portkey.ai/v1",
-    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: @your-bedrock-ai-provider-slug",
-    "ANTHROPIC_MODEL": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "CLAUDE_CODE_SKIP_BEDROCK_AUTH": 1,
-    "CLAUDE_CODE_USE_BEDROCK": 1
-  }
-}
-```
-
-<Note>
-The `CLAUDE_CODE_SKIP_BEDROCK_AUTH` and `CLAUDE_CODE_USE_BEDROCK` must be set as numbers (not strings).
-</Note>
-
-Replace:
-- `YOUR_PORTKEY_API_KEY` with your Portkey API key
-- `YOUR_PROVIDER` with the virtual key ID from Step 1
-- Update the model name if using a different Claude model
-</Tab>
-
-<Tab title="Google Vertex AI">
-For Vertex AI integration:
-
-```json
-{
-  "env": {
-    "ANTHROPIC_VERTEX_BASE_URL": "https://api.portkey.ai/v1",
-    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: @your-vertex-ai-provider-slug",
-    "ANTHROPIC_MODEL": "claude-3-7-sonnet@20250219",
-    "CLAUDE_CODE_SKIP_VERTEX_AUTH": 1,
-    "CLAUDE_CODE_USE_VERTEX": 1
-  }
-}
-```
-
-<Note>
-Use `ANTHROPIC_VERTEX_BASE_URL` specifically for Vertex AI, not the generic base URL.
-</Note>
-</Tab>
-
-<Tab title="Anthropic API">
-For direct Anthropic API usage:
-
-```json
-{
-  "env": {
     "ANTHROPIC_BASE_URL": "https://api.portkey.ai/v1",
-    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: @your-anthropic-ai-provider-slug",
-    "ANTHROPIC_MODEL": "claude-sonnet-4-20250514"
-  }
-}
-```
-</Tab>
-
-<Tab title="Using Config">
-If you created a Portkey config for any provider:
-
-```json
-{
-  "env": {
-    "ANTHROPIC_BEDROCK_BASE_URL": "https://api.portkey.ai/v1",
-    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-config: YOUR_CONFIG_ID",
-    "ANTHROPIC_MODEL": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "CLAUDE_CODE_SKIP_BEDROCK_AUTH": 1,
-    "CLAUDE_CODE_USE_BEDROCK": 1
+    "ANTHROPIC_AUTH_TOKEN": "dummy",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY"
   }
 }
 ```
 
 <Note>
-When using a config, Portkey will use the provider settings defined in your config.
+    This same JSON will work for Anthropic, Bedrock and Vertex. You will need your Portkey API key created in [Step 1](#Setting-up-portkey) for this integration
 </Note>
-</Tab>
-</Tabs>
 
-## Complete Configuration Example
-
-Here's a full `settings.json` example with permissions and Bedrock configuration:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(npm run lint)",
-      "Bash(npm run test:*)",
-      "Read(~/.zshrc)"
-    ],
-    "deny": [
-      "Bash(curl:*)"
-    ]
-  },
-  "env": {
-    "ANTHROPIC_BEDROCK_BASE_URL": "https://api.portkey.ai/v1",
-    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: @your-bedrock-ai-provider-slug",
-    "ANTHROPIC_MODEL": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "CLAUDE_CODE_SKIP_BEDROCK_AUTH": 1,
-    "CLAUDE_CODE_USE_BEDROCK": 1
-  }
-}
-```
-
-## Adding Custom Metadata
-
-Track Claude Code usage by team, project, or user:
-
-```json
-{
-  "env": {
-    "ANTHROPIC_BEDROCK_BASE_URL": "https://api.portkey.ai/v1",
-    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-config: YOUR_CONFIG_ID\nx-portkey-metadata: {\"_user\": \"john.doe\", \"team\": \"engineering\", \"project\": \"backend-api\"}",
-    "CLAUDE_CODE_SKIP_BEDROCK_AUTH": 1,
-    "CLAUDE_CODE_USE_BEDROCK": 1
-  }
-}
-```
-
-## Verifying the Integration
-
-After configuring, test Claude Code:
-
-```bash
-# Start Claude Code
-claude
-
-# Ask it to perform a task
-> explain the authentication flow in this codebase
-```
-
-You should see:
-1. Claude Code functioning normally in your terminal
-2. Requests appearing in your [Portkey logs](https://app.portkey.ai/logs)
-3. Metrics updating in your [Portkey dashboard](https://app.portkey.ai/dashboard)
 
 # 3. Set Up Enterprise Governance for Claude Code
 
-When deploying Claude Code across your organization, implement these governance controls:
+**Why Enterprise Governance?**
+If you are using Claude Code inside your orgnaization, you need to consider several governance aspects:
+- **Cost Management**: Controlling and tracking AI spending across teams
+- **Access Control**: Managing team access and workspaces
+- **Usage Analytics**: Understanding how AI is being used across the organization
+- **Security & Compliance**: Maintaining enterprise security standards
+- **Reliability**: Ensuring consistent service across all users
+- **Model Management**: Managing what models are being used in your setup
+
+Portkey adds a comprehensive governance layer to address these enterprise
+
+**Enterprise Implementation Guide**
 
 <AccordionGroup>
-<Accordion title="Team-Based Access Control">
-Create separate providers for each team with specific limits:
+  <Accordion title="Step 1: Implement Budget Controls & Rate Limits">
+### Step 1: Implement Budget Controls & Rate Limits
 
-1. **Engineering Team**
-   - Budget: $500/month
-   - Models: Claude Sonnet only
-   - Rate limit: 100 requests/minute
+Model Catalog enables you to have granular control over LLM access at the team/department level. This helps you:
+- Set up [budget limits](/product/ai-gateway/virtual-keys/budget-limits)
+- Prevent unexpected usage spikes using Rate limits
+- Track departmental spending
 
-2. **Data Science Team**
-   - Budget: $1000/month
-   - Models: All Claude models
-   - Rate limit: 200 requests/minute
+#### Setting Up Department-Specific Controls:
+1. Navigate to [Model Catalog](https://app.portkey.ai/model-catalog) in Portkey dashboard
+2. Create new Provider for each engineering team with budget limits and rate limits
+3. Configure department-specific limits
 
-Deploy team-specific `settings.json` through your configuration management:
+<Frame>
+<img src="/images/product/model-catalog/create-provider-page.png" width="500"/>
+</Frame>
+
+  </Accordion>
+
+  <Accordion title="Step 2: Define Model Access Rules">
+### Step 2: Define Model Access Rules
+
+As your AI usage scales, controlling which teams can access specific models becomes crucial. You can simply manage AI models in your org by provisioning model at the top integration level.
+
+
+<Frame>
+<img src="/images/product/model-catalog/model-provisioning-page.png" width="500"/>
+</Frame>
+
+
+</Accordion>
+
+<Accordion title="Step 4: Set Routing Configuration">
+    Portkey allows you to control your routing logic very simply with it's Configs feature. Portkey Configs provide this control layer with things like:
+
+- **Data Protection**: Implement guardrails for sensitive code and data
+- **Reliability Controls**: Add fallbacks, load-balance, retry and smart conditional routing logic
+- **Caching**: Implement Simple and Semantic Caching. and more....
+
+#### Example Configuration:
+Here's a basic configuration to load-balance requests to Anthropic and Anthropic:
 
 ```json
 {
-  "env": {
-    "ANTHROPIC_BEDROCK_BASE_URL": "https://api.portkey.ai/v1",
-    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: TEAM_PORTKEY_API_KEY\nx-portkey-provider: @your-bedrock-team-ai-provider-slug",
-    "ANTHROPIC_MODEL": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "CLAUDE_CODE_SKIP_BEDROCK_AUTH": 1,
-    "CLAUDE_CODE_USE_BEDROCK": 1
-  }
+	"strategy": {
+		"mode": "load-balance"
+	},
+	"targets": [
+		{
+			"override_params": {
+				"model": "@YOUR_Anthropic_PROVIDER_SLUG/gpt-model"
+			}
+		},
+		{
+			"override_params": {
+				"model": "@YOUR_ANTHROPIC_PROVIDER/claude-sonnet-model"
+			}
+		}
+	]
 }
 ```
-</Accordion>
 
-<Accordion title="Centralized Policy Management">
-For enterprise deployments, use policy files to enforce settings:
+Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard. You'll need the config ID for connecting to Claude Code's setup.
 
-**macOS**: `/Library/Application Support/ClaudeCode/policies.json`
-**Linux/WSL**: `/etc/claude-code/policies.json`
 
-Example policy file:
-```json
-{
-  "env": {
-    "ANTHROPIC_BEDROCK_BASE_URL": "https://api.portkey.ai/v1",
-    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: ENTERPRISE_API_KEY\nx-portkey-config: ENTERPRISE_CONFIG_ID",
-    "CLAUDE_CODE_SKIP_BEDROCK_AUTH": 1,
-    "CLAUDE_CODE_USE_BEDROCK": 1
-  },
-  "permissions": {
-    "deny": [
-      "Bash(rm -rf*)",
-      "Edit(/etc/*)"
-    ]
-  }
-}
+<Note>
+Configs can be updated anytime to adjust controls without affecting running applications.
+</Note>
+
+  </Accordion>
+
+  <Accordion title="Step 4: Implement Access Controls">
+### Step 3: Implement Access Controls
+
+Create User-specific API keys that automatically:
+- Track usage per developer/team with the help of metadata
+- Apply appropriate configs to route requests
+- Collect relevant metadata to filter logs
+- Enforce access permissions
+
+
+Create API keys through:
+- [Portkey App](https://app.portkey.ai/)
+- [API Key Management API](/api-reference/admin-api/control-plane/api-keys/create-api-key)
+
+
+Example using Python SDK:
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_ADMIN_API_KEY")
+
+api_key = portkey.api_keys.create(
+    name="frontend-engineering",
+    type="organisation",
+    workspace_id="YOUR_WORKSPACE_ID",
+    defaults={
+        "config_id": "your-config-id",
+        "metadata": {
+            "environment": "development",
+            "department": "engineering",
+            "team": "frontend"
+        }
+    },
+    scopes=["logs.view", "configs.read"]
+)
 ```
+
+For detailed key management instructions, see our [API Keys documentation](/api-reference/admin-api/control-plane/api-keys/create-api-key).
+  </Accordion>
+
+  <Accordion title="Step 5: Deploy & Monitor">
+### Step 4: Deploy & Monitor
+After distributing API keys to your engineering teams, your enterprise-ready Claude Code setup is ready to go. Each developer can now use their designated API keys with appropriate access levels and budget controls.
+Apply your governance setup using the integration steps from earlier sections
+Monitor usage in Portkey dashboard:
+- Cost tracking by engineering team
+- Model usage patterns for AI agent tasks
+- Request volumes
+- Error rates and debugging logs
 </Accordion>
 
-<Accordion title="Usage Monitoring & Alerts">
-Set up monitoring in Portkey:
-
-1. **Create Alerts**
-   - Budget threshold warnings at 80%
-   - Unusual usage patterns
-   - Failed request spikes
-
-2. **Regular Reviews**
-   - Weekly cost reports by team
-   - Model usage distribution
-   - Performance metrics
-
-3. **Compliance Tracking**
-   - Export logs for audit trails
-   - Monitor for sensitive data in prompts
-   - Track user activity patterns
-</Accordion>
 </AccordionGroup>
 
-# Advanced Features
+<Check>
+### Enterprise Features Now Available
+**Claude Code now has:**
 
-## Caching for Faster Responses
+- Per-developer budget controls
+- Model access governance
+- Usage tracking & attribution
+- Code security guardrails
+- Reliability features for development workflows
 
-Enable caching in your Portkey config to speed up repeated queries:
+</Check>
 
-```json
-{
-  "provider":"@YOUR_PROVIDER",
-  "cache": {
-    "mode": "simple",
-  }
-}
-```
+# Portkey Features
+Now that you have enterprise-grade Claude Code setup, let's explore the comprehensive features Portkey provides to ensure secure, efficient, and cost-effective AI-assisted development.
 
-## Security & Compliance
+### 1. Comprehensive Metrics
+Using Portkey you can track 40+ key metrics including cost, token usage, response time, and performance across all your LLM providers in real time. Filter these metrics by developer, team, or project using custom metadata.
+
+<Frame>
+  <img src="/images/integrations/observability.png" width="600"/>
+</Frame>
+
+### 2. Advanced Logs
+Portkey's logging dashboard provides detailed logs for every request made by Claude Code. These logs include:
+- Complete request and response tracking
+- Code context and generation metrics
+- Developer attribution
+- Cost breakdown per coding session
+
+<Frame>
+<img src="/images/llms/Anthropic/logs.png"></img>
+</Frame>
+
+### 3. Unified Access to 250+ LLMs
+
+Easily switch between 250+ LLMs for different coding tasks. Use GPT-4 for complex architecture decisions, Claude for detailed code reviews, or specialized models for specific languages - all through a single interface.
+
+### 4. Advanced Metadata Tracking
+Track coding patterns and productivity metrics with custom metadata:
+- Language and framework usage
+- Code generation vs completion tasks
+- Time-of-day productivity patterns
+- Project-specific metrics
+
+<Card title="Custom Metadata" icon="tag" href="/docs/product/ai-gateway/metadata">
+</Card>
+
+### 5. Enterprise Access Management
 
 <CardGroup cols={2}>
-
-<Card title="Access Controls" icon="lock" href="/product/enterprise-offering/access-control-management">
-Set up fine-grained permissions and audit logging
+<Card title="Budget Controls" icon="coins" href="/docs/product/ai-gateway/virtual-keys/budget-limits">
+Set and manage spending limits per developer or team. Prevent budget overruns with automatic cutoffs.
 </Card>
 
-<Card title="Budget Management" icon="coins" href="/product/ai-gateway/virtual-keys/budget-limits">
-Prevent overspending with hard budget limits
+<Card title="Single Sign-On (SSO)" icon="key" href="/docs/product/enterprise-offering/org-management/sso">
+Enterprise-grade SSO integration for seamless developer onboarding and offboarding.
 </Card>
 
-<Card title="Audit Logs" icon="clipboard-list" href="/product/enterprise-offering/access-control-management#audit-logs">
-Track all Claude Code usage for compliance
+<Card title="Organization Management" icon="building" href="/docs/product/enterprise-offering/org-management">
+Hierarchical structure with teams, projects, and role-based access control for development organizations.
+</Card>
+
+<Card title="Access Rules & Audit Logs" icon="shield-check" href="/docs/product/enterprise-offering/access-control-management#audit-logs">
+Comprehensive audit logging for security compliance and code generation tracking.
 </Card>
 </CardGroup>
 
-# References
+### 6. Reliability Features
+<CardGroup cols={3}>
+  <Card title="Fallbacks" icon="life-ring" href="/product/ai-gateway/fallbacks">
+    Automatically switch between models if one fails, ensuring uninterrupted coding.
+  </Card>
+  <Card title="Conditional Routing" icon="route" href="/product/ai-gateway/conditional-routing">
+    Route requests based on code complexity or language requirements.
+  </Card>
+  <Card title="Load Balancing" icon="balance-scale" href="/docs/product/ai-gateway/load-balancing">
+      Distribute requests across multiple API keys or providers.
+  </Card>
+  <Card title="Caching" icon="database" href="/product/ai-gateway/caching">
+    Cache common code patterns to reduce costs and improve response times.
+  </Card>
+  <Card title="Smart Retries" icon="refresh" href="/product/ai-gateway/retries">
+    Automatic retry handling for failed requests with exponential backoff.
+  </Card>
+  <Card title="Budget Limits" icon="shield-check" href="/product/ai-gateway/virtual-keys/budget-limits">
+    Enforce spending limits to control development costs.
+  </Card>
+</CardGroup>
 
-- [Claude Code Proxy Documentation](https://docs.anthropic.com/en/docs/claude-code/bedrock-vertex-proxies) - Official Anthropic documentation for proxy configuration
-- [Portkey Virtual Keys](/product/ai-gateway/virtual-keys) - Secure credential management
-- [Portkey Configs](/product/ai-gateway/configs) - Advanced routing configuration
+### 7. Advanced Guardrails
+
+Protect your codebase and enhance security with real-time checks on AI interactions:
+- Prevent exposure of API keys and secrets
+- Block generation of malicious code patterns
+- Enforce coding standards and best practices
+- Custom security rules for your organization
+- License compliance checks
+
+<Card title="Guardrails" icon="shield-check" href="/docs/product/guardrails">
+Implement real-time protection for your development environment with automatic detection and filtering of sensitive code, credentials, and security vulnerabilities.
+</Card>
 
 # Next Steps
 
-- [Set up team workflows](/docs/product/enterprise-offering/org-management) with role-based access
-- [Configure advanced routing](/docs/product/ai-gateway) for reliability
-- [Monitor usage patterns](/docs/product/observability) across your organization
+**Join our Community**
+- [Discord Community](https://portkey.sh/discord-report)
+- [GitHub Repository](https://github.com/Portkey-AI)
+
+
+<Card title="Schedule a Demo" icon="calendar" href="https://portkey.sh/Claude Code">
+Schedule a 1:1 call with our team to see how Portkey can transform your development workflow with Claude Code. Get personalized recommendations for your team's specific needs.
+</Card>
 
 <Note>
-For enterprise support and custom features, contact our [enterprise team](https://portkey.sh/claude-code-enterprise).
+For enterprise support and custom features for your development teams, contact our [enterprise team](https://calendly.com/portkey-ai).
 </Note>
