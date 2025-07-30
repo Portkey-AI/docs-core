@@ -1,0 +1,750 @@
+---
+title: "Prometheus Metrics"
+description: "Comprehensive monitoring and observability for Portkey Enterprise Gateway through Prometheus metrics"
+---
+
+<Warning>
+This documentation applies exclusively to **Hybrid** and **Airgapped** deployments of Portkey Enterprise Gateway. SaaS customers should use the [Analytics Dashboard](/product/observability/analytics) for monitoring and observability.
+</Warning>
+
+## Overview
+
+The Portkey Enterprise Gateway exposes detailed telemetry data through Prometheus metrics, enabling comprehensive observability for LLM gateway operations. These metrics cover the entire request lifecycle from authentication through response delivery, including cost tracking, performance monitoring, and cache analytics.
+
+This monitoring capability is essential for:
+- **Performance Optimization**: Identify bottlenecks and optimize gateway performance
+- **Cost Management**: Track and analyze LLM usage costs in real-time
+- **Capacity Planning**: Understanding traffic patterns and scaling requirements
+- **SLA Monitoring**: Ensure service level agreements are met
+- **Security Monitoring**: Track authentication and authorization performance
+
+## Metrics Endpoint
+
+**Endpoint**: `/metrics`  
+**Method**: GET  
+**Content-Type**: `text/plain; version=0.0.4; charset=utf-8`  
+**Authentication**: Typically open (check your deployment configuration)
+
+<Tip>
+Ensure your Prometheus server can access the `/metrics` endpoint. In production deployments, consider securing this endpoint or restricting access to monitoring infrastructure only.
+</Tip>
+
+## Global Configuration
+
+### Default Labels
+
+All custom metrics are automatically labeled with:
+- `app`: Service identifier (from `SERVICE_NAME` environment variable)
+- `env`: Deployment environment (from `NODE_ENV` environment variable)
+
+These labels enable multi-environment and multi-service monitoring in shared Prometheus deployments.
+
+## Standard Node.js Runtime Metrics
+
+The gateway automatically exposes Node.js runtime metrics with the `node_` prefix using the `prom-client` default collectors:
+
+### Process Metrics
+- **CPU Usage**: `node_process_cpu_user_seconds_total`, `node_process_cpu_system_seconds_total`
+- **Memory**: `node_process_resident_memory_bytes`, `node_process_heap_bytes`
+- **File Descriptors**: `node_process_open_fds`, `node_process_max_fds`
+- **Process Uptime**: `node_process_start_time_seconds`
+
+### Event Loop Metrics
+- **Event Loop Lag**: `node_eventloop_lag_seconds` (critical for detecting Node.js performance issues)
+- **Event Loop Utilization**: Tracks how busy the event loop is
+
+### Garbage Collection Metrics
+- **GC Duration**: `node_gc_duration_seconds` with custom buckets optimized for LLM gateway workloads
+- **Custom GC Buckets**: `[0.001, 0.01, 0.1, 1, 1.5, 2, 3, 5, 7, 10, 15, 20, 30, 45, 60, 90, 120, 240, 500, 1000, 6000]` (seconds)
+
+These buckets are specifically tuned for applications handling variable-length LLM processing workloads.
+
+## Custom Application Metrics
+
+The Portkey Enterprise Gateway exposes 14 custom metrics designed to provide deep visibility into LLM gateway operations, performance characteristics, and business metrics.
+
+### Universal Label Schema
+
+All custom metrics share a common labeling schema enabling multi-dimensional analysis:
+
+- `method`: HTTP verb (GET, POST, PUT, DELETE, etc.)
+- `endpoint`: Normalized API endpoint path (e.g., `/v1/chat/completions`, `/v1/completions`)
+- `code`: HTTP response status code (200, 400, 500, etc.)
+- `provider`: LLM provider identifier (openai, anthropic, azure-openai, etc.)
+- `model`: Specific model name (gpt-4, claude-3, etc.)
+- `source`: Request origination source or client identifier
+- `stream`: Boolean indicator for streaming responses ("true"/"false")
+- `cacheStatus`: Cache interaction result ("hit", "miss", "disabled", "error")
+- `metadata_*`: Dynamic labels from request metadata (see configuration section)
+
+### 1. Gateway Request Counter
+
+**Metric Name**: `request_count`  
+**Type**: Counter  
+**Unit**: Requests
+
+**Technical Description**:
+Monotonic counter tracking every HTTP request processed by the gateway. This is the primary metric for understanding traffic volume, request patterns, and success/failure rates across different dimensions.
+
+**Use Cases**:
+- **Traffic Analysis**: Monitor request volume trends and identify peak usage periods
+- **Error Rate Monitoring**: Calculate error rates by dividing 4xx/5xx responses by total requests
+- **Provider Distribution**: Understand which LLM providers are most heavily utilized
+- **Model Popularity**: Track adoption of different AI models across your organization
+- **Cache Effectiveness**: Monitor cache hit rates to optimize performance and costs
+
+**Key Monitoring Patterns**:
+```promql
+# Request rate by provider
+rate(request_count[5m]) by (provider)
+
+# Error rate percentage
+sum(rate(request_count{code=~"4..|5.."}[5m])) / sum(rate(request_count[5m])) * 100
+
+# Requests by model
+sum(rate(request_count[5m])) by (model, provider)
+```
+
+---
+
+### 2. HTTP Request Duration Distribution
+
+**Metric Name**: `http_request_duration_seconds`  
+**Type**: Histogram  
+**Unit**: Seconds
+
+**Technical Description**:
+Measures the complete HTTP request-response cycle duration from the gateway's perspective. This includes all processing time: authentication, middleware execution, provider communication, response processing, and network transmission back to the client.
+
+**Bucket Configuration**: `[0.1, 1, 1.5, 2, 3, 5, 7, 10, 15, 20, 30, 45, 60, 90, 120, 240, 500, 1000, 3000]`
+- Optimized for typical LLM response times ranging from sub-second to several minutes
+- Enables percentile analysis for SLA monitoring
+
+**Use Cases**:
+- **SLA Monitoring**: Track P95/P99 response times against service level agreements
+- **Performance Regression Detection**: Identify when response times degrade
+- **Endpoint Performance Analysis**: Compare performance across different API endpoints
+- **Client-Side Latency Tracking**: Full end-to-end timing from client perspective
+
+---
+
+### 3. LLM Provider Request Duration
+
+**Metric Name**: `llm_request_duration_milliseconds`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Measures the duration of actual requests sent to LLM providers, excluding gateway processing overhead. This metric isolates provider performance from internal gateway operations, enabling precise provider SLA monitoring and performance comparison.
+
+**Bucket Configuration**: `[0.1, 1, 2, 5, 10, 30, 50, 75, 100, 150, 200, 350, 500, 1000, 2500, 5000, 10000, 50000, 100000, 300000, 500000, 10000000]`
+- High-resolution buckets for millisecond-precision analysis
+- Extended range to handle very long-running requests (up to ~2.7 hours)
+
+**Use Cases**:
+- **Provider Performance Comparison**: Benchmark response times across different LLM providers
+- **Model Performance Analysis**: Compare latency characteristics of different models
+- **Provider SLA Monitoring**: Track provider performance against contractual agreements
+- **Capacity Planning**: Understand provider response time distributions for scaling decisions
+
+---
+
+### 4. Portkey Processing Time (Excluding Streaming Latency)
+
+**Metric Name**: `portkey_processing_time_excluding_last_byte_ms`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Measures Portkey's internal processing time excluding the time spent waiting for the final byte of streamed responses from LLM providers. This metric isolates the gateway's computational overhead from provider streaming characteristics, enabling precise performance optimization of internal operations.
+
+**Key Insights**:
+- Excludes network latency and provider-side streaming delays
+- Includes authentication, request transformation, middleware execution, and initial response processing
+- Critical for identifying gateway performance bottlenecks vs. provider latency issues
+
+**Use Cases**:
+- **Gateway Performance Optimization**: Identify internal processing bottlenecks
+- **Middleware Performance Analysis**: Measure impact of authentication and transformation logic
+- **Scaling Decisions**: Understand processing capacity independent of provider performance
+- **Performance Baseline Establishment**: Set internal SLAs for gateway operations
+
+---
+
+### 5. LLM Last Byte Latency Analysis
+
+**Metric Name**: `llm_last_byte_diff_duration_milliseconds`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Captures the time difference between receiving the first response data and the final byte from LLM providers. This metric is essential for understanding streaming performance characteristics and time-to-first-token vs. total completion time patterns across different providers and models.
+
+**Streaming Analysis Value**:
+- **Time-to-First-Token**: Indirectly measurable by comparing with total request duration
+- **Streaming Efficiency**: Identifies providers with consistent vs. bursty streaming patterns
+- **Model Behavior Analysis**: Different models exhibit different streaming characteristics
+
+**Use Cases**:
+- **User Experience Optimization**: Understand perceived responsiveness for streaming applications
+- **Provider Streaming Comparison**: Compare streaming performance across providers
+- **Model Selection**: Choose models based on streaming vs. batch completion preferences
+- **Client Application Optimization**: Inform client-side timeout and buffering strategies
+
+---
+
+### 6. Total Portkey Request Duration
+
+**Metric Name**: `portkey_request_duration_milliseconds`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Comprehensive timing metric measuring the complete duration of Portkey request processing from initial request receipt to final response transmission. This provides the most complete view of gateway performance and serves as the authoritative metric for end-to-end processing analysis.
+
+**Scope Includes**:
+- Authentication and authorization processing
+- Request validation and transformation
+- Provider selection and routing logic
+- LLM provider communication (complete)
+- Response processing and transformation
+- Cache operations (read/write)
+- Post-processing hooks and analytics
+
+**Use Cases**:
+- **Comprehensive Performance Monitoring**: Single metric for overall gateway health
+- **Capacity Planning**: Understand total processing requirements for scaling
+- **Performance Baseline**: Primary metric for SLA establishment and monitoring
+- **Troubleshooting**: First metric to check during performance investigations
+
+---
+
+### 7. LLM Cost Accumulator
+
+**Metric Name**: `llm_cost_sum`  
+**Type**: Gauge  
+**Unit**: Currency Units (USD)
+
+**Technical Description**:
+Real-time accumulator tracking the total monetary cost of LLM API usage across all providers and models. This gauge provides immediate visibility into cost burn rates and enables fine-grained cost analysis across multiple dimensions including users, applications, models, and providers.
+
+**Cost Calculation Features**:
+- **Multi-Provider Support**: Normalized cost tracking across different provider pricing models
+- **Token-Based Accuracy**: Precise cost calculation based on actual token consumption
+- **Real-Time Updates**: Immediate cost visibility for budget monitoring
+- **Dimensional Analysis**: Cost breakdown by any label dimension
+
+**Business Value**:
+- **Budget Monitoring**: Real-time tracking against spending limits
+- **Cost Attribution**: Identify highest-cost users, applications, or use cases
+- **ROI Analysis**: Measure cost efficiency across different models and providers
+- **Chargeback/Showback**: Accurate cost allocation for internal billing
+
+**Key Monitoring Patterns**:
+```promql
+# Cost per model over time
+rate(llm_cost_sum[1h]) by (model, provider)
+
+# Highest cost users
+topk(10, sum(rate(llm_cost_sum[24h])) by (metadata_user_id))
+
+# Cost efficiency by provider
+rate(llm_cost_sum[1h]) / rate(request_count[1h]) by (provider)
+```
+
+---
+
+### 8. Authentication Performance Analysis
+
+**Metric Name**: `authentication_duration_milliseconds`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Measures the complete authentication and authorization pipeline duration, including API key validation, usage limit verification, and permission checks. This metric is critical for identifying authentication bottlenecks that could impact overall gateway performance and user experience.
+
+**Authentication Pipeline Components**:
+- **API Key Validation**: Cryptographic verification and database lookups
+- **Usage Limit Checks**: Real-time quota verification against configured limits
+- **Permission Validation**: Role-based access control (RBAC) enforcement
+- **Workspace/Organization Context**: Multi-tenant authorization processing
+
+**Performance Optimization Value**:
+- **Database Performance**: Identifies slow authentication database queries
+- **Caching Effectiveness**: Measures benefit of authentication result caching
+- **Security vs. Performance**: Balances security thoroughness with response time requirements
+
+**Use Cases**:
+- **Security Performance Monitoring**: Ensure security checks don't degrade user experience
+- **Database Optimization**: Identify authentication-related database performance issues
+- **Caching Strategy**: Optimize authentication result caching for better performance
+- **Bottleneck Identification**: Pinpoint authentication components causing delays
+
+---
+
+### 9. Rate Limiting Performance Metrics
+
+**Metric Name**: `api_key_rate_limit_check_duration_milliseconds`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Tracks the performance of hierarchical rate limiting checks across organization, workspace, and user levels. This metric monitors the computational overhead of the multi-level rate limiting system and identifies performance impacts of complex rate limiting policies.
+
+**Rate Limiting Hierarchy**:
+- **Organization Level**: Global rate limits across entire organization
+- **Workspace Level**: Team or project-specific rate limits
+- **User Level**: Individual user rate limits and quotas
+- **API Key Level**: Specific API key usage limits
+
+**Technical Implementation Insights**:
+- **Redis Performance**: Measures Redis-based rate limiting performance
+- **Multi-Level Complexity**: Tracks overhead of hierarchical limit checking
+- **Atomic Operations**: Performance of distributed rate limiting algorithms
+
+**Use Cases**:
+- **Rate Limiting Optimization**: Optimize rate limiting algorithms for better performance
+- **Redis Performance Monitoring**: Track distributed rate limiting infrastructure performance
+- **Policy Impact Analysis**: Measure performance impact of complex rate limiting policies
+- **Scaling Capacity Planning**: Understand rate limiting overhead for capacity planning
+
+---
+
+### 10. Pre-Request Middleware Pipeline Performance
+
+**Metric Name**: `pre_request_processing_duration_milliseconds`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Comprehensive timing of the pre-request processing pipeline that prepares requests for LLM provider execution. This metric captures the overhead of all preparatory operations required before sending requests to upstream providers.
+
+**Pipeline Components**:
+- **Request Context Creation**: Building execution context and metadata
+- **Prompt Template Processing**: Variable substitution and template rendering
+- **Guardrails Retrieval**: Fetching and applying content safety policies
+- **Provider Configuration**: Loading provider-specific settings and authentication
+- **Cache Key Generation**: Computing cache identifiers for request deduplication
+- **Request Transformation**: Converting requests to provider-specific formats
+
+**Optimization Opportunities**:
+- **Template Caching**: Optimize prompt template compilation and caching
+- **Guardrails Performance**: Minimize overhead of content safety checks
+- **Configuration Caching**: Reduce database queries for provider settings
+
+**Use Cases**:
+- **Middleware Performance Optimization**: Identify and optimize slow preprocessing steps
+- **Request Preparation Monitoring**: Track overhead of request enhancement features
+- **Feature Impact Analysis**: Measure performance cost of advanced features
+- **Pipeline Efficiency**: Optimize the request processing pipeline for better throughput
+
+---
+
+### 11. Post-Request Processing Pipeline Performance
+
+**Metric Name**: `post_request_processing_duration_milliseconds`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Measures the duration of post-request processing operations that occur after receiving responses from LLM providers but before returning results to clients. This metric captures the overhead of response enhancement, logging, analytics, and cleanup operations.
+
+**Post-Processing Components**:
+- **Response Transformation**: Converting provider responses to standardized formats
+- **Analytics Data Collection**: Gathering metrics and usage statistics
+- **Audit Logging**: Recording detailed request/response logs for compliance
+- **Cache Writing**: Storing responses for future cache hits
+- **Webhook Execution**: Triggering configured post-request webhooks
+- **Cost Calculation**: Computing and recording usage costs
+
+**Business Intelligence Value**:
+- **Analytics Overhead**: Measures cost of detailed usage analytics
+- **Compliance Impact**: Tracks overhead of audit logging requirements
+- **Cache Performance**: Monitors cache write operation performance
+
+**Use Cases**:
+- **Response Processing Optimization**: Minimize post-request processing overhead
+- **Analytics Performance**: Optimize data collection and storage operations
+- **Cache Write Performance**: Monitor and optimize cache storage operations
+- **Compliance Monitoring**: Track overhead of regulatory compliance features
+
+---
+
+### 12. Cache System Performance Analysis
+
+**Metric Name**: `llm_cache_processing_duration_milliseconds`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Dedicated metric for measuring cache system performance including cache key computation, cache lookups, cache hits/misses, and cache storage operations. This metric is essential for optimizing cache configuration and understanding cache system impact on overall performance.
+
+**Cache Operation Types**:
+- **Cache Key Generation**: Computing deterministic cache identifiers
+- **Cache Lookup Operations**: Reading from distributed cache storage
+- **Cache Hit Processing**: Deserializing and returning cached responses
+- **Cache Miss Handling**: Managing cache misses and preparing for cache writes
+- **Cache Storage Operations**: Writing new responses to cache storage
+
+**Cache Performance Insights**:
+- **Hit vs. Miss Performance**: Compare cache hit vs. miss processing times
+- **Storage Backend Performance**: Monitor Redis, Memcached, or other cache backend performance
+- **Serialization Overhead**: Track cost of response serialization/deserialization
+- **Network Latency**: Measure distributed cache network performance
+
+**Optimization Opportunities**:
+- **Cache Strategy Tuning**: Optimize cache TTL and eviction policies
+- **Serialization Optimization**: Improve response serialization performance
+- **Cache Backend Scaling**: Plan cache infrastructure scaling based on performance data
+- **Cache Hit Rate Optimization**: Improve cache key generation for better hit rates
+
+**Key Monitoring Patterns**:
+```promql
+# Cache hit vs miss performance comparison
+histogram_quantile(0.95, rate(llm_cache_processing_duration_milliseconds_bucket{cacheStatus="hit"}[5m])) vs
+histogram_quantile(0.95, rate(llm_cache_processing_duration_milliseconds_bucket{cacheStatus="miss"}[5m]))
+
+# Cache operation throughput
+rate(llm_cache_processing_duration_milliseconds_count[5m]) by (cacheStatus)
+```
+
+---
+
+### 13. gRPC Request Conversion Performance
+
+**Metric Name**: `grpc_req_conversion_duration_milliseconds`  
+**Type**: Histogram  
+**Unit**: Milliseconds
+
+**Technical Description**:
+Measures the performance of converting incoming gRPC requests to HTTP format before forwarding to the internal HTTP handler. This metric is critical for understanding the overhead introduced by the gRPC-to-HTTP adapter layer and identifying potential bottlenecks in the gRPC gateway implementation.
+
+**Bucket Configuration**: `[0.01, 0.1, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]`
+- Optimized for conversion operations typically ranging from sub-millisecond to several seconds
+- Higher resolution at lower latencies to detect micro-optimizations
+
+**Conversion Pipeline Components**:
+- **gRPC Metadata Extraction**: Converting gRPC metadata to HTTP headers
+- **Request Body Processing**: Transforming gRPC request body to HTTP format
+- **Protocol Translation**: Converting gRPC semantics to HTTP semantics
+- **Header Validation**: Filtering and validating headers for HTTP compatibility
+
+**Performance Optimization Value**:
+- **Adapter Efficiency**: Identify inefficiencies in the gRPC-to-HTTP conversion logic
+- **Serialization Performance**: Monitor overhead of request format transformation
+- **Memory Usage**: Track memory allocation patterns during conversion
+- **Protocol Overhead**: Measure the cost of protocol translation
+
+**Use Cases**:
+- **gRPC Gateway Optimization**: Optimize the conversion layer for better throughput
+- **Service Migration**: Compare gRPC vs. HTTP performance during service transitions
+- **Protocol Selection**: Inform decisions about when to use gRPC vs. HTTP
+- **Performance Regression Detection**: Alert on conversion performance degradation
+
+## Configuration
+
+### Dynamic Metadata Label System
+
+The Portkey Enterprise Gateway supports dynamic metadata labeling through request-specific metadata injection. This powerful feature enables fine-grained observability across custom dimensions specific to your organization's structure and use cases.
+
+**Environment Variable**: `PROMETHEUS_LABELS_METADATA_ALLOWED_KEYS`
+
+**Configuration Format**: Comma-separated list of metadata keys
+```bash
+PROMETHEUS_LABELS_METADATA_ALLOWED_KEYS=user_id,organization_id,workspace_id,application_name,cost_center,environment_type
+```
+
+**Technical Implementation**:
+- Metadata is passed via the `x-portkey-metadata` HTTP header as a JSON string
+- The JSON string is parsed and keys are validated against the allowlist for security
+- Invalid or missing metadata values are handled gracefully (empty object returned)
+- Labels are automatically prefixed with `metadata_` to avoid naming conflicts
+
+<Warning>
+**Security Considerations**:
+- **Cardinality Control**: Limit allowed keys to prevent metric explosion
+- **Sensitive Data Protection**: Avoid including PII or sensitive information in labels
+- **Performance Impact**: Each additional label increases metric storage requirements
+</Warning>
+
+**Example Metadata Usage**:
+
+Pass metadata via HTTP header:
+```http
+POST /v1/chat/completions
+Content-Type: application/json
+x-portkey-metadata: {"user_id":"user_12345","organization_id":"org_acme","workspace_id":"workspace_engineering","application_name":"customer_support_bot","cost_center":"engineering_ops"}
+
+{
+  "model": "gpt-4",
+  "messages": [...]
+}
+```
+
+Resulting in Prometheus labels:
+```
+metadata_user_id="user_12345"
+metadata_organization_id="org_acme"
+metadata_workspace_id="workspace_engineering"
+metadata_application_name="customer_support_bot"
+metadata_cost_center="engineering_ops"
+```
+
+## Comprehensive Monitoring Examples
+
+### Traffic Analysis & Capacity Planning
+
+**Request Volume Monitoring**:
+```promql
+# Requests per second by provider
+rate(request_count[5m]) by (provider)
+
+# Peak request volume (requests per hour)
+increase(request_count[1h]) by (provider, model)
+
+# Request volume growth trend (week-over-week)
+(
+  rate(request_count[7d]) -
+  rate(request_count[7d] offset 7d)
+) / rate(request_count[7d] offset 7d) * 100
+```
+
+**Traffic Distribution Analysis**:
+```promql
+# Top 10 models by request volume
+topk(10, rate(request_count[1h]) by (model, provider))
+
+# Request distribution by endpoint
+(
+  rate(request_count[5m]) by (endpoint) /
+  ignoring(endpoint) group_left sum(rate(request_count[5m]))
+) * 100
+```
+
+### Performance Monitoring & SLA Tracking
+
+**Latency Percentile Analysis**:
+```promql
+# P50, P95, P99 response times by provider
+histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m])) by (provider)
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) by (provider)
+histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) by (provider)
+
+# LLM provider latency comparison (P95)
+histogram_quantile(0.95, rate(llm_request_duration_milliseconds_bucket[5m])) by (provider, model)
+```
+
+**Performance Degradation Detection**:
+```promql
+# Identify performance regressions (current P95 vs. 24h ago)
+(
+  histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) -
+  histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m] offset 24h))
+) > 0.5 # Alert if P95 increased by >500ms
+```
+
+**Error Rate Monitoring**:
+```promql
+# Overall error rate (4xx + 5xx)
+sum(rate(request_count{code=~"4..|5.."}[5m])) /
+sum(rate(request_count[5m])) * 100
+
+# Error rate by provider and model
+sum(rate(request_count{code=~"4..|5.."}[5m])) by (provider, model) /
+sum(rate(request_count[5m])) by (provider, model) * 100
+
+# Critical error rate (5xx only)
+sum(rate(request_count{code=~"5.."}[5m])) /
+sum(rate(request_count[5m])) * 100
+```
+
+### Cache Performance Optimization
+
+**Cache Effectiveness Analysis**:
+```promql
+# Cache hit rate by provider and model
+sum(rate(request_count{cacheStatus="hit"}[5m])) by (provider, model) /
+sum(rate(request_count{cacheStatus=~"hit|miss"}[5m])) by (provider, model) * 100
+
+# Cache performance improvement (latency reduction)
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{cacheStatus="miss"}[5m])) -
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{cacheStatus="hit"}[5m]))
+
+# Cache system overhead
+histogram_quantile(0.95, rate(llm_cache_processing_duration_milliseconds_bucket[5m])) by (cacheStatus)
+```
+
+**Cache Cost-Benefit Analysis**:
+```promql
+# Cost savings from cache hits
+sum(rate(llm_cost_sum{cacheStatus="hit"}[1h])) * 0 # Cache hits cost $0
+vs
+sum(rate(llm_cost_sum{cacheStatus="miss"}[1h])) # Actual provider costs
+```
+
+### Cost Management & Business Intelligence
+
+**Real-Time Cost Monitoring**:
+```promql
+# Hourly cost burn rate
+rate(llm_cost_sum[1h])
+
+# Cost per request by model
+rate(llm_cost_sum[1h]) / rate(request_count[1h]) by (model, provider)
+
+# Top cost drivers (users/applications)
+topk(10, sum(rate(llm_cost_sum[24h])) by (metadata_user_id))
+topk(10, sum(rate(llm_cost_sum[24h])) by (metadata_application_name))
+```
+
+**Cost Trend Analysis**:
+```promql
+# Daily cost comparison (today vs. yesterday)
+increase(llm_cost_sum[1d]) - increase(llm_cost_sum[1d] offset 1d)
+
+# Monthly cost projection based on current week
+increase(llm_cost_sum[7d]) * 4.33 # Approximate monthly projection
+
+# Cost efficiency trend (cost per successful request)
+rate(llm_cost_sum[1d]) / rate(request_count{code="200"}[1d])
+```
+
+### Security & Authentication Performance
+
+**Authentication Performance Monitoring**:
+```promql
+# Authentication latency impact on total request time
+histogram_quantile(0.95, rate(authentication_duration_milliseconds_bucket[5m]))
+
+# Rate limiting overhead
+histogram_quantile(0.95, rate(api_key_rate_limit_check_duration_milliseconds_bucket[5m]))
+
+# Authentication vs. total request duration ratio
+histogram_quantile(0.95, rate(authentication_duration_milliseconds_bucket[5m])) /
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) * 1000
+```
+
+### Advanced Performance Analysis
+
+**Processing Pipeline Breakdown**:
+```promql
+# Pre-processing vs. LLM vs. post-processing time distribution
+avg_over_time(
+  histogram_quantile(0.95, rate(pre_request_processing_duration_milliseconds_bucket[5m]))[1h:]
+) label_replace(..., "stage", "pre_processing", "", "")
+
+union
+
+avg_over_time(
+  histogram_quantile(0.95, rate(llm_request_duration_milliseconds_bucket[5m]))[1h:]
+) label_replace(..., "stage", "llm_processing", "", "")
+
+union
+
+avg_over_time(
+  histogram_quantile(0.95, rate(post_request_processing_duration_milliseconds_bucket[5m]))[1h:]
+) label_replace(..., "stage", "post_processing", "", "")
+```
+
+**Streaming Performance Analysis**:
+```promql
+# Time-to-first-token approximation
+histogram_quantile(0.95, rate(llm_request_duration_milliseconds_bucket{stream="true"}[5m])) -
+histogram_quantile(0.95, rate(llm_last_byte_diff_duration_milliseconds_bucket{stream="true"}[5m]))
+
+# Streaming vs. non-streaming latency comparison
+histogram_quantile(0.95, rate(llm_request_duration_milliseconds_bucket{stream="true"}[5m])) by (provider)
+vs
+histogram_quantile(0.95, rate(llm_request_duration_milliseconds_bucket{stream="false"}[5m])) by (provider)
+```
+
+### gRPC Gateway Performance Analysis
+
+**gRPC Conversion Efficiency Monitoring**:
+```promql
+# gRPC conversion latency by service
+histogram_quantile(0.95, rate(grpc_req_conversion_duration_milliseconds_bucket[5m])) by (service, method)
+histogram_quantile(0.95, rate(grpc_res_conversion_duration_milliseconds_bucket[5m])) by (service, method)
+
+# Total round-trip conversion overhead
+(
+  histogram_quantile(0.95, rate(grpc_req_conversion_duration_milliseconds_bucket[5m])) +
+  histogram_quantile(0.95, rate(grpc_res_conversion_duration_milliseconds_bucket[5m]))
+) by (service)
+
+# gRPC vs HTTP performance comparison
+histogram_quantile(0.95, rate(grpc_req_conversion_duration_milliseconds_bucket[5m])) by (service)
+vs
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{method="POST"}[5m])) by (endpoint) * 1000
+```
+
+**gRPC Throughput Analysis**:
+```promql
+# gRPC conversion requests per second
+rate(grpc_req_conversion_duration_milliseconds_count[5m]) by (service, method)
+
+# Conversion efficiency trend (conversions per second vs latency)
+rate(grpc_req_conversion_duration_milliseconds_count[5m]) /
+histogram_quantile(0.95, rate(grpc_req_conversion_duration_milliseconds_bucket[5m]))
+
+# Service-specific conversion volume
+sum(rate(grpc_req_conversion_duration_milliseconds_count[5m])) by (service)
+```
+
+## Alerting Rules Examples
+
+### Critical Performance Alerts
+```promql
+# High error rate alert (>5% for 5 minutes)
+sum(rate(request_count{code=~"5.."}[5m])) / sum(rate(request_count[5m])) > 0.05
+
+# High latency alert (P95 > 10 seconds)
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 10
+
+# Authentication performance degradation
+histogram_quantile(0.95, rate(authentication_duration_milliseconds_bucket[5m])) > 1000
+```
+
+### Cost Management Alerts
+```promql
+# Hourly cost spike (>200% of 24h average)
+rate(llm_cost_sum[1h]) > 2 * avg_over_time(rate(llm_cost_sum[1h])[24h:])
+
+# Daily budget threshold (>80% of daily limit)
+increase(llm_cost_sum[1d]) > 0.8 * $DAILY_BUDGET_LIMIT
+```
+
+## Security Considerations
+
+<Warning>
+When deploying metrics collection in production:
+
+1. **Endpoint Security**: Consider securing the `/metrics` endpoint with authentication or network restrictions
+2. **Data Sensitivity**: Avoid including sensitive information in metadata labels
+3. **Cardinality Management**: Limit metadata keys to prevent metric explosion and storage issues
+4. **Network Security**: Ensure secure communication between Prometheus and the gateway
+5. **Access Control**: Implement appropriate access controls for monitoring dashboards
+</Warning>
+
+## Troubleshooting
+
+### Common Issues
+
+**High Cardinality Metrics**:
+- Symptom: Prometheus storage growth, query performance degradation
+- Solution: Review `PROMETHEUS_LABELS_METADATA_ALLOWED_KEYS` configuration and limit high-cardinality labels
+
+**Missing Metrics**:
+- Check that the `/metrics` endpoint is accessible
+- Verify Prometheus scraping configuration
+- Review gateway logs for metric collection errors
+
+**Performance Impact**:
+- Monitor the overhead of metrics collection on gateway performance
+- Consider adjusting scrape intervals for high-volume deployments
+
+## Related Documentation
+
+- [Analytics Dashboard](/product/observability/analytics) - SaaS monitoring and analytics
+- [Private Cloud Architecture](/product/enterprise-offering/private-cloud-deployments/architecture) - Deployment architecture overview
+- [Observability](/product/observability) - General observability features
