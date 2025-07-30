@@ -274,3 +274,194 @@ print(resp.output_text)
 </CodeGroup>
 
 To prevent the leakage of sensitive keys, the Responses API does not store the values of **any** string you provide in the `headers` object. These values will also not be visible in the Response object created. Additionally, because some remote MCP servers generate authenticated URLs, we also discard the _path_ portion of the `server_url` in our responses (i.e. `example.com/mcp` becomes `example.com`). Because of this, you must send the full path of the MCP `server_url` and any relevant `headers` in every Responses API creation request you make.
+
+
+
+
+---
+
+
+## Using Remote MCP with Anthropic
+
+Portkey now supports Remote MCP through Anthropic's Messages API format. This allows you to use MCP tools with models from **Anthropic, Amazon Bedrock, and Google Vertex** via the Portkey gateway.
+
+You can enable MCP tools by passing a `tools` array in your request, just like with OpenAI. Portkey handles the translation to the appropriate provider format.
+
+### Example MCP Request
+
+An Anthropic Messages API request with the DeepWiki MCP tool enabled.
+
+<CodeGroup>
+```bash cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: anthropic" \
+  -H "anthropic-beta: mcp-client-2025-04-04" \
+  -d '{
+    "model": "@your-provider-slug/model-name",
+    "max_tokens": 1000,
+    "messages": [{"role": "user", "content": "What tools do you have available?"}],
+    "mcp_servers": [
+      {
+        "type": "url",
+        "url": "https://example-server.modelcontextprotocol.io/sse",
+        "name": "example-mcp",
+        "authorization_token": "YOUR_TOKEN"
+      }
+    ]
+  }'
+```
+
+
+
+
+
+```python Anthropic Python SDK
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key="dummy", # We will use portkey's provider slug
+    base_url="https://api.portkey.ai/v1",
+    default_headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"}
+)
+
+response = client.beta.messages.create(
+    model="@your-provider-slug/your-model-name",
+    max_tokens=1000,
+    messages=[{
+        "role": "user",
+        "content": "What tools do you have available?"
+    }],
+    mcp_servers=[{
+        "type": "url",
+        "url": "https://mcp.example.com/sse",
+        "name": "example-mcp",
+        "authorization_token": "YOUR_TOKEN"
+    }],
+    betas=["mcp-client-2025-04-04"]
+)
+
+print(response.content)
+```
+
+```typescript Anthropic TS SDK
+import Anthropic from '@anthropic-ai/sdk';
+
+const anthropic = new Anthropic({
+  apiKey: 'ANTHROPIC_API_KEY', // We will use portkey's provider slug
+  baseURL: "https://api.portkey.ai/v1",
+  defaultHeaders: { "x-portkey-api-key": "YOUR_PORTKEY_API_KEY" }
+});
+
+const msg = await anthropic.messages.create({
+  model: "@your-provider-slug/your-model-name",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "What transport protocols are supported in the 2025-03-26 version of the MCP spec?" }],
+  tools: [
+    {
+      type: "mcp",
+      server_label: "deepwiki",
+      server_url: "https://mcp.deepwiki.com/mcp",
+      require_approval: "never",
+    },
+  ],
+});
+console.log(msg.content);
+```
+</CodeGroup>
+
+### MCP Server Authentication
+
+Authenticating with a private MCP server follows the same pattern. Simply include the `headers` object within the tool definition to pass credentials like an `Authorization` token.
+
+Here is how you would use the Stripe MCP tool with an Anthropic model.
+
+<CodeGroup>
+```bash cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: anthropic" \
+  -H "anthropic-beta: mcp-client-2025-04-04" \
+  -d '{
+    "model": "@your-provider-slug/model-name",
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Create a payment link for $20"
+      }
+    ],
+    "tools": [
+      {
+        "type": "mcp",
+        "server_label": "stripe",
+        "server_url": "https://mcp.stripe.com",
+        "headers": {
+          "Authorization": "Bearer $STRIPE_API_KEY"
+        }
+      }
+    ]
+  }'
+```
+
+```python Anthropic Python SDK
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key="ANTHROPIC_API_KEY", # Can be a dummy key
+    default_headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"},
+    base_url="https://api.portkey.ai/v1"
+)
+
+message = await anthropic.beta.messages.create({
+  model: "claude-sonnet-4-20250514",
+  max_tokens: 1000,
+  messages: [
+    {
+      role: "user",
+      content: "What tools do you have available?",
+    },
+  ],
+  mcp_servers: [
+    {
+      type: "url",
+      url: "https://example-server.modelcontextprotocol.io/sse",
+      name: "example-mcp",
+      authorization_token: "YOUR_TOKEN",
+    },
+  ],
+  betas: ["mcp-client-2025-04-04"],
+});
+
+print(message.content)
+```
+
+```typescript Anthropic TS SDK
+import Anthropic from '@anthropic-ai/sdk';
+
+const anthropic = new Anthropic({
+  apiKey: 'ANTHROPIC_API_KEY', // Can be a dummy key
+  baseURL: "https://api.portkey.ai/v1",
+  defaultHeaders: { "x-portkey-api-key": "YOUR_PORTKEY_API_KEY" }
+});
+
+const msg = await anthropic.messages.create({
+  model: "claude-3-sonnet-20240229",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Create a payment link for $20" }],
+  tools: [
+    {
+      type: "mcp",
+      server_label: "stripe",
+      server_url: "https://mcp.stripe.com",
+      headers: {
+        Authorization: "Bearer $STRIPE_API_KEY"
+      }
+    }
+  ]
+});
+console.log(msg.content);
+```
+</CodeGroup>
