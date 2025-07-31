@@ -166,45 +166,28 @@ main();
 
 ---
 
-## Using Anthropic's SDKs with Portkey
+## Using /messages route to call Anthropic's API
+Portkey supports Anthropic's `/messages` endpoint, allowing you to use either Anthropic's native SDK or Portkey's SDK with full gateway features like caching, observability, and virtual keys.
 
-Portkey now supports using Anthropic models directly on the `/messages` route, making it easy to leverage the latest Anthropic SDKs and API patterns with Portkey’s gateway features (like caching, observability, and virtual keys).
 
-You can use this with cURL, the official Anthropic Python SDK, and the Anthropic TypeScript SDK by simply pointing your requests to Portkey and adding the required headers.
+#### 1. Method 1: Using Anthropic's Native SDK
+
+Use Anthropic's official Python and TypeScript SDKs while routing through Portkey's gateway. Simply point your requests to Portkey's base URL and add the required headers.
 
 
 <Card href="https://docs.anthropic.com/en/api/reference" title="Anthropic's SDK Docs">
-
 </Card>
 
 
 <CodeGroup>
 
 
-```sh cURL
-curl --location 'https://api.portkey.ai/v1/messages' \
-  --header 'Authorization: dummy' \
-  --header 'Content-Type: application/json' \
-  --header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
-  --data '{
-    "model": "@your-provider-slug/your-model-name",
-    "max_tokens": 1024,
-    "stream": true,
-    "messages": [
-      {
-        "role": "user",
-        "content": "What is the weather like in Chennai?"
-      }
-    ]
-  }'
-```
 
 ```python Anthropic Python SDK
 import anthropic
 
 client = anthropic.Anthropic(
-    # defaults to os.environ.get("ANTHROPIC_API_KEY")
-    api_key="my_api_key",
+    api_key="dummy", # we will use portkey's provider slug
     default_headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"},
     base_url="https://api.portkey.ai/v1"
 )
@@ -222,7 +205,7 @@ print(message.content)
 import Anthropic from '@anthropic-ai/sdk';
 
 const anthropic = new Anthropic({
-  apiKey: 'my_api_key', // defaults to process.env["ANTHROPIC_API_KEY"]
+  apiKey: 'dummy', // we will use portkey's provider slug
   baseURL: "https://api.portkey.ai/v1",
   defaultHeaders: { "x-portkey-api-key": "YOUR_PORTKEY_API_KEY" }
 });
@@ -236,6 +219,54 @@ console.log(msg);
 ```
 
 </CodeGroup>
+
+
+
+
+#### Method 2: Using Portkey's SDK
+Access the `/messages` endpoint directly through Portkey's SDK for a unified interface across all providers.
+
+
+<CodeGroup>
+
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/messages' \
+--header 'x-portkey-provider: anthropic' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--data-raw '{
+    "model": "@your-provider-slug/your-model-name",
+    "max_tokens": 1024,
+    "stream": true,
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the weather like in Chennai?"
+      }
+    ]
+  }'
+```
+
+
+```py Python SDK
+
+Coming soon!
+
+```
+
+
+
+```js Node SDK
+
+Coming soon!!
+
+```
+
+</CodeGroup>
+
+
+
+
 
 
 <Note>  
@@ -1301,371 +1332,3 @@ You'll find more information in the relevant sections:
 2. [Add gateway configs to your Anthropic requests](/product/ai-gateway/configs)
 3. [Tracing Anthropic requests](/product/observability/traces)
 4. [Setup a fallback from OpenAI to Anthropic's Claude APIs](/product/ai-gateway/fallbacks)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
----
-title: "Remote MCP"
-description: Portkey's AI gateway has MCP server support that many foundational model providers offer.
----
-
-[Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) is an open protocol that standardizes how applications provide tools and context to LLMs. The MCP tool in the Responses API allows developers to give the model access to tools hosted on **Remote MCP servers**. These are MCP servers maintained by developers and organizations across the internet that expose these tools to MCP clients, like the Portkey Gateway.
-
-Portkey supports using a remote MCP server with both OpenAI-compatible and Anthropic-compatible models.
-
-## Using Remote MCP with OpenAI
-
-Calling a remote MCP server with OpenAI's API format is straightforward. For example, here's how you can use the [DeepWiki](https://deepwiki.com/) MCP server to ask questions about nearly any public GitHub repository.
-
-### Example MCP Request
-
-A Chat Completions request to an OpenAI model with MCP tools enabled.
-
-<CodeGroup>
-```bash cURL
-curl https://api.portkey.ai/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -d '{
-    "model": "gpt-4-turbo",
-    "messages": [
-        {
-            "role": "user",
-            "content": "What transport protocols are supported in the 2025-03-26 version of the MCP spec?"
-        }
-    ],
-    "tools": [
-      {
-        "type": "mcp",
-        "server_label": "deepwiki",
-        "server_url": "https://mcp.deepwiki.com/mcp",
-        "require_approval": "never"
-      }
-    ]
-  }'
-```
-
-```javascript OpenAI Node SDK
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: "PORTKEY_API_KEY",
-  baseURL: "https://api.portkey.ai/v1"
-});
-
-const resp = await client.chat.completions.create({
-  model: "gpt-4-turbo",
-  messages: [
-    {
-      role: "user",
-      content: "What transport protocols are supported in the 2025-03-26 version of the MCP spec?",
-    },
-  ],
-  tools: [
-    {
-      type: "mcp",
-      server_label: "deepwiki",
-      server_url: "https://mcp.deepwiki.com/mcp",
-      require_approval: "never",
-    },
-  ],
-});
-
-console.log(resp.choices[0].message);
-```
-
-```python OpenAI Python SDK
-from openai import OpenAI
-
-client = OpenAI(
-  api_key="PORTKEY_API_KEY",
-  base_url="https://api.portkey.ai/v1",
-)
-
-resp = client.chat.completions.create(
-  model="gpt-4-turbo",
-  messages=[
-    {
-      "role": "user",
-      "content": "What transport protocols are supported in the 2025-03-26 version of the MCP spec?",
-    },
-  ],
-  tools=[
-    {
-      "type": "mcp",
-      "server_label": "deepwiki",
-      "server_url": "https://mcp.deepwiki.com/mcp",
-      "require_approval": "never",
-    },
-  ],
-)
-
-print(resp.choices[0].message)
-```
-</CodeGroup>
-
-
-<Frame caption="Example Log for the request on Portkey">
-  <img src="/images/product/ai-gateway/mcp-remote-logs-image.png" />
-</Frame>
-
-
-### MCP Server Authentication
-
-Unlike the DeepWiki MCP server, most other MCP servers require authentication. The `tools` parameter gives you the ability to flexibly specify headers that should be included in any request made to a remote MCP server.
-
-<CodeGroup>
-```bash cURL
-curl https://api.portkey.ai/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -d '{
-    "model": "gpt-4-turbo",
-    "messages": [
-        {
-            "role": "user",
-            "content": "Create a payment link for $20"
-        }
-    ],
-    "tools": [
-      {
-        "type": "mcp",
-        "server_label": "stripe",
-        "server_url": "https://mcp.stripe.com",
-        "headers": {
-          "Authorization": "Bearer $STRIPE_API_KEY"
-        }
-      }
-    ]
-  }'
-```
-
-```javascript OpenAI Node SDK
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: "PORTKEY_API_KEY",
-  baseURL: "https://api.portkey.ai/v1"
-});
-
-const resp = await client.chat.completions.create({
-  model: "gpt-4-turbo",
-  messages: [
-    {
-      "role": "user",
-      "content": "Create a payment link for $20",
-    },
-  ],
-  tools: [
-    {
-      type: "mcp",
-      server_label: "stripe",
-      server_url: "https://mcp.stripe.com",
-      headers: {
-        Authorization: "Bearer $STRIPE_API_KEY"
-      }
-    }
-  ]
-});
-
-console.log(resp.choices[0].message);
-```
-
-```python OpenAI Python SDK
-from openai import OpenAI
-
-client = OpenAI(
-  api_key="PORTKEY_API_KEY",
-  base_url="https://api.portkey.ai/v1"
-)
-
-resp = client.chat.completions.create(
-  model="gpt-4-turbo",
-  messages=[
-    {
-      "role": "user",
-      "content": "Create a payment link for $20",
-    },
-  ],
-  tools=[
-    {
-      "type": "mcp",
-      "server_label": "stripe",
-      "server_url": "https://mcp.stripe.com",
-      "headers": {
-        "Authorization": "Bearer $STRIPE_API_KEY"
-      }
-    }
-  ]
-)
-
-print(resp.choices[0].message)
-```
-</CodeGroup>
-
-To prevent leakage of sensitive keys, Portkey does not store the values of **any** string you provide in the `headers` object. These values will also not be visible in the Response object created. 
-
----
-
-## Using Remote MCP with Anthropic, Bedrock & Vertex
-
-Portkey now supports Remote MCP through Anthropic's Messages API format, allowing you to connect to MCP servers with models from **Anthropic, Amazon Bedrock, and Google Vertex**.
-
-This integration uses Anthropic's native MCP connector feature. To enable it, you must include the `mcp_servers` parameter in your request body and the `"anthropic-beta": "mcp-client-2025-04-04"` header.
-
-### Example MCP Request
-
-Here’s how to connect to a remote MCP server using the Messages API through Portkey.
-
-<Info>
-When using SDKs, the `anthropic-beta` header is passed via the `betas=["mcp-client-2025-04-04"]` parameter in the `create` method.
-</Info>
-
-<CodeGroup>
-```bash cURL
-# Use x-portkey-provider to specify anthropic, bedrock, or vertex
-curl https://api.portkey.ai/v1/messages \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: anthropic" \
-  -H "anthropic-beta: mcp-client-2025-04-04" \
-  -d '{
-    "model": "claude-3-sonnet-20240229",
-    "max_tokens": 1000,
-    "messages": [{"role": "user", "content": "What tools do you have available?"}],
-    "mcp_servers": [
-      {
-        "type": "url",
-        "url": "https://mcp.example.com/sse",
-        "name": "example-mcp",
-        "authorization_token": "YOUR_TOKEN"
-      }
-    ]
-  }'
-```
-
-```python Anthropic Python SDK
-import anthropic
-
-# Use Portkey to connect to Anthropic, Bedrock, or Vertex
-client = anthropic.Anthropic(
-    api_key="dummy", 
-    base_url="https://api.portkey.ai/v1",
-    default_headers={
-      "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
-      # Set the target provider
-      "x-portkey-provider": "anthropic" 
-    }
-)
-
-response = client.beta.messages.create(
-    model="claude-3-sonnet-20240229",
-    max_tokens=1000,
-    messages=[{
-        "role": "user",
-        "content": "What tools do you have available?"
-    }],
-    mcp_servers=[{
-        "type": "url",
-        "url": "https://mcp.example.com/sse",
-        "name": "example-mcp",
-        "authorization_token": "YOUR_TOKEN"
-    }],
-    betas=["mcp-client-2025-04-04"]
-)
-
-print(response.content)
-```
-
-```typescript Anthropic TS SDK
-import Anthropic from '@anthropic-ai/sdk';
-
-// Use Portkey to connect to Anthropic, Bedrock, or Vertex
-const anthropic = new Anthropic({
-  apiKey: 'dummy',
-  baseURL: "https://api.portkey.ai/v1",
-  defaultHeaders: { 
-    "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
-    // Set the target provider
-    "x-portkey-provider": "anthropic"
-  }
-});
-
-const msg = await anthropic.beta.messages.create({
-  model: "claude-3-sonnet-20240229",
-  max_tokens: 1024,
-  messages: [{ role: "user", content: "What tools do you have available?" }],
-  mcp_servers: [
-    {
-      "type": "url",
-      "url": "https://mcp.example.com/sse",
-      "name": "example-mcp",
-      "authorization_token": "YOUR_TOKEN"
-    },
-  ],
-  betas:["mcp-client-2025-04-04"]
-});
-console.log(msg.content);
-```
-</CodeGroup>
-
-### MCP Server Configuration
-
-Each object in the `mcp_servers` array supports the following fields:
-
-| Property | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `type` | string | Yes | Currently, only `"url"` is supported. |
-| `url` | string | Yes | The URL of the MCP server. Must start with `https://`. |
-| `name`| string | Yes | A unique identifier for this MCP server. It will be used in `mcp_tool_use` blocks to identify the server. |
-| `authorization_token` | string | No | OAuth authorization token if required by the MCP server. |
-| `tool_configuration` | object | No | Configure tool usage from this server. |
-| `tool_configuration.enabled` | boolean | No | Whether to enable tools from this server (default: `true`). |
-| `tool_configuration.allowed_tools` | array | No | List of tool names to restrict usage to. By default, all tools are allowed. |
-
-### Response Content Types
-
-When the model uses an MCP tool, the response from the Messages API will include new content block types.
-
-#### MCP Tool Use Block
-This block indicates the model is calling a tool from a connected MCP server.
-
-```json
-{
-  "type": "mcp_tool_use",
-  "id": "mcptoolu_014Q35RayjACSWkSj4X2yov1",
-  "name": "echo",
-  "server_name": "example-mcp",
-  "input": { "param1": "value1", "param2": "value2" }
-}
-```
-
-#### MCP Tool Result Block
-This block contains the result from the tool's execution.
-
-```json
-{
-  "type": "mcp_tool_result",
-  "tool_use_id": "mcptoolu_014Q35RayjACSWkSj4X2yov1",
-  "is_error": false,
-  "content": [
-    {
-      "type": "text",
-      "text": "Hello"
-    }
-  ]
-}
-```
