@@ -1,0 +1,124 @@
+---
+title: "Connect Bedrock with Amazon Assumed Role"
+description: "How to create an integrate Bedrock using Amazon Assumed Role Authentication on Portkey"
+---
+
+
+<Card title="Set Up Bedrock Authentication for Enterprise" href="https://github.com/Portkey-AI/helm/blob/main/charts/portkey-gateway/docs/Bedrock.md">
+  On the Enterprise plan and need to connect to Bedrock using an AWS assumed role? Check out the documentation here.
+</Card>
+
+
+## Select AWS Assumed Role Authentication
+
+Create a new integration on Portkey, select **Bedrock** as the provider and **AWS Assumed Role** as the authentication method.
+
+<Frame>
+  <img src="/images/product/ai-gateway/Bedrock-Assumed-Role.png"/>
+</Frame>
+
+
+## Create an AWS Role for Portkey to Assume
+This role you create will be used by Porktey to execute InvokeModel commands on Bedrock models in your AWS account. The setup process will establish a minimal-permission ("least privilege") role and set it up to allow Porktey to assume this role.
+
+### Create a permission policy in your AWS account using the following JSON
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockConsole",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+        ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+<Frame>
+  <img src="/images/product/ai-gateway/create-policy.png"/>
+</Frame>
+
+### Create a new IAM role
+Choose *AWS account* as the trusted entity type. If you set an external ID be sure to copy it, we will need it later.
+
+<Frame>
+  <img src="/images/product/ai-gateway/create-role.png"/>
+</Frame>
+
+### Add the above policy to the role
+Search for the policy you created above and add it to the role.
+
+<Frame>
+  <img src="/images/product/ai-gateway/add-policy.png"/>
+</Frame>
+
+### Configure Trust Relationship for the role
+Once the role is created, open the role and navigate to the *Trust relationships* tab and click *Edit trust policy*.
+This is where you will add the Portkey AWS account as a trusted entity.
+
+```sh Portkey Account ARN
+arn:aws:iam::299329113195:role/portkey-app
+```
+
+<Note>
+The above ARN only works for our [hosted app](https://app.portkey.ai/).<br />
+
+To enable **Assumed Role for AWS in your Portkey Enterprise deployment**, you can refer to [this guide](https://github.com/Portkey-AI/helm/blob/main/charts/portkey-gateway/docs/Bedrock.md). If you face any issue, please reach out to us at support@portkey.ai.
+</Note>
+
+Paste the following JSON into the trust policy editor and click *Update Trust Policy*.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::299329113195:role/portkey-app"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {}
+}
+]
+}
+```
+
+If you set an external ID, add it to the condition as shown below.
+
+```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "<Portkey Account ARN>"
+        },
+        "Action": "sts:AssumeRole",
+        "Condition": {
+          "StringEquals": {
+            "sts:ExternalId": "<your external ID>"
+          }
+        }
+      }
+    ]
+}
+```
+
+
+
+## Configure the integration with the role ARN
+Once the role is created, copy the role ARN and paste it into the Bedrock integrations modal in Portkey along with the external ID if you set one and the AWS region you are using.
+
+<Frame>
+  <img src="/images/product/ai-gateway/add-role-arn.png"/>
+</Frame>
+
+ You're all set! You can now use the new provider to invoke Bedrock models.
