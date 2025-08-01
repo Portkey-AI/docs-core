@@ -3,20 +3,32 @@ title: Batches
 description: Perform batch inference with Bedrock
 ---
 
-To perform batch inference with Bedrock, you need to upload files to S3.
-This process can be cumbersome and duplicative in nature because you need to transform your data into model specific formats.
-
-With Portkey, you can upload the file in [OpenAI format](https://platform.openai.com/docs/guides/batch#1-preparing-your-batch-file) and portkey will handle transforming the file into the format required by Bedrock on the fly!
+Portkey lets you run Bedrock batch jobs without any manual S3 wrangling—simply upload an [OpenAI-format .jsonl file](https://platform.openai.com/docs/guides/batch#1-preparing-your-batch-file) and Portkey converts it on-the-fly to the Bedrock format.
 
 This is the most efficient way to
 - Test your data with different foundation models
 - Perform A/B testing with different foundation models
 - Perform batch inference with different foundation models
 
-## Create Batch Job
-<Tabs>
- <Tab title="Python">
-```python
+<Info>
+Portkey supports **two modes** on Bedrock:
+* **[Provider Batch API](#using-bedrock-batch-api-through-portkey)** (cheapest, completion_window: `24h`, `48h`, etc.)  
+* **[Portkey Batch API  ⭐️](/product/ai-gateway/batches#portkey-batch-api-mode)** (fast, provider-agnostic, completion_window: `immediate`)
+</Info>
+
+## Before You Start
+
+1. **Portkey API key** (`$PORTKEY_API_KEY`).
+2. **Bedrock credentials** — either a Portkey *Virtual Key* or explicit AWS keys (`aws_access_key_id`, `aws_secret_access_key`, `aws_region`, optional `aws_session_token`).
+3. **S3 bucket** with read/write access for inputs and outputs.
+4. **IAM roles** (see *Permissions & IAM* below).
+5. Optional: a **Portkey File** (`input_file_id`) — **required only when you set `completion_window:"immediate"`** (Portkey-Batch mode).
+
+## Using Bedrock Batch API through Portkey
+
+### Create Batch Job
+<CodeGroup>
+```python Python
 from portkey_ai import Portkey
 
 # Initialize the Portkey client
@@ -49,9 +61,8 @@ start_batch_response = portkey.batches.create(
 
 print(start_batch_response)
 ```
-  </Tab>
-    <Tab title="NodeJS">
-```js
+
+```javascript Typescript
 import { Portkey } from 'portkey-ai';
 
 // Initialize the Portkey client
@@ -89,9 +100,8 @@ const startBatch = async () => {
 await startBatch();
 
 ```
-  </Tab>
-<Tab title="REST">
-```sh
+
+```bash curl
 curl --location 'https://api.portkey.ai/v1/batches' \
 --header 'x-portkey-api-key: <portkey_api_key>' \
 --header 'x-portkey-aws-access-key-id: {YOUR_AWS_ACCESS_KEY_ID}' \
@@ -111,9 +121,8 @@ curl --location 'https://api.portkey.ai/v1/batches' \
     "job_name": "anthropi-requests" // optional
 }'
 ```
-</Tab>
-  <Tab title="OpenAI NodeJS">
-```js
+
+```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
 import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
@@ -154,9 +163,8 @@ const startBatch = async () => {
 
 await startBatch();
 ```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
+
+```python OpenAI Python
 from openai import OpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
@@ -192,14 +200,11 @@ start_batch_response = openai.batches.create(
 )
 print(start_batch_response)
 ```
-  </Tab>
- 
-</Tabs>
+</CodeGroup>
 
-## List Batch Jobs
-<Tabs>
- <Tab title="Python">
-```python
+### List Batch Jobs
+<CodeGroup>
+```python Python
 from portkey_ai import Portkey
 
 # Initialize the Portkey client
@@ -215,9 +220,8 @@ batches = portkey.batches.list()
 
 print(batches)
 ```
-  </Tab>
-    <Tab title="NodeJS">
-```js
+
+```javascript Typescript
 import { Portkey } from 'portkey-ai';
 
 // Initialize the Portkey client
@@ -238,16 +242,14 @@ const listBatches = async () => {
 await listBatches();
 
 ```
-  </Tab>
-<Tab title="REST">
-```sh
+
+```bash curl
 curl --location 'https://api.portkey.ai/v1/batches' \
 --header 'x-portkey-api-key: <portkey_api_key>' \
 --header 'x-portkey-provider: @provider' \
 ```
-</Tab>
-  <Tab title="OpenAI NodeJS">
-```js
+
+```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
 import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
@@ -271,9 +273,8 @@ const listBatches = async () => {
 
 await listBatches();
 ```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
+
+```python OpenAI Python
 from openai import OpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
@@ -293,15 +294,11 @@ batches = openai.batches.list()
 
 print(batches)
 ```
-  </Tab>
- 
-</Tabs>
+</CodeGroup>
 
-
-## Get Batch Job Details
-<Tabs>
- <Tab title="Python">
-```python
+### Get Batch Job Details
+<CodeGroup>
+```python Python
 from portkey_ai import Portkey
 
 # Initialize the Portkey client
@@ -314,9 +311,8 @@ batch = portkey.batches.retrieve(batch_id="batch_id")
 
 print(batch)
 ```
-  </Tab>
-    <Tab title="NodeJS">
-```js
+
+```javascript Typescript
 import { Portkey } from 'portkey-ai';
 
 // Initialize the Portkey client
@@ -334,16 +330,14 @@ const getBatch = async () => {
 await getBatch();
 
 ```
-  </Tab>
-<Tab title="REST">
-```sh
+
+```bash curl
 curl --location 'https://api.portkey.ai/v1/batches/<batch_id>' \
 --header 'x-portkey-api-key: <portkey_api_key>' \
 --header 'x-portkey-provider: @provider' \
 ```
-</Tab>
-  <Tab title="OpenAI NodeJS">
-```js
+
+```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
 import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
@@ -365,9 +359,8 @@ const getBatch = async () => {
 
 await getBatch();
 ```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
+
+```python OpenAI Python
 from openai import OpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
@@ -385,27 +378,20 @@ batch = openai.batches.retrieve(batch_id="batch_id")
 
 print(batch)
 ```
-  </Tab>
- 
-</Tabs>
+</CodeGroup>
 
-
-## Get Batch Output
-<Tabs>
-<Tab title="REST">
-```sh
+### Get Batch Output
+<CodeGroup>
+```bash curl
 curl --location 'https://api.portkey.ai/v1/batches/<batch_id>/output' \
 --header 'x-portkey-api-key: <portkey_api_key>' \
 --header 'x-portkey-provider: @provider' \
 ```
-</Tab>
-</Tabs>
+</CodeGroup>
 
-
-## List Batch Jobs
-<Tabs>
- <Tab title="Python">
-```python
+### List Batch Jobs
+<CodeGroup>
+```python Python
 from portkey_ai import Portkey
 
 # Initialize the Portkey client
@@ -418,9 +404,8 @@ batches = portkey.batches.list()
 
 print(batches)
 ```
-  </Tab>
-    <Tab title="NodeJS">
-```js
+
+```javascript Typescript
 import { Portkey } from 'portkey-ai';
 
 // Initialize the Portkey client
@@ -438,16 +423,14 @@ const listBatchingJobs = async () => {
 await listBatchingJobs();
 
 ```
-  </Tab>
-<Tab title="REST">
-```sh
+
+```bash curl
 curl --location 'https://api.portkey.ai/v1/batches' \
 --header 'x-portkey-api-key: <portkey_api_key>' \
 --header 'x-portkey-provider: @provider' \
 ```
-</Tab>
-  <Tab title="OpenAI NodeJS">
-```js
+
+```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
 import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
@@ -469,9 +452,8 @@ const listBatchingJobs = async () => {
 
 await listBatchingJobs();
 ```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
+
+```python OpenAI Python
 from openai import OpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
@@ -489,14 +471,11 @@ batching_jobs = openai.batches.list()
 
 print(batching_jobs)
 ```
-  </Tab>
- 
-</Tabs>
+</CodeGroup>
 
-## Cancel Batch Job
-<Tabs>
- <Tab title="Python">
-```python
+### Cancel Batch Job
+<CodeGroup>
+```python Python
 from portkey_ai import Portkey
 
 # Initialize the Portkey client
@@ -509,9 +488,8 @@ cancel_batch_response = portkey.batches.cancel(batch_id="batch_id")
 
 print(cancel_batch_response)
 ```
-  </Tab>
-    <Tab title="NodeJS">
-```js
+
+```javascript Typescript
 import { Portkey } from 'portkey-ai';
 
 // Initialize the Portkey client
@@ -529,16 +507,14 @@ const cancelBatch = async () => {
 await cancelBatch();
 
 ```
-  </Tab>
-<Tab title="REST">
-```sh
+
+```bash curl
 curl --request POST --location 'https://api.portkey.ai/v1/batches/<batch_id>/cancel' \
 --header 'x-portkey-api-key: <portkey_api_key>' \
 --header 'x-portkey-provider: @provider' \
 ```
-</Tab>
-  <Tab title="OpenAI NodeJS">
-```js
+
+```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
 import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
@@ -560,9 +536,8 @@ const cancelBatch = async () => {
 
 await cancelBatch();
 ```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
+
+```python OpenAI Python
 from openai import OpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
@@ -580,10 +555,7 @@ cancel_batch_response = openai.batches.cancel(batch_id="batch_id")
 
 print(cancel_batch_response)
 ```
-  </Tab>
- 
-</Tabs>
-
+</CodeGroup>
 
 ## Information about Permissions and IAM Roles
 
@@ -694,3 +666,30 @@ print(cancel_batch_response)
   }
   ```
 </Accordion>
+
+## Defaults & Limits (Bedrock Native)
+
+| Property            | Default | Notes                        |
+| ------------------- | ------- | ---------------------------- |
+| `completion_window` | `24h`   | Fixed by Bedrock.            |
+| Job quota           | 50k/day | Subject to your AWS account. |
+| Max input file size | 10 GB   | Across all `.jsonl` objects. |
+
+[Portkey-Batch mode](/product/ai-gateway/batches) inherits the Gateway defaults (**25 req / 5 s**) and retries (**3×**) per request.
+
+---
+
+## Glossary
+
+| Term                               | Meaning                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| **Batch Job**                      | Collection of asynchronous completions.                                        |
+| **Portkey File** (`input_file_id`) | File uploaded to Portkey and re-uploaded to the provider for batch processing. |
+| **Virtual Key**                    | Bedrock credential stored in Portkey; referenced by ID, not secret.            |
+| **Completion Window**              | `immediate` → Portkey-Batch; `24h` → Bedrock native.                           |
+
+---
+
+## See Also
+
+* [Unified Batch Guide](/product/ai-gateway/batches)
