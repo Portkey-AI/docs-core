@@ -3,53 +3,184 @@ title: "Files"
 description: "Upload files to Portkey and reuse the content in your requests"
 ---
 
+
 Portkey supports managing files in two ways:
 
-1. Uploading and managing files to any provider using the unified signature
-2. [Enterprise Only] Uploading files to Portkey and using them for batching/fine-tuning requests with any provider
+1. **Provider Files**: Uploading and managing files directly to any provider using the unified signature
+2. **Portkey Files**: Uploading files to Portkey and using them for batching/fine-tuning requests with any provider
 
-## 1. Uploading and managing files to any provider using the unified signature
+---
 
-Please refer to the [Provider Specific Files](/integrations/llms/openai/files) documentation for more details.
+## 1. Provider Files
 
-1. [OpenAI](/integrations/llms/openai/files)
-2. [Bedrock](/integrations/llms/bedrock/files)
-3. [Azure OpenAI](/integrations/llms/azure-openai/files)
-4. [Fireworks](/integrations/llms/fireworks/files)
-5. [Vertex](/integrations/llms/vertex-ai/files)
+Upload and manage files directly to providers (OpenAI, Bedrock, etc.) using Portkey's unified API signature. This approach is useful when you need provider-specific file features or want to manage files directly on the provider's platform.
 
-## 2. [Enterprise Only] Uploading files to Portkey and using them for batching/fine-tuning requests with any provider
+### Supported Providers
 
-With Portkey, you can upload files to Portkey and reuse them for [batching inference](/product/ai-gateway/batches) with any provider and [fine-tuning](/product/ai-gateway/fine-tuning) with supported providers.
+- [OpenAI](/integrations/llms/openai/files)
+- [Bedrock](/integrations/llms/bedrock/files)
+- [Azure OpenAI](/integrations/llms/azure-openai/files)
+- [Fireworks](/integrations/llms/fireworks/files)
+- [Vertex AI](/integrations/llms/vertex-ai/files)
 
-In this way, you can test your data with different foundation models, perform A/B testing with different foundation models, and perform batch inference with different foundation models.
+### Quick Example
+
+```bash
+curl -X POST https://api.portkey.ai/v1/files \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -F "purpose=fine-tune" \
+  -F "file=@training_data.jsonl"
+```
+
+---
+
+## 2. Portkey Files
+
+Upload files to Portkey and reuse them for [batching inference](/product/ai-gateway/batches) with any provider and [fine-tuning](/product/ai-gateway/fine-tuning) with supported providers. This approach is ideal for:
+
+- Testing your data with different foundation models
+- Performing A/B testing across multiple providers
+- Batch inference with provider-agnostic file management
+- Reusing the same file across multiple batch jobs
+
+### File Requirements
+
+- **Format**: JSONL files where each line contains a single request payload
 
 ### Uploading Files
 
-```sh
-  curl --location --request POST 'https://api.portkey.ai/v1/files' \
---header 'x-portkey-api-key: <portkey_api_key>' \
---form 'purpose="<purpose>"' \
---form 'file=@"<file_path>"'
+<CodeGroup>
+
+```bash curl
+curl -X POST https://api.portkey.ai/v1/files \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -F "purpose=batch" \
+  -F "file=@batch_data.jsonl"
 ```
+
+```javascript Typescript
+import Portkey from 'portkey-ai';
+
+const client = new Portkey({
+  apiKey: 'PORTKEY_API_KEY'
+});
+
+const file = await client.files.create({
+  purpose: 'batch',
+  file: fs.createReadStream('batch_data.jsonl')
+});
+
+console.log(file);
+```
+
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(api_key="PORTKEY_API_KEY")
+
+with open('batch_data.jsonl', 'rb') as f:
+    file = client.files.create(
+        purpose='batch',
+        file=f
+    )
+
+print(file)
+```
+
+</CodeGroup>
 
 ### Listing Files
 
-```sh
+<CodeGroup>
+
+```bash curl
 curl -X GET https://api.portkey.ai/v1/files \
   -H "Authorization: Bearer $PORTKEY_API_KEY"
 ```
 
-### Get File
+```javascript Typescript
+const files = await client.files.list();
+console.log(files);
+```
 
-```sh
+```python Python
+files = client.files.list()
+print(files)
+```
+
+</CodeGroup>
+
+### Get File Details
+
+<CodeGroup>
+
+```bash curl
 curl -X GET https://api.portkey.ai/v1/files/{file_id} \
   -H "Authorization: Bearer $PORTKEY_API_KEY"
 ```
 
+```javascript Typescript
+const file = await client.files.retrieve('file_abc123');
+console.log(file);
+```
+
+```python Python
+file = client.files.retrieve('file_abc123')
+print(file)
+```
+
+</CodeGroup>
+
 ### Get File Content
 
-```sh
+<CodeGroup>
+
+```bash curl
 curl -X GET https://api.portkey.ai/v1/files/{file_id}/content \
   -H "Authorization: Bearer $PORTKEY_API_KEY"
 ```
+
+```javascript Typescript
+const content = await client.files.content('file_abc123');
+console.log(content);
+```
+
+```python Python
+content = client.files.content('file_abc123')
+print(content)
+```
+
+</CodeGroup>
+
+---
+
+## File Format Examples
+
+### Batch Inference JSONL Format
+
+Each line should be a valid JSON object representing a single request:
+
+```jsonl
+{"custom_id": "request-1", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-3.5-turbo-0125", "messages": [{"role": "system", "content": "You are a helpful assistant."},{"role": "user", "content": "Hello world!"}],"max_tokens": 1000}}
+{"custom_id": "request-2", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-3.5-turbo-0125", "messages": [{"role": "system", "content": "You are an unhelpful assistant."},{"role": "user", "content": "Hello world!"}],"max_tokens": 1000}}
+```
+
+### Fine-tuning JSONL Format
+
+For fine-tuning, each line should contain training examples:
+
+```jsonl
+{"messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi! How can I help you today?"}]}
+{"messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "What's 2+2?"}, {"role": "assistant", "content": "2+2 equals 4."}]}
+```
+
+---
+
+## Security & Best Practices
+
+- **Encryption**: Files are encrypted at rest using AES-256
+- **Access Control**: File access is gated by workspace permissions
+- **Provider Upload**: Portkey uploads files to providers using least-privilege credentials
+
+---
