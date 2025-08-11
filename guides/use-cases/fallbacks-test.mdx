@@ -1,0 +1,265 @@
+---
+title: "Testing Application Resilience with Fallbacks"
+---
+
+Reliable applications gracefully handle failure. When a primary AI provider is slow, at capacity, or returns an error, your application must remain operational. Portkey's **fallback** feature is designed for exactly this, ensuring continuity by automatically switching to a backup provider.
+
+This cookbook provides hands-on recipes to help you test and understand this critical feature. You will learn to intentionally trigger failures to see how fallbacks protect your application.
+
+**What You'll Test:**
+
+1.  **Model Failure:** What happens when a requested model name is invalid?
+2.  **Rate Limit Errors:** How does the app react when a provider is too busy?
+3.  **Guardrail Violations:** How can you enforce content rules while maintaining availability?
+
+By the end, you will have the confidence to build more resilient AI applications.
+
+### **Prerequisites: Setting Up Your Environment**
+
+Before you start, ensure you have:
+
+1.  A Portkey account.
+2.  At least two **AI Providers** configured in the [Model Catalog](https://www.google.com/search?q=/product/model-catalog). We'll use `@openai-prod` and `@anthropic-prod`.
+3.  Python with the Portkey SDK installed: `pip install portkey-ai`.
+4.  Your **Portkey API Key** set as an environment variable.
+
+To set an environment variable, use one of the commands below in your terminal:
+
+```sh
+# On macOS or Linux
+export PORTKEY_API_KEY="your-portkey-api-key"
+
+# On Windows (Command Prompt)
+set PORTKEY_API_KEY="your-portkey-api-key"
+
+# On Windows (PowerShell)
+$env:PORTKEY_API_KEY="your-portkey-api-key"
+```
+
+
+-----
+
+## **Recipe 1: Fallback on Model Failure**
+
+A model failure is a common issue, often caused by an invalid model string. This recipe simulates this failure and shows the fallback in action. When the primary provider cannot find the requested model, it returns an error, and Portkey steps in.
+
+#### **Step 1: Configure the Failure Scenario**
+
+No special UI setup is needed for this recipe beyond having a valid `@openai-prod` provider. The failure will be induced directly in our request config by referencing a model name that does not exist.
+
+#### **Step 2: Run the Test**
+
+The following code attempts a request using a config where the primary target specifies an invalid model name. Portkey will detect the **`404 Not Found`** error from the provider and automatically retry with the valid fallback provider.
+
+```python
+import os
+import json
+from portkey_ai import Portkey
+
+# Initializes the client, reading the API key from your environment
+portkey = Portkey()
+
+# This config targets a non-existent model name for the first provider
+fallback_config = {
+  "strategy": { "mode": "fallback" },
+  "on_status_codes": [400, 412]
+  "targets": [
+    {
+      "provider": "@openai-prod",
+      "override_params": { "model": "gpt-4o-this-model-does-not-exist" }
+    },
+    {
+      "provider": "@anthropic-prod",
+      "override_params": { "model": "claude-3-5-sonnet-20240620" }
+    }
+  ]
+}
+
+print("Attempting request with a primary provider that has a bad model name...")
+
+try:
+    # Apply the config to this request using with_options()
+    chat_completion = portkey.with_options(config=json.dumps(fallback_config)).chat.completions.create(
+        messages=[{"role": "user", "content": "Tell me a short story about a resilient robot."}],
+        max_tokens=1024
+    )
+
+    print("\n✅ Success! The fallback was successful.")
+    print(f"Final Response: {chat_completion.choices[0].message.content}")
+
+except Exception as e:
+    print(f"\n❌ Failure! The request did not fall back as expected: {e}")
+
+```
+
+#### **Step 3: Verify the Fallback**
+
+The final response comes from Anthropic, your fallback provider.
+
+To see the complete journey, go to the **[Logs Page](https://app.portkey.ai)** in your Portkey dashboard. Find the most recent request. You will see two attempts associated with it:
+
+1.  **`FAILED`**: The first request to **`@openai-prod`**, which failed with a **`404 Not Found`** status because the model name was invalid.
+2.  **`SUCCESS`**: The automatic fallback request to **`@anthropic-prod`**.
+
+-----
+
+## **Recipe 2: Fallback on Rate Limit Errors**
+
+High traffic can cause providers to return a **`429 Too Many Requests`** error. This recipe shows how to configure a fallback that triggers only on this specific error.
+
+#### **Step 1: Configure the Failure Scenario**
+
+In your Portkey dashboard, navigate to your valid OpenAI provider (`@openai-prod`) and apply a strict **Rate Limit**: **1 Request per Minute**.
+
+#### **Step 2: Run the Test**
+
+This script sends two requests in quick succession. The second request will hit the rate limit, forcing a fallback. The config uses **`on_status_codes: [429]`** to ensure the fallback only triggers for rate limit errors.
+
+```python
+import os
+import json
+from portkey_ai import Portkey
+
+portkey = Portkey()
+
+# This config only falls back on a 429 error
+rate_limit_config = {
+  "strategy": {
+    "mode": "fallback",
+    "on_status_codes": [429]
+  },
+  "targets": [
+    { "override_params": { "model": "@openai-prod/gpt-4o" } },
+    { "override_params": { "model": "@anthropic-prod/claude-3-5-sonnet-20240620" } }
+  ]
+}
+
+messages = [{"role": "user", "content": "What is Newton's first law?"}]
+
+# Make two requests to trigger the rate limit
+for i in range(5):
+    print(f"\n--- Making Request {i+1} ---")
+    try:
+        completion = portkey.with_options(config=json.dumps(rate_limit_config)).chat.completions.create(
+            messages=messages,
+            max_tokens=1024
+        )
+
+        final_model_used = completion.choices[0].model
+        print(f"✅ Request {i+1} was successful. Response from: {final_model_used}")
+
+    except Exception as e:
+        print(f"❌ Request {i+1} failed unexpectedly: {e}")
+```
+
+#### **Step 3: Verify the Fallback**
+
+The first request succeeds with OpenAI. The second request returns a successful response from Anthropic.
+
+Check the **Logs** page for the second request. You will see the `FAILED` attempt to `@openai-prod` with a **`429`** status, followed by the `SUCCESS` call to `@anthropic-prod`.
+
+<Frame>
+<img src="/images/guides/fallback-test-1.png"/>
+</Frame>
+
+
+-----
+
+## **Recipe 3: Fallback on Guardrail Violations**
+
+Portkey Guardrails can block requests that violate your content policies, returning a **`446`** status code. You can use this to trigger a fallback, perhaps to a different model better suited for the filtered content.
+
+#### **Step 1: Configure your guardrail**
+
+1. Navigate to **Guardrails** → **Create**
+
+2. Search for "word count" under Basic guardrails
+
+3. Create a guardrail as shown below.
+
+4. In the actions tab select `Deny the request if guardrail fails` flag.
+
+5. Save the guardrail and note the `guardrail ID` for next step
+
+<Frame>
+<img src="/images/guides/fallback-test-2.png"/>
+</Frame>
+
+
+#### **Step 2: Configure the Failure Scenario**
+
+Create a saved **Portkey Config** in the UI.
+
+1.  Navigate to **Configs** in your Portkey dashboard and click **Create**.
+
+2.  Use a clear ID like **`fallback-on-guardrail-fail`**.
+
+
+
+3.  Paste the following JSON. Notice the **`input_guardrails`** block is nested inside the first target:
+
+    ```json
+    {
+      "strategy": {
+        "mode": "fallback",
+        "on_status_codes": [446]
+      },
+      "targets": [
+        {
+          "provider": "@openai-prod",
+          "override_params": { "model": "gpt-4o" },
+          "input_guardrails": ["your-guardrail-id"]
+        },
+        {
+          "provider": "@anthropic-prod",
+          "override_params": { "model": "claude-3-5-sonnet-20240620" }
+        }
+      ]
+    }
+    ```
+
+4.  **Save the Config**.
+
+#### **Step 2: Run the Test**
+
+This code sends an input that is intentionally too long, violating our 10-word limit. This will trigger the **`446`** error and the fallback.
+
+```python
+import os
+from portkey_ai import Portkey
+
+portkey = Portkey()
+
+long_input_message = "Hey chat!."
+
+print(f"Sending a long input ({len(long_input_message.split())} words) to a config with a 10-20 word limit...")
+
+try:
+    # Apply the saved config by its ID
+    chat_completion = portkey.with_options(config="fallback-on-guardrail-fail").chat.completions.create(
+        messages=[{"role": "user", "content": long_input_message}],
+        max_tokens=1024
+    )
+
+    print("\n✅ Success! The guardrail violation triggered a fallback.")
+    print(f"Final Response: {chat_completion.choices[0].message.content}")
+
+except Exception as e:
+    print(f"\n❌ Failure! The fallback did not work as expected: {e}")
+```
+
+#### **Step 3: Verify the Fallback**
+
+The request succeeds, and the response comes from Anthropic.
+
+Go to the **Logs** page and find the request you just sent. You'll see its trace:
+
+1.  **`FAILED`**: The first attempt to `@openai-prod`, blocked by the `word_count` guardrail with a **`446`** status.
+2.  **`SUCCESS`**: The automatic fallback to `@anthropic-prod`, which processed the input.
+
+### **Summary of Best Practices**
+
+  * **Test Your Configs:** Actively test your fallback logic to ensure it behaves as you expect during a real outage.
+  * **Be Specific with Status Codes:** Use `on_status_codes` to control precisely which errors trigger a fallback. This prevents unnecessary fallbacks on transient issues.
+  * **Monitor Your Logs:** The Trace View in Portkey Logs is your best tool for understanding fallback behavior, latency, and costs.
+  * **Consider Your Fallback Chain:** Choose fallback providers that are compatible with your use case and be mindful of their different performance and cost profiles.
