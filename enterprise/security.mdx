@@ -1,0 +1,151 @@
+---
+title: "Security"
+description: "Compare SaaS, Hybrid, and Airgapped security postures, data flows, and controls"
+---
+
+Portkey provides three enterprise deployment models with identical feature parity. This page explains the security posture, data flows, and shared-responsibility boundaries for each model—so InfoSec teams can assess risk quickly and choose confidently.
+
+
+## Security Comparison (at a glance)
+
+| Control | SaaS Enterprise | Hybrid (Recommended) | Airgapped |
+|:--|:--|:--|:--|
+| **Data residency** | Runtime in region of choice; customer data stored in region-specific shards (e.g., EU) | All data (requests, responses, logs) stays in your VPC/on‑prem; control-plane metrics region is customer’s choice | Fully offline; all data stays inside isolated network |
+| **Runtime data path** | Requests hit nearest regional edge gateway (e.g., EU only when EU is chosen) | Gateway runs inside your network; model calls stay local | Gateway and model calls run entirely offline |
+| **Control‑plane metadata** | Minimal operational metadata in Portkey control plane | Metrics are always sent to Portkey ClickHouse; ClickHouse region can be customer’s choice; IP/URL redaction supported | None (no outbound traffic) |
+| **Logs & retention** | Logs 90 days; metrics 365 days by default; zero‑retention available; PII scrubbing and “metrics‑only” mode supported | Logs in customer S3 or any S3‑compatible store; IRM/lifecycle policies; native export to SIEM/observability | Same as Hybrid, fully offline |
+| **Secrets & KMS** | Provider keys in Portkey vault (envelope encryption) with KMS support; BYOK | BYOK; integrate with AWS KMS/Azure Key Vault/GCP KMS | BYOK; same KMS integrations offline |
+| **Identity & access** | SSO (SAML/OIDC), SCIM, fine‑grained RBAC | Same; plus local gateway RBAC | Same; plus local gateway RBAC |
+| **Egress** | To Portkey control plane and model providers in chosen region(s) | To Portkey control‑plane public APIs and container registry; data‑plane↔control‑plane over Internet or private tunnel/peering | None (no outbound calls required) |
+| **Subprocessors exposure** | Yes (published list and notifications) | Minimal (control‑plane only) | None |
+| **Supply chain** | Signed images, SBOMs, standard vulnerability SLAs | Same | Same |
+| **BCP/DR** | Published RTO/RPO; multi‑AZ/region architecture | Customer‑owned backups/DR; Portkey provides guidance and tooling | Customer‑owned backups/DR, offline procedures |
+| **Feature parity** | Full | Full | Full |
+
+## What leaves your environment?
+
+- SaaS: Runtime traffic remains in the selected region. Minimal control‑plane metadata is stored centrally; customer data (logs/metrics) retained per policy (90/365 by default) with zero‑retention and PII scrubbing options.
+- Hybrid: Application data, prompts, responses, and logs stay entirely in your VPC/on‑prem. Metrics are always emitted to Portkey’s control plane (ClickHouse) and can be hosted in your region of choice. IP/URL redaction supported.
+- Air‑gapped: No outbound network calls for any purpose (including licensing and updates). All data remains inside the isolated environment.
+
+## Data flows (per model)
+
+<Steps>
+<Step title="SaaS Enterprise" icon="network-wired">
+* Control plane is centrally hosted (no customer data resides here).
+* AI Gateway is deployed on regional edge; requests are served in the chosen region (e.g., EU‑only when EU is selected).
+* Persistent data stores (logs, metrics) are created in the customer’s chosen region (e.g., separate EU shards for enterprise customers).
+</Step>
+
+<Step title="Hybrid (Recommended)" icon="cloud-lock">
+* Gateway runs inside your VPC/on‑prem; prompts, responses, and logs never leave your environment.
+* Operational metrics are always sent to Portkey’s control plane (ClickHouse); the ClickHouse DB can be hosted in your region of choice.
+* IP and URL redaction supported; data‑plane↔control‑plane connectivity can be Internet or private tunnel/VPC peering.
+</Step>
+
+<Step title="Air‑gapped" icon="shield">
+* Fully disconnected deployment—no outbound traffic required for licensing or updates.
+* Container images are delivered via private registry or offline media; updates applied offline on your schedule.
+</Step>
+</Steps>
+
+## Common security questions
+
+<AccordionGroup>
+  <Accordion title="Where does our data stay?">
+    <p>
+      *SaaS*: Customer data is stored in your selected region (e.g., EU). Runtime requests are served in‑region via edge gateways.
+      <br />
+      *Hybrid*: All prompts, responses, and logs remain in your VPC/on‑prem stores that you control.
+      <br />
+      *Air‑gapped*: All data remains entirely within your offline environment.
+    </p>
+  </Accordion>
+
+  <Accordion title="What does Portkey see?">
+    <p>
+      *SaaS*: Minimal control‑plane metadata and region‑pinned logs/metrics per your retention policy.
+      <br />
+      *Hybrid*: Only operational metrics are sent to Portkey’s ClickHouse (always). IP/URL redaction supported. Your LLM logs explicitly reside in your databases; the control plane has no access to them.
+      <br />
+      *Air‑gapped*: No outbound telemetry; Portkey receives nothing.
+    </p>
+  </Accordion>
+
+  <Accordion title="How do we handle PII and retention?">
+    <p>
+      *SaaS*: Default retention is 90 days (logs) and 365 days (metrics). Zero‑retention and PII scrubbing are available; a metrics‑only mode is supported.
+      <br />
+      *Hybrid/Air‑gapped*: Logs live in your S3/S3‑compatible store with your lifecycle and IRM policies. Fully offline for Air‑gapped.
+    </p>
+  </Accordion>
+
+  <Accordion title="Secrets and KMS">
+    <p>
+      *SaaS*: Provider keys are stored in Portkey’s vault with envelope encryption; KMS is supported (BYOK).
+      <br />
+      *Hybrid/Air‑gapped*: Bring your own KMS (AWS KMS, Azure Key Vault, GCP KMS) for envelope encryption.
+    </p>
+  </Accordion>
+
+  <Accordion title="Identity, SSO, and RBAC">
+    <p>
+      All models support SSO (SAML/OIDC), SCIM, and fine‑grained RBAC. Hybrid and Air‑gapped include local gateway RBAC.
+    </p>
+  </Accordion>
+
+  <Accordion title="Network egress and connectivity">
+    <p>
+      *Hybrid*: Outbound destinations are Portkey control‑plane public APIs and the container registry. Data‑plane→control‑plane can be over the Internet or a private tunnel/peering. Control‑plane→data‑plane can use a tunnel/peering as well.
+      <br />
+      *Air‑gapped*: No egress—period.
+    </p>
+  </Accordion>
+
+  <Accordion title="SIEM and observability">
+    <p>
+      Native exports (e.g., syslog/OpenTelemetry) and documentation are provided. In Hybrid/Air‑gapped, all integrations run from your environment.
+    </p>
+  </Accordion>
+
+  <Accordion title="Compliance, pen tests, and subprocessors">
+    <p>
+      SOC 2 Type II and other certifications are available via the <a href="https://trust.portkey.ai">trust portal</a>. Pen test cadence and reports are available. Subprocessors are published with a notification policy (SaaS); Hybrid exposure is minimal; Air‑gapped has none.
+    </p>
+  </Accordion>
+</AccordionGroup>
+
+## Shared responsibility
+
+| Area | SaaS Enterprise | Hybrid | Air‑gapped |
+|:--|:--|:--|:--|
+| Data storage & residency | Portkey implements region pinning; you set retention | You own storage, residency, and lifecycle | You own storage, residency, offline lifecycle |
+| Metrics & telemetry | Portkey stores minimal metadata and metrics per policy | Metrics always sent to Portkey control plane; redaction supported | None |
+| Secrets & KMS | Portkey vault with KMS support | Customer KMS integrations | Customer KMS integrations |
+| Identity & RBAC | SSO/SCIM/RBAC in SaaS console | SSO/SCIM + local gateway RBAC | SSO/SCIM + local gateway RBAC |
+| Patching & CVEs | Portkey SLAs | Portkey supplies signed images/SBOM; you apply updates | Same, offline process |
+| Backups & DR | Portkey managed | Customer managed (guidance provided) | Customer managed (offline) |
+
+## Why Hybrid is usually the right choice
+
+<Steps>
+<Step title="Data stays put" icon="lock">
+Keep prompts, responses, and logs in your VPC/on‑prem while still benefiting from a managed control plane.
+</Step>
+
+<Step title="Enterprise velocity" icon="rocket">
+Teams reach production faster, adopt the platform broadly, and realize value sooner—without compromising security controls.
+</Step>
+
+<Step title="Operational safety" icon="shield-check">
+Avoid the patch debt and stagnation risk common in fully offline stacks while maintaining strict network boundaries and redaction.
+</Step>
+</Steps>
+
+## References
+
+- Hybrid deployment guide: <a href="https://github.com/portkey-ai/helm">GitHub (Helm)</a>
+- Trust & compliance portal: <a href="https://trust.portkey.ai">trust.portkey.ai</a>
+- Contact: <code>support@portkey.ai</code>
+
+
