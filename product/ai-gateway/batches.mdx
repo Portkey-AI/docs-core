@@ -1,63 +1,193 @@
 ---
-title: "Batches"
-description: "Run batch inference with Portkey"
+title: "Unified Batch Inference"
+description: "Run large‑scale inference jobs through one consistent endpoint"
 ---
 
-Portkey supports batching requests in two ways:
-
-1. Batching requests with Provider's batch API using unified api and provider file
-2. Custom batching with Portkey's batch API
-
-## 1. Batching requests directly with Provider's batch API using unified api
-
-Portkey supports batching requests directly with Provider's batch API by using a unified api structure.
-The unified api structure is similar to [OpenAI's batch API](https://platform.openai.com/docs/guides/batch).
-Please refer to individual provider's documentation for more details if additional headers or parameters are required.
-
-| Provider       | Supported Endpoints                          |
-|---------------|-------------------------------------------|
-| [OpenAI](/integrations/llms/openai/batches) | `completions`, `chat completions`, `embedding` |
-| [Bedrock](/integrations/llms/bedrock/batches) | `chat completions` |
-| [Azure OpenAI](/integrations/llms/azure-openai/batches) | `completions`, `chat completions`, `embedding` |
-| [Vertex](/integrations/llms/vertex-ai) | `embedding`, `chat completions` |
-
-
-
-## 2. Custom batching with Portkey's batch API
-
-Portkey supports custom batching with Portkey's batch API in two ways.
-1. Batching requests with Provider's batch API using Portkey's file.
-2. Batching requests directly with Portkey's gateway using Portkey's file.
-
-This is controlled by `completion_window` parameter in the request.
-- When `completion_window` is set to `24h`, Portkey will batch requests with Provider's batch API using Portkey's file.
-- When `completion_window` is set to `immediate`, Portkey will batch requests directly with Portkey's gateway.
-
-Along with this, you have to set `portkey_options` which helps Portkey to batch requests to Provider's batch API or Gateway.
-- This is achieved by using provider specific headers in the portkey_options
-    - For example, if you want to use OpenAI's batch API, you can set `portkey_options` to `{"x-portkey-provider": "openai-virtual_key"}`
-
-### 2.1 Batching requests with Provider's batch API using Portkey's file
 <Info>
-`completion_window` needs to be set to `24h` and `input_file_id` needs to be Portkey's file id. Please refer to [Portkey's files](/product/ai-gateway/files) for more details.
+  **Enterprise Feature** <br/> Batch inference is available on **Enterprise** plans only. Contact the Portkey team to enable it for your workspace.
 </Info>
 
-- Using Portkey's file, you can upload your data to Portkey and reuse the content in your requests.
-- Portkey will automatically upload the file to the Provider and reuse the content in your batch requests.
-- Portkey will also automatically check the batch progress and does post batch request analysis including token and cost calculations.
-- You can also get the batch output in the response using `GET /batches/<batch_id>/output` endpoint.
+Portkey’s AI Gateway lets you send a single request that fan‑outs to hundreds—or millions—of completions. Choose the mode that best fits cost, latency, and provider support.
 
-### 2.2 Batching requests directly with Portkey's gateway
-<Info>
-`completion_window` needs to be set to `immediate` and `input_file_id` needs to be Portkey's file id. Please refer to [Portkey's files](/product/ai-gateway/files) for more details.
-</Info>
-<Info>
-Using this method, you can batch requests to any provider, whether they support batching or not.
-</Info>
-- Portkey will batch requests directly with Portkey's gateway.
-- Please note the following:
-    - Currently, Batch Size is set to 25 by default.
-    - Batch Interval / Reset is set to 5 seconds (Next batch runs after 5 seconds)
-    - We retry requests 3 times by default (can be extended retry using `x-portkey-config` header with retry)
-    - We have plans to support custom batch size, batch interval and retry count in the future.
-- Portkey will also automatically check the batch progress and does post batch request analysis including token and cost calculations.
+## Choose Your Batching Mode
+
+| Mode                   | When to pick it | Works with |
+| ---------------------- | -------------------------- | ------------ |
+| **[Provider Batch API](#provider-batch-api-mode)** | *Cheapest* for overnight or offline jobs. Uses the provider’s native batch endpoint & limits.| `OpenAI`, `Azure OpenAI`, `Bedrock`, `Vertex`, `Fireworks` |
+| **[Portkey Batch API](#portkey-batch-api-mode)**  | *Fastest* and provider‑agnostic. Batches at the Gateway layer; ideal when a provider has no native batch support or you need cross‑provider jobs. | Any provider supported by Portkey |
+
+<Tip>
+<strong>Quick rule of thumb →</strong> <br/> Need low latency or multi‑provider batching? **Portkey Batch API**. Otherwise, stick with the provider’s native batch for cost savings.
+</Tip>
+
+---
+
+## Before You Start
+
+Have the following ready to start making batch requests:
+1. **Portkey account & API key**.
+2. **Provider credentials** for each downstream model (OpenAI key, Bedrock IAM role, etc.).
+3. A **Portkey File** (`input_file_id`) - **required only when using the Portkey Batch API (Mode #2)**. See [Files](/product/ai-gateway/files) to upload one.
+4. Optional: Familiarity with the [Create Batch OpenAPI spec](https://portkey.ai/docs/api-reference/inference-api/batch/create-batch).
+
+---
+
+## Provider Batch API Mode
+Used to run batch jobs with the provider's native batch endpoint. Providers usually offer a cheaper rate for batch jobs, but you'll be limited by the provider's quota and limits. Most completion windows are about 24 hours.
+
+### Quickstart (OpenAI example)
+
+
+<CodeGroup>
+
+```bash curl
+curl -X POST https://api.portkey.ai/v1/batches \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-provider: $@YOUR_PROVIDER_SLUG" \
+  -d '{
+    "input_file_id": "file_abc123",
+    "completion_window": "24h",
+    "endpoint": "/v1/chat/completions",
+}'
+```
+
+```javascript Typescript
+import Portkey from 'portkey-ai';
+
+const client = new Portkey({
+  apiKey: 'PORTKEY_API_KEY',
+  provider: '@YOUR_PROVIDER_SLUG'
+});
+
+async function main() {
+  const batch = await client.batches.create({
+    input_file_id: "file-abc123",
+    endpoint: "/v1/chat/completions",
+    completion_window: "24h"
+  });
+
+  console.log(batch);
+}
+
+main();
+
+```
+
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(
+  api_key = "PORTKEY_API_KEY",
+  provider = "@YOUR_PROVIDER_SLUG"
+)
+
+client.batches.create(
+  input_file_id="file-abc123",
+  endpoint="/v1/chat/completions",
+  completion_window="24h"
+)
+```
+
+
+</CodeGroup>
+
+> 🔗 Full schema: see the [OpenAPI reference](/api-reference/inference-api/batch/create-batch).
+
+### Supported Providers & Endpoints
+
+| Provider                                                | Endpoints                                       |
+| ------------------------------------------------------- | ----------------------------------------------- |
+| [OpenAI](/integrations/llms/openai/batches)             | `completions`, `chat completions`, `embeddings` |
+| [Azure OpenAI](/integrations/llms/azure-openai/batches) | `completions`, `chat completions`, `embeddings` |
+| [Bedrock](/integrations/llms/bedrock/batches)           | `chat completions`                              |
+| [Vertex AI](/integrations/llms/vertex-ai/batches)       | `chat completions`, `embeddings`                |
+| [Fireworks](/integrations/llms/fireworks/batches)       | `completions`                                   |
+
+### Defaults & Limits
+
+| Property            | Default          | Notes                                          |
+| ------------------- | ---------------- | ---------------------------------------------- |
+| `completion_window` | `24h`            | Set by provider (cannot be shorter).           |
+| Provider quota      | Per provider     | e.g., OpenAI ≤ 50k jobs/day.                   |
+| Retries             | Provider‑defined | Portkey surfaces job status; no Gateway retry. |
+
+---
+
+## Portkey Batch API Mode ⭐️
+
+### How It Works
+
+Set `completion_window` to `immediate` and Portkey aggregates your requests in memory, then fires them to the target provider in fixed buckets.
+
+| Gateway default | Value                                                   |
+| --------------- | ------------------------------------------------------- |
+| Batch size      | **25** requests                                         |
+| Batch interval  | **5 s** between flushes                                 |
+| Retries         | **3** per request (configurable via `x-portkey-config`) |
+
+*Coming soon*: configurable `batch_size`, `batch_interval`, and `max_retries`.
+
+### Quickstart (provider‑agnostic)
+
+```bash
+curl -X POST https://api.portkey.ai/v1/batches \
+  -H "Authorization: Bearer <PORTKEY_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input_file_id": "pk_file_...",
+    "completion_window": "immediate",
+    "endpoint": "/v1/chat/completions"
+}'
+```
+
+Because Portkey orchestrates the batching, this works even for providers without a native batch endpoint.
+
+### Response & Monitoring
+
+Identical to Provider mode; the difference is that `provider_job_id` is absent and cost is computed from individual calls.
+
+### About Portkey Files
+
+Portkey Files are files uploaded to Portkey that are then automatically uploaded to the provider. They're useful when you want to make multiple batch completions using the same file. Portkey will:
+
+- Automatically upload the file to the provider on your behalf
+- Reuse the content in your batch requests
+- Check batch progress and provide post-batch analysis including token and cost calculations
+- Make batch outputs available via the `GET /batches/<batch_id>/output` endpoint
+
+---
+
+## Error Handling & Retries
+
+| Layer                   | What Portkey does                 | How to override                                    |
+| ----------------------- | --------------------------------- | -------------------------------------------------- |
+| Gateway (Portkey Batch) | Retries **3×** on network/429/5xx | `x-portkey-config: {"retry": {"max_attempts": 5}}` |
+| Provider (native batch) | Provider rules                    | Not configurable via Portkey                       |
+
+---
+
+## Security & IAM
+
+* **Files** are encrypted at rest (AES‑256) and deleted from provider storage once the batch succeeds or after 7 days, whichever is earlier.
+* Portkey uploads on your behalf using *least‑privilege* scoped credentials; no long‑lived secrets are stored.
+* Access to batch status & outputs is gated by your workspace role (`batch.read`).
+
+---
+
+## Glossary
+
+| Term                               | Meaning                                                                                                   |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Batch Job**                      | A collection of completion requests executed asynchronously.                                              |
+| **Portkey File** (`input_file_id`) | Files uploaded to Portkey that are automatically uploaded to the provider for batch processing. Useful for reusing the same file across multiple batch completions. |
+| **Virtual Key**                    | A logical provider credential stored in Portkey; referenced by ID, not secret.                            |
+| **Completion Window**              | Time frame in which the job must finish. `immediate` → handled by Portkey; `24h` → delegated to provider. |
+
+---
+
+## Roadmap
+
+* Custom `batch_size`, `batch_interval`, `max_retries` (Q3 2025)
+* Real‑time progress webhooks
+* UI for canceling or pausing jobs

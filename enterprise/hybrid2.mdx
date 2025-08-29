@@ -1,0 +1,369 @@
+---
+title: "Deploy Portkey in Your Infrastructure"
+description: "Get your AI gateway running in 4 simple steps. Most teams finish in under 2 hours."
+---
+
+<div className="hero-section">
+
+# Your AI Gateway. Your Infrastructure. **2 Hours.**
+
+Deploy Portkey's data plane in your VPC and start routing LLM traffic securely. No data leaves your network.
+
+<div className="success-metrics">
+  <div className="metric">
+    <span className="number">247</span>
+    <span className="label">Teams deployed</span>
+  </div>
+  <div className="metric">
+    <span className="number">2.3 hrs</span>
+    <span className="label">Average time</span>
+  </div>
+  <div className="metric">
+    <span className="number">15 min</span>
+    <span className="label">To first API call</span>
+  </div>
+</div>
+
+</div>
+
+---
+
+## 🎯 What You'll Have in 2 Hours
+
+<div className="outcome-grid">
+  <Card icon="rocket" title="Working AI Gateway">
+    Route requests to OpenAI, Anthropic, and 1600+ LLMs through your private endpoint
+  </Card>
+  <Card icon="shield" title="Complete Data Privacy">
+    All prompts and responses stay in your VPC. Only metrics leave (no sensitive data).
+  </Card>
+  <Card icon="chart-line" title="Full Observability">
+    See every request, cost, latency, and error in the Portkey dashboard
+  </Card>
+</div>
+
+<Frame>
+  <img src="/images/deployment-success.png" alt="Successful deployment showing gateway handling requests" />
+</Frame>
+
+---
+
+## 📍 Your 4-Step Journey
+
+<Steps>
+  <Step title="Check Prerequisites" duration="5 min" icon="clipboard-check">
+    Verify your Kubernetes cluster and create storage buckets
+  </Step>
+  <Step title="Get Credentials" duration="10 min" icon="key">
+    Receive and test your access tokens from Portkey
+  </Step>
+  <Step title="Deploy Gateway" duration="30 min" icon="rocket">
+    Run one Helm command with our production-ready template
+  </Step>
+  <Step title="Validate Success" duration="15 min" icon="check-circle">
+    Make your first API call and see logs flowing
+  </Step>
+</Steps>
+
+<Alert type="success" icon="phone">
+**We're on standby**: Our deployment team typically responds in &lt;15 minutes during business hours. Don't hesitate to ping us!
+</Alert>
+
+---
+
+## Step 1: Check Prerequisites (5 min)
+
+<div className="checklist-card">
+
+### ✓ Quick Checks
+
+```bash
+# 1. Kubernetes ready?
+kubectl version --short
+# Need: v1.24+
+
+# 2. Helm installed?
+helm version --short
+# Need: v3.0+
+
+# 3. Can reach internet?
+curl -I https://control.portkey.ai
+# Need: HTTP/2 200
+```
+
+### ✓ Pick Your Storage
+
+<Tabs>
+  <Tab title="AWS (S3)" icon="aws">
+    ```bash
+    # Create a bucket
+    aws s3 mb s3://my-portkey-logs
+    ```
+  </Tab>
+  <Tab title="GCS" icon="google">
+    ```bash
+    # Create a bucket
+    gsutil mb gs://my-portkey-logs
+    ```
+  </Tab>
+  <Tab title="Quick Test (Wasabi)" icon="bolt">
+    We'll provide temporary credentials - no setup needed!
+  </Tab>
+</Tabs>
+
+</div>
+
+<Card title="Need help? Start a quick chat" icon="message" href="https://portkey.wiki/chat">
+  Most issues resolved in under 10 minutes
+</Card>
+
+---
+
+## Step 2: Get Credentials (10 min)
+
+You'll receive a **1Password link** with two items:
+
+<div className="credential-cards">
+  <div className="cred-card">
+    <h4>🐳 Docker Access</h4>
+    <p>Username & password for our container registry</p>
+  </div>
+  <div className="cred-card">
+    <h4>🔐 Gateway Token</h4>
+    <p>JWT to connect your gateway to control plane</p>
+  </div>
+</div>
+
+### Quick Test
+
+```bash
+# 1. Test Docker access
+docker login -u <username> -p <password>
+docker pull portkey/gateway-enterprise:latest
+
+# 2. Create Kubernetes secret
+kubectl create namespace portkey
+kubectl -n portkey create secret docker-registry portkey-creds \
+  --docker-username=<username> \
+  --docker-password=<password>
+```
+
+<Alert type="warning">
+**Can't pull image?** It's usually a firewall. [Click here for instant help →](https://portkey.wiki/slack)
+</Alert>
+
+---
+
+## Step 3: Deploy Gateway (30 min)
+
+### 3.1 Save This Config
+
+<div className="config-wizard">
+
+Create `values.yaml` with your details:
+
+```yaml
+# values.yaml - Production-ready config
+replicaCount: 2
+
+images:
+  gatewayImage:
+    repository: "portkey/gateway-enterprise"
+    tag: "1.10.24"
+
+environment:
+  data:
+    # Your identifiers
+    SERVICE_NAME: "my-company-gateway"
+    PORTKEY_CLIENT_AUTH: "<token-from-1password>"
+
+    # Storage (pick one)
+    LOG_STORE: "s3"  # or "gcs", "mongo", "wasabi"
+    LOG_STORE_REGION: "us-east-1"
+    LOG_STORE_GENERATIONS_BUCKET: "my-portkey-logs"
+    LOG_STORE_ACCESS_KEY: "<your-access-key>"
+    LOG_STORE_SECRET_KEY: "<your-secret-key>"
+
+    # Cache (auto-deployed)
+    CACHE_STORE: "redis"
+    REDIS_URL: "redis://portkey-redis:6379"
+
+    # Analytics
+    ANALYTICS_STORE: "control_plane"
+
+# Expose your gateway
+ingress:
+  enabled: true
+  className: "nginx"
+  hosts:
+    - host: gateway.internal.mycompany.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+# Auto-scaling
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+```
+
+</div>
+
+### 3.2 Deploy with One Command
+
+```bash
+# Add Portkey charts
+helm repo add portkey https://portkey-ai.github.io/helm
+helm repo update
+
+# Deploy!
+helm upgrade --install portkey-gateway portkey/gateway \
+  -n portkey -f values.yaml
+
+# Watch it come up
+kubectl -n portkey get pods -w
+```
+
+<div className="deploy-status">
+Expected output:
+```
+NAME                                READY   STATUS
+portkey-gateway-7f9b8c5d4-abc123   1/1     Running
+portkey-gateway-7f9b8c5d4-def456   1/1     Running
+portkey-redis-master-0             1/1     Running
+```
+</div>
+
+---
+
+## Step 4: Validate Success (15 min)
+
+### 4.1 Check Health
+
+```bash
+# Port-forward for quick test
+kubectl -n portkey port-forward svc/portkey-gateway 8787:8787
+
+# In new terminal
+curl http://localhost:8787/v1/health
+# ✅ Should return: {"status":"healthy"}
+```
+
+### 4.2 Get Your API Keys
+
+<div className="key-steps">
+  1. Go to [app.portkey.ai](https://app.portkey.ai)
+  2. Click **"Create Virtual Key"**
+  3. Select your LLM provider (e.g., OpenAI)
+  4. Add your OpenAI API key
+  5. Copy the generated virtual key
+</div>
+
+### 4.3 Make Your First Call! 🎉
+
+```bash
+# Using your gateway URL
+curl https://gateway.internal.mycompany.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: <your-virtual-key>" \
+  -d '{
+    "model": "gpt-4",
+    "messages": [{"role": "user", "content": "Hello from my private gateway!"}]
+  }'
+```
+
+### 4.4 See It in Action
+
+<div className="validation-grid">
+  <Card title="✅ Check Logs" icon="file-text">
+    Visit app.portkey.ai → Logs
+    Your request appears instantly
+  </Card>
+  <Card title="✅ View Analytics" icon="chart-bar">
+    Visit app.portkey.ai → Analytics
+    See costs and latencies
+  </Card>
+</div>
+
+<Alert type="success" icon="trophy">
+**Congratulations!** Your AI gateway is live. All LLM traffic now routes through your infrastructure.
+</Alert>
+
+---
+
+## 🎊 You Did It! What's Next?
+
+<div className="next-steps-grid">
+  <Card title="Add More Providers" icon="plus-circle" href="/docs/providers">
+    Connect Claude, Gemini, Llama, and 1600+ models
+  </Card>
+  <Card title="Set Up Fallbacks" icon="shield-alt" href="/docs/fallbacks">
+    Add redundancy with automatic provider failover
+  </Card>
+  <Card title="Configure Caching" icon="lightning" href="/docs/caching">
+    Reduce costs by 40% with semantic caching
+  </Card>
+  <Card title="Production Checklist" icon="clipboard-list" href="/docs/production">
+    Security hardening and monitoring setup
+  </Card>
+</div>
+
+<Card title="📞 Book Your Success Review" icon="calendar-check" href="https://portkey.wiki/success-review">
+  Optional: Show us your deployment and get optimization tips (15 min)
+</Card>
+
+---
+
+## 🆘 Troubleshooting
+
+<details>
+<summary>Common Issues (Click to expand)</summary>
+
+<Accordion title="Pods won't start">
+```bash
+# Check logs
+kubectl -n portkey logs -l app=portkey-gateway
+
+# Common fixes:
+- Verify credentials in 1Password
+- Check firewall allows Docker Hub
+- Ensure namespace has image pull secret
+```
+</Accordion>
+
+<Accordion title="Can't reach gateway">
+```bash
+# Test internal service
+kubectl -n portkey port-forward svc/portkey-gateway 8787:8787
+curl http://localhost:8787/v1/health
+
+# Check ingress
+kubectl -n portkey describe ingress
+```
+</Accordion>
+
+<Accordion title="No logs appearing">
+- Verify S3/storage credentials
+- Check gateway can reach storage endpoint
+- Look for errors in: `kubectl -n portkey logs -l app=portkey-gateway | grep ERROR`
+</Accordion>
+
+</details>
+
+---
+
+## 💬 Get Help Fast
+
+  <Card title="Live Chat" icon="message-circle">
+    [portkey.wiki/chat](https://portkey.wiki/chat)
+    ~10 min response time
+  </Card>
+  <Card title="Slack Community" icon="slack">
+    [portkey.wiki/slack](https://portkey.wiki/slack)
+    #deployment-help channel
+  </Card>
+  <Card title="Email Support" icon="mail">
+    support@portkey.ai
+    24-hour response SLA
+  </Card>

@@ -4,7 +4,8 @@ title: "Google Vertex AI"
 
 Portkey provides a robust and secure gateway to facilitate the integration of various Large Language Models (LLMs), and embedding models into your apps, including [Google Vertex AI](https://cloud.google.com/vertex-ai?hl=en).
 
-With Portkey, you can take advantage of features like fast AI gateway access, observability, prompt management, and more, all while ensuring the secure management of your Vertex auth through a [virtual key](/product/ai-gateway/virtual-keys/) system
+With Portkey, you can take advantage of features like fast AI gateway access, observability, prompt management, and more, all while ensuring the secure management of your Vertex auth through a Portkey's [Model Catalog](/product/ai-gateway/model-catalog)
+
 <Note>
 Provider Slug. `vertex-ai`
 </Note>
@@ -34,9 +35,9 @@ pip install portkey-ai
 
 
 
-### 2\. Initialize Portkey with the Virtual Key
+### 2\. Initialize Portkey Client
 
-To integrate Vertex AI with Portkey, you'll need your `Vertex Project Id` Or `Service Account JSON` & `Vertex Region`, with which you can set up the Virtual key.
+To integrate Vertex AI with Portkey, you'll need your `Vertex Project Id` Or `Service Account JSON` & `Vertex Region`, with which you can set up the Portkey's AI Provider.
 
 [Here's a guide on how to find your Vertex Project details](/integrations/llms/vertex-ai#how-to-find-your-google-vertex-project-details)
 
@@ -49,7 +50,7 @@ If you are integrating through Service Account File, [refer to this guide](/inte
 
     const portkey = new Portkey({
         apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
-        provider:"@VERTEX_PROVIDER", // Your Vertex AI Virtual Key
+
     })
     ```
   </Tab>
@@ -59,18 +60,17 @@ If you are integrating through Service Account File, [refer to this guide](/inte
 
     portkey = Portkey(
         api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        provider="@VERTEX_PROVIDER"   # Replace with your virtual key for Google
     )
     ```
   </Tab>
 </Tabs>
 
 
-If you do not want to add your Vertex AI details to Portkey vault, you can directly pass them while instantiating the Portkey client. [More on that here](/integrations/llms/vertex-ai#making-requests-without-virtual-keys).
+If you do not want to add your Vertex AI details to Portkey vault, you can directly pass them while instantiating the Portkey client. [More on that here](/integrations/llms/vertex-ai#making-requests-without-portkeys-model-catalog).
 
-### **3\. Invoke Chat Completions with** Vertex AI and Gemini
+### **3\. Invoke Chat Completions with** Vertex AI
 
-Use the Portkey instance to send requests to Gemini models hosted on Vertex AI. You can also override the virtual key directly in the API call if needed.
+Use the Portkey instance to send requests to any models hosted on Vertex AI. You can also override the Portkey's AI Provider directly in the API call if needed.
 <Warning>
 Vertex AI uses OAuth2 to authenticate its requests, so you need to send the **access token** additionally along with the request.
 </Warning>
@@ -80,7 +80,7 @@ Vertex AI uses OAuth2 to authenticate its requests, so you need to send the **ac
 ```js
 const chatCompletion = await portkey.chat.completions.create({
     messages: [{ role: 'user', content: 'Say this is a test' }],
-    model: 'gemini-1.5-pro-latest',
+    model: '@VERTEX_PROVIDER/gemini-1.5-pro-latest', // your model slug from Portkey's Model Catalog
 }, {Authorization: "Bearer $YOUR_VERTEX_ACCESS_TOKEN"});
 
 console.log(chatCompletion.choices);
@@ -91,7 +91,7 @@ console.log(chatCompletion.choices);
 ```python
 completion = portkey.with_options(Authorization="Bearer $YOUR_VERTEX_ACCESS_TOKEN").chat.completions.create(
     messages= [{ "role": 'user', "content": 'Say this is a test' }],
-    model= 'gemini-1.5-pro-latest'
+    model= '@VERTEX_PROVIDER/gemini-1.5-pro-latest' # your model slug from Portkey's Model Catalog
 )
 
 print(completion)
@@ -101,13 +101,95 @@ print(completion)
 
 <Note>
 To use Anthopic models on Vertex AI, prepend `anthropic.` to the model name.<br />
-Example: `anthropic.claude-3-5-sonnet@20240620`
+Example: `@VERTEX_PROVIDER/anthropic.claude-3-5-sonnet@20240620`
 
 Similarly, for Meta models, prepend `meta.` to the model name.<br />
-Example: `meta.llama-3-8b-8192`
+Example: `@VERTEX_PROVIDER/meta.llama-3-8b-8192`
 </Note>
 
 
+
+
+
+
+## Using the /messages Route with Vertex AI Models
+
+Access Claude models on Vertex AI through Anthropic's native`/messages` endpoint using Portkey's SDK or Anthropic's SDK.
+
+<Note>
+This route only works with Claude models. For other models, use the standard OpenAI compliant endpoint.
+</Note>
+
+<Tabs>
+    <Tab title="cURL">
+        ```sh
+        curl --location 'https://api.portkey.ai/v1/messages' \
+        --header 'Content-Type: application/json' \
+        --header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+        --data '{
+            "model": "@YOUR_VERTEX_PROVIDER/MODEL_NAME",
+            "max_tokens": 250,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Hello, Claude"
+                }
+            ]
+        }'
+        ```
+    </Tab>
+    <Tab title="Python SDK">
+        ```python
+            Coming Soon!
+        ```
+    </Tab>
+    <Tab title="NodeJS SDK">
+        ```javascript
+            Coming Soon!
+        ```
+    </Tab>
+    <Tab title="Anthropic Python SDK">
+      ```python Anthropic Python SDK
+        import anthropic
+
+        client = anthropic.Anthropic(
+            api_key="dummy", # we will use portkey's provider slug
+            default_headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"},
+            base_url="https://api.portkey.ai/v1"
+        )
+        message = client.messages.create(
+            model="@your-provider-slug/your-model-name",
+            max_tokens=250,
+            messages=[
+                {"role": "user", "content": "Hello, Claude"}
+            ],
+        )
+        print(message.content)
+      ```
+    </Tab>
+    <Tab title="Anthropic TypeScript SDK">
+       ```typescript Anthropic TS SDK
+          import Anthropic from '@anthropic-ai/sdk';
+
+          const anthropic = new Anthropic({
+            apiKey: 'dummy', // we will use portkey's provider slug
+            baseURL: "https://api.portkey.ai/v1",
+            defaultHeaders: { "x-portkey-api-key": "YOUR_PORTKEY_API_KEY" }
+          });
+
+          const msg = await anthropic.messages.create({
+            model: "@your-provider-slug/your-model-name",
+            max_tokens: 1024,
+            messages: [{ role: "user", content: "Hello, Claude" }],
+          });
+          console.log(msg);
+        ```
+    </Tab>
+</Tabs>
+
+<Card title="Counting Tokens" href="/integrations/llms/bedrock/count-tokens" >
+Portkey also supports the [token counting endpoint for vertex](https://docs.anthropic.com/en/docs/build-with-claude/token-counting). Checkout the example in this link for more details.
+</Card>
 
 
 
@@ -124,7 +206,7 @@ To use self-deployed models on Vertex AI through Portkey:
    endpoints.my_endpoint_name
    ```
 
-2. **Required Permissions**: The Google Cloud service account used in your Portkey virtual key must have the `aiplatform.endpoints.predict` permission.
+2. **Required Permissions**: The Google Cloud service account used in your Portkey Model Catalog must have the `aiplatform.endpoints.predict` permission.
 
 <Tabs>
   <Tab title="NodeJS SDK">
@@ -230,7 +312,7 @@ curl --location 'https://api.portkey.ai/v1/chat/completions' \
 --header 'x-portkey-vertex-region: us-central1' \
 --header 'Content-Type: application/json' \
 --header 'x-portkey-api-key: PORTKEY_API_KEY' \
---header 'Authorization: GEMINI_API_KEY' \
+--header 'Authorization: VERTEX_AI_ACCESS_TOKEN' \
 --data '{
     "model": "gemini-1.5-pro-001",
     "max_tokens": 200,
@@ -260,6 +342,151 @@ curl --location 'https://api.portkey.ai/v1/chat/completions' \
 ```
 </CodeGroup>
 
+
+
+
+### Document Processing (PDF)
+
+Gemini's vision capabilities excel at understanding the content of PDF documents, including text, tables, and images.
+
+<Card href="https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/document-understanding#googlegenaisdk_textgen_with_pdf-python_genai_sdk" title="Gemini Documents Understanding Docs">
+</Card>
+
+**Method 1: Sending a Document via Google Files URL**
+
+Upload your PDF using the Files API to get a Google Files URL.
+
+<CodeGroup>
+```javascript NodeJS
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-1.5-pro',
+    messages: [{
+        role: 'user',
+        content: [
+            {
+                type: 'image_url',
+                image_url: {
+                    url: 'https://generativelanguage.googleapis.com/v1beta/files/your-pdf-file-id'
+                }
+            },
+            { type: 'text', text: 'Summarize the key findings of this research paper.' }
+        ]
+    }],
+});
+console.log(chatCompletion.choices[0].message.content);
+```
+```python Python
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://generativelanguage.googleapis.com/v1beta/files/your-pdf-file-id"
+                }
+            },
+            { "type": "text", "text": "Summarize the key findings of this research paper." }
+        ]
+    }],
+)
+print(completion.choices[0].message.content)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: VERTEX_AI_ACCESS_TOKEN' \
+--data '{
+    "model": "@VERTEX_PROVIDER/MODEL_NAME",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Summarize the key findings of this research paper."},
+            {"type": "image_url", "image_url": {"url": "https://generativelanguage.googleapis.com/v1beta/files/your-pdf-file-id"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+**Method 2: Sending a Local Document as Base64 Data**
+
+This is suitable for smaller, local PDF files.
+
+<CodeGroup>
+```javascript NodeJS
+import fs from 'fs';
+
+const pdfBytes = fs.readFileSync('whitepaper.pdf');
+const base64Pdf = pdfBytes.toString('base64');
+const pdfUri = `data:application/pdf;base64,${base64Pdf}`;
+
+const chatCompletion = await portkey.chat.completions.create({
+    model: '@VERTEX_PROVIDER/MODEL_NAME',
+    messages: [{
+        role: 'user',
+        content: [
+            { type: 'image_url', image_url: { url: pdfUri }},
+            { type: 'text', text: 'What is the main conclusion of this document?' }
+        ]
+    }],
+});
+console.log(chatCompletion.choices[0].message.content);
+```
+```python Python
+import base64
+
+with open("whitepaper.pdf", "rb") as pdf_file:
+    pdf_bytes = pdf_file.read()
+
+base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+pdf_uri = f"data:application/pdf;base64,{base64_pdf}"
+
+completion = portkey.chat.completions.create(
+    model='@VERTEX_PROVIDER/MODEL_NAME',
+    messages=[{
+        "role": "user",
+        "content": [
+            { "type": "image_url", "image_url": { "url": pdf_uri }},
+            { "type": "text", "text": "What is the main conclusion of this document?" }
+        ]
+    }],
+)
+print(completion.choices[0].message.content)
+```
+```sh cURL
+# First, encode your PDF file to base64
+# For example: base64 -i whitepaper.pdf -o pdf.b64
+# Then use the encoded content in the request
+
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: VERTEX_AI_ACCESS_TOKEN' \
+--data '{
+    "model": "@VERTEX_PROVIDER/MODEL_NAME",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is the main conclusion of this document?"},
+            {"type": "image_url", "image_url": {"url": "data:application/pdf;base64,YOUR_BASE64_PDF_DATA"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Note>While you can send other document types like `.txt` or `.html`, they will be treated as plain text. Gemini's native document vision capabilities are optimized for the `application/pdf` MIME type.</Note>
+
+---
+
+
+
+
 ## Extended Thinking (Reasoning Models) (Beta)
 
 <Note>
@@ -278,16 +505,15 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     ```py Python
     from portkey_ai import Portkey
 
-    # Initialize the Portkey client
+    # Initialize the Portkey clien
     portkey = Portkey(
         api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        provider="@PROVIDER",   
         strict_open_ai_compliance=False
     )
 
     # Create the request
     response = portkey.chat.completions.create(
-      model="anthropic.claude-3-7-sonnet@20250219",
+      model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from Portkey's Model Catalog
       max_tokens=3000,
       thinking={
           "type": "enabled",
@@ -324,14 +550,13 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     // Initialize the Portkey client
     const portkey = new Portkey({
       apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
-      provider:"@PROVIDER", // your vertex-ai virtual key
       strictOpenAiCompliance: false
     });
 
     // Generate a chat completion
     async function getChatCompletionFunctions() {
         const response = await portkey.chat.completions.create({
-          model: "anthropic.claude-3-7-sonnet@20250219",
+          model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from Portkey's Model Catalog
           max_tokens: 3000,
           thinking: {
               type: "enabled",
@@ -371,11 +596,9 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
     const openai = new OpenAI({
-      apiKey: 'VERTEX_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
+      apiKey: 'PORTKEY_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
       baseURL: PORTKEY_GATEWAY_URL,
       defaultHeaders: createHeaders({
-        provider: "vertex-ai",
-        apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
         strictOpenAiCompliance: false
       })
     });
@@ -383,7 +606,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     // Generate a chat completion with streaming
     async function getChatCompletionFunctions(){
       const response = await openai.chat.completions.create({
-        model: "anthropic.claude-3-7-sonnet@20250219",
+        model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from Portkey's Model Catalog
         max_tokens: 3000,
         thinking: {
             type: "enabled",
@@ -423,18 +646,16 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
     openai = OpenAI(
-        api_key='VERTEX_API_KEY',
+        api_key='PORTKEY_API_KEY',
         base_url=PORTKEY_GATEWAY_URL,
         default_headers=createHeaders(
-            provider="vertex-ai",
-            api_key="PORTKEY_API_KEY",
             strict_open_ai_compliance=False
         )
     )
 
 
     response = openai.chat.completions.create(
-        model="anthropic.claude-3-7-sonnet@20250219",
+        model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from Portkey's Model Catalog
         max_tokens=3000,
         thinking={
             "type": "enabled",
@@ -460,11 +681,9 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     curl "https://api.portkey.ai/v1/chat/completions" \
       -H "Content-Type: application/json" \
       -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-      -H "x-portkey-provider: vertex-ai" \
-      -H "x-api-key: $VERTEX_API_KEY" \
       -H "x-portkey-strict-open-ai-compliance: false" \
       -d '{
-        "model": "anthropic.claude-3-7-sonnet@20250219",
+        "model": "@VERTEX_PROVIDER/MODEL_NAME_FROM_PORTKEY_MODEL_CATALOG",
         "max_tokens": 3000,
         "thinking": {
           "type": "enabled",
@@ -505,13 +724,12 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     # Initialize the Portkey client
     portkey = Portkey(
         api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        provider="@PROVIDER",   
         strict_open_ai_compliance=False
     )
 
     # Create the request
     response = portkey.chat.completions.create(
-      model="anthropic.claude-3-7-sonnet@20250219",
+      model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from Portkey's Model Catalog
       max_tokens=3000,
       thinking={
           "type": "enabled",
@@ -552,14 +770,13 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     // Initialize the Portkey client
     const portkey = new Portkey({
       apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
-      provider:"@PROVIDER", // your vertex-ai virtual key
       strictOpenAiCompliance: false
     });
 
     // Generate a chat completion
     async function getChatCompletionFunctions() {
         const response = await portkey.chat.completions.create({
-          model: "anthropic.claude-3-7-sonnet@20250219",
+          model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from Portkey's Model Catalog
           max_tokens: 3000,
           thinking: {
               type: "enabled",
@@ -602,11 +819,9 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
     const openai = new OpenAI({
-      apiKey: 'ANTHROPIC_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
+      apiKey: 'PORTKEY_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
       baseURL: PORTKEY_GATEWAY_URL,
       defaultHeaders: createHeaders({
-        provider: "vertex-ai",
-        apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
         strictOpenAiCompliance: false
       })
     });
@@ -614,7 +829,7 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     // Generate a chat completion with streaming
     async function getChatCompletionFunctions(){
       const response = await openai.chat.completions.create({
-        model: "anthropic.claude-3-7-sonnet@20250219",
+        model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from Portkey's Model Catalog
         max_tokens: 3000,
         thinking: {
             type: "enabled",
@@ -658,18 +873,16 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
     openai = OpenAI(
-        api_key='Anthropic_API_KEY',
+        api_key='PORTKEY_API_KEY',
         base_url=PORTKEY_GATEWAY_URL,
         default_headers=createHeaders(
-            provider="vertex-ai",
-            api_key="PORTKEY_API_KEY",
             strict_open_ai_compliance=False
         )
     )
 
 
     response = openai.chat.completions.create(
-        model="anthropic.claude-3-7-sonnet@20250219",
+        model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from Portkey's Model Catalog
         max_tokens=3000,
         thinking={
             "type": "enabled",
@@ -709,11 +922,9 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
     curl "https://api.portkey.ai/v1/chat/completions" \
       -H "Content-Type: application/json" \
       -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-      -H "x-portkey-provider: vertex-ai" \
-      -H "x-api-key: $VERTEX_API_KEY" \
       -H "x-portkey-strict-open-ai-compliance: false" \
       -d '{
-        "model": "anthropic.claude-3-7-sonnet@20250219",
+        "model": "@VERTEX_PROVIDER/MODEL_NAME_FROM_PORTKEY_MODEL_CATALOG",
         "max_tokens": 3000,
         "thinking": {
           "type": "enabled",
@@ -776,14 +987,13 @@ import Portkey from 'portkey-ai';
 
 const portkey = new Portkey({
     apiKey: "PORTKEY_API_KEY",
-    provider:"@VERTEX_PROVIDER"
 });
 
 // Generate embeddings
 async function getEmbeddings() {
     const embeddings = await portkey.embeddings.create({
         input: "embed this",
-        model: "text-multilingual-embedding-002",
+        model: "@VERTEX_PROVIDER/text-multilingual-embedding-002", // your model slug from Portkey's Model Catalog
         // @ts-ignore (if using typescript)
         task_type: "CLASSIFICATION", // Optional
     }, {Authorization: "Bearer $YOUR_VERTEX_ACCESS_TOKEN"});
@@ -800,14 +1010,13 @@ from portkey_ai import Portkey
 # Initialize the Portkey client
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="@VERTEX_PROVIDER"
 )
 
 # Generate embeddings
 def get_embeddings():
     embeddings = portkey.with_options(Authorization="Bearer $YOUR_VERTEX_ACCESS_TOKEN").embeddings.create(
         input='The vector representation for this text',
-        model='text-embedding-004',
+        model='@VERTEX_PROVIDER/text-embedding-004', # your model slug from Portkey's Model Catalog
         task_type="CLASSIFICATION" # Optional
     )
     print(embeddings)
@@ -820,11 +1029,8 @@ get_embeddings()
  curl 'https://api.portkey.ai/v1/embeddings' \
     -H 'Content-Type: application/json' \
     -H 'x-portkey-api-key: PORTKEY_API_KEY' \
-    -H 'x-portkey-provider: vertex-ai' \
-    -H 'Authorization: Bearer VERTEX_AI_ACCESS_TOKEN' \
-    -H 'x-portkey-provider: $VERTEX_PROVIDER' \
     --data-raw '{
-        "model": "textembedding-004",
+        "model": "@VERTEX_PROVIDER/text-embedding-004", # your model slug from Portkey's Model Catalog
         "input": "A HTTP 246 code is used to signify an AI response containing hallucinations or other inaccuracies",
         "task_type": "CLASSIFICATION"
     }'
@@ -858,7 +1064,7 @@ curl https://api.portkey.ai/v1/images/generations \
   -H "x-portkey-provider: $PORTKEY_PROVIDER" \
   -d '{
     "prompt": "Cat flying to mars from moon",
-    "model":"imagen-3.0-generate-001"
+    "model":"@your-model-slug"
   }'
 ```
 ```py Python
@@ -866,12 +1072,11 @@ from portkey_ai import Portkey
 
 client = Portkey(
   api_key = "PORTKEY_API_KEY",
-  virtual_key = "PROVIDER"
 )
 
 client.images.generate(
   prompt = "Cat flying to mars from moon",
-  model = "imagen-3.0-generate-001"
+  model = "@VERTEX_PROVIDER/imagen-3.0-generate-001" # your model slug from Portkey's Model Catalog
 )
 ```
 ```ts JavaScript
@@ -879,13 +1084,12 @@ import Portkey from 'portkey-ai';
 
 const client = new Portkey({
   apiKey: 'PORTKEY_API_KEY',
-  provider:'@PROVIDER'
 });
 
 async function main() {
   const image = await client.images.generate({
     prompt: "Cat flying to mars from moon",
-    model: "imagen-3.0-generate-001"
+    model: "@VERTEX_PROVIDER/imagen-3.0-generate-001" # your model slug from Portkey's Model Catalog
   });
 
   console.log(image.data);
@@ -934,9 +1138,9 @@ If you want to get the inference text only, pass the [strict open ai compliance 
 
 ---
 
-## Making Requests Without Virtual Keys
+## Making Requests Without Portkey's Model Catalog
 
-You can also pass your Vertex AI details & secrets directly without using the Virtual Keys in Portkey.
+You can also pass your Vertex AI details & secrets directly without using the Portkey's Model Catalog.
 
 Vertex AI expects a `region`, a `project ID` and the `access token` in the request for a successful completion request. This is how you can specify these fields directly in your requests:
 
@@ -955,7 +1159,7 @@ Vertex AI expects a `region`, a `project ID` and the `access token` in the reque
         apiKey: "PORTKEY_API_KEY",
         vertexProjectId: "sample-55646",
         vertexRegion: "us-central1",
-        provider:"vertex_ai",
+        provider:"vertex-ai",
         Authorization: "$GCLOUD AUTH PRINT-ACCESS-TOKEN"
     })
 
@@ -975,7 +1179,7 @@ portkey = Portkey(
     api_key="PORTKEY_API_KEY",
     vertex_project_id="sample-55646",
     vertex_region="us-central1",
-    provider="vertex_ai",
+    provider="vertex-ai",
     Authorization="$GCLOUD AUTH PRINT-ACCESS-TOKEN"
 )
 

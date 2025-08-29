@@ -1,0 +1,97 @@
+---
+title: "Replace Custom Regex Patterns"
+description: "Redact custom patterns with Regex in Portkey."
+---
+
+For more granular control over pattern redaction, you can create custom patterns using Portkey's **Regex Match** guardrail with redaction capabilities. This allows you to define specific regex patterns for sensitive information unique to your use case.
+
+### Setting Up Custom Regex Patterns
+
+<Frame>
+<img src="/images/guardrails/regex.png" />
+</Frame>
+
+1. **Navigate to Guardrails**: Go to the `Guardrails` page and click `Create`
+2. **Select Regex Match**: Choose the "Regex Replace" guardrail from the BASIC category
+3. **Configure the Pattern**:
+   - **Regex Rule**: Enter your regex pattern to match specific data (e.g., `\b\d{3}-\d{2}-\d{4}\b` for SSN patterns)
+   - **Replacement Text**: Define what to replace matches with (e.g., `[REDACTED]`, `*****`, `[SSN_HIDDEN]`)
+
+4. **Save the Guardrail**: Name your guardrail and save it to get the associated Guardrail ID
+
+### Common Regex Patterns for Sensitive Data
+
+
+| Pattern Type | Regex Pattern | Replacement Example |
+|----------|---------------|-------------------|
+| Credit Card | `\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b` | `[CREDIT_CARD]` |
+| Social Security Number | `\b\d{3}-\d{2}-\d{4}\b` | `[SSN_REDACTED]` |
+| Phone Numbers | `\b\d{3}[-.]\d{3}[-.]\d{4}\b` | `[PHONE_HIDDEN]` |
+| Email Addresses | `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b` | `[EMAIL_REDACTED]` |
+| Custom Employee IDs | `EMP-\d{6}` | `[EMPLOYEE_ID]` |
+
+
+### Adding to Your Config
+
+Once you've created your custom regex pattern guardrail, add it to your Portkey config:
+
+```json
+{
+  "before_request_hooks": [
+    {"id": "your-guardrail-id"}
+  ],
+  "after_request_hooks": [
+    {"id": "your-guardrail-id"}
+  ]
+}
+```
+
+<Note>
+You can add the same guardrail to both `before_request_hooks` (input guardrails) and `after_request_hooks` (output guardrails) to scan and redact regex patterns in both user inputs and LLM responses.
+</Note>
+
+### Example Implementation
+
+<Tabs>
+  <Tab title="NodeJS">
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***" // Config with custom regex pattern redaction
+});
+
+const response = await portkey.chat.completions.create({
+    model: "@your-model-slug",
+    messages: [
+        {
+            role: "user",
+            content: "My SSN is 123-45-6789 and credit card is 4532-1234-5678-9012"
+        }
+    ]
+});
+```
+  </Tab>
+  <Tab title="Python">
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***" # Config with custom regex pattern redaction
+)
+
+response = portkey.chat.completions.create(
+    model="@your-model-slug",
+    messages=[
+        {
+            "role": "user",
+            "content": "My SSN is 123-45-6789 and credit card is 4532-1234-5678-9012"
+        }
+    ]
+)
+```
+  </Tab>
+</Tabs>
+
+With the custom regex guardrail configured, the input would be automatically transformed to:
+```
+"My SSN is [SSN_REDACTED] and credit card is [CREDIT_CARD]"
+```
