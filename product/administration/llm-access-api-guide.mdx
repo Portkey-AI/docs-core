@@ -1,0 +1,583 @@
+---
+title: "Enterprise API Guide: Model Catalog Management"
+description: "Complete guide for enterprises to programmatically manage AI integrations, workspace provisioning, and model access using Portkey's Admin APIs"
+---
+
+<Note>
+This guide is designed for **enterprise administrators and DevOps teams** who need to programmatically manage AI provider integrations across their organization. For UI-based management, see the [Model Catalog](/product/model-catalog) documentation.
+</Note>
+
+Enterprise teams often need to programmatically manage their AI infrastructure at scale. This guide walks you through using Portkey's Admin APIs to automate the complete setup process - from creating integrations to provisioning workspace access and managing model availability.
+
+## Why Use APIs Instead of UI?
+
+**Automation & Scale**: Set up hundreds of integrations and workspace configurations instantly
+**Infrastructure as Code**: Version control your AI infrastructure configurations
+**CI/CD Integration**: Automate integration setup as part of your deployment pipeline
+**Governance at Scale**: Apply consistent policies across multiple environments
+**Audit & Compliance**: Track all configuration changes through your existing logging systems
+
+---
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+1. **Admin API Access**: Your Portkey organization admin API key
+2. **Organization Structure**: List of workspaces that need AI access
+3. **Provider Credentials**: API keys for your AI providers (OpenAI, Anthropic, etc.)
+4. **Governance Policies**: Budget limits, rate limits, and model access policies defined
+
+<Card title="Get Your Admin API Key" icon="key">
+  Contact your Portkey admin or visit the Portkey dashboard to generate an admin API key with the necessary permissions.
+</Card>
+
+---
+
+## Step 1: Create Integration
+
+An Integration securely stores your AI provider credentials and serves as the foundation for all AI access in your organization.
+
+<CodeGroup>
+```python Python SDK
+from portkey_ai import Portkey
+
+# Initialize Portkey client with admin API key
+portkey = Portkey(
+    api_key="YOUR_ADMIN_API_KEY",
+    base_url="https://albus.portkey.ai/v2"  # Admin API base URL
+)
+
+# Create an OpenAI integration
+openai_integration = portkey.integrations.create(
+    name="OpenAI Production",
+    description="Production OpenAI integration for all teams",
+    key="your-openai-api-key-here",
+    ai_provider_id="openai",
+    slug="openai-prod",
+    organisation_id="your-org-id",
+    note="Created via API for production environment",
+    configuration={
+        "base_url": "https://api.openai.com/v1",
+        "api_version": "2024-01-01"
+    }
+)
+
+print(f"Created integration: {openai_integration.slug}")
+```
+
+```python AWS Bedrock Example
+# Create an AWS Bedrock integration
+bedrock_integration = portkey.integrations.create(
+    name="AWS Bedrock Production",
+    description="Production Bedrock integration with enterprise AWS account",
+    key="your-aws-access-key",
+    ai_provider_id="bedrock",
+    slug="bedrock-prod",
+    configuration={
+        "aws_secret_access_key": "your-secret-key",
+        "aws_region": "us-east-1",
+        "aws_access_key_id": "your-access-key-id"
+    }
+)
+```
+</CodeGroup>
+
+<Card title="Integration API Reference" href="/api-reference/admin-api/control-plane/integrations/list-integrations">
+  View complete integration management API documentation
+</Card>
+
+### Common AI Providers
+
+| Provider | AI Provider ID | Required Configuration |
+|----------|----------------|------------------------|
+| OpenAI | `openai` | `api_key` |
+| Anthropic | `anthropic` | `api_key` |
+| AWS Bedrock | `bedrock` | `aws_access_key`, `aws_secret_access_key`, `aws_region` |
+| Azure OpenAI | `azure-openai` | `api_key`, `api_base`, `api_version` |
+| Google Vertex AI | `vertex-ai` | Service account credentials |
+
+---
+
+## Step 2: Configure Workspace Provisioning  
+
+Workspace provisioning determines which teams can access your AI integrations. This step controls the security boundary of your AI infrastructure.
+
+```python
+# List available workspaces first
+workspaces = portkey.integrations.workspaces.list(
+    slug="openai-prod"
+)
+
+print("Available workspaces:", workspaces)
+
+# Provision integration to specific workspaces
+provisioning_result = portkey.integrations.workspaces.update(
+    slug="openai-prod",
+    workspaces=[
+        {
+            "id": "ws-engineering-team",
+            "enabled": True
+        },
+        {
+            "id": "ws-data-science-team", 
+            "enabled": True
+        },
+        {
+            "id": "ws-qa-testing",
+            "enabled": True
+        }
+    ]
+)
+
+print("Workspace provisioning updated:", provisioning_result)
+```
+
+<Card title="Workspace API Reference" href="/api-reference/admin-api/control-plane/integrations/workspaces/update-workspace-access">
+  View workspace provisioning API documentation
+</Card>
+
+### Provisioning Strategies
+
+**Selective Access**: Provision only to workspaces that need specific AI capabilities
+**Environment-Based**: Create separate integrations for dev/staging/production environments
+**Team-Based**: Provision based on team responsibilities and access requirements
+
+---
+
+## Step 3: Set Budget & Rate Limits
+
+Configure financial and usage guardrails to prevent runaway costs and ensure fair resource distribution.
+
+<Frame>
+  <img src="/images/product/model-catalog/budget-and-limits-page-model-catalog.png" alt="Budget and Rate Limit Configuration" />
+</Frame>
+
+```python
+# Update workspace with budget and rate limits
+workspace_limits = portkey.integrations.workspaces.update(
+    slug="openai-prod",
+    workspaces=[
+        {
+            "id": "ws-engineering-team",
+            "enabled": True,
+            "budget_limit": {
+                "type": "cost",  # or "token"
+                "value": 1000,  # $1000 USD
+                "period": "monthly",  # "weekly", "monthly", or "none"
+                "alert_threshold": 800  # Alert at $800
+            },
+            "rate_limit": {
+                "type": "request",  # or "token" 
+                "value": 10000,  # 10k requests
+                "period": "hour"  # "minute", "hour", or "day"
+            }
+        },
+        {
+            "id": "ws-data-science-team",
+            "enabled": True,
+            "budget_limit": {
+                "type": "cost",
+                "value": 5000,  # Higher budget for data science
+                "period": "monthly"
+            },
+            "rate_limit": {
+                "type": "token",
+                "value": 1000000,  # 1M tokens per hour
+                "period": "hour"
+            }
+        }
+    ]
+)
+```
+
+### Budget Limit Options
+
+**Cost-Based Limits**: Set maximum spending in USD (minimum $1)
+**Token-Based Limits**: Set maximum token consumption (minimum 100 tokens)
+**Periodic Reset**: Automatically reset limits weekly or monthly
+**Alert Thresholds**: Get notified before limits are reached
+
+### Rate Limit Options
+
+**Request-Based**: Limit API calls per time window
+**Token-Based**: Limit token consumption rate
+**Time Windows**: Per minute, hour, or day intervals
+
+---
+
+## Step 4: Configure Model Provisioning
+
+Control which AI models are available through your integration. This ensures teams only access approved, cost-effective models.
+
+```python
+# List all available models for the integration
+available_models = portkey.integrations.models.list(
+    slug="openai-prod"
+)
+
+print("Available models:", available_models)
+
+# Enable specific models (allowlist approach)
+model_provisioning = portkey.integrations.models.update(
+    slug="openai-prod", 
+    models=[
+        {
+            "slug": "gpt-4o-mini",
+            "enabled": True
+        },
+        {
+            "slug": "gpt-4o",
+            "enabled": True
+        },
+        {
+            "slug": "gpt-3.5-turbo",
+            "enabled": True
+        },
+        {
+            "slug": "text-embedding-3-small",
+            "enabled": True
+        }
+    ]
+)
+
+print("Model provisioning updated:", model_provisioning)
+```
+
+<Card title="Model Provisioning API Reference" href="/api-reference/admin-api/control-plane/integrations/models/update-model-access">
+  View model provisioning API documentation
+</Card>
+
+### Model Selection Strategies
+
+**Cost-Optimized**: Enable only the most cost-effective models for each use case
+**Performance-Tiered**: Provide different model tiers for different teams
+**Compliance-First**: Only enable models that meet your governance requirements
+
+---
+
+## Step 5: Create Workspace API Keys
+
+Generate API keys for your teams to access the provisioned AI resources. These keys inherit all the limits and model access you've configured.
+
+```python
+# Create API key for engineering team
+engineering_api_key = portkey.api_keys.create(
+    name="Engineering Team Production Key",
+    type="organisation",
+    sub_type="service", 
+    workspace_id="ws-engineering-team",
+    scopes=[
+        "logs.list",
+        "logs.view", 
+        "configs.create",
+        "configs.update",
+        "configs.read",
+        "configs.list",
+        "virtual_keys.create",
+        "virtual_keys.update",
+        "virtual_keys.read",
+        "virtual_keys.list"
+    ]
+)
+
+# Create API key for data science team with broader permissions
+data_science_api_key = portkey.api_keys.create(
+    name="Data Science Team API Key",
+    type="organisation", 
+    sub_type="service",
+    workspace_id="ws-data-science-team",
+    scopes=[
+        "logs.export",
+        "logs.list",
+        "logs.view",
+        "configs.create", 
+        "configs.update",
+        "configs.delete",
+        "configs.read",
+        "configs.list",
+        "virtual_keys.create",
+        "virtual_keys.update",
+        "virtual_keys.delete", 
+        "virtual_keys.read",
+        "virtual_keys.list"
+    ]
+)
+
+print(f"Engineering API Key: {engineering_api_key.key}")
+print(f"Data Science API Key: {data_science_api_key.key}")
+```
+
+### API Key Scopes Reference
+
+| Scope | Description | Recommended For |
+|-------|-------------|-----------------|
+| `logs.*` | Access to request logs and analytics | All teams |
+| `configs.*` | Manage AI configurations | Development teams |
+| `virtual_keys.*` | Manage virtual keys for applications | Production teams |
+| `*.export` | Export data capabilities | Data teams |
+| `*.delete` | Deletion permissions | Admin teams only |
+
+---
+
+## Step 6: List Available Models
+
+Your teams can now discover which models are available through their workspace API keys.
+
+```python
+# Your teams can use their workspace API keys to list available models
+from portkey_ai import Portkey
+
+# Initialize with workspace API key (not admin key)
+user_client = Portkey(
+    api_key="WORKSPACE_API_KEY_FROM_STEP_5"
+)
+
+# List available models (inherits integration's model provisioning)
+available_models = user_client.models.list()
+
+print("Models available to this workspace:")
+for model in available_models:
+    print(f"- {model.id} ({model.provider})")
+```
+
+Your teams can now make AI requests using these provisioned models:
+
+```python
+# Make a request using a provisioned model
+response = user_client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "user", "content": "Hello, world!"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+---
+
+## Complete Example Workflow
+
+Here's a complete script that sets up an enterprise AI infrastructure:
+
+<CodeGroup>
+```python Complete Setup Script
+from portkey_ai import Portkey
+import json
+
+class PortkeyEnterpriseSetup:
+    def __init__(self, admin_api_key, org_id):
+        self.portkey = Portkey(
+            api_key=admin_api_key,
+            base_url="https://albus.portkey.ai/v2"
+        )
+        self.org_id = org_id
+    
+    def create_integration(self, name, provider, credentials, slug):
+        """Create a new AI provider integration"""
+        integration = self.portkey.integrations.create(
+            name=name,
+            ai_provider_id=provider,
+            slug=slug,
+            organisation_id=self.org_id,
+            **credentials
+        )
+        print(f"✅ Created integration: {integration.slug}")
+        return integration
+    
+    def setup_workspace_provisioning(self, integration_slug, workspace_configs):
+        """Configure workspace access with limits"""
+        workspaces = []
+        for config in workspace_configs:
+            workspace = {
+                "id": config["workspace_id"],
+                "enabled": True
+            }
+            
+            # Add budget limits if specified
+            if "budget_limit" in config:
+                workspace["budget_limit"] = config["budget_limit"]
+            
+            # Add rate limits if specified  
+            if "rate_limit" in config:
+                workspace["rate_limit"] = config["rate_limit"]
+            
+            workspaces.append(workspace)
+        
+        result = self.portkey.integrations.workspaces.update(
+            slug=integration_slug,
+            workspaces=workspaces
+        )
+        print(f"✅ Configured workspace provisioning for {integration_slug}")
+        return result
+    
+    def setup_model_provisioning(self, integration_slug, enabled_models):
+        """Configure which models are available"""
+        models = [{"slug": model, "enabled": True} for model in enabled_models]
+        
+        result = self.portkey.integrations.models.update(
+            slug=integration_slug,
+            models=models
+        )
+        print(f"✅ Configured model provisioning for {integration_slug}")
+        return result
+    
+    def create_workspace_api_keys(self, workspace_configs):
+        """Create API keys for each workspace"""
+        api_keys = {}
+        
+        for config in workspace_configs:
+            api_key = self.portkey.api_keys.create(
+                name=f"{config['name']} API Key",
+                type="organisation",
+                sub_type="service",
+                workspace_id=config["workspace_id"],
+                scopes=config.get("scopes", [
+                    "logs.list", "logs.view", "configs.create",
+                    "configs.read", "virtual_keys.create", "virtual_keys.read"
+                ])
+            )
+            api_keys[config["workspace_id"]] = api_key.key
+            print(f"✅ Created API key for {config['name']}")
+        
+        return api_keys
+
+# Usage example
+setup = PortkeyEnterpriseSetup(
+    admin_api_key="YOUR_ADMIN_API_KEY",
+    org_id="YOUR_ORG_ID"
+)
+
+# Step 1: Create integrations
+openai_integration = setup.create_integration(
+    name="OpenAI Production",
+    provider="openai", 
+    credentials={"key": "your-openai-key"},
+    slug="openai-prod"
+)
+
+# Step 2 & 3: Setup workspace provisioning with limits
+workspace_configs = [
+    {
+        "workspace_id": "ws-engineering",
+        "name": "Engineering Team",
+        "budget_limit": {"type": "cost", "value": 1000, "period": "monthly"},
+        "rate_limit": {"type": "request", "value": 10000, "period": "hour"},
+        "scopes": ["logs.list", "configs.create", "virtual_keys.create"]
+    },
+    {
+        "workspace_id": "ws-data-science", 
+        "name": "Data Science Team",
+        "budget_limit": {"type": "cost", "value": 5000, "period": "monthly"},
+        "rate_limit": {"type": "token", "value": 1000000, "period": "hour"},
+        "scopes": ["logs.export", "configs.create", "virtual_keys.create"]
+    }
+]
+
+setup.setup_workspace_provisioning("openai-prod", workspace_configs)
+
+# Step 4: Configure model access
+enabled_models = ["gpt-4o-mini", "gpt-4o", "text-embedding-3-small"]
+setup.setup_model_provisioning("openai-prod", enabled_models)
+
+# Step 5: Create workspace API keys
+api_keys = setup.create_workspace_api_keys(workspace_configs)
+
+print("\n🎉 Setup complete!")
+print("API Keys for your teams:")
+for workspace_id, api_key in api_keys.items():
+    print(f"  {workspace_id}: {api_key}")
+```
+</CodeGroup>
+
+---
+
+## Best Practices
+
+### Security
+
+**🔒 API Key Management**: Store admin API keys securely (environment variables, secret managers)
+**👥 Principle of Least Privilege**: Give workspaces only the scopes they need  
+**🔄 Regular Rotation**: Rotate API keys periodically
+**📝 Audit Logging**: Track all API configuration changes
+
+### Cost Control
+
+**💰 Start Conservative**: Begin with lower budget limits and increase as needed
+**📊 Monitor Usage**: Set up alerts at 80% of budget limits
+**🎯 Model Optimization**: Enable cost-effective models first, add premium models selectively
+**📈 Regular Reviews**: Review and adjust limits based on actual usage patterns
+
+### Operational Excellence
+
+**📋 Infrastructure as Code**: Version control your setup scripts
+**🧪 Test in Staging**: Test integration setup in non-production environments first  
+**📚 Documentation**: Document your integration patterns and governance policies
+**🚀 Gradual Rollout**: Start with a few workspaces, then expand
+
+### Model Management
+
+**🎨 Curated Catalogs**: Create different model sets for different use cases
+**⚡ Performance Tiers**: Provide fast models for real-time use, powerful models for batch processing
+**🔍 Regular Updates**: Review and update model availability as new models are released
+**📊 Usage Analytics**: Monitor which models are most used to optimize provisioning
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**Integration Creation Fails**
+- Verify your AI provider credentials are correct
+- Check that the AI provider ID matches exactly (case-sensitive)
+- Ensure your admin API key has sufficient permissions
+
+**Workspace Provisioning Errors**
+- Confirm workspace IDs exist and are accessible
+- Verify budget/rate limit values meet minimum requirements
+- Check that your organization plan supports the requested features
+
+**Model Provisioning Issues**
+- Ensure model slugs match exactly with provider's model names
+- Verify your AI provider account has access to the requested models
+- Check that model provisioning is supported for your integration type
+
+**API Key Creation Fails**
+- Confirm the workspace ID exists and is provisioned
+- Verify the requested scopes are valid and available
+- Check that you haven't exceeded API key limits for the workspace
+
+### Getting Help
+
+If you encounter issues:
+1. Check the [API Reference documentation](/api-reference/admin-api/control-plane/integrations/list-integrations)
+2. Review your API key permissions and scopes
+3. Contact Portkey support with specific error messages and request IDs
+
+---
+
+## What's Next?
+
+After completing this setup:
+
+1. **Deploy Applications**: Your teams can now build AI applications using their workspace API keys
+2. **Monitor Usage**: Track costs and usage through the Portkey dashboard
+3. **Scale Up**: Add more integrations, workspaces, and models as needed
+4. **Optimize**: Adjust limits and model access based on actual usage patterns
+
+<CardGroup cols={2}>
+    <Card title="Virtual Keys" href="/product/ai-gateway/virtual-keys">
+        Create application-specific keys with custom configurations
+    </Card>
+    <Card title="Observability" href="/product/observability">
+        Monitor and analyze your AI infrastructure performance
+    </Card>
+    <Card title="Config Management" href="/product/ai-gateway/configs">
+        Manage fallbacks, retries, and routing configurations
+    </Card>
+    <Card title="Enterprise Features" href="/product/enterprise">
+        Explore advanced enterprise capabilities
+    </Card>
+</CardGroup>
