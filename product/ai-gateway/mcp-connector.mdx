@@ -1,0 +1,289 @@
+---
+title: "MCP Connector"
+description: "Portkey’s Model Context Protocol (MCP) connector feature enables you to connect to remote MCP servers directly from the Chat Completions API without a separate MCP client."
+---
+
+[Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) is an open protocol that standardizes how applications provide tools and context to LLMs. The MCP tool in the Chat Completions API allows developers to give the model access to tools hosted on **Remote MCP servers**. These are MCP servers maintained by developers and organizations across the internet that expose these tools.
+
+**Key features**
+
+- **Direct API integration**: Connect to MCP servers without implementing an MCP client
+- **Tool calling support**: Access MCP tools through the Chat Completions API
+- **OAuth authentication**: Support for OAuth Bearer tokens for authenticated servers
+- **Multiple servers**: Connect to multiple MCP servers in a single request
+
+<Info>
+  **Limitations**
+
+  - Of the feature set of the [**MCP specification**](https://modelcontextprotocol.io/introduction#explore-mcp), only [**tool calls**](https://modelcontextprotocol.io/docs/concepts/tools) are currently supported.
+  - The server must be publicly exposed through HTTP (supports both Streamable HTTP and SSE transports). Local STDIO servers cannot be connected directly.
+  - The MCP connector is currently not supported on Completions, Messages or Messages endpoints.
+</Info>
+
+## Adding MCP Tools
+
+Calling a remote MCP server with the Chat Completions API is straightforward. For example, here's how you can use the [DeepWiki](https://deepwiki.com/) MCP server to ask questions about nearly any public GitHub repository.
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -d '{
+  "model": "@openai-prod/gpt-4.1",
+  "tools": [
+    {
+      "type": "mcp",
+      "server_label": "deepwiki",
+      "server_url": "https://mcp.deepwiki.com/mcp",
+      "require_approval": "never"
+    }
+  ],
+  "messages": [{
+	"content": "What transport protocols are supported in the 2025-03-26 version of the MCP spec?",
+    "role": "user"
+  }]
+}'
+```
+
+
+```javascript Javascript SDK
+import { Portkey } from 'portkey-ai';
+const client = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+const resp = await client.chat.completions.create({
+  model: '@openai-prod/gpt-4o',
+  messages: [{ role: 'user', content: 'What transport protocols are supported in the 2025-03-26 version of the MCP spec?' }],
+  tools: [{
+      "type": "mcp",
+      "server_label": "deepwiki",
+      "server_url": "https://mcp.deepwiki.com/mcp",
+      "require_approval": "never"
+  }]
+});
+```
+
+
+```python Python SDK
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+resp = portkey.chat.completions.create(
+  model="@openai-prod/gpt-4o",
+  messages=[{"role":"user","content":"What transport protocols are supported in the 2025-03-26 version of the MCP spec?"}],
+  tools=[{
+      "type": "mcp",
+      "server_label": "deepwiki",
+      "server_url": "https://mcp.deepwiki.com/mcp",
+      "require_approval": "never"
+  }]
+)
+```
+
+
+```python OpenAI Python SDK
+from openai import OpenAI
+
+client = OpenAI(api_key="PORTKEY_API_KEY", base_url="https://api.portkey.ai/v1")
+
+client.chat.completions.create(
+	model="@openai-prod/gpt-4o", 
+	messages=[…],
+	tools=[{
+      "type": "mcp",
+      "server_label": "deepwiki",
+      "server_url": "https://mcp.deepwiki.com/mcp",
+      "require_approval": "never"
+  	}]
+)
+```
+
+
+```javascript OpenAI JS SDK
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai/v1"
+});
+
+const completion = await openai.chat.completions.create({
+  model: "@openai-prod/gpt-4o",
+  messages: [{ role: 'user', content: 'What transport protocols are supported in the 2025-03-26 version of the MCP spec?' }],
+  tools: [{
+    "type": "mcp",
+    "server_label": "deepwiki",
+    "server_url": "https://mcp.deepwiki.com/mcp",
+    "require_approval": "never"
+  }]
+});
+```
+
+</CodeGroup>
+
+## MCP Tool Configuration
+
+Each tool with `type` as `mcp` can have the following configuration fields
+
+```json
+{
+  "type": "mcp",
+  "server_label": "deepwiki",
+  "server_url": "https://mcp.deepwiki.com/mcp",
+  "require_approval": "never",
+  "allowed_tools": ["ask_question"]
+}
+```
+
+### Field Descriptions
+
+| Property         | Type   | Required | Description                                                                                                     |
+| ---------------- | ------ | -------- | --------------------------------------------------------------------------------------------------------------- |
+| type             | string | yes      | The type of the tool MUST be `mcp`                                                                              |
+| server_label     | string | yes      | The name of the MCP server to be called. This should not contain any spaces, special characters or underscores. |
+| server_url       | string | yes      | The URL of the MCP server. Must start with https://                                                             |
+| require_approval | string | no       | The only accepted value currently in this is "never"                                                            |
+| allowed_tools    | array  | no       | List to restrict the tools to allow (by default, all tools are allowed)                                         |
+| headers          | object | no       | Optional HTTP headers to send to the MCP server. Use for authentication or other purposes.                      |
+
+## Authentication
+
+Unlike the DeepWiki MCP server, most other MCP servers require authentication. The MCP tool in the Chat Completions API gives you the ability to flexibly specify headers that should be included in any request made to a remote MCP server. These headers can be used to share API keys, oAuth access tokens, or any other authentication scheme the remote MCP server implements.
+
+The most common header used by remote MCP servers is the `Authorization` header. This is what passing this header looks like:
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -d '{
+  "model": "@openai-prod/gpt-4.1",
+  "tools": [{
+    "type": "mcp",
+    "server_label": "stripe",
+    "server_url": "https://mcp.stripe.com",
+    "headers": {
+      "Authorization": "Bearer $STRIPE_API_KEY"
+    }
+  }],
+  "messages": [{
+	"content": "Create a payment link for $20",
+    "role": "user"
+  }]
+}'
+```
+
+
+```javascript Javascript SDK
+import { Portkey } from 'portkey-ai';
+const client = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+const resp = await client.chat.completions.create({
+  model: '@openai-prod/gpt-4o',
+  messages: [{ role: 'user', content: 'Create a payment link for $20' }],
+  tools: [{
+    "type": "mcp",
+    "server_label": "stripe",
+    "server_url": "https://mcp.stripe.com",
+    "headers": {
+      "Authorization": "Bearer $STRIPE_API_KEY"
+    }
+  }]
+});
+```
+
+
+```python Python SDK
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+resp = portkey.chat.completions.create(
+  model="@openai-prod/gpt-4o",
+  messages=[{"role":"user","content":"Create a payment link for $20"}],
+  tools=[{
+    "type": "mcp",
+    "server_label": "stripe",
+    "server_url": "https://mcp.stripe.com",
+    "headers": {
+      "Authorization": "Bearer $STRIPE_API_KEY"
+    }
+  }]
+)
+```
+
+
+```python OpenAI Python SDK
+from openai import OpenAI
+
+client = OpenAI(api_key="PORTKEY_API_KEY", base_url="https://api.portkey.ai/v1")
+
+client.chat.completions.create(
+	model="@openai-prod/gpt-4o", 
+	messages=[…],
+	tools=[{
+      "type": "mcp",
+      "server_label": "stripe",
+      "server_url": "https://mcp.stripe.com",
+      "headers": {
+        "Authorization": "Bearer $STRIPE_API_KEY"
+      }
+    }]
+)
+```
+
+
+```javascript OpenAI JS SDK
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai/v1"
+});
+
+const completion = await openai.chat.completions.create({
+  model: "@openai-prod/gpt-4o",
+  messages: [{ role: 'user', content: 'Create a payment link for $20' }],
+  tools: [{
+    "type": "mcp",
+    "server_label": "stripe",
+    "server_url": "https://mcp.stripe.com",
+    "headers": {
+      "Authorization": "Bearer $STRIPE_API_KEY"
+    }
+  }]
+});
+```
+
+</CodeGroup>
+
+API consumers are expected to handle the OAuth flow and obtain the access token prior to making the API call, as well as refreshing the token as needed.
+
+## Multiple MCP Servers
+
+You can connect to multiple MCP servers by including multiple objects in the `tools` array:
+
+```json
+[{
+    "type": "mcp",
+    "server_label": "stripe",
+    "server_url": "https://mcp.stripe.com",
+    "headers": {
+      "Authorization": "Bearer $STRIPE_API_KEY"
+    }
+}, {
+	"type": "mcp",
+	"server_label": "deepwiki",
+	"server_url": "https://mcp.deepwiki.com/mcp"
+}]
+```
+
+## Observability
+
+You can follow the flow of execution of API requests being made by the gateway to the MCP servers and LLMs in the trace. Each request is logged giving you deep observability into the MCP agent flow.
+
+\<Insert Image Here\>
