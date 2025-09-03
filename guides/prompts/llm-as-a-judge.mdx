@@ -246,78 +246,165 @@ Once you've created the main template, you'll get a prompt ID that you'll use in
 
 #### Step 5: Implementing the Evaluation Code with Structured Output
 
-Now that you have your prompt template set up in Portkey, use this Python code to evaluate customer support interactions with structured output:
+Now that you have your prompt template set up in Portkey, use this Python code to evaluate customer support interactinos. You can use either of the following ways to go ahead with this cookbook, depending upon what your LLM supports:
 
-```python
-from portkey_ai import Portkey
+<Tabs>
+    <Tab title="Structured Output">
+        ```python
+        from portkey_ai import Portkey
 
-# Initialize Portkey client
-portkey = Portkey(
-    api_key="YOUR_PORTKEY_API_KEY",
-    trace_id="customer-support-eval-run-1"  # For tracing in Portkey
-)
-def evaluate_interaction(customer_query, agent_response):
-    """
-    Evaluate a customer support interaction using LLM-as-a-Judge
-    """
-    # Use response_schema to ensure structured output
-    response_schema = {
-        "name": "evaluation",
-        "schema": {
-        "type": "object",
-        "properties": {
-            "critique": {
-                "type": "string",
-                "description": "A detailed critique of the agent's response"
-            },
-            "outcome": {
-                "type": "string",
-                "enum": ["good", "bad"],
-                "description": "The final judgment: 'good' or 'bad'"
+        # Initialize Portkey client
+        portkey = Portkey(
+            api_key="YOUR_PORTKEY_API_KEY",
+            trace_id="customer-support-eval-run-1"  # For tracing in Portkey
+        )
+        def evaluate_interaction(customer_query, agent_response):
+            """
+            Evaluate a customer support interaction using LLM-as-a-Judge
+            """
+            # Use response_schema to ensure structured output
+            response_schema = {
+                "name": "evaluation",
+                "schema": {
+                "type": "object",
+                "properties": {
+                    "critique": {
+                        "type": "string",
+                        "description": "A detailed critique of the agent's response"
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "enum": ["good", "bad"],
+                        "description": "The final judgment: 'good' or 'bad'"
+                    }
+                },
+                "required": ["critique", "outcome"]
+                }
             }
-        },
-        "required": ["critique", "outcome"]
-        }
-    }
 
-    # Call Portkey's prompt API with response_schema
-    response = portkey.prompts.completions.create(
-        prompt_id="pp-llm-judge-62a41d",  # Replace with your actual prompt ID for LLM as a Judge
-        variables={
-            "user_input": customer_query,
-            "generated_query": agent_response,
-        },
-        response_format={"type": "json_schema", "json_schema": response_schema, }
-    )
+            # Call Portkey's prompt API with response_schema
+            response = portkey.prompts.completions.create(
+                prompt_id="pp-llm-judge-62a41d",  # Replace with your actual prompt ID for LLM as a Judge
+                variables={
+                    "user_input": customer_query,
+                    "generated_query": agent_response,
+                },
+                response_format={"type": "json_schema", "json_schema": response_schema, }
+            )
 
-    # Extract structured response and log feedback to Portkey
-    result = response.choices[0].message.content
+            # Extract structured response and log feedback to Portkey
+            result = response.choices[0].message.content
 
 
-    import json
+            import json
 
-    # Parse the JSON string into a dictionary
-    result_dict = json.loads(result)
+            # Parse the JSON string into a dictionary
+            result_dict = json.loads(result)
 
-    trace = response.get_headers()['trace-id']
-    print(result_dict["outcome"])
+            trace = response.get_headers()['trace-id']
+            print(result_dict["outcome"])
 
-    # Now you can access the dictionary with keys
-    portkey.feedback.create(
-        trace_id=trace,
-        value=1 if result_dict["outcome"] == "good" else 0,  # Now this will work
-    )
+            # Now you can access the dictionary with keys
+            portkey.feedback.create(
+                trace_id=trace,
+                value=1 if result_dict["outcome"] == "good" else 0,  # Now this will work
+            )
 
 
-    return result
+            return result
 
-# Example usage
-customer_query = "I've been waiting for my refund for over two weeks now. When will I receive it?"
-agent_response = "Refunds typically take 7-10 business days to process. Let me check the status of your refund and get back to you."
+        # Example usage
+        customer_query = "I've been waiting for my refund for over two weeks now. When will I receive it?"
+        agent_response = "Refunds typically take 7-10 business days to process. Let me check the status of your refund and get back to you."
 
-evaluation = evaluate_interaction(customer_query, agent_response)
-print(evaluation)
-```
+        evaluation = evaluate_interaction(customer_query, agent_response)
+        print(evaluation)
+        ```
+    </Tab>
+
+    <Tab title="Tool Calling Supported LLM">
+        ```py
+        from portkey_ai import Portkey
+
+        # Initialize Portkey client
+        portkey = Portkey(
+            api_key="YOUR_PORTKEY_API_KEY",
+            trace_id="customer-support-eval-run-1"  # For tracing in Portkey
+        )
+        def evaluate_interaction(customer_query, agent_response):
+            """
+            Evaluate a customer support interaction using LLM-as-a-Judge
+            """
+            # Use function calling to ensure JSON output
+
+            tools = [
+                {
+                    "type": "function",
+                    "name": "evaluation",
+                    "description": "this funcuction evaaluated the user query and agent ouptut and give a detailed repsone",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "critique": {
+                            "type": "string",
+                            "description": "A detailed critique of the agent's response"
+                            },
+                            "outcome": {
+                                "type": "string",
+                                "enum": ["good", "bad"],
+                                "description": "The final judgment: 'good' or 'bad'"
+                            }
+                        },
+                        "required": ["critique", "outcome"],
+                    },
+                },
+            ]
+
+
+
+            # Call Portkey's prompt API with response_schema
+            response = portkey.prompts.completions.create(
+                prompt_id="pp-llm-judge-62a41d",  # Replace with your actual prompt ID for LLM as a Judge
+                variables={
+                    "user_input": customer_query,
+                    "generated_query": agent_response,
+                },
+                tools=tools
+            )
+
+            # Extract structured response and log feedback to Portkey
+            result = response.choices[0].message.tool_calls[0].function.arguments
+
+
+            import json
+
+            # Parse the JSON string into a dictionary
+            result_dict = json.loads(result)
+
+            trace = response.get_headers()['trace-id']
+            print(result_dict["outcome"])
+
+            # Now you can access the dictionary with keys
+            portkey.feedback.create(
+                trace_id=trace,
+                value=1 if result_dict["outcome"] == "good" else 0,  # Now this will work
+            )
+
+
+            return result
+
+        # Example usage
+        customer_query = "I've been waiting for my refund for over two weeks now. When will I receive it?"
+        agent_response = "Refunds typically take 7-10 business days to process. Let me check the status of your refund and get back to you."
+
+        evaluation = evaluate_interaction(customer_query, agent_response)
+        print(evaluation)
+        ```
+    </Tab>
+</Tabs>
+
+
+
 <Accordion  title="Example Output">
 
 Example output:
