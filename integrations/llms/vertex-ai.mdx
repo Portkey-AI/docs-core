@@ -1138,6 +1138,562 @@ If you want to get the inference text only, pass the [strict open ai compliance 
 
 ---
 
+## Multiple Modalities on chat completions endpoint
+
+### gemini-2.5-flash-image (nano banana)
+The image data is available in the `content_parts` field in the response and it can be plugged back in for multi turn conversations
+
+#### single turn conversation
+<CodeGroup>
+    ```py Python
+    from portkey_ai import Portkey
+
+    # Initialize the Portkey clien
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+        strict_open_ai_compliance=False
+    )
+
+    # Create the request
+    response = portkey.chat.completions.create(
+      model="gemini-2.5-flash-image-preview", # your model slug from Portkey's Model Catalog
+      max_tokens=32768,
+      stream=False,
+      messages= [
+          {
+            role: "system",
+            content: "You are a helpful assistant"
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                }
+              }
+            ]
+          }
+        ]
+    )
+    print(response)
+    # in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
+    # response = portkey.chat.completions.create(
+    #   ...same config as above but with stream: true
+    # )
+    # for chunk in response:
+    #     if chunk.choices[0].delta:
+    #         content_blocks = chunk.choices[0].delta.get("content_blocks")
+    #         if content_blocks is not None:
+    #             for content_block in content_blocks:
+    #                 print(content_block)
+    ```
+    ```ts NodeJS
+    import Portkey from 'portkey-ai';
+
+    // Initialize the Portkey client
+    const portkey = new Portkey({
+      apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
+      strictOpenAiCompliance: false
+    });
+
+    // Generate a chat completion
+    async function getChatCompletionFunctions() {
+        const response = await portkey.chat.completions.create({
+          model: "gemini-2.5-flash-image-preview", // your model slug from Portkey's Model Catalog
+          max_tokens: 32768,
+          stream: false,
+          messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant"
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                }
+              }
+            ]
+          }
+        ]
+        });
+        console.log(response);
+      // in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
+      // const response = await portkey.chat.completions.create({
+      //   ...same config as above but with stream: true
+      // });
+      // for await (const chunk of response) {
+      //   if (chunk.choices[0].delta?.content_blocks) {
+      //     for (const contentBlock of chunk.choices[0].delta.content_blocks) {
+      //       console.log(contentBlock);
+      //     }
+      //   }
+      // }
+      }
+    // Call the function
+    getChatCompletionFunctions();
+    ```
+    ```js OpenAI NodeJS
+    import OpenAI from 'openai'; // We're using the v4 SDK
+    import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+    const openai = new OpenAI({
+      apiKey: 'PORTKEY_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
+      baseURL: PORTKEY_GATEWAY_URL,
+      defaultHeaders: createHeaders({
+        strictOpenAiCompliance: false
+      })
+    });
+
+    async function run() {
+      const response = await openai.chat.completions.create({
+        model: "gemini-2.5-flash-image-preview",
+        max_tokens: 32768,
+        stream: false,
+        modalities: ["text", "image"],
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant"
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                }
+              }
+            ]
+          }
+        ]
+      });
+
+      console.log(response);
+    }
+
+    run();
+    ```
+    ```py OpenAI Python
+    from openai import OpenAI
+    from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+    openai = OpenAI(
+        api_key='PORTKEY_API_KEY',
+        base_url=PORTKEY_GATEWAY_URL,
+        default_headers=createHeaders(
+            strict_open_ai_compliance=False
+        )
+    )
+
+    response = openai.chat.completions.create(
+        model="gemini-2.5-flash-image-preview",
+        max_tokens=32768,
+        stream=False,
+        modalities=["text", "image"],
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a helpful assistant"
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                        }
+                    }
+                ]
+            }
+        ]
+    )
+
+    print(response)
+    ```
+    ```sh cURL
+    curl "https://api.portkey.ai/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-strict-open-ai-compliance: false" \
+      -d '{
+    "model": "gemini-2.5-flash-image-preview",
+    "max_tokens": 32768,
+    "stream": false,
+    "modalities": ["text", "image"],
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant"
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                    }
+                }
+            ]
+        }
+    ]
+}'
+    ```
+</CodeGroup>
+
+
+#### multi turn conversation
+<CodeGroup>
+    ```py Python
+    from portkey_ai import Portkey
+
+    # Initialize the Portkey clien
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+        strict_open_ai_compliance=False
+    )
+
+    # Create the request
+    response = portkey.chat.completions.create(
+      model="gemini-2.5-flash-image-preview", # your model slug from Portkey's Model Catalog
+      max_tokens=32768,
+      stream=False,
+      messages= [
+          {
+            role: "system",
+            content: "You are a helpful assistant"
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                }
+              }
+            ]
+          },
+            {
+            role: "assistant",
+            content: [
+                    {
+                        type: "text",
+                        text: "Here are the croissants with chocolate drizzle and the requested text: "
+                    },
+                    {
+                        type: "image_url",
+                        image_url: {
+                            url: "data:image/jpeg;base64,UKDhasdhj....."
+                        }
+                    }
+                ]
+            },
+            {
+                role: "user",
+                content: "looking good, thanks fam"
+            }
+
+        ]
+    )
+    print(response)
+    # in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
+    # response = portkey.chat.completions.create(
+    #   ...same config as above but with stream: true
+    # )
+    # for chunk in response:
+    #     if chunk.choices[0].delta:
+    #         content_blocks = chunk.choices[0].delta.get("content_blocks")
+    #         if content_blocks is not None:
+    #             for content_block in content_blocks:
+    #                 print(content_block)
+    ```
+    ```ts NodeJS
+    import Portkey from 'portkey-ai';
+
+    // Initialize the Portkey client
+    const portkey = new Portkey({
+      apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
+      strictOpenAiCompliance: false
+    });
+
+    // Generate a chat completion
+    async function getChatCompletionFunctions() {
+        const response = await portkey.chat.completions.create({
+          model: "gemini-2.5-flash-image-preview", // your model slug from Portkey's Model Catalog
+          max_tokens: 32768,
+          stream: false,
+          messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant"
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                }
+              }
+            ]
+          },
+                  {
+            "role": "assistant",
+            "content": [
+                    {
+                        "type": "text",
+                        "text": "Here are the croissants with chocolate drizzle and the requested text: "
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/jpeg;base64,UKDhasdhj....."
+                        }
+                    }
+                ]
+        },
+        {
+            "role": "user",
+            "content": "looking good, thanks fam"
+        }
+
+        ]
+        });
+        console.log(response);
+      // in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
+      // const response = await portkey.chat.completions.create({
+      //   ...same config as above but with stream: true
+      // });
+      // for await (const chunk of response) {
+      //   if (chunk.choices[0].delta?.content_blocks) {
+      //     for (const contentBlock of chunk.choices[0].delta.content_blocks) {
+      //       console.log(contentBlock);
+      //     }
+      //   }
+      // }
+      }
+    // Call the function
+    getChatCompletionFunctions();
+    ```
+    ```js OpenAI NodeJS
+    import OpenAI from 'openai'; // We're using the v4 SDK
+    import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+    const openai = new OpenAI({
+      apiKey: 'PORTKEY_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
+      baseURL: PORTKEY_GATEWAY_URL,
+      defaultHeaders: createHeaders({
+        strictOpenAiCompliance: false
+      })
+    });
+
+    async function run() {
+      const response = await openai.chat.completions.create({
+        model: "gemini-2.5-flash-image-preview",
+        max_tokens: 32768,
+        stream: false,
+        modalities: ["text", "image"],
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant"
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                }
+              }
+            ]
+          },
+                  {
+            "role": "assistant",
+            "content": [
+                    {
+                        "type": "text",
+                        "text": "Here are the croissants with chocolate drizzle and the requested text: "
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/jpeg;base64,UKDhasdhj....."
+                        }
+                    }
+                ]
+        },
+        {
+            "role": "user",
+            "content": "looking good, thanks fam"
+        }
+        ]
+      });
+
+      console.log(response);
+    }
+
+    run();
+    ```
+    ```py OpenAI Python
+    from openai import OpenAI
+    from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+    openai = OpenAI(
+        api_key='PORTKEY_API_KEY',
+        base_url=PORTKEY_GATEWAY_URL,
+        default_headers=createHeaders(
+            strict_open_ai_compliance=False
+        )
+    )
+
+    response = openai.chat.completions.create(
+        model="gemini-2.5-flash-image-preview",
+        max_tokens=32768,
+        stream=False,
+        modalities=["text", "image"],
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a helpful assistant"
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                        }
+                    }
+                ]
+            },
+            {
+                "role": "assistant",
+                "content": [
+                        {
+                            "type": "text",
+                            "text": "Here are the croissants with chocolate drizzle and the requested text: "
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "data:image/jpeg;base64,UKDhasdhj....."
+                            }
+                        }
+                    ]
+            },
+            {
+                "role": "user",
+                "content": "looking good, thanks fam"
+            }
+        ]
+    )
+
+    print(response)
+    ```
+    ```sh cURL
+    curl "https://api.portkey.ai/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-strict-open-ai-compliance: false" \
+      -d '{
+    "model": "gemini-2.5-flash-image-preview",
+    "max_tokens": 32768,
+    "stream": false,
+    "modalities": ["text", "image"],
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant"
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                    }
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                    {
+                        "type": "text",
+                        "text": "Here are the croissants with chocolate drizzle and the requested text: "
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/jpeg;base64,UKDhasdhj....."
+                        }
+                    }
+                ]
+        },
+        {
+            "role": "user",
+            "content": "looking good, thanks fam"
+        }
+
+    ]
+}'
+    ```
+</CodeGroup>
+
 ## Making Requests Without Portkey's Model Catalog
 
 You can also pass your Vertex AI details & secrets directly without using the Portkey's Model Catalog.
