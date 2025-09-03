@@ -14,7 +14,7 @@ Portkey enhances PydanticAI with production-readiness features, turning your exp
 - **Cost tracking and optimization** to manage your AI spend
 - **Access to 1600+ LLMs** through a single integration
 - **Guardrails** to keep agent behavior safe and compliant
-- **Version-controlled prompts** for consistent agent performance
+- **OpenTelemetry integration** for comprehensive monitoring
 
 <Card title="PydanticAI Official Documentation" icon="arrow-up-right-from-square" href="https://ai.pydantic.dev/">
   Learn more about PydanticAI's core concepts and features
@@ -25,45 +25,35 @@ Portkey enhances PydanticAI with production-readiness features, turning your exp
 <Steps>
 <Step title="Install the required packages">
 ```bash
-pip install -U pydantic-ai portkey-ai
+pip install -U pydantic-ai openai
 ```
 </Step>
 
-<Step title="Generate API Key" icon="lock">
-Create a Portkey API key with optional budget/rate limits from the [Portkey dashboard](https://app.portkey.ai/). You can attach configurations for reliability, caching, and more to this key.
-</Step>
-
 <Step title="Configure Portkey Client">
-For a simple setup, first configure the Portkey client that will be used with PydanticAI:
+Since Portkey is OpenAI SDK compatible, you can use the standard OpenAI client with Portkey's gateway URL:
 
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
-# Set up Portkey client with appropriate metadata for tracking
-portkey_client = AsyncPortkey(
+# Set up Portkey client using OpenAI SDK
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_PROVIDER",
-    trace_id="unique-trace-id",               # Optional, for request tracing
-    metadata={                                # Optional, for request segmentation
-        "app_env": "production",
-        "_user": "user_123"                   # Special _user field for user analytics
-    }
+    base_url="https://api.portkey.ai/v1"
 )
 ```
 </Step>
 
 <Step title="Connect to PydanticAI">
-After setting up your Portkey client, you can integrate it with PydanticAI by connecting it to a model provider:
+After setting up your Portkey client, integrate it with PydanticAI:
 
 ```python
-from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.openai import OpenAIProvider
-
-# Connect Portkey client to a PydanticAI model via provider
+# Connect Portkey client to a PydanticAI model
 agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",  # Use Portkey's model format
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     system_prompt="You are a helpful assistant."
@@ -77,18 +67,16 @@ agent = Agent(
 Let's create a simple structured output agent with PydanticAI and Portkey. This agent will respond to a query about Formula 1 and return structured data:
 
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-# Set up Portkey client with tracing and metadata
-portkey_client = AsyncPortkey(
+# Set up Portkey client
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_OPENAI_PROVIDER",
-    trace_id="f1-data-request",
-    metadata={"app_env": "production", "_user": "user_123"}
+    base_url="https://api.portkey.ai/v1"
 )
 
 # Define structured output using Pydantic
@@ -101,7 +89,7 @@ class F1GrandPrix(BaseModel):
 # Create the agent with structured output type
 f1_gp_agent = Agent[None, F1GrandPrix](
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     output_type=F1GrandPrix,
@@ -136,28 +124,58 @@ print(result.output)
 
 ## Advanced Features
 
+### Using Portkey Headers for Enhanced Features
+
+When you need additional Portkey features like tracing, metadata, or configs, you can add headers to your client:
+
+```python
+from openai import AsyncOpenAI
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+# Set up Portkey client with additional features
+portkey_client = AsyncOpenAI(
+    api_key="YOUR_PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-trace-id": "f1-data-request",
+        "x-portkey-metadata": '{"app_env": "production", "_user": "user_123"}',
+        "x-portkey-config": "your-config-id"
+    }
+)
+
+# Create agent with enhanced Portkey features
+agent = Agent(
+    model=OpenAIModel(
+        model_name="@openai-team-1/gpt-4o",
+        provider=OpenAIProvider(openai_client=portkey_client),
+    ),
+    system_prompt="You are a helpful assistant."
+)
+```
+
 ### Working with Images
 
 PydanticAI supports multimodal inputs including images. Here's how to use Portkey with a vision model:
 
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 from pydantic_ai import Agent, ImageUrl
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # Set up Portkey client
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_OPENAI_PROVIDER",
-    trace_id="vision-request",
-    metadata={"request_type": "image_analysis"}
+    base_url="https://api.portkey.ai/v1",
+    default_headers={"x-portkey-trace-id": "vision-request"}
 )
 
 # Create a vision-capable agent
 vision_agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",  # Vision-capable model
+        model_name="@openai-team-1/gpt-4o",  # Vision-capable model
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     system_prompt="Analyze images and provide detailed descriptions."
@@ -179,23 +197,22 @@ PydanticAI provides a powerful tools system that integrates seamlessly with Port
 
 ```python
 import random
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # Set up Portkey client
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_OPENAI_PROVIDER",
-    trace_id="dice-game-session",
-    metadata={"game_type": "dice"}
+    base_url="https://api.portkey.ai/v1",
+    default_headers={"x-portkey-trace-id": "dice-game-session"}
 )
 
 # Create an agent with dependency injection (player name)
 dice_agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     deps_type=str,  # Dependency type (player name as string)
@@ -272,14 +289,13 @@ from rich.prompt import Prompt
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import Usage, UsageLimits
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 
 # Set up Portkey clients with shared trace ID for connected tracing
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_OPENAI_PROVIDER",
-    trace_id="flight-booking-session",
-    metadata={"app_type": "flight_booking"}
+    base_url="https://api.portkey.ai/v1",
+    default_headers={"x-portkey-trace-id": "flight-booking-session"}
 )
 
 # Define structured output types
@@ -315,7 +331,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 search_agent = Agent[Deps, FlightDetails | NoFlightFound](
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     output_type=FlightDetails | NoFlightFound,  # type: ignore
@@ -329,7 +345,7 @@ search_agent = Agent[Deps, FlightDetails | NoFlightFound](
 # This agent is responsible for extracting flight details from web page text
 extraction_agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     output_type=list[FlightDetails],
@@ -339,7 +355,7 @@ extraction_agent = Agent(
 # This agent is responsible for extracting the user's seat selection
 seat_preference_agent = Agent[None, SeatPreference | Failed](
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     output_type=SeatPreference | Failed,  # type: ignore
@@ -481,11 +497,10 @@ Traces provide a hierarchical view of your agent's execution, showing the sequen
 
 ```python
 # Add trace_id to enable hierarchical tracing in Portkey
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_LLM_PROVIDER",
-    trace_id="unique-session-id",  # Add unique trace ID
-    metadata={"request_type": "user_query"}
+    base_url="https://api.portkey.ai/v1",
+    default_headers={"x-portkey-trace-id": "unique-session-id"}
 )
 ```
   </Tab>
@@ -528,14 +543,11 @@ You can filter and segment all metrics by custom metadata to analyze specific ag
 Add custom metadata to your PydanticAI agent calls to enable powerful filtering and segmentation:
 
 ```python
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_LLM_PROVIDER",
-    metadata={
-        "agent_type": "weather_agent",
-        "environment": "production",
-        "_user": "user_123",   # Special _user field for user analytics
-        "request_source": "mobile_app"
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-metadata": '{"agent_type": "weather_agent", "environment": "production", "_user": "user_123", "request_source": "mobile_app"}'
     }
 )
 ```
@@ -544,34 +556,60 @@ This metadata can be used to filter logs, traces, and metrics on the Portkey das
   </Tab>
 </Tabs>
 
-### 2. Reliability - Keep Your Agents Running Smoothly
+### 2. OpenTelemetry Integration
+
+For comprehensive monitoring and observability, Portkey supports OpenTelemetry integration through various libraries:
+
+```python
+import openlit
+
+# Initialize OpenLit with Portkey's OTEL endpoint
+openlit.init(
+    otlp_endpoint="https://api.portkey.ai/v1/otel",
+    otlp_headers={
+        "x-portkey-api-key": "YOUR_PORTKEY_API_KEY"
+    }
+)
+
+# Your PydanticAI agents will now send telemetry data to Portkey
+from openai import AsyncOpenAI
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+portkey_client = AsyncOpenAI(
+    api_key="YOUR_PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai/v1"
+)
+
+agent = Agent(
+    model=OpenAIModel(
+        model_name="@openai-team-1/gpt-4o",
+        provider=OpenAIProvider(openai_client=portkey_client),
+    ),
+    system_prompt="You are a helpful assistant."
+)
+```
+
+<Card title="OpenTelemetry Documentation" icon="chart-line" href="/product/observability/opentelemetry">
+  Learn more about Portkey's OpenTelemetry integration and supported libraries
+</Card>
+
+### 3. Reliability - Keep Your Agents Running Smoothly
 
 When running agents in production, things can go wrong - API rate limits, network issues, or provider outages. Portkey's reliability features ensure your agents keep running smoothly even when problems occur.
 
 It's simple to enable fallback in your PydanticAI agents by using a Portkey Config:
 
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 
 # Create Portkey client with fallback config
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    config={
-        "strategy": {
-            "mode": "fallback"
-        },
-        "targets": [
-            {
-                "provider": "openai",
-                "api_key": "YOUR_OPENAI_API_KEY",
-                "override_params": {"model": "gpt-4o"}
-            },
-            {
-                "provider": "anthropic",
-                "api_key": "YOUR_ANTHROPIC_API_KEY",
-                "override_params": {"model": "claude-3-opus-20240229"}
-            }
-        ]
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-config": "your-fallback-config-id"
     }
 )
 ```
@@ -596,110 +634,6 @@ This configuration will automatically try Claude if the GPT-4o request fails, en
   </Card>
 </CardGroup>
 
-### 3. Prompting in PydanticAI
-
-Portkey's Prompt Engineering Studio helps you create, manage, and optimize the prompts used in your PydanticAI agents. Instead of hardcoding prompts or instructions, use Portkey's prompt rendering API to dynamically fetch and apply your versioned prompts.
-
-<Frame caption="Manage prompts in Portkey's Prompt Library">
-![Prompt Playground Interface](/images/product/ai-gateway/ai-20.webp)
-</Frame>
-
-<Tabs>
-  <Tab title="Prompt Playground">
-Prompt Playground is a place to compare, test and deploy perfect prompts for your AI application. It's where you experiment with different models, test variables, compare outputs, and refine your prompt engineering strategy before deploying to production. It allows you to:
-
-1. Iteratively develop prompts before using them in your agents
-2. Test prompts with different variables and models
-3. Compare outputs between different prompt versions
-4. Collaborate with team members on prompt development
-
-This visual environment makes it easier to craft effective prompts for each step in your PydanticAI agent's workflow.
-  </Tab>
-
-  <Tab title="Using Prompt Templates">
-The Prompt Render API retrieves your prompt templates with all parameters configured:
-
-```python
-from portkey_ai import Portkey, AsyncPortkey
-from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.openai import OpenAIProvider
-
-# Initialize Portkey clients
-portkey_admin = Portkey(api_key="YOUR_PORTKEY_API_KEY")
-portkey_client = AsyncPortkey(api_key="YOUR_PORTKEY_API_KEY", provider="@YOUR_OPENAI_PROVIDER")
-
-# Retrieve prompt using the render API
-prompt_data = portkey_admin.prompts.render(
-    prompt_id="YOUR_PROMPT_ID",
-    variables={
-        "user_input": "Tell me about artificial intelligence"
-    }
-)
-
-# Use the rendered prompt in your PydanticAI agent
-agent = Agent(
-    model=OpenAIModel(
-        model_name="gpt-4o",
-        provider=OpenAIProvider(openai_client=portkey_client),
-    ),
-    system_prompt=prompt_data.data.messages[0]["content"]  # Use the rendered prompt
-)
-
-result = agent.run_sync("Tell me about artificial intelligence")
-print(result.output)
-```
-  </Tab>
-
-  <Tab title="Prompt Versioning">
-You can:
-- Create multiple versions of the same prompt
-- Compare performance between versions
-- Roll back to previous versions if needed
-- Specify which version to use in your code:
-
-```python
-# Use a specific prompt version
-prompt_data = portkey_admin.prompts.render(
-    prompt_id="YOUR_PROMPT_ID@version_number",
-    variables={
-        "user_input": "Tell me about quantum computing"
-    }
-)
-```
-  </Tab>
-
-  <Tab title="Mustache Templating for variables">
-Portkey prompts use Mustache-style templating for easy variable substitution:
-
-```
-You are an AI assistant helping with {{task_type}}.
-
-User question: {{user_input}}
-
-Please respond in a {{tone}} tone and include {{required_elements}}.
-```
-
-When rendering, simply pass the variables:
-
-```python
-prompt_data = portkey_admin.prompts.render(
-    prompt_id="YOUR_PROMPT_ID",
-    variables={
-        "task_type": "research",
-        "user_input": "Tell me about quantum computing",
-        "tone": "professional",
-        "required_elements": "recent academic references"
-    }
-)
-```
-  </Tab>
-</Tabs>
-
-<Card title="Prompt Engineering Studio" icon="wand-magic-sparkles" href="/product/prompt-library">
-  Learn more about Portkey's prompt management features
-</Card>
-
 ### 4. Guardrails for Safe Agents
 
 Guardrails ensure your PydanticAI agents operate safely and respond appropriately in all situations.
@@ -717,25 +651,24 @@ While PydanticAI provides type safety for outputs, Portkey's guardrails add addi
 **Implementing Guardrails**
 
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # Create Portkey client with guardrails
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_OPENAI_PROVIDER",
-    config={
-        "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
-        "output_guardrails": ["guardrails-id-zzz"]
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-config": "your-guardrails-config-id"
     }
 )
 
 # Create agent with Portkey-enabled client
 agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     system_prompt="You are a helpful assistant."
@@ -762,27 +695,24 @@ Track individual users through your PydanticAI agents using Portkey's metadata s
 Metadata allows you to associate custom data with each request, enabling filtering, segmentation, and analytics. The special `_user` field is specifically designed for user tracking.
 
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # Configure client with user tracking
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_OPENAI_PROVIDER",
-    metadata={
-        "_user": "user_123",  # Special _user field for user analytics
-        "user_tier": "premium",
-        "user_company": "Acme Corp",
-        "session_id": "abc-123"
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-metadata": '{"_user": "user_123", "user_tier": "premium", "user_company": "Acme Corp", "session_id": "abc-123"}'
     }
 )
 
 # Create agent with Portkey client
 agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     system_prompt="You are a helpful assistant."
@@ -814,26 +744,24 @@ Implement caching to make your PydanticAI agents more efficient and cost-effecti
 <Tabs>
   <Tab title="Simple Caching">
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # Configure Portkey client with simple caching
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_OPENAI_PROVIDER",
-    config={
-        "cache": {
-            "mode": "simple"
-        }
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-config": "your-simple-cache-config-id"
     }
 )
 
 # Create agent with cached LLM calls
 agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     system_prompt="You are a helpful assistant."
@@ -845,26 +773,24 @@ Simple caching performs exact matches on input prompts, caching identical reques
 
   <Tab title="Semantic Caching">
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # Configure Portkey client with semantic caching
-portkey_client = AsyncPortkey(
+portkey_client = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_OPENAI_PROVIDER",
-    config={
-        "cache": {
-            "mode": "semantic"
-        }
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-config": "your-semantic-cache-config-id"
     }
 )
 
 # Create agent with semantically cached LLM calls
 agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     system_prompt="You are a helpful assistant."
@@ -880,27 +806,27 @@ Semantic caching considers the contextual similarity between input requests, cac
 PydanticAI supports multiple LLM providers, and Portkey extends this capability by providing access to over 200 LLMs through a unified interface. You can easily switch between different models without changing your core agent logic:
 
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # OpenAI with Portkey
-portkey_openai = AsyncPortkey(
+portkey_openai = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_OPENAI_PROVIDER"
+    base_url="https://api.portkey.ai/v1"
 )
 
 # Anthropic with Portkey
-portkey_anthropic = AsyncPortkey(
+portkey_anthropic = AsyncOpenAI(
     api_key="YOUR_PORTKEY_API_KEY",
-    provider="@YOUR_ANTHROPIC_PROVIDER"
+    base_url="https://api.portkey.ai/v1"
 )
 
 # Create agents with different models
 openai_agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@openai-team-1/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_openai),
     ),
     system_prompt="You are a helpful assistant."
@@ -908,8 +834,8 @@ openai_agent = Agent(
 
 anthropic_agent = Agent(
     model=OpenAIModel(
-        model_name="claude-3-opus-20240229",
-        provider=OpenAIProvider(anthropic_client=portkey_anthropic),
+        model_name="@anthropic-team-1/claude-3-5-sonnet-20241022",
+        provider=OpenAIProvider(openai_client=portkey_anthropic),
     ),
     system_prompt="You are a helpful assistant."
 )
@@ -948,50 +874,11 @@ If you are using PydanticAI inside your organization, you need to consider sever
 Portkey adds a comprehensive governance layer to address these enterprise needs. Let's implement these controls step by step.
 
 <Steps>
-<Step title="Create Virtual Key">
-Virtual Keys are Portkey's secure way to manage your LLM provider API keys. They provide essential controls like:
-- Budget limits for API usage
-- Rate limiting capabilities
-- Secure API key storage
-
-To create a virtual key:
-Go to [Virtual Keys](https://app.portkey.ai/virtual-keys) in the Portkey App. Save and copy the virtual key ID
-
-<Frame>
-<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
-</Frame>
-
-<Note>
-Save your virtual key ID - you'll need it for the next step.
-</Note>
-</Step>
-
-<Step title="Create Default Config">
-Configs in Portkey define how your requests are routed, with features like advanced routing, fallbacks, and retries.
-
-To create your config:
-1. Go to [Configs](https://app.portkey.ai/configs) in Portkey dashboard
-2. Create new config with:
-    ```json
-    {
-        "provider":"@YOUR_PROVIDER_FROM_STEP1",
-       	"override_params": {
-          "model": "gpt-4o" // Your preferred model name
-        }
-    }
-    ```
-3. Save and note the Config name for the next step
-
-<Frame>
-<img src="/images/integrations/config.png" width="500"/>
-</Frame>
-</Step>
-
-<Step title="Configure Portkey API Key">
-Now create a Portkey API key and attach the config you created in Step 2:
+<Step title="Create API Key with Config">
+Since Portkey now uses the model format like `@team-name/model-name`, you can specify your team and model directly without needing virtual keys. Create a Portkey API key with an attached config:
 
 1. Go to [API Keys](https://app.portkey.ai/api-keys) in Portkey and Create new API key
-2. Select your config from `Step 2`
+2. Optionally attach a config for advanced routing, fallbacks, and reliability features
 3. Generate and save your API key
 
 <Frame>
@@ -999,24 +886,56 @@ Now create a Portkey API key and attach the config you created in Step 2:
 </Frame>
 </Step>
 
-<Step title="Connect to PydanticAI">
-After setting up your Portkey API key with the attached config, connect it to your PydanticAI agents:
+<Step title="Configure Model Access">
+Use Portkey's model naming format to specify which team/provider can access which models:
 
 ```python
-from portkey_ai import AsyncPortkey
+from openai import AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-# Configure Portkey client with your API key
-portkey_client = AsyncPortkey(
-    api_key="YOUR_PORTKEY_API_KEY"  # The API key with attached config from step 3
+# Configure Portkey client with team-specific model access
+portkey_client = AsyncOpenAI(
+    api_key="YOUR_PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai/v1"
 )
 
-# Create agent with Portkey client
+# Create agent with team-specific model
 agent = Agent(
     model=OpenAIModel(
-        model_name="gpt-4o",
+        model_name="@engineering-team/gpt-4o",  # Team-specific model access
+        provider=OpenAIProvider(openai_client=portkey_client),
+    ),
+    system_prompt="You are a helpful assistant."
+)
+```
+</Step>
+
+<Step title="Add Enhanced Features with Headers">
+For additional governance features like tracing, metadata, and configs, add headers as needed:
+
+```python
+from openai import AsyncOpenAI
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+# Configure Portkey client with governance features
+portkey_client = AsyncOpenAI(
+    api_key="YOUR_PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-trace-id": "engineering-session",
+        "x-portkey-metadata": '{"department": "engineering", "environment": "production"}',
+        "x-portkey-config": "your-governance-config-id"
+    }
+)
+
+# Create agent with governance controls
+agent = Agent(
+    model=OpenAIModel(
+        model_name="@engineering-team/gpt-4o",
         provider=OpenAIProvider(openai_client=portkey_client),
     ),
     system_prompt="You are a helpful assistant."
@@ -1029,33 +948,33 @@ agent = Agent(
   <Accordion title="Step 1: Implement Budget Controls & Rate Limits">
 ### Step 1: Implement Budget Controls & Rate Limits
 
-Virtual Keys enable granular control over LLM access at the team/department level. This helps you:
-- Set up [budget limits](/product/ai-gateway/virtual-keys/budget-limits)
-- Prevent unexpected usage spikes using Rate limits
+Create configs that enable granular control over LLM access at the team/department level. This helps you:
+- Set up budget limits through usage tracking
+- Prevent unexpected usage spikes using rate limits
 - Track departmental spending
 
 #### Setting Up Department-Specific Controls:
-1. Navigate to [Virtual Keys](https://app.portkey.ai/virtual-keys) in Portkey dashboard
-2. Create new Virtual Key for each department with budget limits and rate limits
-3. Configure department-specific limits
+1. Navigate to [Configs](https://app.portkey.ai/configs) in Portkey dashboard
+2. Create new config for each department with appropriate controls
+3. Configure department-specific limits and routing
 
 <Frame>
-<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
+<img src="/images/integrations/config.png" width="500"/>
 </Frame>
   </Accordion>
 
   <Accordion title="Step 2: Define Model Access Rules">
 ### Step 2: Define Model Access Rules
 
-As your AI usage scales, controlling which teams can access specific models becomes crucial. Portkey Configs provide this control layer with features like:
+As your AI usage scales, controlling which teams can access specific models becomes crucial. Portkey's model naming format and configs provide this control layer with features like:
 
 #### Access Control Features:
-- **Model Restrictions**: Limit access to specific models
+- **Model Restrictions**: Limit access to specific models using team prefixes
 - **Data Protection**: Implement guardrails for sensitive data
 - **Reliability Controls**: Add fallbacks and retry logic
 
 #### Example Configuration:
-Here's a basic configuration to route requests to OpenAI, specifically using GPT-4o:
+Here's a basic configuration to route requests to OpenAI, specifically using GPT-4o for the engineering team:
 
 ```json
 {
@@ -1064,7 +983,8 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
 	},
 	"targets": [
 		{
-			"provider":"@YOUR_OPENAI_PROVIDER",
+			"provider": "openai",
+			"api_key": "YOUR_OPENAI_API_KEY",
 			"override_params": {
 				"model": "gpt-4o"
 			}
@@ -1083,8 +1003,8 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
   <Accordion title="Step 3: Implement Access Controls">
     ### Step 3: Implement Access Controls
 
-    Create User-specific API keys that automatically:
-    - Track usage per user/team with the help of metadata
+    Create team-specific API keys that automatically:
+    - Track usage per user/team with metadata
     - Apply appropriate configs to route requests
     - Collect relevant metadata to filter logs
     - Enforce access permissions
@@ -1119,7 +1039,7 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
 
   <Accordion title="Step 4: Deploy & Monitor">
     ### Step 4: Deploy & Monitor
-    After distributing API keys to your team members, your enterprise-ready PydanticAI setup is ready to go. Each team member can now use their designated API keys with appropriate access levels and budget controls.
+    After distributing API keys to your team members, your enterprise-ready PydanticAI setup is ready to go. Each team member can now use their designated API keys with appropriate access levels and governance controls.
 
     Monitor usage in Portkey dashboard:
     - Cost tracking by department
@@ -1133,9 +1053,9 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
 <Note>
 ### Enterprise Features Now Available
 **Your PydanticAI integration now has:**
-- Departmental budget controls
-- Model access governance
+- Team-based model access controls
 - Usage tracking & attribution
+- Governance through configs
 - Security guardrails
 - Reliability features
 </Note>
@@ -1148,7 +1068,7 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
   </Accordion>
 
   <Accordion title="Can I use Portkey with existing PydanticAI applications?">
-    Yes! Portkey integrates seamlessly with existing PydanticAI applications. You just need to replace your client initialization code with the Portkey-enabled version. The rest of your agent code remains unchanged and continues to benefit from PydanticAI's strong typing.
+    Yes! Portkey integrates seamlessly with existing PydanticAI applications. You just need to replace your OpenAI client initialization with the Portkey-enabled version using our gateway URL. The rest of your agent code remains unchanged and continues to benefit from PydanticAI's strong typing.
   </Accordion>
 
   <Accordion title="Does Portkey work with all PydanticAI features?">
@@ -1156,15 +1076,15 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
   </Accordion>
 
   <Accordion title="Can I track usage across multiple agents in a workflow?">
-    Yes, Portkey allows you to use a consistent `trace_id` across multiple agents and requests to track the entire workflow. This is especially useful for multi-agent systems where you want to understand the full execution path.
+    Yes, Portkey allows you to use a consistent `x-portkey-trace-id` header across multiple agents and requests to track the entire workflow. This is especially useful for multi-agent systems where you want to understand the full execution path.
   </Accordion>
 
   <Accordion title="How do I filter logs and traces for specific agent runs?">
-    Portkey allows you to add custom metadata to your agent runs, which you can then use for filtering. Add fields like `agent_name`, `agent_type`, or `session_id` to easily find and analyze specific agent executions.
+    Portkey allows you to add custom metadata through the `x-portkey-metadata` header to your agent runs, which you can then use for filtering. Add fields like `agent_name`, `agent_type`, or `session_id` to easily find and analyze specific agent executions.
   </Accordion>
 
   <Accordion title="Can I use my own API keys with Portkey?">
-    Yes! Portkey uses your own API keys for the various LLM providers. It securely stores them, allowing you to easily manage and rotate keys without changing your code.
+    Yes! Portkey uses your own API keys for the various LLM providers. You can configure them through configs and virtual keys, allowing you to easily manage and rotate keys without changing your code.
   </Accordion>
 
 </AccordionGroup>
