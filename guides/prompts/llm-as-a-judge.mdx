@@ -214,6 +214,13 @@ Here's what your main prompt template should look like:
 
 <Accordion  title="Main LLM as a Judge Prompt">
 
+##### System
+```
+You are a Customer Service query evaluator
+```
+
+
+##### User
 ```
 You are a Customer Service query evaluator with advanced capabilities to judge if a query is good or not.
 You understand the nuances of customer service including what is likely to be the most useful customer service executive.
@@ -239,6 +246,50 @@ then provide a pass/fail judgment in the same format as above.
 <critique>
 ```
 </Accordion>
+
+
+<Note>
+    Some LLMs don't support strcutured output generation. In those cases you should use LLMs function calling ability to generate JSON output.
+</Note>
+
+<Accordion  title="Tool Calling Supported LLM">
+
+If your LLM does not support Structure Outputs, you will have to add this tool in your prompt template along with the prompt above.
+
+Choose `Tool Choice` = `Required` in your prompt template.
+```
+{
+  "type": "function",
+  "function": {
+    "name": "evaluation",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "critique",
+        "outcome"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "good",
+            "bad"
+          ],
+          "type": "string",
+          "description": "The final judgment: 'good' or 'bad'"
+        },
+        "critique": {
+          "type": "string",
+          "description": "A detailed critique of the agent's response"
+        }
+      }
+    },
+    "description": "this fuuction evaluates the user query and agent ouptut and give a detailed repsone"
+  }
+}
+```
+</Accordion>
+
+
 
 This template sets the evaluator role, inserts your company information, guidelines, and examples, and provides placeholders for the customer query and agent response. Make sure to select an appropriate model (like OpenAI o1, DeepSeek R1) when creating this template.
 
@@ -331,36 +382,11 @@ Now that you have your prompt template set up in Portkey, use this Python code t
             api_key="YOUR_PORTKEY_API_KEY",
             trace_id="customer-support-eval-run-1"  # For tracing in Portkey
         )
+
         def evaluate_interaction(customer_query, agent_response):
             """
             Evaluate a customer support interaction using LLM-as-a-Judge
             """
-            # Use function calling to ensure JSON output
-
-            tools = [
-                {
-                    "type": "function",
-                    "name": "evaluation",
-                    "description": "this funcuction evaaluated the user query and agent ouptut and give a detailed repsone",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "critique": {
-                            "type": "string",
-                            "description": "A detailed critique of the agent's response"
-                            },
-                            "outcome": {
-                                "type": "string",
-                                "enum": ["good", "bad"],
-                                "description": "The final judgment: 'good' or 'bad'"
-                            }
-                        },
-                        "required": ["critique", "outcome"],
-                    },
-                },
-            ]
-
-
 
             # Call Portkey's prompt API with response_schema
             response = portkey.prompts.completions.create(
@@ -369,7 +395,6 @@ Now that you have your prompt template set up in Portkey, use this Python code t
                     "user_input": customer_query,
                     "generated_query": agent_response,
                 },
-                tools=tools
             )
 
             # Extract structured response and log feedback to Portkey
@@ -411,12 +436,7 @@ Example output:
 ```json
 {
   "critique": "The agent response provides general information about refund processing times (7-10 business days) but doesn't address why the customer's refund is taking over two weeks, which exceeds the standard timeline. While the agent offers to check the status, they don't acknowledge the customer's obvious frustration with the delay, missing an opportunity for empathy. There's also no clear explanation of when the agent will 'get back' with the information, leaving the timeline ambiguous.",
-  "outcome": "bad",
-  "improvement_areas": [
-    "Acknowledge customer frustration",
-    "Explain why the refund exceeds standard timeline",
-    "Provide specific timeframe for follow-up"
-  ]
+  "outcome": "bad"
 }
 ```
 </Accordion>
