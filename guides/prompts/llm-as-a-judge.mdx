@@ -240,6 +240,44 @@ then provide a pass/fail judgment in the same format as above.
 ```
 </Accordion>
 
+
+<Accordion  title="Tool Calling Supported LLM">
+
+If your LLM does not support Structure Outputs, you will have to add this tool in your prompt template along with the prompt above
+```
+{
+  "type": "function",
+  "function": {
+    "name": "evaluation",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "critique",
+        "outcome"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "good",
+            "bad"
+          ],
+          "type": "string",
+          "description": "The final judgment: 'good' or 'bad'"
+        },
+        "critique": {
+          "type": "string",
+          "description": "A detailed critique of the agent's response"
+        }
+      }
+    },
+    "description": "this fuuction evaluates the user query and agent ouptut and give a detailed repsone"
+  }
+}
+```
+</Accordion>
+
+
+
 This template sets the evaluator role, inserts your company information, guidelines, and examples, and provides placeholders for the customer query and agent response. Make sure to select an appropriate model (like OpenAI o1, DeepSeek R1) when creating this template.
 
 Once you've created the main template, you'll get a prompt ID that you'll use in your code to access this prompt.
@@ -331,36 +369,11 @@ Now that you have your prompt template set up in Portkey, use this Python code t
             api_key="YOUR_PORTKEY_API_KEY",
             trace_id="customer-support-eval-run-1"  # For tracing in Portkey
         )
+
         def evaluate_interaction(customer_query, agent_response):
             """
             Evaluate a customer support interaction using LLM-as-a-Judge
             """
-            # Use function calling to ensure JSON output
-
-            tools = [
-                {
-                    "type": "function",
-                    "name": "evaluation",
-                    "description": "this funcuction evaaluated the user query and agent ouptut and give a detailed repsone",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "critique": {
-                            "type": "string",
-                            "description": "A detailed critique of the agent's response"
-                            },
-                            "outcome": {
-                                "type": "string",
-                                "enum": ["good", "bad"],
-                                "description": "The final judgment: 'good' or 'bad'"
-                            }
-                        },
-                        "required": ["critique", "outcome"],
-                    },
-                },
-            ]
-
-
 
             # Call Portkey's prompt API with response_schema
             response = portkey.prompts.completions.create(
@@ -369,7 +382,6 @@ Now that you have your prompt template set up in Portkey, use this Python code t
                     "user_input": customer_query,
                     "generated_query": agent_response,
                 },
-                tools=tools
             )
 
             # Extract structured response and log feedback to Portkey
