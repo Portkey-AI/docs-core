@@ -7,27 +7,27 @@ This guide will help you implement enterprise-grade security, observability, and
 
 For IT administrators deploying centralized instances of OpenWebUI, Portkey enables essential enterprise features including usage tracking, access controls, and budget management. Let's walk through implementing these features step by step.
 
-# Understanding the Implementation
+# Understanding the Integration Paths
 
-When implementing Portkey with OpenWebUI in your organization, we'll follow these key steps:
+When implementing Portkey with OpenWebUI you can choose between two complementary approaches:
 
-1. Basic OpenWebUI integration with Portkey
-2. Setting up organizational governance using Model Catlog
-3. Managing user access and permissions, setting- budget & rate limits, and more...
+1. **Direct OpenAI-compatible connection** – ideal if you already rely on Portkey's Model Catalog and simply need to expose those models inside OpenWebUI.
+2. **Portkey Manifold Pipe** – our official pipe unlocks richer governance, metadata, and resilience features directly within OpenWebUI.
+
+Pick the path that matches your requirements: you can start with the API-compatible flow and graduate to the pipe whenever you need advanced controls.
 
 <Note>
-  If you're an individual user just looking to use Portkey with Open WebUI, you
-  only need to complete Steps 1 and 2 to get started.
+  If you're an individual user just looking to use Portkey with OpenWebUI, you only need to complete the workspace preparation and one of the integration options below.
 </Note>
 
 
-## 1. Setting Up Portkey
+## 1. Prepare Your Portkey Workspace
 
 <Steps>
   <Step title="Create Portkey API Key">
     1. Go to the [**API Keys**](https://app.portkey.ai/api-keys) section in the Portkey sidebar.
-    2. Click **Create New API Key** with **all the permissions**.
-    3. Save and copy the key — you’ll need it for OpenWebUI.
+    2. Click **Create New API Key** with the permissions you plan to expose.
+    3. Save and copy the key — you’ll paste it into OpenWebUI.
   </Step>
 
   <Step title="Add Your Provider">
@@ -54,40 +54,44 @@ When implementing Portkey with OpenWebUI in your organization, we'll follow thes
   </Step>
 </Steps>
 
-That's it — your Portkey setup is ready. Now let’s integrate it with OpenWebUI.
+Before switching to OpenWebUI, decide whether you want to connect via the OpenAI-compatible API or use the official Portkey Manifold Pipe.
 
 ---
 
-## 2. Integrating Portkey with OpenWebUI
+## 2. Connect OpenWebUI to Portkey
 
-Since Portkey is OpenAI API–compatible, connecting it to OpenWebUI is quick and straightforward.
+Choose the option that best fits your needs.
+
+### Option A: Direct OpenAI-Compatible Connection
+
+This route keeps your setup lightweight by pointing OpenWebUI at Portkey's OpenAI-compatible endpoint.
 
 <Note>
-  You’ll need your Portkey API key from [Step&nbsp;1](#1-setting-up-portkey) before continuing.
+  You’ll need the API key and model slugs collected in [Step&nbsp;1](#1-prepare-your-portkey-workspace).
 </Note>
 
 <Steps>
   <Step title="Access Admin Panel">
     1. Start your OpenWebUI server.
-    2. Click on your **username** at the bottom left.
-    3. Go to the **Admin Panel** -> **Settings** tab -> Select **Connections** from the sidebar.
+    2. Click your **username** at the bottom left.
+    3. Open the **Admin Panel** → **Settings** tab → select **Connections** from the sidebar.
     <Frame>
       <img src="/images/integrations/openwebui-settings-connection-page.png" width="400" />
     </Frame>
   </Step>
 
   <Step title="Enable Direct Connections">
-    1. Turn ON **Direct Connections** and **OpenAI API** toggle switch.
+    1. Turn on **Direct Connections** and the **OpenAI API** toggle.
     2. Click the **+** icon next to *Manage OpenAI API Connections*.
   </Step>
 
   <Step title="Configure Portkey Connection">
-    Fill in the following in the **Edit Connection** dialog:
+    Fill in the **Edit Connection** dialog:
 
     - **URL**: `https://api.portkey.ai/v1`
-    - **Key**: Your Portkey API key from Step&nbsp;1
-    - **Prefix ID**: `portkey` (or any name you prefer)
-    - **Model IDs**: Your model slugs (e.g., `@openai/gpt-4o`, `@anthropic/claude-3-sonnet`) from Step&nbsp;1
+    - **Key**: Your Portkey API key
+    - **Prefix ID**: `portkey` (or a label you prefer)
+    - **Model IDs**: Slugs such as `@openai/gpt-4o` or `@anthropic/claude-3-sonnet`
 
     <Frame>
       <img src="/images/integrations/openwebui-edit-connection.png" width="400" />
@@ -97,84 +101,411 @@ Since Portkey is OpenAI API–compatible, connecting it to OpenWebUI is quick an
   </Step>
 
   <Step title="Select and Use Your Model">
-    1. Go back to the main chat interface and select Portkey model (format: `@model-name`) from the dropdown at the top.
-    2. Start chatting!
+    1. Return to the main chat interface and pick your Portkey-backed model (format: `@provider/model`).
+    2. Start chatting.
 
     <Note>
-      **For Anthropic models**: You must set a *Max Tokens* value.
-      Click the settings icon (top right) and set **Max Tokens** to a valid number (e.g., 1024).
+      **Anthropic models** require a *Max Tokens* value. Click the settings icon (top right) and set **Max Tokens** to a valid number (for example, 1024).
     </Note>
   </Step>
 </Steps>
 
-You can track requests, usage, and costs in the [**Portkey Dashboard**](https://app.portkey.ai/dashboard).
+Monitor requests, usage, and spend in the [Portkey Dashboard](https://app.portkey.ai/dashboard).
+
+### Option B: Portkey Manifold Pipe (Advanced)
+
+If you want OpenWebUI to inherit Portkey's metadata forwarding, structured observability, retry policies, and per-user governance, install the official Portkey Manifold Pipe.
+
+- **Download:** [portkey_manifold_pipe.py](/integrations/libraries/openwebui-portkey-pipe.py)
+- **Best for:** Teams that need automatic model discovery, enhanced streaming control, metadata headers, and resilient retry/backoff behaviour from inside OpenWebUI.
+
+<AccordionGroup>
+  <Accordion title="portkey_manifold_pipe.py">
+
+```python title="portkey_manifold_pipe.py"
+"""
+title: Portkey Manifold Pipe
+author: Portkey
+version: 0.6.0
+license: MIT
+documentation: https://portkey.ai/docs/integrations/libraries/openwebui
+"""
+
+from pydantic import BaseModel, Field
+from typing import Union, Generator, Iterator, List, Dict, Any
+import json
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+class Pipe:
+    class Valves(BaseModel):
+        # Auth & endpoint
+        PORTKEY_API_KEY: str = Field(
+            default="",
+            description="Your Portkey API key (required). Will be used as Bearer token."
+        )
+        PORTKEY_API_BASE_URL: str = Field(
+            default="https://api.portkey.ai/v1",
+            description="Base URL for the Portkey API (change only for self-hosted)."
+        )
+
+        # Models
+        AUTO_DISCOVER_MODELS: bool = Field(
+            default=True,
+            description="If true, fetches models from GET {BASE}/models to fill dropdown."
+        )
+        PORTKEY_MODELS: str = Field(
+            default="@openai-slug/gpt-4o, @anthropic-slug/claude-sonnet-latest",
+            description="Comma-separated model IDs (used when auto-discovery is disabled or to augment)."
+        )
+
+        # Streaming format
+        STREAM_FORMAT: str = Field(
+            default="auto",
+            description="How to return streamed lines: 'auto' | 'jsonl' | 'sse'. "
+                        "'jsonl' strips 'data:' and yields pure JSON per line; "
+                        "'sse' passes lines as-is; 'auto' tries to normalize sensibly."
+        )
+
+        # Headers / metadata
+        FORWARD_USER_INFO_HEADERS: bool = Field(
+            default=False,
+            description="If true, forwards X-OpenWebUI-* user headers to Portkey."
+        )
+        SEND_METADATA_HEADER: bool = Field(
+            default=True,
+            description="If true, sends x-portkey-metadata with user info as JSON."
+        )
+
+        # Networking
+        REQUEST_TIMEOUT_SECS: int = Field(
+            default=600,
+            description="HTTP timeout (seconds). Increase for long streams."
+        )
+        RETRIES_NON_STREAM: int = Field(
+            default=3,
+            description="Retry count for non-streaming requests (backoff included)."
+        )
+        RETRY_BACKOFF_FACTOR: float = Field(
+            default=0.5,
+            description="Seconds factor for exponential backoff (non-stream only)."
+        )
+
+    def __init__(self):
+        self.type = "manifold"
+        self.valves = self.Valves()
+        self.name = "PORTKEY"
+        self._session = None  # lazy init
+
+    # ---------- utilities ----------
+
+    def _clean_model_id(self, full_model_id: str) -> str:
+        # OpenWebUI may prefix the pipe filename; strip it.
+        # "portkey_manifold_pipe.@foo/bar" -> "@foo/bar"
+        return full_model_id.split(".", 1)[-1] if "." in full_model_id else full_model_id
+
+    def _user_to_metadata(self, __user__: Dict[str, Any]) -> Dict[str, Any]:
+        # Harvest user info commonly available from OpenWebUI
+        __user__ = __user__ or {}
+        meta = {}
+        # canonical set
+        if "name" in __user__: meta["name"] = __user__["name"]
+        if "id" in __user__: meta["id"] = __user__["id"]
+        if "email" in __user__: meta["email"] = __user__["email"]
+        if "role" in __user__: meta["role"] = __user__["role"]
+        if "chat_id" in __user__: meta["chat_id"] = __user__["chat_id"]
+        return meta
+
+    def _build_headers(self, __user__: Dict[str, Any]) -> Dict[str, str]:
+        if not self.valves.PORTKEY_API_KEY:
+            raise Exception("PORTKEY_API_KEY is required. Paste your Portkey API key.")
+
+        headers = {
+            "Authorization": f"Bearer {self.valves.PORTKEY_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "openwebui-portkey-pipe/0.6.0",
+        }
+
+        # Optional: forward OpenWebUI X- headers (mirrors ENABLE_FORWARD_USER_INFO_HEADERS behavior)
+        if self.valves.FORWARD_USER_INFO_HEADERS and __user__:
+            if "name" in __user__:   headers["X-OpenWebUI-User-Name"] = str(__user__["name"])
+            if "id" in __user__:     headers["X-OpenWebUI-User-Id"] = str(__user__["id"])
+            if "email" in __user__:  headers["X-OpenWebUI-User-Email"] = str(__user__["email"])
+            if "role" in __user__:   headers["X-OpenWebUI-User-Role"] = str(__user__["role"])
+            if "chat_id" in __user__:headers["X-OpenWebUI-Chat-Id"] = str(__user__["chat_id"])
+
+        # Optional: structured metadata payload for Portkey observability
+        if self.valves.SEND_METADATA_HEADER:
+            meta = self._user_to_metadata(__user__)
+            if meta:
+                headers["x-portkey-metadata"] = json.dumps(meta)
+
+        return headers
+
+    def _session_non_stream(self) -> requests.Session:
+        # Session with retries for non-stream requests
+        if self._session is None:
+            s = requests.Session()
+            retry = Retry(
+                total=self.valves.RETRIES_NON_STREAM,
+                read=self.valves.RETRIES_NON_STREAM,
+                connect=self.valves.RETRIES_NON_STREAM,
+                backoff_factor=self.valves.RETRY_BACKOFF_FACTOR,
+                status_forcelist=(429, 500, 502, 503, 504),
+                allowed_methods=False,  # allow POST retries
+                raise_on_status=False,
+            )
+            adapter = HTTPAdapter(max_retries=retry)
+            s.mount("https://", adapter)
+            s.mount("http://", adapter)
+            self._session = s
+        return self._session
+
+    # ---------- models list for UI ----------
+
+    def _models_from_auto_discovery(self) -> List[str]:
+        url = f"{self.valves.PORTKEY_API_BASE_URL}/models"
+        try:
+            r = self._session_non_stream().get(url, timeout=30)
+            r.raise_for_status()
+            payload = r.json()
+            # Robust extraction: prefer OpenAI-ish shape {"data":[{"id":...}]}
+            data = payload.get("data") if isinstance(payload, dict) else None
+            if isinstance(data, list):
+                ids = [item.get("id") for item in data if isinstance(item, dict) and item.get("id")]
+                return [i for i in ids if isinstance(i, str)]
+            # Fallbacks
+            if isinstance(payload, list):
+                # maybe it's already a list of ids or objects
+                maybe_ids = []
+                for item in payload:
+                    if isinstance(item, str):
+                        maybe_ids.append(item)
+                    elif isinstance(item, dict) and "id" in item and isinstance(item["id"], str):
+                        maybe_ids.append(item["id"])
+                return maybe_ids
+            return []
+        except Exception:
+            return []
+
+    def pipes(self) -> list:
+        model_ids = []
+
+        if self.valves.AUTO_DISCOVER_MODELS:
+            model_ids.extend(self._models_from_auto_discovery())
+
+        if self.valves.PORTKEY_MODELS:
+            manual = [m.strip() for m in self.valves.PORTKEY_MODELS.split(",") if m.strip()]
+            model_ids.extend(manual)
+
+        # De-dup preserve order
+        seen = set()
+        uniq = []
+        for m in model_ids:
+            if m not in seen:
+                seen.add(m)
+                uniq.append(m)
+
+        return [{"id": model_id, "name": model_id} for model_id in uniq]
+
+    # ---------- streaming helpers ----------
+
+    def _normalize_stream_line(self, line: str) -> str:
+        """
+        Return a single line based on STREAM_FORMAT:
+          - 'jsonl': strip leading 'data:' if present; return the JSON payload only.
+          - 'sse': return as-is.
+          - 'auto': if startswith 'data:', drop the prefix; yield JSON if decodes, else original.
+        Lines equal to '[DONE]' are skipped.
+        """
+        if not line or line.strip() == "[DONE]":
+            return ""
+
+        fmt = (self.valves.STREAM_FORMAT or "auto").lower()
+
+        if fmt == "sse":
+            return line
+
+        # jsonl or auto
+        if line.startswith("data:"):
+            line = line[len("data:"):].lstrip()
+
+        if fmt == "jsonl" or fmt == "auto":
+            # try to confirm it is JSON; if yes, return compact JSON string
+            try:
+                obj = json.loads(line)
+                return json.dumps(obj, separators=(",", ":"))
+            except Exception:
+                # not JSON, return as-is in 'auto'; in 'jsonl' still return raw line
+                return line
+
+        return line
+
+    def _iter_stream(self, response: requests.Response) -> Iterator[str]:
+        for raw in response.iter_lines(decode_unicode=True):
+            if raw is None:
+                continue
+            line = raw.strip()
+            if not line:
+                continue  # skip keep-alives
+            out = self._normalize_stream_line(line)
+            if out:
+                yield out
+
+    # ---------- main entry ----------
+
+    def pipe(self, body: dict, __user__: dict) -> Union[str, Generator, Iterator]:
+        # validate & normalize model id
+        full_model_id = body.get("model", "")
+        if not full_model_id:
+            raise Exception("A 'model' must be provided.")
+        payload = {**body, "model": self._clean_model_id(full_model_id)}
+
+        headers = self._build_headers(__user__)
+        url = f"{self.valves.PORTKEY_API_BASE_URL}/chat/completions"
+        stream = bool(body.get("stream", True))
+
+        try:
+            if stream:
+                # streaming: do NOT use retrying session to avoid duplicate tokens
+                r = requests.post(
+                    url=url,
+                    json=payload,
+                    headers=headers,
+                    stream=True,
+                    timeout=self.valves.REQUEST_TIMEOUT_SECS,
+                )
+            else:
+                r = self._session_non_stream().post(
+                    url=url,
+                    json=payload,
+                    headers=headers,
+                    stream=False,
+                    timeout=self.valves.REQUEST_TIMEOUT_SECS,
+                )
+
+            r.raise_for_status()
+
+            if stream:
+                return self._iter_stream(r)
+            else:
+                return r.json()
+
+        except requests.HTTPError as http_err:
+            status = getattr(http_err.response, "status_code", "unknown")
+            details = None
+            try:
+                details = http_err.response.json()
+            except Exception:
+                try:
+                    details = {"raw": http_err.response.text}
+                except Exception:
+                    details = None
+
+            msg = f"Portkey HTTP {status}"
+            if isinstance(details, dict):
+                err = details.get("error")
+                if isinstance(err, dict):
+                    parts = []
+                    if "message" in err: parts.append(err["message"])
+                    if "type" in err: parts.append(f"type={err['type']}")
+                    if "request_id" in err: parts.append(f"request_id={err['request_id']}")
+                    if parts: msg += " — " + " | ".join(parts)
+                else:
+                    # keep it concise, but helpful
+                    snippet = json.dumps(details)[:800]
+                    msg += f" — {snippet}"
+            raise Exception(msg) from http_err
+
+        except requests.RequestException as req_err:
+            raise Exception(f"Network error talking to Portkey: {req_err}") from req_err
+
+        except Exception as e:
+            raise Exception(f"Unexpected error: {e}") from e
+
+```
+
+  </Accordion>
+</AccordionGroup>
+
+<Steps>
+  <Step title="Install the Pipe">
+    1. Copy or download `portkey_manifold_pipe.py`.
+    2. Place it in your OpenWebUI `pipes/` directory (Docker defaults to `/app/backend/data/pipes/`).
+    3. Restart OpenWebUI so the new pipe registers.
+  </Step>
+
+  <Step title="Configure Valves">
+    1. In OpenWebUI, choose the `PORTKEY` pipe from the dropdown.
+    2. Open the **Valves** panel and set:
+       - **PORTKEY_API_KEY** (required) and optional **PORTKEY_API_BASE_URL**.
+       - **AUTO_DISCOVER_MODELS** to pull live catalog entries, or curate the list with **PORTKEY_MODELS**.
+       - Metadata controls such as **FORWARD_USER_INFO_HEADERS** and **SEND_METADATA_HEADER** to keep Portkey audit-ready.
+       - Streaming and resilience options including **STREAM_FORMAT**, **REQUEST_TIMEOUT_SECS**, and **RETRIES_NON_STREAM**.
+  </Step>
+
+  <Step title="Bring Your Governance">
+    1. Apply Portkey's budget controls and rate limits by aligning your pipe with the appropriate access policies.
+    2. Reference [Configs](https://docs.portkey.ai/configs) to enable routing, fallbacks, caching, or segmentation.
+    3. Start chatting—OpenWebUI will apply your governance and telemetry automatically.
+  </Step>
+</Steps>
 
 
-# 3. Set Up Enterprise Governance for Open WebUI
+## 3. Set Up Enterprise Governance for OpenWebUI
 
 **Why Enterprise Governance?**
-If you are using Open WebUI inside your orgnaization, you need to consider several governance aspects:
+If you are using OpenWebUI inside your organization, consider the following governance pillars:
 
 - **Cost Management**: Controlling and tracking AI spending across teams
-- **Access Control**: Managing team access and workspaces
+- **Access Control**: Managing which teams can access specific models
 - **Usage Analytics**: Understanding how AI is being used across the organization
 - **Security & Compliance**: Maintaining enterprise security standards
 - **Reliability**: Ensuring consistent service across all users
-- **Model Management**: Managing what models are being used in your setup
+- **Model Management**: Governing how models are provisioned and updated
 
-Portkey adds a comprehensive governance layer to address these enterprise
+Portkey adds a comprehensive governance layer to address these enterprise needs. Combine access policies, Configs, and API Keys to orchestrate usage across teams.
 
 **Enterprise Implementation Guide**
 
 <AccordionGroup>
   <Accordion title="Step 1: Implement Budget Controls & Rate Limits">
-### Step 1: Implement Budget Controls & Rate Limits
+    ### Step 1: Implement Budget Controls & Rate Limits
 
-Model Catalog enables you to have granular control over LLM access at the team/department level. This helps you:
+    Use Portkey's access policies to set per-team budget ceilings and rate limits. From the Portkey dashboard you can:
 
-- Set up [budget limits](/product/model-catalog/integrations#3-budget-%26-rate-limits)
-- Prevent unexpected usage spikes using Rate limits
-- Track departmental spending
+    - Configure [budget limits](/product/ai-gateway/virtual-keys/budget-limits) for each integration or workspace
+    - Prevent unexpected usage spikes with rate limiting rules
+    - Track departmental spending using consistent metadata tags
 
-#### Setting Up Department-Specific Controls:
+    #### Department-Specific Controls
 
-1. Navigate to [Model Catalog](https://app.portkey.ai/model-catalog) in Portkey dashboard
-2. Create new Provider for each engineering team with budget limits and rate limits
-3. Configure department-specific limits
+    1. In the Portkey dashboard, open your chosen workspace or integration.
+    2. Configure budget ceilings and rate caps for each team profile.
+    3. Share the corresponding credentials with the appropriate OpenWebUI users or pipes.
 
-<Frame>
-  <img
-    src="/images/product/model-catalog/create-provider-page.png"
-    width="500"
-  />
-</Frame>
+    <Frame>
+      <img src="/images/integrations/openai/virtual-key-2.png" width="500" />
+    </Frame>
 
   </Accordion>
 
   <Accordion title="Step 2: Define Model Access Rules">
-### Step 2: Define Model Access Rules
+    ### Step 2: Define Model Access Rules
 
-As your AI usage scales, controlling which teams can access specific models becomes crucial. You can simply manage AI models in your org by provisioning model at the top integration level.
+    Use the Model Catalog to provision which models are exposed to each integration or workspace.
 
-<Frame>
-  <img
-    src="/images/product/model-catalog/model-provisioning-page.png"
-    width="500"
-  />
-</Frame>
+    <Frame>
+      <img src="/images/product/model-catalog/model-provisioning-page.png" width="500" />
+    </Frame>
 
-</Accordion>
+    Leverage Portkey Configs to enforce provider- or model-specific guardrails without editing your OpenWebUI setup.
 
-<Accordion title="Step 4: Set Routing Configuration">
-    Portkey allows you to control your routing logic very simply with it's Configs feature. Portkey Configs provide this control layer with things like:
+  </Accordion>
 
-- **Data Protection**: Implement guardrails for sensitive code and data
-- **Reliability Controls**: Add fallbacks, load-balance, retry and smart conditional routing logic
-- **Caching**: Implement Simple and Semantic Caching. and more....
-
-#### Example Configuration:
-
-Here's a basic configuration to load-balance requests to OpenAI and Anthropic:
+  <Accordion title="Step 3: Set Routing Configuration">
+    Portkey Configs control routing logic, fallbacks, caching, and data protection.
 
 ```json
 {
@@ -196,31 +527,22 @@ Here's a basic configuration to load-balance requests to OpenAI and Anthropic:
 }
 ```
 
-Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard. You'll need the config ID for connecting to Open WebUI's setup.
+    Create or edit configs in the [Configs Library](https://app.portkey.ai/configs). Reference the config ID inside OpenWebUI requests or pipe valves.
 
 <Note>
-  Configs can be updated anytime to adjust controls without affecting running
-  applications.
+    Configs can be updated anytime to adjust policies without redeploying OpenWebUI.
 </Note>
 
   </Accordion>
 
   <Accordion title="Step 4: Implement Access Controls">
-### Step 3: Implement Access Controls
+    Create user- or team-specific API keys that automatically:
 
-Create User-specific API keys that automatically:
+    - Track usage with metadata
+    - Apply the right configs and access policies
+    - Enforce scoped permissions
 
-- Track usage per developer/team with the help of metadata
-- Apply appropriate configs to route requests
-- Collect relevant metadata to filter logs
-- Enforce access permissions
-
-Create API keys through:
-
-- [Portkey App](https://app.portkey.ai/)
-- [API Key Management API](/api-reference/admin-api/control-plane/api-keys/create-api-key)
-
-Example using Python SDK:
+    Create API keys through the [Portkey App](https://app.portkey.ai/) or the [API Key Management API](/api-reference/admin-api/control-plane/api-keys/create-api-key):
 
 ```python
 from portkey_ai import Portkey
@@ -243,25 +565,23 @@ api_key = portkey.api_keys.create(
 )
 ```
 
-For detailed key management instructions, see our [API Keys documentation](/api-reference/admin-api/control-plane/api-keys/create-api-key).
-
   </Accordion>
 
-<Accordion title="Step 5: Deploy & Monitor">
-  ### Step 4: Deploy & Monitor After distributing API keys to your engineering
-  teams, your enterprise-ready Open WebUI setup is ready to go. Each developer
-  can now use their designated API keys with appropriate access levels and
-  budget controls. Apply your governance setup using the integration steps from
-  earlier sections Monitor usage in Portkey dashboard: - Cost tracking by
-  engineering team - Model usage patterns for AI agent tasks - Request volumes -
-  Error rates and debugging logs
-</Accordion>
+  <Accordion title="Step 5: Deploy & Monitor">
+    Distribute API keys, apply your governance defaults, and monitor live usage inside the Portkey dashboard:
+
+    - Cost tracking by department
+    - Model usage patterns
+    - Request volumes and error rates
+    - Audit-ready metadata
+
+  </Accordion>
 
 </AccordionGroup>
 
 <Check>
 ### Enterprise Features Now Available
-**Open WebUI now has:**
+**OpenWebUI now has:**
 
 - Per-developer budget controls
 - Model access governance
@@ -275,14 +595,14 @@ For detailed key management instructions, see our [API Keys documentation](/api-
 Here's the new section for image generation using Portkey with Open WebUI:
 
 
-## 4.  Image Generation with Portkey
+## 4. Image Generation with Portkey
 
 Portkey enables seamless image generation through Open WebUI by providing a unified interface for various image generation models like DALL-E 2, DALL-E 3, and other compatible models. This integration allows you to leverage Portkey's enterprise features including cost tracking, access controls, and observability for all your image generation needs.
 
 ### Setting Up Image Generation
 
 <Note>
-  Before proceeding, ensure you have completed the basic Portkey setup from [Step 1](#1-setting-up-portkey) and have your Portkey API key ready.
+  Before proceeding, ensure you have completed the workspace setup in [Step 1](#1-prepare-your-portkey-workspace) and have your Portkey API key ready. Image generation works with either integration path above.
 </Note>
 
 <Steps>
@@ -322,7 +642,7 @@ Portkey enables seamless image generation through Open WebUI by providing a unif
 
     **Steps**: Set the number of generation steps (typically 50 for good quality)
 
-    - **Other Models**: Check your provider's documentation (gemini, vertex, and more..) for supported sizes
+    - **Other Models**: Check your provider's documentation (Gemini, Vertex, and others) for supported sizes.
 
 
   </Step>
@@ -349,13 +669,13 @@ All image generation requests through Portkey are automatically tracked with:
 </Frame>
 
 <Note>
-  **Pro Tip**: If you are using a different AI provider (Gemini, Vertex AI, etc..) and you need to pass some additional params for image gen, you can do that by adding them in portkey's config as `override_params` and attaching it to your Portkey API key. Here's a [guide](/product/administration/enforce-default-config)
+  **Pro Tip**: If you are using a different AI provider (Gemini, Vertex AI, etc.) and need additional parameters for image generation, add them to a Portkey Config as `override_params` and attach it to your API key. Here's a [guide](/product/administration/enforce-default-config).
 </Note>
 
 
 # Portkey Features
 
-Now that you have enterprise-grade Zed setup, let's explore the comprehensive features Portkey provides to ensure secure, efficient, and cost-effective AI operations.
+Now that you have an enterprise-grade OpenWebUI setup, explore the comprehensive features Portkey provides to ensure secure, efficient, and cost-effective AI operations.
 
 ### 1. Comprehensive Metrics
 
