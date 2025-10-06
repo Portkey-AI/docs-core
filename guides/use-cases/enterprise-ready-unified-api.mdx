@@ -7,33 +7,30 @@ description: "Build a single API interface with automatic failover and unified e
 
 This guide shows engineering teams how to replace multiple LLM integrations with one unified API. You'll learn to implement automatic failover, standardized error handling, and intelligent retry logic without custom code.
 
-<Card title="Jump to Production Example" icon="rocket" href="#production-ready-implementation">
-  See the complete implementation with all best practices
-</Card>
 
 ## The problem with multiple LLM providers
 
 Engineering teams maintaining separate integrations for each LLM provider face several challenges.
 
-**Different SDKs create complexity.** Each provider requires its own library, authentication method, and error handling logic. Your codebase becomes fragmented with provider-specific code.
+- **Different SDKs create complexity.** Each provider requires its own library, authentication method, and error handling logic. Your codebase becomes fragmented with provider-specific code.
 
-**Manual retry logic is error-prone.** Teams write custom exponential backoff, track retry counts, and handle edge cases differently for each provider. This inconsistency leads to bugs.
+- **Manual retry logic is error-prone.** Teams write custom exponential backoff, track retry counts, and handle edge cases differently for each provider. This inconsistency leads to bugs.
 
-**Provider outages affect availability.** When OpenAI experiences downtime, your application fails even though Anthropic might be fully operational. There's no automatic failover.
+- **Provider outages affect availability.** When OpenAI experiences downtime, your application fails even though Anthropic might be fully operational. There's no automatic failover.
 
-**Error responses vary wildly.** OpenAI returns 429 for rate limits while Bedrock might return ThrottlingException. Your error handling becomes a maze of conditionals.
+- **Error responses vary wildly.** OpenAI returns 429 for rate limits while Bedrock might return ThrottlingException. Your error handling becomes a maze of conditionals.
 
 ## How Portkey solves these problems
 
 Portkey acts as an intelligent gateway between your application and LLM providers.
 
-**One SDK replaces many.** Use the same client and methods regardless of whether you're calling OpenAI, Anthropic, or Bedrock. The API signature remains consistent.
+- **One SDK replaces many.** Use the same client and methods regardless of whether you're calling OpenAI, Anthropic, or Bedrock. The API signature remains consistent.
 
-**Automatic retries handle transient failures.** Configure retry attempts and Portkey manages exponential backoff automatically. No custom retry loops needed.
+- **Automatic retries handle transient failures.** Configure retry attempts and Portkey manages exponential backoff automatically. No custom retry loops needed.
 
-**Instant failover maintains availability.** When one provider fails, requests automatically route to your backup providers in milliseconds. Your application stays online.
+- **Instant failover maintains availability.** When one provider fails, requests automatically route to your backup providers in milliseconds. Your application stays online.
 
-**Standardized errors simplify handling.** All providers return consistent error codes through Portkey's gateway. One error handler works for all providers.
+- **Standardized errors simplify handling.** All providers return consistent error codes through Portkey's gateway. One error handler works for all providers.
 
 ## Quick start: Your first unified request
 
@@ -206,10 +203,6 @@ console.log(response.choices[0].message.content);
 
 Portkey's observability dashboard shows exactly what happens during failover. You can see which providers were attempted, why they failed, and which one ultimately succeeded.
 
-<Frame>
-  <img src="/images/failover-trace.png" alt="Failover trace showing multiple provider attempts" />
-</Frame>
-
 **Each attempt appears in the trace.** Failed requests show their status codes and error messages. The successful request shows response time and tokens used.
 
 <Card title="Tracing Guide" icon="route" href="/product/observability/traces">
@@ -275,11 +268,11 @@ Use both strategies together for maximum reliability. Retry transient failures o
 
 ## Unified error handling
 
-Portkey standardizes error responses across all providers. Handle errors consistently regardless of which provider generated them.
+Handle errors consistently regardless of which provider generated them.
 
 ### Standard error codes
 
-All providers return these standardized codes through Portkey.
+All providers return these standardized codes for most errors.
 
 | Code | Description | Recommended Action |
 |------|-------------|-------------------|
@@ -292,93 +285,104 @@ All providers return these standardized codes through Portkey.
 | 446 | Guardrail Failed | Review content filters |
 | 500-504 | Server Error | Retry or failover |
 
-**Consistent codes simplify handling.** Whether OpenAI returns "rate_limit_exceeded" or Bedrock returns "ThrottlingException", Portkey normalizes both to 429.
 
 ### Implementing error handlers
 
-Write one error handler that works for all providers.
+Write one [config](/product/ai-gateway/configs) handler that works for all providers.
 
-<CodeGroup>
-```python Python
-from portkey_ai import Portkey
-import time
+For example, if you want to implement fallback if you get rate limited on one particular Provider. You can simply attach a config on your request like this:
 
-def handle_llm_request(prompt: str, max_retries: int = 3):
-    """Make LLM request with unified error handling"""
 
-    for attempt in range(max_retries):
-        try:
-            response = portkey.chat.completions.create(
-                model="@openai-prod/gpt-4",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return response
-
-        except Exception as e:
-            # Consistent error format for all providers
-            error_code = getattr(e, 'status_code', None)
-
-            if error_code == 412:
-                raise Exception("Budget exhausted - contact admin")
-
-            if error_code == 446:
-                raise Exception("Content blocked by guardrails")
-
-            if error_code in [429, 500, 502, 503, 504]:
-                if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
-                    print(f"Error {error_code} - retrying in {wait_time}s")
-                    time.sleep(wait_time)
-                    continue
-
-            raise e
-
-    raise Exception("Max retries exceeded")
-```
-
-```javascript Node.js
-async function handleLLMRequest(prompt, maxRetries = 3) {
-    // Make LLM request with unified error handling
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-            const response = await portkey.chat.completions.create({
-                model: "@openai-prod/gpt-4",
-                messages: [{ role: "user", content: prompt }]
-            });
-            return response;
-
-        } catch (error) {
-            // Consistent error format for all providers
-            const errorCode = error.status_code;
-
-            if (errorCode === 412) {
-                throw new Error("Budget exhausted - contact admin");
-            }
-
-            if (errorCode === 446) {
-                throw new Error("Content blocked by guardrails");
-            }
-
-            if ([429, 500, 502, 503, 504].includes(errorCode)) {
-                if (attempt < maxRetries - 1) {
-                    const waitTime = Math.pow(2, attempt);
-                    console.log(`Error ${errorCode} - retrying in ${waitTime}s`);
-                    await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
-                    continue;
-                }
-            }
-
-            throw error;
-        }
+```json
+{
+  "strategy": {
+    "mode": "fallback"
+  },
+  "on_status_codes":[412],
+  "targets": [
+    {
+      "provider": "@openai-provider",
+    },
+    {
+      "provider": "@anthripic-provider",
     }
-
-    throw new Error("Max retries exceeded");
+  ]
 }
 ```
-</CodeGroup>
 
-**One handler for all providers.** This error handler works whether the request went to OpenAI, Anthropic, or Bedrock. The error codes remain consistent.
+You can pass this config in your request like this:
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***" // Supports a string config id or a config object
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***" # Supports a string config id or a config object
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+
+```js
+const openai = new OpenAI({
+  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "openai",
+    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+    config: "CONFIG_ID" // Fetched from the UI
+  })
+});
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```python
+client = OpenAI(
+    api_key="OPENAI_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+        config="CONFIG_ID"
+    )
+)
+```
+  </Tab>
+<Tab title="cURL">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [{
+        "role": "user",
+        "content": "Hello!"
+      }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+
+
+
+**One handler for all providers.** This rate limit handler works whether the request went to OpenAI, Anthropic, or Bedrock.
 
 ## Streaming responses
 
@@ -436,92 +440,6 @@ Portkey offers two batch processing modes to fit different needs.
   Complete documentation for batch inference at scale
 </Card>
 
-### Implementing batch requests
-
-Upload your requests as a JSONL file and process them in batch.
-
-<CodeGroup>
-```python Python
-# Prepare batch file with multiple requests
-requests = [
-    {"custom_id": "req-1", "method": "POST", "url": "/v1/chat/completions",
-     "body": {"model": "gpt-4", "messages": [{"role": "user", "content": "Analyze revenue trends"}]}},
-    {"custom_id": "req-2", "method": "POST", "url": "/v1/chat/completions",
-     "body": {"model": "gpt-4", "messages": [{"role": "user", "content": "Summarize customer feedback"}]}}
-]
-
-# Save as JSONL
-import json
-with open("batch_requests.jsonl", "w") as f:
-    for request in requests:
-        f.write(json.dumps(request) + "\n")
-
-# Upload file to Portkey
-file = portkey.files.create(
-    file=open("batch_requests.jsonl", "rb"),
-    purpose="batch"
-)
-
-# Create batch job
-batch = portkey.batches.create(
-    input_file_id=file.id,
-    endpoint="/v1/chat/completions",
-    completion_window="24h"  # Use "immediate" for instant processing
-)
-
-# Monitor progress
-import time
-while batch.status != "completed":
-    time.sleep(60)
-    batch = portkey.batches.retrieve(batch.id)
-    print(f"Progress: {batch.request_counts.completed}/{batch.request_counts.total}")
-
-# Get results
-results = portkey.files.content(batch.output_file_id)
-```
-
-```javascript Node.js
-// Prepare batch file with multiple requests
-const requests = [
-    {custom_id: "req-1", method: "POST", url: "/v1/chat/completions",
-     body: {model: "gpt-4", messages: [{role: "user", content: "Analyze revenue trends"}]}},
-    {custom_id: "req-2", method: "POST", url: "/v1/chat/completions",
-     body: {model: "gpt-4", messages: [{role: "user", content: "Summarize customer feedback"}]}}
-];
-
-// Save as JSONL
-const fs = require('fs');
-const fileContent = requests.map(r => JSON.stringify(r)).join('\n');
-fs.writeFileSync('batch_requests.jsonl', fileContent);
-
-// Upload file to Portkey
-const file = await portkey.files.create({
-    file: fs.createReadStream("batch_requests.jsonl"),
-    purpose: "batch"
-});
-
-// Create batch job
-let batch = await portkey.batches.create({
-    input_file_id: file.id,
-    endpoint: "/v1/chat/completions",
-    completion_window: "24h"  // Use "immediate" for instant processing
-});
-
-// Monitor progress
-while (batch.status !== "completed") {
-    await new Promise(resolve => setTimeout(resolve, 60000));
-    batch = await portkey.batches.retrieve(batch.id);
-    console.log(`Progress: ${batch.request_counts.completed}/${batch.request_counts.total}`);
-}
-
-// Get results
-const results = await portkey.files.content(batch.output_file_id);
-```
-</CodeGroup>
-
-**Batch processing reduces costs.** OpenAI offers 50% discounts for batch requests. Even without discounts, batching improves throughput and reduces rate limit issues.
-
-**Automatic cost tracking included.** Portkey calculates tokens and costs for all batch requests, giving you complete visibility into batch job expenses.
 
 ## Load balancing across keys
 
@@ -589,13 +507,13 @@ Update your routing logic without touching code. Modify configs through Portkey'
 
 ### When to update configs
 
-**Add new providers.** When you get access to a new model or provider, add it to your fallback chain without deployment.
+- **Add new providers.** When you get access to a new model or provider, add it to your fallback chain without deployment.
 
-**Adjust retry logic.** If you're seeing more transient errors, increase retry attempts. If latency is critical, reduce them.
+- **Adjust retry logic.** If you're seeing more transient errors, increase retry attempts. If latency is critical, reduce them.
 
-**Shift traffic gradually.** Use load balancing to gradually migrate from one provider to another while monitoring performance.
+- **Shift traffic gradually.** Use load balancing to gradually migrate from one provider to another while monitoring performance.
 
-**Respond to incidents.** If a provider experiences an outage, temporarily remove it from rotation or reduce its weight.
+- **Respond to incidents.** If a provider experiences an outage, temporarily remove it from rotation or reduce its weight.
 
 ### Config versioning
 
@@ -609,17 +527,17 @@ Portkey maintains version history for all configs. You can rollback to previous 
 
 By implementing this guide, your engineering team now has:
 
-**Single API interface.** One SDK and consistent methods for all LLM providers. No more provider-specific code scattered through your application.
+- **Single API interface.** One SDK and consistent methods for all LLM providers. No more provider-specific code scattered through your application.
 
-**Automatic failover.** When providers fail, requests seamlessly route to backups. Your application stays online even during provider outages.
+- **Automatic failover.** When providers fail, requests seamlessly route to backups. Your application stays online even during provider outages.
 
-**Unified error handling.** Consistent error codes across all providers. One error handler works everywhere.
+- **Unified error handling.** Consistent error codes across all providers. One error handler works everywhere.
 
-**Intelligent retries.** Automatic exponential backoff for transient failures. No custom retry loops needed.
+- **Intelligent retries.** Automatic exponential backoff for transient failures. No custom retry loops needed.
 
-**Production observability.** Complete visibility into requests, costs, and performance across all providers.
+- **Production observability.** Complete visibility into requests, costs, and performance across all providers.
 
-**Dynamic configuration.** Update routing logic, add providers, or adjust limits without code changes or deployments.
+- **Dynamic configuration.** Update routing logic, add providers, or adjust limits without code changes or deployments.
 
 ## Next steps
 
@@ -630,17 +548,11 @@ Explore these advanced capabilities to further enhance your LLM infrastructure.
     Route requests based on metadata, user tiers, or custom rules
   </Card>
 
-  <Card title="Semantic Caching" icon="database" href="/product/ai-gateway/cache-simple-and-semantic">
-    Cache similar requests to reduce costs and latency
-  </Card>
 
   <Card title="Guardrails" icon="shield" href="/product/guardrails">
     Add content filters and safety checks to all requests
   </Card>
 
-  <Card title="Request Timeouts" icon="clock" href="/product/ai-gateway/request-timeouts">
-    Set maximum execution times to prevent hanging requests
-  </Card>
 </CardGroup>
 
 ## Getting help
