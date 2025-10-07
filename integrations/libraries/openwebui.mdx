@@ -1,11 +1,9 @@
 ---
 title: "Open WebUI"
-description: "Cost tracking, observability, and more for Open WebUI"
+description: "Enterprise-grade cost tracking, observability, and more for Open WebUI"
 ---
 
-This guide will help you implement enterprise-grade security, observability, and governance for OpenWebUI using Portkey. While OpenWebUI supports various provider plugins, Portkey provides a unified interface for all your LLM providers, offering comprehensive features for model management, cost tracking, observability, and metadata logging.
-
-For IT administrators deploying centralized instances of OpenWebUI, Portkey enables essential enterprise features including usage tracking, access controls, and budget management. Let's walk through implementing these features step by step.
+For IT teams running centralized OpenWebUI deployments, Portkey brings enterprise-grade observability and governance. Get unified model management, automatic cost tracking, and per-user attribution across all your LLM providers.
 
 # Understanding the Integration Paths
 
@@ -112,12 +110,33 @@ This route keeps your setup lightweight by pointing OpenWebUI at Portkey's OpenA
 
 Monitor requests, usage, and spend in the [Portkey Dashboard](https://app.portkey.ai/dashboard).
 
-### Option B: Portkey Manifold Pipe (Advanced)
+### Option B: Portkey Manifold Pipe (Recommended for Enterprise)
 
-If you want OpenWebUI to inherit Portkey's metadata forwarding, structured observability, retry policies, and per-user governance, install the official Portkey Manifold Pipe.
+The official Portkey Manifold Pipe unlocks enterprise-grade observability and governance features that aren't available through the basic OpenAI-compatible connection:
+
+<Note>
+In typical OpenWebUI deployments, a single shared API key means you lose visibility into which user made which request. Portkey logs show anonymous traffic instead of per-user attribution. The Portkey Manifold Pipe solves this by automatically forwarding OpenWebUI user context to Portkey, enabling true per-user observability, cost tracking, and governance—even with a shared API key setup.
+</Note>
+
+#### Why Use the Manifold Pipe?
+
+<CardGroup cols={2}>
+  <Card title="Per-User Attribution" icon="user">
+    Automatically track which OpenWebUI user made each request—essential for enterprise deployments with shared API keys.
+  </Card>
+  <Card title="Structured Metadata" icon="tags">
+    Forward OpenWebUI user context (email, name, role, chat ID) as structured metadata for filtering and analytics.
+  </Card>
+  <Card title="Auto Model Discovery" icon="magnifying-glass">
+    Automatically populate OpenWebUI's model dropdown from your Portkey Model Catalog—no manual configuration.
+  </Card>
+  <Card title="Enhanced Resilience" icon="shield">
+    Built-in retry logic with exponential backoff for non-streaming requests ensures reliable performance.
+  </Card>
+</CardGroup>
 
 - **Download:** [portkey_manifold_pipe.py](/integrations/libraries/openwebui-portkey-pipe.py)
-- **Best for:** Teams that need automatic model discovery, enhanced streaming control, metadata headers, and resilient retry/backoff behaviour from inside OpenWebUI.
+- **Best for:** Enterprise deployments with shared infrastructure where user-level tracking, governance, and automated model management are critical.
 
 <AccordionGroup>
   <Accordion title="portkey_manifold_pipe.py">
@@ -277,18 +296,99 @@ class Pipe:
   <Step title="Configure Valves">
 
     1. In OpenWebUI, choose the `PORTKEY` pipe from the dropdown.
-    2. Open the **Valves** panel and set:
-       - **PORTKEY_API_KEY** (required) and optional **PORTKEY_API_BASE_URL**.
-       - **AUTO_DISCOVER_MODELS** to pull live catalog entries (recommended)
-       - **PORTKEY_MODELS** curate the list particular model slugs from Model Catalog. Example: (@openai-provider/gpt-5, @anthropic-provider-slug/claude-sonnet-latest).
+    2. Open the **Valves** panel and configure:
+
+    **Required Configuration:**
+    - **PORTKEY_API_KEY**: Your Portkey API key (required)
+    - **PORTKEY_API_BASE_URL**: Default `https://api.portkey.ai/v1` (change only for self-hosted)
+
+    **Model Management:**
+    - **AUTO_DISCOVER_MODELS**: Enable to automatically fetch available models from Portkey's catalog (recommended)
+    - **PORTKEY_MODELS**: Comma-separated model slugs for manual curation. Example: `@openai-provider/gpt-4o, @anthropic-provider-slug/claude-sonnet-latest`
+
+    <Note>
+      **Enterprise Tip:** The pipe automatically forwards OpenWebUI user metadata (name, email, role, chat_id) to Portkey via the `x-portkey-metadata` header. This solves the shared API key attribution problem—you'll see per-user details in Portkey logs even when all users share the same API key.
+    </Note>
   </Step>
 
-  <Step title="Bring Your Governance">
-    1. Apply Portkey's budget controls and rate limits by aligning your pipe with the appropriate access policies.
-    2. Reference [Configs](https://docs.portkey.ai/configs) on API key level to enable routing, fallbacks, caching, or segmentation.
-    3. Start chatting—OpenWebUI will apply your governance and telemetry automatically.
+  <Step title="Verify User Attribution">
+    1. Start chatting in OpenWebUI with the PORTKEY pipe selected.
+    2. Open the [Portkey Logs dashboard](https://app.portkey.ai/logs).
+    3. You should now see detailed user attribution in your logs:
+       - User email, name, and role visible in request metadata
+       - Filter logs by specific users or teams
+       - Track costs and usage per team member
+    
+    <Check>
+      **Success!** You've solved the shared API key problem. Every request now shows which OpenWebUI user originated it, enabling true enterprise observability.
+    </Check>
+  </Step>
+
+  <Step title="Apply Additional Governance (Optional)">
+    1. Reference [Configs](https://docs.portkey.ai/configs) at the API key level to enable routing, fallbacks, caching, or segmentation.
+    2. Set up [budget limits and rate controls](/product/model-catalog/integrations#3-budget-%26-rate-limits) through Portkey's Model Catalog.
+    3. All governance policies automatically apply across OpenWebUI users via the shared setup.
   </Step>
 </Steps>
+
+#### What You'll See in Portkey
+
+Once configured, the manifold pipe automatically captures and displays OpenWebUI user context in every request. Here's what the Portkey Logs UI shows:
+
+<Frame>
+  <img src="/images/integrations/owui-metadata.png" alt="Portkey logs showing OpenWebUI user metadata including email, name, role, and chat ID" />
+</Frame>
+
+**Captured metadata includes:**
+- **User email** – Identify exactly who made each request
+- **User name** – Full name from OpenWebUI user profile
+- **User role** – Admin, user, or custom roles for access control
+- **Chat ID** – Track conversations and session context
+- **User ID** – Unique identifier for programmatic filtering
+
+This rich metadata enables you to filter logs by specific users, attribute costs to departments, and maintain complete audit trails—all without requiring individual API keys per user.
+
+---
+
+### How the Manifold Pipe Solves Enterprise Attribution
+
+The manifold pipe bridges OpenWebUI's user context with Portkey's observability, solving a critical enterprise pain point:
+
+<Tabs>
+  <Tab title="Without Manifold Pipe">
+    ```
+    OpenWebUI (User A, User B, User C...) 
+      ↓
+    Shared Portkey API Key
+      ↓  
+    Portkey Logs: All requests appear anonymous
+    ```
+    
+    **Problem:** No way to attribute costs, track usage, or audit which user accessed which models.
+  </Tab>
+  
+  <Tab title="With Manifold Pipe">
+    ```
+    OpenWebUI User A → Pipe adds metadata → Portkey
+      Headers: {"x-portkey-metadata": {"email": "user-a@company.com", "name": "User A", "role": "admin"}}
+    
+    OpenWebUI User B → Pipe adds metadata → Portkey
+      Headers: {"x-portkey-metadata": {"email": "user-b@company.com", "name": "User B", "role": "user"}}
+    ```
+    
+    **Solution:** Full per-user attribution in Portkey logs and analytics, even with a single shared API key.
+  </Tab>
+</Tabs>
+
+**This enables:**
+- **Cost attribution** per user or department
+- **Usage analytics** segmented by team member
+- **Compliance & audit trails** showing who accessed sensitive models
+- **Governance policies** based on user roles and permissions
+
+<Note>
+  The pipe leverages OpenWebUI's `__user__` context object, which contains user details passed from the frontend. This data is automatically formatted as [Portkey metadata](/product/observability/metadata) and attached to every request.
+</Note>
 
 
 ## 3. Set Up Enterprise Governance for OpenWebUI
