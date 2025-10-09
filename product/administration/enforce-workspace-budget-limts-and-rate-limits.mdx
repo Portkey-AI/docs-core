@@ -22,13 +22,27 @@ By implementing budget and rate limits at the workspace level, you can:
 
 To configure budget limits for a workspace:
 
-1. Navigate to the sidebar and select **Workspace Control**
-2. In the Workspace Control panel, click on the **Budget Allocation** tab
-3. Configure your desired rate and budget limits for the workspace
+1. In the app sidebar, click **Workspace Control** for the workspace you want to manage
+2. Select the **Budget Allocation** tab
+3. Add your workspace rate limits and budgets, then click **Update**
+
+### Who can manage workspace budgets
 
 <Note>
-Only workspace administrators and organization owners/admins have access to these controls. Permissions can be managed in **Admin Settings** → **Security** tab.
+The following roles can configure workspace budgets and rate limits:
+
+- Organization owners and organization admins
+- Workspace admins
+- Workspace managers (if the org admin has enabled "Workspace Management Permissions" in Admin Settings)
+
 </Note>
+
+
+<Frame title="Workspace Management Permissions">
+  <img src="/images/product/administration/workspace-budget-and-rate-limits.png"/>
+
+</Frame>
+
 
 ## Setting Rate Limits
 
@@ -43,9 +57,6 @@ To set up rate limits for a workspace:
 3. Specify the limit value in the **Set Rate Limit** field
 4. Select a time interval from the dropdown (Requests/Minute, Requests/Hour, Requests/Day)
 
-<Frame caption="Workspace rate limit configuration">
-  <img src="/images/product/workspace-rate-limit.png" />
-</Frame>
 
 When a workspace reaches its rate limit, all subsequent requests from that workspace will be rejected until the time interval resets, regardless of which API key is used.
 
@@ -63,9 +74,6 @@ To set up budget limits for a workspace:
 4. Optionally, set an **Alert Threshold ($)** to receive notifications before reaching the full budget
 5. Select a **Periodic Reset** option to determine when the budget refreshes
 
-<Frame caption="Workspace budget configuration">
-  <img src="/images/product/workspace-budget-limit.png" />
-</Frame>
 
 ### Alert Thresholds
 
@@ -82,6 +90,8 @@ Workspace budgets can be set to automatically reset at regular intervals:
 - **No Periodic Reset**: The budget limit applies until exhausted
 - **Reset Weekly**: Budget limits reset every Sunday at 12 AM UTC
 - **Reset Monthly**: Budget limits reset on the 1st of each month at 12 AM UTC
+
+> The configuration options for workspace budgets and rate limits are the same as other budget and rate limit controls in the Portkey app (for API keys and providers). If you're familiar with those, this will feel identical—just applied at the workspace level.
 
 
 ## Notification System
@@ -104,6 +114,55 @@ Workspace budget limits are particularly useful for:
 - **Phased Rollouts**: Gradually increase limits as teams demonstrate value and mature their AI use cases
 
 
+
+
+
+
+### Set Workspace Budget and Rate Limits using Portkey Admin API
+
+Use the Admin API to programmatically manage workspace budgets and rate limits.
+
+- The endpoint updates a workspace and accepts both `usage_limits` (budgets) and `rate_limits`.
+- Budget limits mirror the app controls: cost- or token-based, optional `alert_threshold`, and optional `periodic_reset` of `weekly` or `monthly`.
+- Rate limits support request- or token-based throttling with units `rpm` (per minute), `rph` (per hour), or `rpd` (per day).
+
+<CodeGroup>
+```python Python SDK
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+workspace = portkey.admin.workspaces.update(
+    workspace_id="WORKSPACE_ID",
+    # Workspace budgets (usage_limits): supports multiple entries
+    usage_limits=[
+        {
+            "type": "cost",            # or "tokens"
+            "credit_limit": 500,       # integer >= 1; dollars if type == "cost"
+            "alert_threshold": 400,    # optional; integer >= 1
+            "periodic_reset": "monthly"  # optional; "weekly" | "monthly"
+        },
+    ],
+    # Workspace rate limits: supports multiple entries
+    rate_limits=[
+        {
+            "type": "requests",  # or "tokens"
+            "unit": "rpm",       # "rpm" | "rph" | "rpd"
+            "value": 120         # integer
+        },
+    ],
+)
+
+print(workspace)
+```
+</CodeGroup>
+
+
+Learn more here:
+
+<Card title="Portkey Admin API" href="/api-reference/admin-api/control-plane/workspaces/update-workspace">
+Portkey Workspace API documentation
+</Card>
 
 ## Availability
 
