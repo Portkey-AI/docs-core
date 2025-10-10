@@ -1,0 +1,1671 @@
+---
+title: "AWS Marketplace"
+description: This enterprise-focused document provides comprehensive instructions for deploying the Portkey software using AWS Marketplace.
+---
+
+ It includes specific steps to subscribe Portkey AI Hybrid Enterprise Edition using AWS Marketplace and deploy the Portkey AI Gateway on AWS EKS with Quick Launch.
+
+
+## Architecture
+
+<Frame>
+<img src="/images/enterprise/cloud-marketplace/aws/portkey-aws-architecture.png" />
+</Frame>
+
+## Components and Sizing Recommendations
+
+| Component                               | Options                                                                   | Sizing Recommendations                                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| AI Gateway                              | Deploy as a Docker container in your Kubernetes cluster using Helm Charts | AWS NodeGroup t4g.medium instance, with at least 4GiB of memory and two vCPUs For high reliability, deploy across multiple Availability Zones. |
+| Logs store                              | AWS S3                                                                    | Each log document is \~10kb in size (uncompressed)                                                                                       |
+| Cache (Prompts, Configs & Providers) | Elasticache or self-hosted Redis                                          | Deploy in the same VPC as the Portkey Gateway.                                                                                           |
+
+## Helm Chart
+
+This deployment uses the Portkey AI hybrid Helm chart to deploy the Portkey AI Gateway. You can find more information about the Helm chart in the [Portkey AI Helm Chart GitHub Repository](https://github.com/Portkey-AI/helm/blob/main/charts/portkey-gateway/README.md).
+
+## Prerequisites
+
+1. Create a Portkey account on [Portkey AI](https://app.portkey.ai)
+2. Portkey team will share the credentials for the private Docker registry.
+
+## Markeplace Listing
+
+### Visit Portkey AI AWS Marketplace Listing
+
+You can find the Portkey AI AWS Marketplace listing [here](https://aws.amazon.com/marketplace/pp/prodview-o2leb4xcrkdqa).
+
+<Frame>
+<img src="/images/enterprise/cloud-marketplace/aws/aws-marketplace-1.png" />
+</Frame>
+
+### Subscribe to Portkey AI Enterprise Edition
+
+Subscribe to the Portkey AI Enterprise Edition to gain access to the Portkey AI Gateway.
+
+<Frame>
+<img src="/images/enterprise/cloud-marketplace/aws/aws-marketplace-2.png" />
+</Frame>
+
+### Quick Launch
+
+Upon subscribing to the Portkey AI Enterprise Edition, you will be able to select Quick Launch from within your AWS Console Subscriptions.
+
+<Frame>
+<img src="/images/enterprise/cloud-marketplace/aws/aws-marketplace-3.png" />
+</Frame>
+
+### Launch the Cloud Formation Template
+
+Select the Portkey AI Enterprise Edition and click on Quick Launch.
+<Frame>
+<img src="/images/enterprise/cloud-marketplace/aws/aws-marketplace-4.png" />
+</Frame>
+
+### Run the Cloud Formation Template
+
+Fill the required parameters and click on Next and run the Cloud Formation Template.
+
+<Frame>
+<img src="/images/enterprise/cloud-marketplace/aws/aws-marketplace-5.png" />
+</Frame>
+
+## Cloud Formation Steps
+
+- Creates a new EKS cluster and NodeGroup in your selected VPC and Subnets
+- Sets up IAM Roles needed for S3 bucket access using STS and Lambda execution
+- Uses AWS Lambda to:
+  - Install the Portkey AI Helm chart to your EKS cluster
+  - Upload the values.yaml file to the S3 bucket
+- Allows for changes to the values file or helm chart deployment by updating and re-running the same Lambda function in your AWS account
+
+### Cloudformation Template
+
+> Our cloudformation template has passed the AWS Marketplace validation and security review.
+
+```yaml portkey-hybrid-eks-cloudformation.template.yaml [expandable]
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Portkey deployment template for AWS Marketplace
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Required Parameters"
+        Parameters:
+          - VPCID
+          - Subnet1ID
+          - Subnet2ID
+          - ClusterName
+          - NodeGroupName
+          - NodeGroupInstanceType
+          - SecurityGroupID
+          - CreateNewCluster
+          - HelmChartVersion
+          - PortkeyDockerUsername:
+              NoEcho: true
+          - PortkeyDockerPassword:
+              NoEcho: true
+          - PortkeyClientAuth:
+              NoEcho: true
+      - Label:
+          default: "Optional Parameters"
+        Parameters:
+          - PortkeyOrgId
+          - PortkeyGatewayIngressEnabled
+          - PortkeyGatewayIngressSubdomain
+          - PortkeyFineTuningEnabled
+
+Parameters:
+  # Required Parameters
+  VPCID:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where the EKS cluster will be created
+    Default: Select a VPC
+
+  Subnet1ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: First subnet ID for EKS cluster
+    Default: Select your subnet
+
+  Subnet2ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: Second subnet ID for EKS cluster
+    Default: Select your subnet
+
+  # Optional Parameters with defaults
+  ClusterName:
+    Type: String
+    Description: Name of the EKS cluster (if not provided, a new EKS cluster will be created)
+    Default: portkey-eks-cluster
+
+  NodeGroupName:
+    Type: String
+    Description: Name of the EKS node group (if not provided, a new EKS node group will be created)
+    Default: portkey-eks-cluster-node-group
+
+  NodeGroupInstanceType:
+    Type: String
+    Description: EC2 instance type for the node group (if not provided, t3.medium will be used)
+    Default: t3.medium
+    AllowedValues:
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+
+  PortkeyDockerUsername:
+    Type: String
+    Description: Docker username for Portkey (provided by the Portkey team)
+    Default: portkeyenterprise
+
+  PortkeyDockerPassword:
+    Type: String
+    Description: Docker password for Portkey (provided by the Portkey team)
+    Default: ""
+    NoEcho: true
+
+  PortkeyClientAuth:
+    Type: String
+    Description: Portkey Client ID (provided by the Portkey team)
+    Default: ""
+    NoEcho: true
+
+  PortkeyOrgId:
+    Type: String
+    Description: Portkey Organisation ID (provided by the Portkey team)
+    Default: ""
+
+  HelmChartVersion:
+    Type: String
+    Description: Version of the Helm chart to deploy
+    Default: "latest"
+    AllowedValues:
+      - latest
+
+  SecurityGroupID:
+    Type: String
+    Description: Optional security group ID for the EKS cluster (if not provided, a new security group will be created)
+    Default: ""
+
+  CreateNewCluster:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Whether to create a new EKS cluster or use an existing one
+
+  PortkeyGatewayIngressEnabled:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+    Description: Whether to enable the Portkey Gateway ingress
+
+  PortkeyGatewayIngressSubdomain:
+    Type: String
+    Description: Subdomain for the Portkey Gateway ingress
+    Default: ""
+
+  PortkeyFineTuningEnabled:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+    Description: Whether to enable the Portkey Fine Tuning
+
+Conditions:
+  CreateSecurityGroup: !Equals [!Ref SecurityGroupID, ""]
+  ShouldCreateCluster: !Equals [!Ref CreateNewCluster, true]
+
+Resources:
+  PortkeyAM:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    Properties:
+      RoleName: PortkeyAM
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PortkeyEKSAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "eks:DescribeCluster"
+                  - "eks:ListClusters"
+                  - "eks:ListNodegroups"
+                  - "eks:ListFargateProfiles"
+                  - "eks:ListNodegroups"
+                  - "eks:CreateCluster"
+                  - "eks:CreateNodegroup"
+                  - "eks:DeleteCluster"
+                  - "eks:DeleteNodegroup"
+                  - "eks:UpdateClusterConfig"
+                  - "eks:UpdateKubeconfig"
+                Resource: !Sub "arn:aws:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}"
+              - Effect: Allow
+                Action:
+                  - "sts:AssumeRole"
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/PortkeyAM"
+              - Effect: Allow
+                Action:
+                  - "sts:GetCallerIdentity"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "iam:ListRoles"
+                  - "iam:GetRole"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "bedrock:InvokeModel"
+                  - "bedrock:InvokeModelWithResponseStream"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "arn:aws:s3:::${AWS::AccountId}-${AWS::Region}-portkey-logs/*"
+
+  PortkeyLogsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Sub "${AWS::AccountId}-${AWS::Region}-portkey-logs"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # EKS Cluster Role
+  EksClusterRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    Properties:
+      RoleName: EksClusterRole-Portkey
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+  # EKS Cluster Security Group (if not provided)
+  EksSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateSecurityGroup
+    DeletionPolicy: Delete
+    Properties:
+      GroupDescription: Security group for Portkey EKS cluster
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8787
+          ToPort: 8787
+          CidrIp: PORTKEY_IP
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  # EKS Cluster
+  EksCluster:
+    Type: AWS::EKS::Cluster
+    Condition: ShouldCreateCluster
+    DeletionPolicy: Delete
+    DependsOn: EksClusterRole
+    Properties:
+      Name: !Ref ClusterName
+      Version: "1.32"
+      RoleArn: !GetAtt EksClusterRole.Arn
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !If
+            - CreateSecurityGroup
+            - !Ref EksSecurityGroup
+            - !Ref SecurityGroupID
+        SubnetIds:
+          - !Ref Subnet1ID
+          - !Ref Subnet2ID
+      AccessConfig:
+        AuthenticationMode: API_AND_CONFIG_MAP
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    DependsOn: EksCluster
+    Properties:
+      RoleName: PortkeyLambdaRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: EKSAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeRegions
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "sts:AssumeRole"
+                Resource: !GetAtt PortkeyAM.Arn
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "arn:aws:s3:::${AWS::AccountId}-${AWS::Region}-portkey-logs/*"
+              - Effect: Allow
+                Action:
+                  - "eks:DescribeCluster"
+                  - "eks:ListClusters"
+                  - "eks:ListNodegroups"
+                  - "eks:ListFargateProfiles"
+                  - "eks:ListNodegroups"
+                  - "eks:CreateCluster"
+                  - "eks:CreateNodegroup"
+                  - "eks:DeleteCluster"
+                  - "eks:DeleteNodegroup"
+                  - "eks:CreateFargateProfile"
+                  - "eks:DeleteFargateProfile"
+                  - "eks:DescribeFargateProfile"
+                  - "eks:UpdateClusterConfig"
+                  - "eks:UpdateKubeconfig"
+                Resource: !Sub "arn:aws:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}"
+
+  LambdaClusterAdmin:
+    Type: AWS::EKS::AccessEntry
+    DependsOn: EksCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      PrincipalArn: !GetAtt LambdaExecutionRole.Arn
+      Type: STANDARD
+      KubernetesGroups:
+        - system:masters
+      AccessPolicies:
+        - PolicyArn: "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          AccessScope:
+            Type: "cluster"
+
+  # Node Group Role
+  NodeGroupRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    Properties:
+      RoleName: NodeGroupRole-Portkey
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+  # EKS Node Group
+  EksNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EksCluster
+    DeletionPolicy: Delete
+    Properties:
+      CapacityType: ON_DEMAND
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Ref NodeGroupName
+      NodeRole: !GetAtt NodeGroupRole.Arn
+      InstanceTypes:
+        - !Ref NodeGroupInstanceType
+      ScalingConfig:
+        MinSize: 1
+        DesiredSize: 1
+        MaxSize: 1
+      Subnets:
+        - !Ref Subnet1ID
+        - !Ref Subnet2ID
+
+  PortkeyInstallerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: EksNodeGroup
+    DeletionPolicy: Delete
+    Properties:
+      FunctionName: portkey-eks-installer
+      Runtime: nodejs18.x
+      Handler: index.handler
+      MemorySize: 1024
+      EphemeralStorage:
+        Size: 1024
+      Code:
+        ZipFile: |
+          const fs = require('fs');
+          const zlib = require('zlib');
+          const { pipeline } = require('stream');
+          const path = require('path');
+          const https = require('https');
+          const { promisify } = require('util');
+          const { execSync } = require('child_process');
+          const { EKSClient, DescribeClusterCommand } = require('@aws-sdk/client-eks');
+
+          async function unzipAwsCli(zipPath, destPath) {
+            // ZIP file format: https://en.wikipedia.org/wiki/ZIP_(file_format)
+            const data = fs.readFileSync(zipPath);
+            let offset = 0;
+
+            // Find end of central directory record
+            const EOCD_SIGNATURE = 0x06054b50;
+            for (let i = data.length - 22; i >= 0; i--) {
+                if (data.readUInt32LE(i) === EOCD_SIGNATURE) {
+                    offset = i;
+                    break;
+                }
+            }
+
+            // Read central directory info
+            const numEntries = data.readUInt16LE(offset + 10);
+            let centralDirOffset = data.readUInt32LE(offset + 16);
+
+            // Process each file
+            for (let i = 0; i < numEntries; i++) {
+                // Read central directory header
+                const signature = data.readUInt32LE(centralDirOffset);
+                if (signature !== 0x02014b50) {
+                    throw new Error('Invalid central directory header');
+                }
+
+                const fileNameLength = data.readUInt16LE(centralDirOffset + 28);
+                const extraFieldLength = data.readUInt16LE(centralDirOffset + 30);
+                const fileCommentLength = data.readUInt16LE(centralDirOffset + 32);
+                const localHeaderOffset = data.readUInt32LE(centralDirOffset + 42);
+                
+                // Get filename
+                const fileName = data.slice(
+                    centralDirOffset + 46,
+                    centralDirOffset + 46 + fileNameLength
+                ).toString();
+
+                // Read local file header
+                const localSignature = data.readUInt32LE(localHeaderOffset);
+                if (localSignature !== 0x04034b50) {
+                    throw new Error('Invalid local file header');
+                }
+
+                const localFileNameLength = data.readUInt16LE(localHeaderOffset + 26);
+                const localExtraFieldLength = data.readUInt16LE(localHeaderOffset + 28);
+                
+                // Get file data
+                const fileDataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength;
+                const compressedSize = data.readUInt32LE(centralDirOffset + 20);
+                const uncompressedSize = data.readUInt32LE(centralDirOffset + 24);
+                const compressionMethod = data.readUInt16LE(centralDirOffset + 10);
+
+                // Create directory if needed
+                const fullPath = path.join(destPath, fileName);
+                const directory = path.dirname(fullPath);
+                if (!fs.existsSync(directory)) {
+                    fs.mkdirSync(directory, { recursive: true });
+                }
+
+                // Extract file
+                if (!fileName.endsWith('/')) {  // Skip directories
+                    const fileData = data.slice(fileDataOffset, fileDataOffset + compressedSize);
+                    
+                    if (compressionMethod === 0) {  // Stored (no compression)
+                        fs.writeFileSync(fullPath, fileData);
+                    } else if (compressionMethod === 8) {  // Deflate
+                        const inflated = require('zlib').inflateRawSync(fileData);
+                        fs.writeFileSync(fullPath, inflated);
+                    } else {
+                        throw new Error(`Unsupported compression method: ${compressionMethod}`);
+                    }
+                }
+
+                // Move to next entry
+                centralDirOffset += 46 + fileNameLength + extraFieldLength + fileCommentLength;
+            }
+          }
+
+
+          async function extractTarGz(source, destination) {
+            // First, let's decompress the .gz file
+            const gunzip = promisify(zlib.gunzip);
+            console.log('Reading source file...');
+            const compressedData = fs.readFileSync(source);
+            
+            console.log('Decompressing...');
+            const tarData = await gunzip(compressedData);
+            
+            // Now we have the raw tar data
+            // Tar files are made up of 512-byte blocks
+            let position = 0;
+            
+            while (position < tarData.length) {
+              // Read header block
+              const header = tarData.slice(position, position + 512);
+              position += 512;
+              
+              // Get filename from header (first 100 bytes)
+              const filename = header.slice(0, 100)
+                                  .toString('utf8')
+                                  .replace(/\0/g, '')
+                                  .trim();
+                                  
+              if (!filename) break; // End of tar
+              
+              // Get file size from header (bytes 124-136)
+              const sizeStr = header.slice(124, 136)
+                                  .toString('utf8')
+                                  .replace(/\0/g, '')
+                                  .trim();
+              const size = parseInt(sizeStr, 8); // Size is in octal
+              
+              console.log(`Found file: ${filename} (${size} bytes)`);
+              
+              if (filename === 'linux-amd64/helm') {
+                console.log('Found helm binary, extracting...');
+                // Extract the file content
+                const content = tarData.slice(position, position + size);
+                
+                // Write to destination
+                const outputPath = path.join(destination, 'helm');
+                fs.writeFileSync(outputPath, content);
+                console.log(`Helm binary extracted to: ${outputPath}`);
+                return; // We found what we needed
+              }
+              
+              // Move to next file
+              position += size;
+              // Move to next 512-byte boundary
+              position += (512 - (size % 512)) % 512;
+            }
+            
+            throw new Error('Helm binary not found in archive');
+          }
+
+          async function downloadFile(url, dest) {
+              return new Promise((resolve, reject) => {
+                  const file = fs.createWriteStream(dest);
+                  https.get(url, (response) => {
+                      response.pipe(file);
+                      file.on('finish', () => {
+                          file.close();
+                          resolve();
+                      });
+                  }).on('error', reject);
+              });
+          }
+
+          async function setupBinaries() {
+              const { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } = require("@aws-sdk/client-sts");
+              const { SignatureV4 } = require("@aws-sdk/signature-v4");
+              const { defaultProvider } = require("@aws-sdk/credential-provider-node");
+              const crypto = require('crypto');
+
+              const tmpDir = '/tmp/bin';
+              if (!fs.existsSync(tmpDir)) {
+                  fs.mkdirSync(tmpDir, { recursive: true });
+              }
+                console.log('Setting up AWS CLI...');
+                const awsCliUrl = 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip';
+                const awsZipPath = `${tmpDir}/awscliv2.zip`;
+                await unzipAwsCli(awsZipPath, tmpDir);
+                execSync(`chmod +x ${tmpDir}/aws/install ${tmpDir}/aws/dist/aws`);
+                execSync(`${tmpDir}/aws/install --update --install-dir /tmp/aws-cli --bin-dir /tmp/aws-bin`, { stdio: 'inherit' });
+
+              try {
+                await new Promise((resolve, reject) => {
+                  const https = require('https');
+                  const fs = require('fs');
+                  
+                  const file = fs.createWriteStream('/tmp/kubectl');
+                  
+                  const request = https.get('https://dl.k8s.io/release/v1.32.1/bin/linux/amd64/kubectl', response => {
+                    if (response.statusCode === 302 || response.statusCode === 301) {
+                      https.get(response.headers.location, redirectResponse => {
+                        redirectResponse.pipe(file);
+                        file.on('finish', () => {
+                          file.close();
+                          resolve();
+                        });
+                      }).on('error', err => {
+                        fs.unlink('/tmp/kubectl', () => {});
+                        reject(err);
+                      });
+                      return;
+                    }
+                    
+                    response.pipe(file);
+                    file.on('finish', () => {
+                      file.close();
+                      resolve();
+                    });
+                  });
+                  
+                  request.on('error', err => {
+                    fs.unlink('/tmp/kubectl', () => {});
+                    reject(err);
+                  });
+                });
+                
+                execSync('chmod +x /tmp/kubectl', {
+                  stdio: 'inherit'
+                });
+              } catch (error) {
+                console.error('Error installing kubectl:', error);
+                throw error;
+              }
+
+              console.log('Setting up helm...');
+              const helmUrl = 'https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz';
+              const helmTarPath = `${tmpDir}/helm.tar.gz`;
+              await downloadFile(helmUrl, helmTarPath);
+              
+              await extractTarGz(helmTarPath, tmpDir);
+              execSync(`chmod +x ${tmpDir}/helm`);
+              fs.unlinkSync(helmTarPath);
+
+              process.env.PATH = `${tmpDir}:${process.env.PATH}`;
+
+              execSync(`/tmp/aws-bin/aws --version`);
+          }
+
+          exports.handler = async (event, context) => {
+              try {
+
+                  const { CLUSTER_NAME, NODE_GROUP_NAME, CLUSTER_ARN, CHART_VERSION, 
+                    PORTKEY_AWS_REGION, PORTKEY_AWS_ACCOUNT_ID, PORTKEYAM_ROLE_ARN, 
+                    PORTKEY_DOCKER_USERNAME, PORTKEY_DOCKER_PASSWORD, 
+                    PORTKEY_CLIENT_AUTH, ORGANISATIONS_TO_SYNC } = process.env;
+
+                  console.log(process.env)
+
+                  if (!CLUSTER_NAME || !PORTKEY_AWS_REGION || !CHART_VERSION || 
+                      !PORTKEY_AWS_ACCOUNT_ID || !PORTKEYAM_ROLE_ARN) {
+                      throw new Error('Missing one or more required environment variables.');
+                  }
+
+                  await setupBinaries();
+                  
+                  const awsCredentialsDir = '/tmp/.aws';
+                  if (!fs.existsSync(awsCredentialsDir)) {
+                      fs.mkdirSync(awsCredentialsDir, { recursive: true });
+                  }
+
+                  // Write AWS credentials file
+                  const credentialsContent = `[default]
+          aws_access_key_id = ${process.env.AWS_ACCESS_KEY_ID}
+          aws_secret_access_key = ${process.env.AWS_SECRET_ACCESS_KEY}
+          aws_session_token = ${process.env.AWS_SESSION_TOKEN}
+          region = ${process.env.PORTKEY_AWS_REGION}
+          `;
+
+                  fs.writeFileSync(`${awsCredentialsDir}/credentials`, credentialsContent);
+
+                  // Write AWS config file
+                  const configContent = `[default]
+          region = ${process.env.PORTKEY_AWS_REGION}
+          output = json
+          `;
+                  fs.writeFileSync(`${awsCredentialsDir}/config`, configContent);
+
+                  // Set AWS config environment variables
+                  process.env.AWS_CONFIG_FILE = `${awsCredentialsDir}/config`;
+                  process.env.AWS_SHARED_CREDENTIALS_FILE = `${awsCredentialsDir}/credentials`;
+
+                  // Define kubeconfig path
+                  const kubeconfigDir = `/tmp/${CLUSTER_NAME.trim()}`;
+                  const kubeconfigPath = path.join(kubeconfigDir, 'config');
+
+                  // Create the directory if it doesn't exist
+                  if (!fs.existsSync(kubeconfigDir)) {
+                      fs.mkdirSync(kubeconfigDir, { recursive: true });
+                  }
+
+                  console.log(`Updating kubeconfig for cluster: ${CLUSTER_NAME}`);
+                  execSync(`/tmp/aws-bin/aws eks update-kubeconfig --name ${process.env.CLUSTER_NAME} --region ${process.env.PORTKEY_AWS_REGION} --kubeconfig ${kubeconfigPath}`, {
+                    stdio: 'inherit',
+                    env: {
+                        ...process.env,
+                        HOME: '/tmp',
+                        AWS_CONFIG_FILE: `${awsCredentialsDir}/config`,
+                        AWS_SHARED_CREDENTIALS_FILE: `${awsCredentialsDir}/credentials`
+                    }
+                  });
+
+                  // Set KUBECONFIG environment variable
+                  process.env.KUBECONFIG = kubeconfigPath;
+
+                  let kubeconfig = fs.readFileSync(kubeconfigPath, 'utf8');
+                  
+                  // Replace the command line to use full path
+                  kubeconfig = kubeconfig.replace(
+                    'command: aws',
+                    'command: /tmp/aws-bin/aws'
+                  );
+                  
+                  fs.writeFileSync(kubeconfigPath, kubeconfig);
+
+                  // Setup Helm repository
+                  console.log('Setting up Helm repository...');
+                  await new Promise((resolve, reject) => {
+                    try {
+                      execSync(`helm repo add portkey-ai https://portkey-ai.github.io/helm`, {
+                        stdio: 'inherit',
+                        env: { ...process.env, HOME: '/tmp' }
+                      });
+                      resolve();
+                    } catch (error) {
+                      reject(error);
+                    }
+                  });
+
+                  await new Promise((resolve, reject) => {
+                    try {
+                      execSync(`helm repo update`, {
+                        stdio: 'inherit',
+                        env: { ...process.env, HOME: '/tmp' }
+                      });
+                      resolve();
+                    } catch (error) {
+                      reject(error);
+                    }
+                  });
+
+                  // Create values.yaml
+                  const valuesYAML = `
+          replicaCount: 1
+
+          images:
+            gatewayImage:
+              repository: "docker.io/portkeyai/gateway_enterprise"
+              pullPolicy: IfNotPresent
+              tag: "1.9.0"
+            dataserviceImage:
+              repository: "docker.io/portkeyai/data-service"
+              pullPolicy: IfNotPresent
+              tag: "1.0.2"
+
+          imagePullSecrets: [portkeyenterpriseregistrycredentials]
+          nameOverride: ""
+          fullnameOverride: ""
+
+          imageCredentials:
+          - name: portkeyenterpriseregistrycredentials
+            create: true
+            registry: https://index.docker.io/v1/
+            username: ${PORTKEY_DOCKER_USERNAME}
+            password: ${PORTKEY_DOCKER_PASSWORD}
+
+          useVaultInjection: false
+
+          environment:
+            create: true
+            secret: true
+            data:
+              SERVICE_NAME: portkeyenterprise
+              PORT: "8787"
+              LOG_STORE: s3_assume
+              LOG_STORE_REGION: ${PORTKEY_AWS_REGION}
+              AWS_ROLE_ARN: ${PORTKEYAM_ROLE_ARN}
+              LOG_STORE_GENERATIONS_BUCKET: portkey-gateway
+              ANALYTICS_STORE: control_plane
+              CACHE_STORE: redis
+              REDIS_URL: redis://redis:6379
+              REDIS_TLS_ENABLED: "false"
+              PORTKEY_CLIENT_AUTH: ${PORTKEY_CLIENT_AUTH}
+              ORGANISATIONS_TO_SYNC: ${ORGANISATIONS_TO_SYNC}
+
+          serviceAccount:
+            create: true
+            automount: true
+            annotations: {}
+            name: ""
+
+          podAnnotations: {}
+          podLabels: {}
+
+          podSecurityContext: {}
+          securityContext: {}
+
+          service:
+            type: LoadBalancer
+            port: 8787
+            targetPort: 8787
+            protocol: TCP
+            additionalLabels: {}
+            annotations: {}
+
+          ingress:
+            enabled: ${PORTKEY_GATEWAY_INGRESS_ENABLED}
+            className: ""
+            annotations: {}
+            hosts:
+              - host: ${PORTKEY_GATEWAY_INGRESS_SUBDOMAIN}
+                paths:
+                  - path: /
+                    pathType: ImplementationSpecific
+            tls: []
+
+          resources: {}
+
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8787
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8787
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 5
+
+          autoscaling:
+            enabled: true
+            minReplicas: 1
+            maxReplicas: 10
+            targetCPUUtilizationPercentage: 80
+
+          volumes: []
+          volumeMounts: []
+          nodeSelector: {}
+          tolerations: []
+          affinity: {}
+          autoRestart: false
+
+          dataservice:
+            name: "dataservice"
+            enabled: ${PORTKEY_FINE_TUNING_ENABLED}
+            containerPort: 8081
+            finetuneBucket: ${PORTKEY_AWS_ACCOUNT_ID}-${PORTKEY_AWS_REGION}-portkey-logs
+            logexportsBucket: ${PORTKEY_AWS_ACCOUNT_ID}-${PORTKEY_AWS_REGION}-portkey-logs
+            deployment:
+              autoRestart: true
+              replicas: 1
+              labels: {}
+              annotations: {}
+              podSecurityContext: {}
+              securityContext: {}
+              resources: {}
+              startupProbe:
+                httpGet:
+                  path: /health
+                  port: 8081
+                initialDelaySeconds: 60
+                failureThreshold: 3
+                periodSeconds: 10
+                timeoutSeconds: 1
+              livenessProbe:
+                httpGet:
+                  path: /health
+                  port: 8081
+                failureThreshold: 3
+                periodSeconds: 10
+                timeoutSeconds: 1
+              readinessProbe:
+                httpGet:
+                  path: /health
+                  port: 8081
+                failureThreshold: 3
+                periodSeconds: 10
+                timeoutSeconds: 1
+              extraContainerConfig: {}
+              nodeSelector: {}
+              tolerations: []
+              affinity: {}
+              volumes: []
+              volumeMounts: []
+            service:
+              type: ClusterIP
+              port: 8081
+              labels: {}
+              annotations: {}
+              loadBalancerSourceRanges: []
+              loadBalancerIP: ""
+            serviceAccount:
+              create: true
+              name: ""
+              labels: {}
+              annotations: {}
+            autoscaling:
+              enabled: false
+              createHpa: false
+              minReplicas: 1
+              maxReplicas: 5
+              targetCPUUtilizationPercentage: 80`
+
+                  // Write values.yaml
+                  const valuesYamlPath = '/tmp/values.yaml';
+                  fs.writeFileSync(valuesYamlPath, valuesYAML);
+
+                  const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+                  const s3Client = new S3Client({ region: process.env.PORTKEY_AWS_REGION });
+                  try {
+                    const response = await s3Client.send(new GetObjectCommand({
+                      Bucket: `${process.env.PORTKEY_AWS_ACCOUNT_ID}-${process.env.PORTKEY_AWS_REGION}-portkey-logs`,
+                      Key: 'values.yaml'
+                    }));
+                    const existingValuesYAML = await response.Body.transformToString();
+                    console.log('Found existing values.yaml in S3, using it instead of default');
+                    fs.writeFileSync(valuesYamlPath, existingValuesYAML);
+                  } catch (error) {
+                    if (error.name === 'NoSuchKey') {
+                      // Upload the default values.yaml to S3
+                      await s3Client.send(new PutObjectCommand({
+                        Bucket: `${process.env.PORTKEY_AWS_ACCOUNT_ID}-${process.env.PORTKEY_AWS_REGION}-portkey-logs`,
+                        Key: 'values.yaml',
+                        Body: valuesYAML,
+                        ContentType: 'text/yaml'
+                      }));
+                      console.log('Default values.yaml written to S3 bucket');
+                    } else {
+                      throw error;
+                    }
+                  }
+
+                  // Install/upgrade Helm chart
+                  console.log('Installing helm chart...');
+                  await new Promise((resolve, reject) => {
+                    try {
+                      execSync(`helm upgrade --install portkey-ai portkey-ai/gateway -f ${valuesYamlPath} -n portkeyai --create-namespace --kube-context ${process.env.CLUSTER_ARN} --kubeconfig ${kubeconfigPath}`, {
+                        stdio: 'inherit',
+                        env: { 
+                          ...process.env, 
+                          HOME: '/tmp',
+                          PATH: `/tmp/aws-bin:${process.env.PATH}`
+                        }
+                      });
+                      resolve();
+                    } catch (error) {
+                      reject(error);
+                    }
+                  });
+
+                  return {
+                      statusCode: 200,
+                      body: JSON.stringify({
+                          message: 'EKS installation and helm chart deployment completed successfully',
+                          event: event
+                      })
+                  };
+              } catch (error) {
+                  console.error('Error:', error);
+                  return {
+                      statusCode: 500,
+                      body: JSON.stringify({
+                          message: 'Error during EKS installation and helm chart deployment',
+                          error: error.message
+                      })
+                  };
+              }
+          };
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 900
+      Environment:
+        Variables:
+          CLUSTER_NAME: !Ref ClusterName
+          NODE_GROUP_NAME: !Ref NodeGroupName
+          CLUSTER_ARN: !GetAtt EksCluster.Arn
+          CHART_VERSION: !Ref HelmChartVersion
+          PORTKEY_AWS_REGION: !Ref "AWS::Region"
+          PORTKEY_AWS_ACCOUNT_ID: !Ref "AWS::AccountId"
+          PORTKEYAM_ROLE_ARN: !GetAtt PortkeyAM.Arn
+          PORTKEY_DOCKER_USERNAME: !Ref PortkeyDockerUsername
+          PORTKEY_DOCKER_PASSWORD: !Ref PortkeyDockerPassword
+          PORTKEY_CLIENT_AUTH: !Ref PortkeyClientAuth
+          ORGANISATIONS_TO_SYNC: !Ref PortkeyOrgId
+          PORTKEY_GATEWAY_INGRESS_ENABLED: !Ref PortkeyGatewayIngressEnabled
+          PORTKEY_GATEWAY_INGRESS_SUBDOMAIN: !Ref PortkeyGatewayIngressSubdomain
+          PORTKEY_FINE_TUNING_ENABLED: !Ref PortkeyFineTuningEnabled
+```
+
+### Lambda Function
+
+<Frame>
+<img src="/images/enterprise/cloud-marketplace/aws/aws-marketplace-6.png" />
+</Frame>
+
+#### Steps
+
+1. **Sets up required binaries** - Downloads and configures AWS CLI, kubectl, and Helm binaries in the Lambda environment to enable interaction with AWS services and Kubernetes.
+2. **Configures AWS credentials** - Creates temporary AWS credential files in the Lambda environment to authenticate with AWS services.
+3. **Connects to EKS cluster** - Updates the kubeconfig file to establish a connection with the specified Amazon EKS cluster.
+4. **Manages Helm chart deployment** - Adds the Portkey AI Helm repository and deploys/upgrades the Portkey AI Gateway using Helm charts.
+5. **Handles configuration values** - Creates a values.yaml file with environment-specific configurations and stores it in an S3 bucket for future reference or updates.
+6. **Provides idempotent deployment** - Checks for existing configurations in S3 and uses them if available, allowing the function to be run multiple times for updates without losing custom configurations.
+
+```javascript portkey-hybrid-eks-cloudformation.lambda.js [expandable]
+          const fs = require('fs');
+          const zlib = require('zlib');
+          const { pipeline } = require('stream');
+          const path = require('path');
+          const https = require('https');
+          const { promisify } = require('util');
+          const { execSync } = require('child_process');
+          const { EKSClient, DescribeClusterCommand } = require('@aws-sdk/client-eks');
+
+          async function unzipAwsCli(zipPath, destPath) {
+            // ZIP file format: https://en.wikipedia.org/wiki/ZIP_(file_format)
+            const data = fs.readFileSync(zipPath);
+            let offset = 0;
+
+            // Find end of central directory record
+            const EOCD_SIGNATURE = 0x06054b50;
+            for (let i = data.length - 22; i >= 0; i--) {
+                if (data.readUInt32LE(i) === EOCD_SIGNATURE) {
+                    offset = i;
+                    break;
+                }
+            }
+
+            // Read central directory info
+            const numEntries = data.readUInt16LE(offset + 10);
+            let centralDirOffset = data.readUInt32LE(offset + 16);
+
+            // Process each file
+            for (let i = 0; i < numEntries; i++) {
+                // Read central directory header
+                const signature = data.readUInt32LE(centralDirOffset);
+                if (signature !== 0x02014b50) {
+                    throw new Error('Invalid central directory header');
+                }
+
+                const fileNameLength = data.readUInt16LE(centralDirOffset + 28);
+                const extraFieldLength = data.readUInt16LE(centralDirOffset + 30);
+                const fileCommentLength = data.readUInt16LE(centralDirOffset + 32);
+                const localHeaderOffset = data.readUInt32LE(centralDirOffset + 42);
+                
+                // Get filename
+                const fileName = data.slice(
+                    centralDirOffset + 46,
+                    centralDirOffset + 46 + fileNameLength
+                ).toString();
+
+                // Read local file header
+                const localSignature = data.readUInt32LE(localHeaderOffset);
+                if (localSignature !== 0x04034b50) {
+                    throw new Error('Invalid local file header');
+                }
+
+                const localFileNameLength = data.readUInt16LE(localHeaderOffset + 26);
+                const localExtraFieldLength = data.readUInt16LE(localHeaderOffset + 28);
+                
+                // Get file data
+                const fileDataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength;
+                const compressedSize = data.readUInt32LE(centralDirOffset + 20);
+                const uncompressedSize = data.readUInt32LE(centralDirOffset + 24);
+                const compressionMethod = data.readUInt16LE(centralDirOffset + 10);
+
+                // Create directory if needed
+                const fullPath = path.join(destPath, fileName);
+                const directory = path.dirname(fullPath);
+                if (!fs.existsSync(directory)) {
+                    fs.mkdirSync(directory, { recursive: true });
+                }
+
+                // Extract file
+                if (!fileName.endsWith('/')) {  // Skip directories
+                    const fileData = data.slice(fileDataOffset, fileDataOffset + compressedSize);
+                    
+                    if (compressionMethod === 0) {  // Stored (no compression)
+                        fs.writeFileSync(fullPath, fileData);
+                    } else if (compressionMethod === 8) {  // Deflate
+                        const inflated = require('zlib').inflateRawSync(fileData);
+                        fs.writeFileSync(fullPath, inflated);
+                    } else {
+                        throw new Error(`Unsupported compression method: ${compressionMethod}`);
+                    }
+                }
+
+                // Move to next entry
+                centralDirOffset += 46 + fileNameLength + extraFieldLength + fileCommentLength;
+            }
+          }
+
+
+          async function extractTarGz(source, destination) {
+            // First, let's decompress the .gz file
+            const gunzip = promisify(zlib.gunzip);
+            console.log('Reading source file...');
+            const compressedData = fs.readFileSync(source);
+            
+            console.log('Decompressing...');
+            const tarData = await gunzip(compressedData);
+            
+            // Now we have the raw tar data
+            // Tar files are made up of 512-byte blocks
+            let position = 0;
+            
+            while (position < tarData.length) {
+              // Read header block
+              const header = tarData.slice(position, position + 512);
+              position += 512;
+              
+              // Get filename from header (first 100 bytes)
+              const filename = header.slice(0, 100)
+                                  .toString('utf8')
+                                  .replace(/\0/g, '')
+                                  .trim();
+                                  
+              if (!filename) break; // End of tar
+              
+              // Get file size from header (bytes 124-136)
+              const sizeStr = header.slice(124, 136)
+                                  .toString('utf8')
+                                  .replace(/\0/g, '')
+                                  .trim();
+              const size = parseInt(sizeStr, 8); // Size is in octal
+              
+              console.log(`Found file: ${filename} (${size} bytes)`);
+              
+              if (filename === 'linux-amd64/helm') {
+                console.log('Found helm binary, extracting...');
+                // Extract the file content
+                const content = tarData.slice(position, position + size);
+                
+                // Write to destination
+                const outputPath = path.join(destination, 'helm');
+                fs.writeFileSync(outputPath, content);
+                console.log(`Helm binary extracted to: ${outputPath}`);
+                return; // We found what we needed
+              }
+              
+              // Move to next file
+              position += size;
+              // Move to next 512-byte boundary
+              position += (512 - (size % 512)) % 512;
+            }
+            
+            throw new Error('Helm binary not found in archive');
+          }
+
+          async function downloadFile(url, dest) {
+              return new Promise((resolve, reject) => {
+                  const file = fs.createWriteStream(dest);
+                  https.get(url, (response) => {
+                      response.pipe(file);
+                      file.on('finish', () => {
+                          file.close();
+                          resolve();
+                      });
+                  }).on('error', reject);
+              });
+          }
+
+          async function setupBinaries() {
+              const { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } = require("@aws-sdk/client-sts");
+              const { SignatureV4 } = require("@aws-sdk/signature-v4");
+              const { defaultProvider } = require("@aws-sdk/credential-provider-node");
+              const crypto = require('crypto');
+
+              const tmpDir = '/tmp/bin';
+              if (!fs.existsSync(tmpDir)) {
+                  fs.mkdirSync(tmpDir, { recursive: true });
+              }
+
+                // Download and setup AWS CLI
+                console.log('Setting up AWS CLI...');
+                const awsCliUrl = 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip';
+                const awsZipPath = `${tmpDir}/awscliv2.zip`;
+                await downloadFile(awsCliUrl, awsZipPath);
+                // Extract using our custom unzip function
+                await unzipAwsCli(awsZipPath, tmpDir);
+                execSync(`chmod +x ${tmpDir}/aws/install ${tmpDir}/aws/dist/aws`);
+                // Install AWS CLI
+                execSync(`${tmpDir}/aws/install --update --install-dir /tmp/aws-cli --bin-dir /tmp/aws-bin`, { stdio: 'inherit' });
+
+              // Download and setup kubectl
+              try {
+                // Download kubectl binary using Node.js https
+                await new Promise((resolve, reject) => {
+                  const https = require('https');
+                  const fs = require('fs');
+                  
+                  const file = fs.createWriteStream('/tmp/kubectl');
+                  
+                  const request = https.get('https://dl.k8s.io/release/v1.32.1/bin/linux/amd64/kubectl', response => {
+                    if (response.statusCode === 302 || response.statusCode === 301) {
+                      https.get(response.headers.location, redirectResponse => {
+                        redirectResponse.pipe(file);
+                        file.on('finish', () => {
+                          file.close();
+                          resolve();
+                        });
+                      }).on('error', err => {
+                        fs.unlink('/tmp/kubectl', () => {});
+                        reject(err);
+                      });
+                      return;
+                    }
+                    
+                    response.pipe(file);
+                    file.on('finish', () => {
+                      file.close();
+                      resolve();
+                    });
+                  });
+                  
+                  request.on('error', err => {
+                    fs.unlink('/tmp/kubectl', () => {});
+                    reject(err);
+                  });
+                });
+                
+                execSync('chmod +x /tmp/kubectl', {
+                  stdio: 'inherit'
+                });
+              } catch (error) {
+                console.error('Error installing kubectl:', error);
+                throw error;
+              }
+
+              console.log('Setting up helm...');
+              const helmUrl = 'https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz';
+              const helmTarPath = `${tmpDir}/helm.tar.gz`;
+              await downloadFile(helmUrl, helmTarPath);
+              
+              await extractTarGz(helmTarPath, tmpDir);
+              execSync(`chmod +x ${tmpDir}/helm`);
+              fs.unlinkSync(helmTarPath);
+
+              process.env.PATH = `${tmpDir}:${process.env.PATH}`;
+
+              execSync(`/tmp/aws-bin/aws --version`);
+          }
+
+          exports.handler = async (event, context) => {
+              try {
+
+                  const { CLUSTER_NAME, NODE_GROUP_NAME, CLUSTER_ARN, CHART_VERSION, 
+                    PORTKEY_AWS_REGION, PORTKEY_AWS_ACCOUNT_ID, PORTKEYAM_ROLE_ARN, 
+                    PORTKEY_DOCKER_USERNAME, PORTKEY_DOCKER_PASSWORD, 
+                    PORTKEY_CLIENT_AUTH, ORGANISATIONS_TO_SYNC } = process.env;
+
+                  console.log(process.env)
+
+                  if (!CLUSTER_NAME || !PORTKEY_AWS_REGION || !CHART_VERSION || 
+                      !PORTKEY_AWS_ACCOUNT_ID || !PORTKEYAM_ROLE_ARN) {
+                      throw new Error('Missing one or more required environment variables.');
+                  }
+
+                  await setupBinaries();
+                  
+                  const awsCredentialsDir = '/tmp/.aws';
+                  if (!fs.existsSync(awsCredentialsDir)) {
+                      fs.mkdirSync(awsCredentialsDir, { recursive: true });
+                  }
+
+                  // Write AWS credentials file
+                  const credentialsContent = `[default]
+          aws_access_key_id = ${process.env.AWS_ACCESS_KEY_ID}
+          aws_secret_access_key = ${process.env.AWS_SECRET_ACCESS_KEY}
+          aws_session_token = ${process.env.AWS_SESSION_TOKEN}
+          region = ${process.env.PORTKEY_AWS_REGION}
+          `;
+
+                  fs.writeFileSync(`${awsCredentialsDir}/credentials`, credentialsContent);
+
+                  // Write AWS config file
+                  const configContent = `[default]
+          region = ${process.env.PORTKEY_AWS_REGION}
+          output = json
+          `;
+                  fs.writeFileSync(`${awsCredentialsDir}/config`, configContent);
+
+                  // Set AWS config environment variables
+                  process.env.AWS_CONFIG_FILE = `${awsCredentialsDir}/config`;
+                  process.env.AWS_SHARED_CREDENTIALS_FILE = `${awsCredentialsDir}/credentials`;
+
+                  // Define kubeconfig path
+                  const kubeconfigDir = `/tmp/${CLUSTER_NAME.trim()}`;
+                  const kubeconfigPath = path.join(kubeconfigDir, 'config');
+
+                  // Create the directory if it doesn't exist
+                  if (!fs.existsSync(kubeconfigDir)) {
+                      fs.mkdirSync(kubeconfigDir, { recursive: true });
+                  }
+
+                  console.log(`Updating kubeconfig for cluster: ${CLUSTER_NAME}`);
+                  execSync(`/tmp/aws-bin/aws eks update-kubeconfig --name ${process.env.CLUSTER_NAME} --region ${process.env.PORTKEY_AWS_REGION} --kubeconfig ${kubeconfigPath}`, {
+                    stdio: 'inherit',
+                    env: {
+                        ...process.env,
+                        HOME: '/tmp',
+                        AWS_CONFIG_FILE: `${awsCredentialsDir}/config`,
+                        AWS_SHARED_CREDENTIALS_FILE: `${awsCredentialsDir}/credentials`
+                    }
+                  });
+
+                  // Set KUBECONFIG environment variable
+                  process.env.KUBECONFIG = kubeconfigPath;
+
+                  let kubeconfig = fs.readFileSync(kubeconfigPath, 'utf8');
+                  
+                  // Replace the command line to use full path
+                  kubeconfig = kubeconfig.replace(
+                    'command: aws',
+                    'command: /tmp/aws-bin/aws'
+                  );
+                  
+                  fs.writeFileSync(kubeconfigPath, kubeconfig);
+
+                  // Setup Helm repository
+                  console.log('Setting up Helm repository...');
+                  await new Promise((resolve, reject) => {
+                    try {
+                      execSync(`helm repo add portkey-ai https://portkey-ai.github.io/helm`, {
+                        stdio: 'inherit',
+                        env: { ...process.env, HOME: '/tmp' }
+                      });
+                      resolve();
+                    } catch (error) {
+                      reject(error);
+                    }
+                  });
+
+                  await new Promise((resolve, reject) => {
+                    try {
+                      execSync(`helm repo update`, {
+                        stdio: 'inherit',
+                        env: { ...process.env, HOME: '/tmp' }
+                      });
+                      resolve();
+                    } catch (error) {
+                      reject(error);
+                    }
+                  });
+
+                  // Create values.yaml
+                  const valuesYAML = `
+          replicaCount: 1
+
+          images:
+            gatewayImage:
+              repository: "docker.io/portkeyai/gateway_enterprise"
+              pullPolicy: IfNotPresent
+              tag: "1.9.0"
+            dataserviceImage:
+              repository: "docker.io/portkeyai/data-service"
+              pullPolicy: IfNotPresent
+              tag: "1.0.2"
+
+          imagePullSecrets: [portkeyenterpriseregistrycredentials]
+          nameOverride: ""
+          fullnameOverride: ""
+
+          imageCredentials:
+          - name: portkeyenterpriseregistrycredentials
+            create: true
+            registry: https://index.docker.io/v1/
+            username: ${PORTKEY_DOCKER_USERNAME}
+            password: ${PORTKEY_DOCKER_PASSWORD}
+
+          useVaultInjection: false
+
+          environment:
+            create: true
+            secret: true
+            data:
+              SERVICE_NAME: portkeyenterprise
+              PORT: "8787"
+              LOG_STORE: s3_assume
+              LOG_STORE_REGION: ${PORTKEY_AWS_REGION}
+              AWS_ROLE_ARN: ${PORTKEYAM_ROLE_ARN}
+              LOG_STORE_GENERATIONS_BUCKET: portkey-gateway
+              ANALYTICS_STORE: control_plane
+              CACHE_STORE: redis
+              REDIS_URL: redis://redis:6379
+              REDIS_TLS_ENABLED: "false"
+              PORTKEY_CLIENT_AUTH: ${PORTKEY_CLIENT_AUTH}
+              ORGANISATIONS_TO_SYNC: ${ORGANISATIONS_TO_SYNC}
+
+          serviceAccount:
+            create: true
+            automount: true
+            annotations: {}
+            name: ""
+
+          podAnnotations: {}
+          podLabels: {}
+
+          podSecurityContext: {}
+          securityContext: {}
+
+          service:
+            type: LoadBalancer
+            port: 8787
+            targetPort: 8787
+            protocol: TCP
+            additionalLabels: {}
+            annotations: {}
+
+          ingress:
+            enabled: ${PORTKEY_GATEWAY_INGRESS_ENABLED}
+            className: ""
+            annotations: {}
+            hosts:
+              - host: ${PORTKEY_GATEWAY_INGRESS_SUBDOMAIN}
+                paths:
+                  - path: /
+                    pathType: ImplementationSpecific
+            tls: []
+
+          resources: {}
+
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8787
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8787
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 5
+
+          autoscaling:
+            enabled: true
+            minReplicas: 1
+            maxReplicas: 10
+            targetCPUUtilizationPercentage: 80
+
+          volumes: []
+          volumeMounts: []
+          nodeSelector: {}
+          tolerations: []
+          affinity: {}
+          autoRestart: false
+
+          dataservice:
+            name: "dataservice"
+            enabled: ${PORTKEY_FINE_TUNING_ENABLED}
+            containerPort: 8081
+            finetuneBucket: ${PORTKEY_AWS_ACCOUNT_ID}-${PORTKEY_AWS_REGION}-portkey-logs
+            logexportsBucket: ${PORTKEY_AWS_ACCOUNT_ID}-${PORTKEY_AWS_REGION}-portkey-logs
+            deployment:
+              autoRestart: true
+              replicas: 1
+              labels: {}
+              annotations: {}
+              podSecurityContext: {}
+              securityContext: {}
+              resources: {}
+              startupProbe:
+                httpGet:
+                  path: /health
+                  port: 8081
+                initialDelaySeconds: 60
+                failureThreshold: 3
+                periodSeconds: 10
+                timeoutSeconds: 1
+              livenessProbe:
+                httpGet:
+                  path: /health
+                  port: 8081
+                failureThreshold: 3
+                periodSeconds: 10
+                timeoutSeconds: 1
+              readinessProbe:
+                httpGet:
+                  path: /health
+                  port: 8081
+                failureThreshold: 3
+                periodSeconds: 10
+                timeoutSeconds: 1
+              extraContainerConfig: {}
+              nodeSelector: {}
+              tolerations: []
+              affinity: {}
+              volumes: []
+              volumeMounts: []
+            service:
+              type: ClusterIP
+              port: 8081
+              labels: {}
+              annotations: {}
+              loadBalancerSourceRanges: []
+              loadBalancerIP: ""
+            serviceAccount:
+              create: true
+              name: ""
+              labels: {}
+              annotations: {}
+            autoscaling:
+              enabled: false
+              createHpa: false
+              minReplicas: 1
+              maxReplicas: 5
+              targetCPUUtilizationPercentage: 80`
+
+                  // Write values.yaml
+                  const valuesYamlPath = '/tmp/values.yaml';
+                  fs.writeFileSync(valuesYamlPath, valuesYAML);
+
+                  const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+                  const s3Client = new S3Client({ region: process.env.PORTKEY_AWS_REGION });
+                  try {
+                    const response = await s3Client.send(new GetObjectCommand({
+                      Bucket: `${process.env.PORTKEY_AWS_ACCOUNT_ID}-${process.env.PORTKEY_AWS_REGION}-portkey-logs`,
+                      Key: 'values.yaml'
+                    }));
+                    const existingValuesYAML = await response.Body.transformToString();
+                    console.log('Found existing values.yaml in S3, using it instead of default');
+                    fs.writeFileSync(valuesYamlPath, existingValuesYAML);
+                  } catch (error) {
+                    if (error.name === 'NoSuchKey') {
+                      // Upload the default values.yaml to S3
+                      await s3Client.send(new PutObjectCommand({
+                        Bucket: `${process.env.PORTKEY_AWS_ACCOUNT_ID}-${process.env.PORTKEY_AWS_REGION}-portkey-logs`,
+                        Key: 'values.yaml',
+                        Body: valuesYAML,
+                        ContentType: 'text/yaml'
+                      }));
+                      console.log('Default values.yaml written to S3 bucket');
+                    } else {
+                      throw error;
+                    }
+                  }
+
+                  // Install/upgrade Helm chart
+                  console.log('Installing helm chart...');
+                  await new Promise((resolve, reject) => {
+                    try {
+                      execSync(`helm upgrade --install portkey-ai portkey-ai/gateway -f ${valuesYamlPath} -n portkeyai --create-namespace --kube-context ${process.env.CLUSTER_ARN} --kubeconfig ${kubeconfigPath}`, {
+                        stdio: 'inherit',
+                        env: { 
+                          ...process.env, 
+                          HOME: '/tmp',
+                          PATH: `/tmp/aws-bin:${process.env.PATH}`
+                        }
+                      });
+                      resolve();
+                    } catch (error) {
+                      reject(error);
+                    }
+                  });
+
+                  return {
+                      statusCode: 200,
+                      body: JSON.stringify({
+                          message: 'EKS installation and helm chart deployment completed successfully',
+                          event: event
+                      })
+                  };
+              } catch (error) {
+                  console.error('Error:', error);
+                  return {
+                      statusCode: 500,
+                      body: JSON.stringify({
+                          message: 'Error during EKS installation and helm chart deployment',
+                          error: error.message
+                      })
+                  };
+              }
+          };
+```
+
+### Post Deployment Verification
+
+#### Verify Portkey AI Deployment
+
+```bash
+kubectl get all -n portkeyai
+```
+
+<Frame>
+<img src="/images/enterprise/cloud-marketplace/aws/portkey-hybrid-k8s-pods.png" />
+</Frame>
+
+
+#### Verify Portkey AI Gateway Endpoint
+
+```bash
+export POD_NAME=$(kubectl get pods -n portkeyai -l app.kubernetes.io/name=gateway -o jsonpath="{.items[0].metadata.name}")
+kubectl port-forward $POD_NAME 8787:8787 -n portkeyai
+```
+
+Visiting localhost:8787/v1/health will return `Server is healthy`
+
+<Frame>
+<img src="/images/enterprise/cloud-marketplace/aws/portkey-gateway-healthcheck.png" />
+</Frame>
+
+Your Portkey AI Gateway is now ready to use!

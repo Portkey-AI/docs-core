@@ -1,0 +1,507 @@
+---
+title: "EKS"
+description: This enterprise-focused document provides comprehensive instructions for deploying the Portkey software in a hybrid mode on Amazon EKS clusters, designed to meet the needs of large-scale, mission-critical applications. It includes specific recommendations for component sizing, high availability, and integration with monitoring systems.
+---
+
+
+
+## Components and Sizing Recommendations
+
+| Component                               | Options                                                                   | Sizing Recommendations                                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| AI Gateway                              | Deploy as a Docker container in your Kubernetes cluster using Helm Charts | AWS EC2 t4g.medium instance, with at least 4GiB of memory and two vCPUs. For high reliability, deploy across multiple Availability Zones. |
+| Logs Store (optional)                   | Hosted MongoDB, Document DB or AWS S3                                     | Each log document is \~10kb in size (uncompressed)                                                                                       |
+| Cache (Prompts, Configs & Providers)    | Elasticache or self-hosted Redis                                          | Deploy in the same VPC as the Portkey Gateway.                                                                                           |
+
+## Prerequisites
+
+Ensure the following tools and resources are installed and available:
+
+* [Kubectl](https://docs.aws.amazon.com/eks/latest/userguide/install-kubectl.html)  
+* [Helm (v3 or above)](https://helm.sh/docs/intro/install/)  
+* [eksctl](https://docs.aws.amazon.com/eks/latest/userguide/install-kubectl.html)
+* A running [Amazon EKS cluster](https://docs.aws.amazon.com/eks/latest/userguide/create-cluster-auto.html) with at least 2 worker nodes. ( **Best Practice:** Use 2 nodes, with one node in each Availability Zone, to ensure high availability.)
+
+
+## Create a Portkey Account
+- Go to the [Portkey](https://portkey.ai) website.  
+- Sign up for a Portkey account. 
+- Once logged in, locate and save your `Organisation ID` for future reference. You can find it in the browser URL:
+  `https://app.portkey.ai/organisation/<organisation_id>/`
+- Contact the PortkeyAI team and provide your Organisation ID and the email address used during signup..
+- The Portkey team will share the following information with you:
+    - Docker credentials for the Gateway images (username and password).
+    - License: Client Auth Key.
+
+## Setup Project Environment
+```sh
+cluster_name=<EKS_CLUSTER_NAME>               # Specify the name of the EKS cluster where the gateway will be deployed.
+namespace=<NAMESPACE>                         # Specify the namespace where the gateway should be deployed (for example, portkeyai).
+service_account_name=<SERVICE_ACCOUNT_NAME>   # Provide a name for the Service Account to be associated with Gateway Pod (for example, gateway-sa)
+
+mkdir portkey-gateway
+cd portkey-gateway
+touch values.yaml
+```
+
+### Image Credentials Configuration
+```yaml
+# Update the values.yaml file
+imageCredentials:
+  - name: portkey-enterprise-registry-credentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <PROVIDED BY PORTKEY>
+    password: <PROVIDED BY PORTKEY>
+
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: <SERVICE_NAME>                      # Specify a name for the service
+    PORTKEY_CLIENT_AUTH: <PROVIDED BY PORTKEY>
+    ORGANISATIONS_TO_SYNC: <ORGANISAION_ID>           # This is obtained after signing up for a Portkey account.
+    
+```
+
+## Configure Components 
+Based on the choice of components and their configuration update the `values.yaml`.
+### Cache Store
+The Portkey Gateway deployment includes a Redis instance pre-installed by default.. You can either use this built-in Redis or connect to an external cache like `Amazon ElastiCache for Redis OSS` or `Valkey`.
+1. **Built-in Redis:** No additional permissions or network configurations are required.
+
+#### Built-in Redis
+```yaml
+## To use the built-in Redis, Add the following configuration to the values.yaml file.
+environment:
+  data:
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+```
+2. **Amazon ElastiCache:** To enable the gateway to work with an ElastiCache cache, ensure that inbound rule is configured in ElastiCache's Security Group allowing access from EKS cluster on required port.
+#### [Amazon ElastiCache](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/SubnetGroups.designing-cluster-pre.html)
+
+```yaml
+## To use Amazon ElastiCache for Redis OSS or Valkey, Add the following configuration in the values.yaml file.
+environment:
+  data:
+    CACHE_STORE: aws-elastic-cache
+    REDIS_URL: "redis://<ElastiCache_Endpoint>:<Port>" 
+    REDIS_TLS_ENABLED: "true"                             ## "true"/"false"
+    REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled on Amazon ElastiCache
+```
+**Note:** If cluster mode is enabled in ElastiCache then use **Configuration Endpoint** otherwise use **Primary Endpoint**.
+For more information on ElastiCache endpoints, refer to the [AWS resources](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Endpoints.html).
+
+### Log Store
+#### Amazon S3
+
+1. Create an Amazon S3 bucket for storing LLM logs.
+
+2. [Set up](#setting-up-iam-permission) access to the log store. The Gateway offers the following options to access the S3 bucket to store logs.:
+    - IAM Roles for Service Accounts (IRSA)
+
+**IAM Roles for Service Accounts (IRSA)**
+```yaml
+## To enable IRSA update values.yaml with following details:-
+serviceAccount:
+  create: true
+  automount: true
+  name: <SERVICE_ACCOUNT_NAME>             # Provide the name of service account. Must be same as the name you provided while creating IAM Role in last step.
+  annotations:
+    eks.amazonaws.com/role-arn: <ROLE_ARN> # Provide the IAM role ARN obtained in previous step.
+
+environment:
+  data:
+    LOG_STORE: s3_assume
+    LOG_STORE_REGION: "<AWS_BUCKET_REGION>"                     # Specify the AWS region where the S3 log bucket resides (e.g., us-east-1).
+    LOG_STORE_GENERATIONS_BUCKET: "<AWS_BUCKET_NAME>"           # Specify the name of S3 log bucket.
+```
+
+
+### Data Service (Optional)
+The Data Service is a component of the Portkey deployment responsible for batch processing, fine-tuning, and log exports. 
+
+To enable Data Service, add the following configuration to the `values.yaml` file.
+
+```yaml
+dataservice:
+  name: "dataservice"
+  enabled: true
+  env:
+    DEBUG_ENABLED: false
+    SERVICE_NAME: "portkeyenterprise-dataservice"
+  serviceAccount:
+    create: false
+    name: <SERVICE_ACCOUNT_NAME>                                  # Provide the name of service account. Must be same as the name you provided while creating IAM Role in last step.
+
+
+```
+
+## Network Configuration
+
+### Set Up External Access to the Gateway
+To ensure the Gateway service is accessible from outside the cluster, create either an internal or internet-facing Load Balancer.
+
+**Prerequisites**
+- VPC and Subnet [tagging requirements](https://docs.aws.amazon.com/eks/latest/userguide/network-reqs.html) 
+- Installed and running AWS Load Balancer Controller. For Load Balancer Controller installation details, refer to the AWS [documentation](https://docs.aws.amazon.com/eks/latest/userguide/lbc-helm.html).
+
+```yaml
+service:
+  type: LoadBalancer
+  port: <PORT_NUMBER_FOR_LISTENER>                                               # Specify the desired port number for the NLB listener.
+  annotations: 
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"                     # Specify the type of Load Balancer to create. Note that AWS PrivateLink only supports NLB and GWLB for creating endpoint service.
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"                # Choose whether to create an internal or internet-facing load balancer.
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"     
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/v1/health"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "http" 
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "8787"        
+    service.beta.kubernetes.io/aws-load-balancer-manage-backend-security-group-rules: "true"         
+```
+
+
+Load Balancer Controller provides additional annotations (like TLS, custom health checks etc ) for managing NLB. For a comprehensive list of available annotations, refer to the [AWS Load Balancer Controller documentation](https://kubernetes-sigs.github.io/aws-load-balancer-controller/v2.7/guide/service/annotations/).
+
+### Ensure Outbound Network Access
+
+By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
+
+Example NetworkPolicy for Outbound Access:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+  namespace: portkeyai
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+```
+
+This allows the gateway to access LLMs hosted within your VPC and outside as well. This also enables connection for the sync service to the Portkey Control Plane.
+
+
+## Deploying Portkey Gateway
+```sh
+# Add the PortkeyAI Gateway helm repository
+helm repo add portkey-ai https://portkey-ai.github.io/helm
+helm repo update
+
+# Install the chart
+helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml -n $namespace --create-namespace
+```
+
+## Verify the deployment 
+To confirm that the deployment was successful, follow these steps:
+
+-  Verify that all pods are running correctly.
+  ```sh
+  # 
+  kubectl get pods -n $namespace
+  # You should see all pods with a 'STATUS' of 'Running'.
+  ```
+  **Note:** If pods are in a Pending, CrashLoopBackOff, or other error state, inspect the [pod logs](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/) and [events](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_events/) to diagnose potential issues.
+
+
+- Test Gateway by sending a cURL request. 
+    1.  Port-forward the Gateway pod
+      ```sh
+        kubectl port-forward  <POD_NAME> -n $namespace 9000:8787       # Replace <POD_NAME> with your Gateway pod's actual name.
+      ```
+      
+
+    2. Once port forwarding is active, open a new terminal window or tab and send a test request by running:
+      
+      ```sh
+      # Specify LLM provider and Portkey API keys
+      OPENAI_API_KEY=<OPENAI_API_KEY>                           # Replace <OPENAI_API_KEY> with an actual API key
+      PORTKEY_API_KEY=<PORTKEY_API_KEY>                         # Replace <PORTKEY_API_KEY> with Portkey API key which can be created from Portkey website(https://app.portkey.ai/api-keys).
+      
+      # Configure and send the curl request
+      curl 'http://localhost:9000/v1/chat/completions'`\
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $OPENAI_API_KEY"  \ 
+      -H "x-portkey-provider: openai" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY"  \
+      -d '{ 
+          "model": "gpt-4o-mini", 
+          "messages": [{"role": "user","content": "What is a fractal?"}]  
+      }'
+      ```
+    3. Test gateway service integration with Load Balancer.
+      ```sh
+      # Replace <LOAD_BALANCER_DNS> and <LB_LISTENER_PORT_NUMBER> with the DNS name and listener port of the created load balancer, respectively.
+      curl 'http://<LOAD_BALANCER_DNS>:<LB_LISTENER_PORT_NUMBER>/v1/chat/completions' \    
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $OPENAI_API_KEY"  \
+      -H "x-portkey-provider: openai" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY"  \
+      -d '{
+          "model": "gpt-4o-mini",
+          "messages": [{"role": "user","content": "What is a fractal?"}]
+      }'
+      ```
+
+
+## Integrating Gateway with Control Plane
+Portkey supports the following methods for integrating the Control Plane with the Data Plane/Gateway:
+- AWS PrivateLink
+- IP Whitelisting 
+
+#### AWS PrivateLink
+Establishes a secure, private connection between the Control Plane and Data Plane within the AWS network, eliminating exposure to the public internet.
+
+**Steps to establish AWS PrivateLink connectivity** - 
+
+To use AWS PrivateLink, you must create an AWS Network Load Balancer (NLB)—either internal or internet-facing—to expose the Gateway outside the EKS cluster.
+For detailed instructions on creating and integrating an NLB, please refer to the [Networking Configuration](#network-configuration) 
+
+**Create Endpoint Service**
+- Navigate to the [AWS VPC Console](https://ap-southeast-1.console.aws.amazon.com/vpcconsole/home#CreateVpcEndpointServiceConfiguration).
+- In the top-right corner of the AWS Console, select the region where the Portkey Gateway is deployed.
+- Provide the following details - 
+    - Name of endpoint service
+    - Select Network Load Balancer to associate with Endpoint.
+    - Choose region in which endpoint service will be available.
+    - Select whether acceptance is required or not for requested connections.
+    - Choose whether to enable private DNS name - If enabled provide the Private DNS Name.
+    - Select **IPv4** under Supported IP address types.
+- Click **Create**.
+
+**(Optional) Verify ownership of Private DNS name**
+
+This step needs to be performed if you are using Private DNS Name.
+
+Open created Endpoint Service > click on **Actions** > select Verify domain ownership for private DNS name > Create the recommended record in your DNS server > Click Verify.
+
+**Authorize Portkey's Control Plane to initiate connection requests**
+
+- Open to Endpoint Service > click on **Actions** > select **Allow principals**, and enter the Control Plane's ARN(`arn:aws:iam::299329113195:root`).
+Reach out to portkey team and share the following details - 
+    - **Service name**
+    - **DNS names**
+    - **Private DNS name**
+    - **Region** selected while creating Endpoint Service.
+    - Port number on which Load Balancer is listening for connections.
+- Wait for the Portkey team to initiate a connection request from the control plane's AWS account to your Gateway AWS account. Navigate to the **Endpoint connections** section and once the request appears, approve it.
+  
+
+#### IP Whitelisting
+Allows control plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Control Plane. This method requires the Data Plane to have a publicly accessible endpoint.
+To implement, add an inbound rule to the Load Balancer's security group allowing connections from the Portkey Control Plane's IP (`44.221.117.129`) on NLB listner port.
+
+## Verifying Gateway Integration with the Control Plane
+
+- Send a test request to Gateway using `curl`.
+- Go to [Portkey website](https://app.portkey.ai/) -> **Logs**.
+- Verify that the test request appears in the logs and that you can view its full details by selecting the log entry.
+
+
+## Uninstalling Portkey Gateway
+```sh
+helm uninstall portkey-ai --namespace $namespace
+```
+
+## Setting up IAM Permission
+
+To enable the Portkey Gateway to access Amazon S3 for log storage and, optionally, Amazon Bedrock for model invocation, specific permissions are required. Follow the steps below to configure these permissions.
+
+### IAM Roles for Service Accounts (IRSA)
+1. Create an IAM trust policy to provide Gateway access to S3 bucket. 
+    
+  ```sh
+  bucket_name=<S3_BUCKET_NAME>                  # Specify the name of S3 bucket which will store logs. Bucket must already be created.
+  role_name=<IAM_ROLE_NAME>                     # Provide a name for the role to be associated with Service Account.
+
+  # Retrieve AWS Account ID
+  aws_account_id=$(aws sts get-caller-identity --query Account --output text)
+        
+  # Retrieve EKS cluster’s OIDC issuer.
+  oidc_issuer=$(aws eks describe-cluster --name $cluster_name --query "cluster.identity.oidc.issuer" --output text | sed -e "s~https://~~")
+  
+  # Check if an IAM OIDC provider is already created for EKS cluster in your account.
+  aws iam list-open-id-connect-providers | grep $oidc_issuer
+  
+  # If no output is returned, then create an IAM OIDC provider for your EKS cluster.
+  eksctl utils associate-iam-oidc-provider --cluster $cluster_name --approve
+  
+  # Define a trust policy for IAM role
+  cat >trust-relationship.json <<EOF
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "Federated": "arn:aws:iam::$aws_account_id:oidc-provider/$oidc_issuer"
+        },
+        "Action": "sts:AssumeRoleWithWebIdentity",
+        "Condition": {
+          "StringEquals": {
+            "$oidc_issuer:aud": "sts.amazonaws.com",
+            "$oidc_issuer:sub": "system:serviceaccount:$namespace:$service_account_name"
+          }
+        }
+      }
+    ]
+  }
+  EOF
+  ```
+    
+
+
+2. Create an IAM Role to associate with Gateway's service account.
+  ```sh
+  # Create IAM role to associate with Gateway service account.                 
+  aws iam create-role --role-name $role_name --assume-role-policy-document file://trust-relationship.json 
+
+  # Fetch ARN of IAM role
+  role_arn=$(aws iam get-role --role-name $role_name --query "Role.Arn" --output text)
+  echo "$role_arn"
+  ```
+  **Note:** Record the IAM role ARN for future reference, as it will be required when configuring the Gateway’s service account in `values.yaml`.
+
+3. Attach an IAM policy to the role to grant access to the S3 log store and, optionally, Amazon Bedrock.
+
+**Amazon S3**
+  ```sh
+  cat >s3-access-policy.json <<EOF
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": ["s3:PutObject", "s3:GetObject"],
+        "Resource": ["arn:aws:s3:::$bucket_name/*"]
+      }
+    ]
+  }
+  EOF
+
+  # Attach policy to the IAM role
+  aws iam put-role-policy --role-name $role_name --policy-name s3-access-policy --policy-document file://s3-access-policy.json
+  ```
+
+**Amazon Bedrock**
+  ```sh
+  cat >bedrock-access-policy.json <<EOF
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+        "Resource": ["*"]
+      }
+    ]
+  }
+  EOF
+
+  # Attach policy to the IAM role
+  aws iam put-role-policy --role-name $role_name --policy-name bedrock-access-policy --policy-document file://bedrock-access-policy.json
+
+  ```
+## Examples
+
+**Built-in Redis**
+
+The following sample `values.yaml` below shows how to configure the built-in Redis cache and Amazon S3 log store using IRSA.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.ikuo/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway                                                  
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>                      # REPLACE <CLIENT_AUTH> with client auth shared by Portkey team.
+    ORGANISATIONS_TO_SYNC: <ORGANIZATION_ID>                # REPLACE <ORGANIZATION_ID> with organisation_id of your account.
+    PORT: "8787"
+
+    # Configuration for using built-in redis
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+   
+    # Configuration for enabling IRSA access to Amazon S3
+    LOG_STORE: s3_assume
+    LOG_STORE_REGION: <S3_BUCKET_REGION>                    # Specify the AWS region where the S3 log bucket resides (e.g., us-east-1).
+    LOG_STORE_GENERATIONS_BUCKET: <S3_BUCKET_NAME>          # Specify the name of the Amazon S3 bucket (e.g., portkey-log-store).
+
+
+
+# Configuration for enabling Data Service
+dataservice:
+  name: "dataservice"
+  enabled: true
+  env:
+    DEBUG_ENABLED: false
+    SERVICE_NAME: "portkeyenterprise-dataservice"
+
+# Enabling IRSA for providing Gateway access to Amazon S3 and, optionally Amazon Bedrock.
+serviceAccount:
+  create: true
+  automount: true
+  name: gateway-sa
+  annotations:
+    eks.amazonaws.com/role-arn: <IAM_ROLE_ARN>               # Specify the IAM Role ARN created for enabling IRSA access to Amazon S3 bucket
+
+
+# Enabling Load Balancer to provide access outside of cluster
+service:
+  type: LoadBalancer
+  port: 8787                                                 # Customize this paramter if you require a Load Balancer listener for a custom port.
+  annotations: 
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"     
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/v1/health"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "http" 
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "8787" 
+    service.beta.kubernetes.io/aws-load-balancer-manage-backend-security-group-rules: "true"
+
+```
+
+
+
+
+
+
