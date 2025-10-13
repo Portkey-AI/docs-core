@@ -4,28 +4,28 @@ description: This enterprise-focused document provides comprehensive instruction
 ---
 
 
-
 ## Components and Sizing Recommendations
 
-| Component                               | Options                                                                   | Sizing Recommendations                                                                                                                   |
-| --------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| AI Gateway                              | Deploy as a Docker container in your Kubernetes cluster using Helm Charts | AWS EC2 t4g.medium instance, with at least 4GiB of memory and two vCPUs. For high reliability, deploy across multiple Availability Zones. |
-| Logs Store (optional)                   | Hosted MongoDB, Document DB or AWS S3                                     | Each log document is \~10kb in size (uncompressed)                                                                                       |
-| Cache (Prompts, Configs & Providers)    | Elasticache or self-hosted Redis                                          | Deploy in the same VPC as the Portkey Gateway.                                                                                           |
+| Component                               | Options                                                                   | Sizing Recommendations                                                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------                    |
+| AI Gateway                              | Deploy in your EKS cluster using Helm charts.                             | Use Amazon EKS t4g.medium worker nodes, each providing at least 2 vCPUs and 4 GiB of memory. For high availability, deploy them across multiple Availability Zones. |
+| Logs Store (optional)                   | Amazon S3 or S3-compatible Storage                                        | Each log document is \~10kb in size (uncompressed)                                                                                                                  |
+| Cache (Prompts, Configs & Providers)    | Built-in Redis, Amazon ElastiCache for Redis OSS or Valkey                | Deployed within the same VPC as the Portkey Gateway.                                                                                                                  |
 
 ## Prerequisites
 
 Ensure the following tools and resources are installed and available:
 
+* A running [Amazon EKS cluster](https://docs.aws.amazon.com/eks/latest/userguide/create-cluster-auto.html) with at least 2 worker nodes. ( **Best Practice:** Use 2 nodes, with one node in each Availability Zone, to ensure high availability.)
+* [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 * [Kubectl](https://docs.aws.amazon.com/eks/latest/userguide/install-kubectl.html)  
 * [Helm (v3 or above)](https://helm.sh/docs/intro/install/)  
 * [eksctl](https://docs.aws.amazon.com/eks/latest/userguide/install-kubectl.html)
-* A running [Amazon EKS cluster](https://docs.aws.amazon.com/eks/latest/userguide/create-cluster-auto.html) with at least 2 worker nodes. ( **Best Practice:** Use 2 nodes, with one node in each Availability Zone, to ensure high availability.)
 
 
 ## Create a Portkey Account
 - Go to the [Portkey](https://portkey.ai) website.  
-- Sign up for a Portkey account. 
+- Sign up for a Portkey account.  
 - Once logged in, locate and save your `Organisation ID` for future reference. You can find it in the browser URL:
   `https://app.portkey.ai/organisation/<organisation_id>/`
 - Contact the PortkeyAI team and provide your Organisation ID and the email address used during signup..
@@ -66,34 +66,40 @@ imageCredentials:
     repository: "docker.io/redis"
     pullPolicy: IfNotPresent
     tag: "7.2-alpine"
-data:
+environment:
+  create: true
+  secret: true
+  data:
     ANALYTICS_STORE: control_plane
     SERVICE_NAME: <SERVICE_NAME>                      # Specify a name for the service
     PORTKEY_CLIENT_AUTH: <PROVIDED BY PORTKEY>
-    ORGANISATIONS_TO_SYNC: <ORGANISAION_ID>           # This is obtained after signing up for a Portkey account.
-    
+    ORGANISATIONS_TO_SYNC: <ORGANISAION_ID>           # This is obtained after signing up for a Portkey account.  
 ```
 
 ## Configure Components 
 Based on the choice of components and their configuration update the `values.yaml`.
 ### Cache Store
-The Portkey Gateway deployment includes a Redis instance pre-installed by default.. You can either use this built-in Redis or connect to an external cache like `Amazon ElastiCache for Redis OSS` or `Valkey`.
-1. **Built-in Redis:** No additional permissions or network configurations are required.
+The Portkey Gateway deployment includes a Redis instance pre-installed by default. You can either use this built-in Redis or connect to an external cache like `Amazon ElastiCache for Redis OSS` or `Valkey`.
 
 #### Built-in Redis
+
+No additional permissions or network configurations are required.
+
 ```yaml
-## To use the built-in Redis, Add the following configuration to the values.yaml file.
+## To use the built-in Redis, add the following configuration to the values.yaml file.
 environment:
   data:
     CACHE_STORE: redis
     REDIS_URL: "redis://redis:6379"
     REDIS_TLS_ENABLED: "false"
 ```
-2. **Amazon ElastiCache:** To enable the gateway to work with an ElastiCache cache, ensure that inbound rule is configured in ElastiCache's Security Group allowing access from EKS cluster on required port.
-#### [Amazon ElastiCache](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/SubnetGroups.designing-cluster-pre.html)
+
+#### Amazon ElastiCache
+
+To enable the gateway to work with an ElastiCache cache, ensure that inbound rule is configured in ElastiCache's Security Group allowing access from EKS cluster on required port.
 
 ```yaml
-## To use Amazon ElastiCache for Redis OSS or Valkey, Add the following configuration in the values.yaml file.
+## To use Amazon ElastiCache for Redis OSS or Valkey, add the following configuration in the values.yaml file.
 environment:
   data:
     CACHE_STORE: aws-elastic-cache
@@ -109,26 +115,31 @@ For more information on ElastiCache endpoints, refer to the [AWS resources](http
 
 1. Create an Amazon S3 bucket for storing LLM logs.
 
-2. [Set up](#setting-up-iam-permission) access to the log store. The Gateway offers the following options to access the S3 bucket to store logs.:
+2. [Set up](#setting-up-iam-permission) access to the log store. The Gateway supports the following methods for connecting to S3 bucket for log storage:
     - IAM Roles for Service Accounts (IRSA)
 
-**IAM Roles for Service Accounts (IRSA)**
-```yaml
-## To enable IRSA update values.yaml with following details:-
-serviceAccount:
-  create: true
-  automount: true
-  name: <SERVICE_ACCOUNT_NAME>             # Provide the name of service account. Must be same as the name you provided while creating IAM Role in last step.
-  annotations:
-    eks.amazonaws.com/role-arn: <ROLE_ARN> # Provide the IAM role ARN obtained in previous step.
 
-environment:
-  data:
-    LOG_STORE: s3_assume
-    LOG_STORE_REGION: "<AWS_BUCKET_REGION>"                     # Specify the AWS region where the S3 log bucket resides (e.g., us-east-1).
-    LOG_STORE_GENERATIONS_BUCKET: "<AWS_BUCKET_NAME>"           # Specify the name of S3 log bucket.
-```
+    Depending on the chosen S3 access method, update `values.yaml` with the following configuration.
+    <Tabs>
+      <Tab title="IRSA">
+        ```yaml
+        ## To enable IRSA update values.yaml with following details:-
+        serviceAccount:
+          create: true
+          automount: true
+          name: <SERVICE_ACCOUNT_NAME>             # Provide the name of service account. Must be same as the name you provided while creating IAM Role in last step.
+          annotations:
+            eks.amazonaws.com/role-arn: <ROLE_ARN> # Provide the IAM role ARN obtained in previous step.
 
+        environment:
+          data:
+            LOG_STORE: s3_assume
+            LOG_STORE_REGION: "<AWS_BUCKET_REGION>"                     # Specify the AWS region where the S3 log bucket resides (e.g., us-east-1).
+            LOG_STORE_GENERATIONS_BUCKET: "<AWS_BUCKET_NAME>"           # Specify the name of S3 log bucket.
+        ```
+      </Tab>
+    </Tabs>
+ 
 
 ### Data Service (Optional)
 The Data Service is a component of the Portkey deployment responsible for batch processing, fine-tuning, and log exports. 
@@ -151,7 +162,7 @@ dataservice:
 
 ## Network Configuration
 
-### Set Up External Access to the Gateway
+**Set up external access to the Gateway**
 To ensure the Gateway service is accessible from outside the cluster, create either an internal or internet-facing Load Balancer.
 
 **Prerequisites**
@@ -161,7 +172,7 @@ To ensure the Gateway service is accessible from outside the cluster, create eit
 ```yaml
 service:
   type: LoadBalancer
-  port: <PORT_NUMBER_FOR_LISTENER>                                               # Specify the desired port number for the NLB listener.
+  port: 8787                                              
   annotations: 
     service.beta.kubernetes.io/aws-load-balancer-type: "nlb"                     # Specify the type of Load Balancer to create. Note that AWS PrivateLink only supports NLB and GWLB for creating endpoint service.
     service.beta.kubernetes.io/aws-load-balancer-internal: "true"                # Choose whether to create an internal or internet-facing load balancer.
@@ -239,7 +250,7 @@ To confirm that the deployment was successful, follow these steps:
       # Configure and send the curl request
       curl 'http://localhost:9000/v1/chat/completions'`\
       -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $OPENAI_API_KEY"  \ 
+      -H "Authorization: Bearer $OPENAI_API_KEY"  \
       -H "x-portkey-provider: openai" \
       -H "x-portkey-api-key: $PORTKEY_API_KEY"  \
       -d '{ 
@@ -250,7 +261,7 @@ To confirm that the deployment was successful, follow these steps:
     3. Test gateway service integration with Load Balancer.
       ```sh
       # Replace <LOAD_BALANCER_DNS> and <LB_LISTENER_PORT_NUMBER> with the DNS name and listener port of the created load balancer, respectively.
-      curl 'http://<LOAD_BALANCER_DNS>:<LB_LISTENER_PORT_NUMBER>/v1/chat/completions' \    
+      curl 'http://<LOAD_BALANCER_DNS>:8787/v1/chat/completions' \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $OPENAI_API_KEY"  \
       -H "x-portkey-provider: openai" \
@@ -323,103 +334,109 @@ helm uninstall portkey-ai --namespace $namespace
 
 ## Setting up IAM Permission
 
-To enable the Portkey Gateway to access Amazon S3 for log storage and, optionally, Amazon Bedrock for model invocation, specific permissions are required. Follow the steps below to configure these permissions.
+To enable the Portkey Gateway to access Amazon S3 for log storage and, optionally, Amazon Bedrock for model invocation, specific permissions are required. 
 
-### IAM Roles for Service Accounts (IRSA)
-1. Create an IAM trust policy to provide Gateway access to S3 bucket. 
+Follow the steps below to configure permissions based on your chosen access method.
+
     
-  ```sh
-  bucket_name=<S3_BUCKET_NAME>                  # Specify the name of S3 bucket which will store logs. Bucket must already be created.
-  role_name=<IAM_ROLE_NAME>                     # Provide a name for the role to be associated with Service Account.
+      <Tabs>
+      <Tab title="IRSA">
+      1. Create an IAM trust policy to provide Gateway access to IAM Role. 
+        ```sh
+      bucket_name=<S3_BUCKET_NAME>                  # Specify the name of S3 bucket which will store logs. Bucket must already be created.
+      role_name=<IAM_ROLE_NAME>                     # Provide a name for the role to be associated with Service Account.
 
-  # Retrieve AWS Account ID
-  aws_account_id=$(aws sts get-caller-identity --query Account --output text)
-        
-  # Retrieve EKS cluster’s OIDC issuer.
-  oidc_issuer=$(aws eks describe-cluster --name $cluster_name --query "cluster.identity.oidc.issuer" --output text | sed -e "s~https://~~")
-  
-  # Check if an IAM OIDC provider is already created for EKS cluster in your account.
-  aws iam list-open-id-connect-providers | grep $oidc_issuer
-  
-  # If no output is returned, then create an IAM OIDC provider for your EKS cluster.
-  eksctl utils associate-iam-oidc-provider --cluster $cluster_name --approve
-  
-  # Define a trust policy for IAM role
-  cat >trust-relationship.json <<EOF
-  {
-    "Version": "2012-10-17",
-    "Statement": [
+      # Retrieve AWS Account ID
+      aws_account_id=$(aws sts get-caller-identity --query Account --output text)
+            
+      # Retrieve EKS cluster’s OIDC issuer.
+      oidc_issuer=$(aws eks describe-cluster --name $cluster_name --query "cluster.identity.oidc.issuer" --output text | sed -e "s~https://~~")
+      
+      # Check if an IAM OIDC provider is already created for EKS cluster in your account.
+      aws iam list-open-id-connect-providers | grep $oidc_issuer
+      
+      # (Optional) If no output is returned, then create an IAM OIDC provider for your EKS cluster.
+      eksctl utils associate-iam-oidc-provider --cluster $cluster_name --approve
+      
+      # Define a trust policy for IAM role
+      cat >trust-relationship.json <<EOF
       {
-        "Effect": "Allow",
-        "Principal": {
-          "Federated": "arn:aws:iam::$aws_account_id:oidc-provider/$oidc_issuer"
-        },
-        "Action": "sts:AssumeRoleWithWebIdentity",
-        "Condition": {
-          "StringEquals": {
-            "$oidc_issuer:aud": "sts.amazonaws.com",
-            "$oidc_issuer:sub": "system:serviceaccount:$namespace:$service_account_name"
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "arn:aws:iam::${aws_account_id}:oidc-provider/${oidc_issuer}"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": {
+                "${oidc_issuer}:aud": "sts.amazonaws.com",
+                "${oidc_issuer}:sub": "system:serviceaccount:${namespace}:${service_account_name}"
+              }
+            }
           }
-        }
+        ]
       }
-    ]
-  }
-  EOF
-  ```
-    
+      EOF
+      ```
+      2. Create an IAM Role to associate with Gateway's service account.
+    ```sh
+    # Create IAM role to associate with Gateway service account.                 
+    aws iam create-role --role-name $role_name --assume-role-policy-document file://trust-relationship.json 
 
-
-2. Create an IAM Role to associate with Gateway's service account.
-  ```sh
-  # Create IAM role to associate with Gateway service account.                 
-  aws iam create-role --role-name $role_name --assume-role-policy-document file://trust-relationship.json 
-
-  # Fetch ARN of IAM role
-  role_arn=$(aws iam get-role --role-name $role_name --query "Role.Arn" --output text)
-  echo "$role_arn"
-  ```
-  **Note:** Record the IAM role ARN for future reference, as it will be required when configuring the Gateway’s service account in `values.yaml`.
+    # Fetch ARN of IAM role
+    role_arn=$(aws iam get-role --role-name $role_name --query "Role.Arn" --output text)
+    echo "$role_arn"
+    ```
+    **Note:** Record the IAM role ARN for future reference, as it will be required when configuring the Gateway’s service account in `values.yaml`.
 
 3. Attach an IAM policy to the role to grant access to the S3 log store and, optionally, Amazon Bedrock.
 
-**Amazon S3**
-  ```sh
-  cat >s3-access-policy.json <<EOF
-  {
-    "Version": "2012-10-17",
-    "Statement": [
-      {
-        "Effect": "Allow",
-        "Action": ["s3:PutObject", "s3:GetObject"],
-        "Resource": ["arn:aws:s3:::$bucket_name/*"]
-      }
-    ]
-  }
-  EOF
+  **Amazon S3**
+    ```sh
+    cat >s3-access-policy.json <<EOF
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": ["s3:PutObject", "s3:GetObject"],
+          "Resource": ["arn:aws:s3:::${bucket_name}/*"]
+        }
+      ]
+    }
+    EOF
 
-  # Attach policy to the IAM role
-  aws iam put-role-policy --role-name $role_name --policy-name s3-access-policy --policy-document file://s3-access-policy.json
-  ```
+    # Attach policy to the IAM role
+    aws iam put-role-policy --role-name $role_name --policy-name s3-access-policy --policy-document file://s3-access-policy.json
+    ```
 
-**Amazon Bedrock**
-  ```sh
-  cat >bedrock-access-policy.json <<EOF
-  {
-    "Version": "2012-10-17",
-    "Statement": [
-      {
-        "Effect": "Allow",
-        "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-        "Resource": ["*"]
-      }
-    ]
-  }
-  EOF
+  **(Optional) Amazon Bedrock**
+    ```sh
+    cat >bedrock-access-policy.json <<EOF
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+          "Resource": ["*"]
+        }
+      ]
+    }
+    EOF
 
-  # Attach policy to the IAM role
-  aws iam put-role-policy --role-name $role_name --policy-name bedrock-access-policy --policy-document file://bedrock-access-policy.json
+    # Attach policy to the IAM role
+    aws iam put-role-policy --role-name $role_name --policy-name bedrock-access-policy --policy-document file://bedrock-access-policy.json
 
-  ```
+    ```
+
+  </Tab> 
+</Tabs>
+    
+
+
 ## Examples
 
 **Built-in Redis**
