@@ -1,7 +1,7 @@
 """
 title: Portkey Manifold Pipe
 author: Portkey
-version: 0.7.0
+version: 0.8.0
 license: MIT
 documentation: https://portkey.ai/docs/integrations/libraries/openwebui
 """
@@ -93,6 +93,7 @@ class Pipe:
         metadata = {}
         if __user__:
             if "email" in __user__:
+                metadata["_user"] = __user__["email"]  # Special key for User column
                 metadata["email"] = __user__["email"]
             if "name" in __user__:
                 metadata["name"] = __user__["name"]
