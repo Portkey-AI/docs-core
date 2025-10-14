@@ -738,6 +738,149 @@ For reference, see the following documentation:
 https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-prereq.html
 
 
+## Using AWS Bedrock Guardrails in Requests
+
+You can apply AWS Bedrock guardrails directly within your inference requests using the `guardrailConfig` parameter. This allows you to use guardrails you've created in AWS Bedrock without setting them up in Portkey.
+
+<Note>
+This is different from [Portkey's Bedrock Guardrails integration](/integrations/guardrails/bedrock-guardrails), which provides additional features like PII redaction and custom actions.
+</Note>
+
+### Guardrail Configuration
+
+Pass the `guardrailConfig` object in your request with the following parameters:
+
+- `guardrailIdentifier`: The unique identifier of your AWS Bedrock guardrail (ID or ARN)
+- `guardrailVersion`: The version of the guardrail to use (or `"DRAFT"`)
+- `trace`: (Optional) Set to `"enabled"` to get detailed information about guardrail actions
+
+<Tabs>
+    <Tab title="Python SDK">
+        ```python
+        from portkey_ai import Portkey
+
+        portkey = Portkey(
+            api_key="PORTKEY_API_KEY",
+            provider="@PROVIDER"  # Your Bedrock Provider Slug
+        )
+
+        response = portkey.chat.completions.create(
+            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            messages=[{"role": "user", "content": "Hello!"}],
+            max_tokens=250,
+            guardrailConfig={
+                "guardrailIdentifier": "your-guardrail-id",
+                "guardrailVersion": "1",  # or "DRAFT"
+                "trace": "enabled"
+            }
+        )
+        ```
+    </Tab>
+    <Tab title="NodeJS SDK">
+        ```javascript
+        import Portkey from 'portkey-ai';
+
+        const portkey = new Portkey({
+            apiKey: "PORTKEY_API_KEY",
+            provider: "@PROVIDER"  // Your Bedrock Provider Slug
+        });
+
+        const response = await portkey.chat.completions.create({
+            model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            messages: [{ role: "user", content: "Hello!" }],
+            max_tokens: 250,
+            guardrailConfig: {
+                guardrailIdentifier: "your-guardrail-id",
+                guardrailVersion: "1",  // or "DRAFT"
+                trace: "enabled"
+            }
+        });
+        ```
+    </Tab>
+    <Tab title="OpenAI Python SDK">
+        ```python
+        from openai import OpenAI
+        from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+        client = OpenAI(
+            api_key='dummy',
+            base_url=PORTKEY_GATEWAY_URL,
+            default_headers=createHeaders(
+                provider="@bedrock",  # Your Bedrock Provider Slug
+                api_key="PORTKEY_API_KEY"
+            )
+        )
+
+        response = client.chat.completions.create(
+            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            messages=[{"role": "user", "content": "Hello!"}],
+            max_tokens=250,
+            extra_body={
+                "guardrailConfig": {
+                    "guardrailIdentifier": "your-guardrail-id",
+                    "guardrailVersion": "1",
+                    "trace": "enabled"
+                }
+            }
+        )
+        ```
+    </Tab>
+    <Tab title="OpenAI NodeJS SDK">
+        ```javascript
+        import OpenAI from 'openai';
+        import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+        const client = new OpenAI({
+            apiKey: 'dummy',
+            baseURL: PORTKEY_GATEWAY_URL,
+            defaultHeaders: createHeaders({
+                provider: "@bedrock",  // Your Bedrock Provider Slug
+                apiKey: "PORTKEY_API_KEY"
+            })
+        });
+
+        const response = await client.chat.completions.create({
+            model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            messages: [{ role: "user", content: "Hello!" }],
+            max_tokens: 250,
+            guardrailConfig: {
+                guardrailIdentifier: "your-guardrail-id",
+                guardrailVersion: "1",
+                trace: "enabled"
+            }
+        });
+        ```
+    </Tab>
+    <Tab title="cURL">
+        ```sh
+        curl https://api.portkey.ai/v1/chat/completions \
+          -H "Content-Type: application/json" \
+          -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+          -H "x-portkey-provider: @your-bedrock-provider" \
+          -d '{
+            "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "messages": [{"role": "user", "content": "Hello!"}],
+            "max_tokens": 250,
+            "guardrailConfig": {
+              "guardrailIdentifier": "your-guardrail-id",
+              "guardrailVersion": "1",
+              "trace": "enabled"
+            }
+          }'
+        ```
+    </Tab>
+</Tabs>
+
+### Understanding Guardrail Responses
+
+When a guardrail is triggered, the response will include trace information showing what was detected and blocked. The guardrail can:
+
+- **Block the request** if harmful content is detected in the input
+- **Block the response** if harmful content is detected in the model output
+- **Redact PII** if configured to do so in your AWS Bedrock guardrail settings
+
+For more details on AWS Bedrock Guardrails, see the [AWS documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-use-converse-api.html).
+
 ## Bedrock Converse API
 
 Portkey uses the [AWS Converse API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html) internally for making chat completions requests.

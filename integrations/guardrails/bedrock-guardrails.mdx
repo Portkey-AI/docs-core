@@ -11,49 +11,42 @@ To get started with AWS Bedrock Guardrails, visit their documentation:
 
 ## Using AWS Bedrock Guardrails with Portkey
 
+Portkey provides native support for AWS Bedrock Guardrails to secure your LLM applications, including features like content filtering and PII detection.
 
 ### 1. Create a guardrail on AWS Bedrock
 
 * Navigate to `AWS Bedrock` -> `Guardrails` -> `Create guardrail`
 * Configure the guardrail according to your requirements
-* For `PII redaction`, we recommend setting the Guardrail behavior as **BLOCK** for the required entity types. This is necessary because Bedrock does not apply PII checks on input (request message) if the behavior is set to MASK
 * Once the guardrail is created, note the **ID** and **version** displayed on the console - you'll need these to enable the guardrail in Portkey
 
+### 2. Enable Bedrock integration on Portkey
 
-### 2. Enable Bedrock Plugin on Portkey
-* Navigate to the `Integration` page under `Sidebar`
-* Click on the edit button for the Bedrock integration
-* Add your Bedrock `Region`, `AwsAuthType`, `Role ARN` & `External ID`credentials (refer to [Bedrock's documentation](https://pangea.cloud/docs/ai-guard) for how to obtain these credentials)
+* Navigate to the `Integrations` page in Portkey
+* Find and enable the Bedrock integration
+* Add your AWS credentials on the integrations page
 
-
-### 3. Create a Guardrail on Portkey
+### 3. Create a guardrail on Portkey
 
 * Navigate to the `Guardrails` page and click the `Create` button
 * Search for `Apply bedrock guardrail` and click `Add`
-* Enter the Guardrials ID and version of the guardrail you created in step 1
-* Enable or disable the `Redact PII` toggle as needed
-* Set any actions you want on your guardrail check, and click `Create`
+* Enter the guardrail ID and version from step 1
+* Configure any additional settings as needed
+* Click `Create` and note the Portkey Guardrail ID
 
-<Note>
-    Guardrail Actions allow you to orchestrate your guardrails logic. You can learn them [here](/product/guardrails#there-are-6-types-of-guardrail-actions)
-</Note>
+### 4. Add the Portkey Guardrail ID to a config
 
-
-### 4. Add Guardrail ID to a Config and Make Your Request
-
-* When you save a Guardrail, you'll get an associated Guardrail ID - add this ID to the `before_request_hooks` or `after_request_hooks` params in your Portkey Config
-* Create these Configs in Portkey UI, save them, and get an associated Config ID to attach to your requests. [More here](/product/ai-gateway/configs).
-
-
-Here's an example configuration:
+Create a config with your guardrail:
 
 ```json
 {
-  "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
-  "output_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"]
+  "input_guardrails": ["guardrails-id-xxx"],
+  "output_guardrails": ["guardrails-id-xxx"]
 }
 ```
 
+Save this config in Portkey UI and get the Config ID.
+
+### 5. Attach the config to your requests
 
 <Tabs>
   <Tab title="NodeJS">
@@ -61,7 +54,7 @@ Here's an example configuration:
 ```js
 const portkey = new Portkey({
     apiKey: "PORTKEY_API_KEY",
-    config: "pc-***" // Supports a string config id or a config object
+    config: "pc-***" // Your Config ID from step 4
 });
 ```
   </Tab>
@@ -70,7 +63,7 @@ const portkey = new Portkey({
 ```py
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
-    config="pc-***" # Supports a string config id or a config object
+    config="pc-***" # Your Config ID from step 4
 )
 ```
   </Tab>
@@ -82,7 +75,7 @@ const openai = new OpenAI({
   baseURL: PORTKEY_GATEWAY_URL,
   defaultHeaders: createHeaders({
     apiKey: "PORTKEY_API_KEY",
-    config: "CONFIG_ID"
+    config: "CONFIG_ID" // Your Config ID from step 4
   })
 });
 ```
@@ -91,12 +84,12 @@ const openai = new OpenAI({
 
 ```py
 client = OpenAI(
-    api_key="OPENAI_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
+    api_key="OPENAI_API_KEY",
     base_url=PORTKEY_GATEWAY_URL,
     default_headers=createHeaders(
         provider="openai",
-        api_key="PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
-        config="CONFIG_ID"
+        api_key="PORTKEY_API_KEY",
+        config="CONFIG_ID" # Your Config ID from step 4
     )
 )
 ```
@@ -120,34 +113,11 @@ curl https://api.portkey.ai/v1/chat/completions \
   </Tab>
 </Tabs>
 
-For more, refer to the [Config documentation](/product/ai-gateway/configs).
+For more details, refer to the [Config documentation](/product/ai-gateway/configs).
 
-## Using AWS Bedrock Guardrails - Scenarios
+## Response handling
 
-After setting up your guardrails, there are different ways to use them depending on your security requirements:
-
-### Only Detect PII, Harmful Content, etc.
-
-To simply detect but not redact content:
-- Keep the `Redact PII` flag disabled when creating the guardrail on Portkey
-- If any filters are triggered, the response status code will be 246 (instead of 200)
-- The response will include a `hook_results` object with details for all checks
-
-### Redact PII and Detect Other Filters
-
-To automatically redact PII while still checking for other issues:
-- Enable the `Redact PII` flag when creating the guardrail on Portkey
-- If PII is detected, it will be automatically redacted and the status code will be 200
-- If other issues (like harmful content) are detected, the response code will be 246
-- The response will include a `hook_results` object with all check details
-- If PII was redacted, the results will have a flag named `transformed` set to `true`
-
-### Deny Requests with Policy Violations
-
-To completely block requests that violate your policies:
-- Enable the `Deny` option in the guardrails action tab
-- If any filters are detected, the request will fail with response status code 446
-- However, if only PII is detected and redaction is enabled, the request will still be processed (since the issue was automatically resolved)
+When using AWS Bedrock Guardrails through Portkey, the response will include details about any guardrail checks that were triggered. You can configure different behaviors based on your security requirements through the Portkey Guardrails UI.
 
 
 
