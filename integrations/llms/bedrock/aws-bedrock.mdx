@@ -738,6 +738,83 @@ For reference, see the following documentation:
 https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-prereq.html
 
 
+## Bedrock Guardrails
+
+You can use Bedrock guardrails directly in your chat completions requests to add content filtering and safety measures. Guardrails help ensure that model responses adhere to your specific safety and content policies.
+
+
+<Note>
+    We recommend using guardrails through the Portkey UI for easier management and configuration.
+    You can learn more about guardrails [here](/integrations/guardrails/bedrock-guardrails).
+</Note>
+
+### Using Guardrails in Chat Completions
+
+To enable guardrails, include the `guardrailConfig` parameter in your request:
+
+<Tabs>
+    <Tab title="NodeJS SDK">
+        ```js
+        const chatCompletion = await portkey.chat.completions.create({
+            messages: [{ role: 'user', content: 'Say this is a test' }],
+            model: 'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+            max_tokens: 250,
+            guardrailConfig: {
+                guardrailIdentifier: "your-guardrail-id",
+                guardrailVersion: "DRAFT", // or specific version number
+                trace: "enabled" // optional: "enabled" or "disabled"
+            }
+        });
+        ```
+    </Tab>
+    <Tab title="Python SDK">
+        ```python
+        completion = portkey.chat.completions.create(
+            messages=[{ "role": 'user', "content": 'Say this is a test' }],
+            model='us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+            max_tokens=250,
+            guardrail_config={  # Note: snake_case also supported
+                "guardrailIdentifier": "your-guardrail-id",
+                "guardrailVersion": "DRAFT",
+                "trace": "enabled"
+            }
+        )
+        ```
+    </Tab>
+    <Tab title="cURL">
+        ```sh
+        curl https://api.portkey.ai/v1/chat/completions \
+          -H "Content-Type: application/json" \
+          -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+          -H "x-portkey-provider: @your-bedrock-provider" \
+          -d '{
+            "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "max_tokens": 250,
+            "messages": [{"role": "user","content": "Say this is a test"}],
+            "guardrailConfig": {
+              "guardrailIdentifier": "your-guardrail-id",
+              "guardrailVersion": "DRAFT",
+              "trace": "enabled"
+            }
+          }'
+        ```
+    </Tab>
+</Tabs>
+
+### Guardrail Configuration Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `guardrailIdentifier` | string | Yes | The unique identifier of your Bedrock guardrail |
+| `guardrailVersion` | string | Yes | Version of the guardrail (`"DRAFT"` for the latest draft version, or a specific version number) |
+| `trace` | string | No | Controls trace generation (`"enabled"` or `"disabled"`) |
+
+<Note>
+Both `guardrailConfig` (camelCase) and `guardrail_config` (snake_case) parameter names are supported for compatibility.
+</Note>
+
+When a guardrail is triggered, the response will include a `guardrail_intervened` stop reason. You can access detailed trace information if tracing is enabled.
+
 ## Bedrock Converse API
 
 Portkey uses the [AWS Converse API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html) internally for making chat completions requests.
@@ -826,6 +903,12 @@ curl https://api.portkey.ai/v1/chat/completions \
   </Tabs>
 
 ---
+
+## Using AWS PrivateLink for Bedrock [Self Hosted Enterprise]
+
+Though using assumed role is in itself enough for enterprise security. You can additional configure AWS [PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/what-is-privatelink.html) for Bedrock to ensure that your requests are not traversed outside your VPC.
+- Create a private link between the VPC you've deployed Portkey and AWS Bedrock (the endpoint is in most cases `https://bedrock.{your_region}.amazonaws.com`).
+- When configuring your integration on portkey, simply configure the `custom host` option to point to your VPC endpoint for the private link.
 
 ## Supported Models
 <Card title="List of supported Amazon Bedrock model IDs" href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns" />

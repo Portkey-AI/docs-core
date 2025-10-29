@@ -1,0 +1,566 @@
+---
+title: "Unified LLM API with Automatic Failover & Error Handling"
+description: "Build a single API interface with automatic failover and unified error handling across OpenAI, Anthropic, and AWS Bedrock"
+---
+
+## What this guide covers
+
+This guide shows engineering teams how to replace multiple LLM integrations with one unified API. You'll learn to implement automatic failover, standardized error handling, and intelligent retry logic without custom code.
+
+
+## The problem with multiple LLM providers
+
+Engineering teams maintaining separate integrations for each LLM provider face several challenges.
+
+- **Different SDKs create complexity.** Each provider requires its own library, authentication method, and error handling logic. Your codebase becomes fragmented with provider-specific code.
+
+- **Manual retry logic is error-prone.** Teams write custom exponential backoff, track retry counts, and handle edge cases differently for each provider. This inconsistency leads to bugs.
+
+- **Provider outages affect availability.** When OpenAI experiences downtime, your application fails even though Anthropic might be fully operational. There's no automatic failover.
+
+- **Error responses vary wildly.** OpenAI returns 429 for rate limits while Bedrock might return ThrottlingException. Your error handling becomes a maze of conditionals.
+
+## How Portkey solves these problems
+
+Portkey acts as an intelligent gateway between your application and LLM providers.
+
+- **One SDK replaces many.** Use the same client and methods regardless of whether you're calling OpenAI, Anthropic, or Bedrock. The API signature remains consistent.
+
+- **Automatic retries handle transient failures.** Configure retry attempts and Portkey manages exponential backoff automatically. No custom retry loops needed.
+
+- **Instant failover maintains availability.** When one provider fails, requests automatically route to your backup providers in milliseconds. Your application stays online.
+
+- **Standardized errors simplify handling.** All providers return consistent error codes through Portkey's gateway. One error handler works for all providers.
+
+## Quick start: Your first unified request
+
+Let's start with a basic example that demonstrates the unified interface.
+
+### Step 1: Install the Portkey SDK
+
+<CodeGroup>
+```bash Node.js
+npm install portkey-ai
+```
+
+```bash Python
+pip install portkey-ai
+```
+</CodeGroup>
+
+### Step 2: Set up your AI Provider
+
+Navigate to the Portkey dashboard and add your first AI Provider. This securely stores your API credentials.
+
+<Steps>
+  <Step title="Go to AI Providers">
+    Click **AI Providers** in the sidebar, then **Add Provider**
+    <Frame>
+      <img src="/images/product/model-catalog/integrations-page.png" alt="AI Providers page" />
+    </Frame>
+  </Step>
+
+  <Step title="Select your service">
+    Choose OpenAI, Anthropic, or AWS Bedrock from the list
+    <Frame>
+      <img src="/images/product/model-catalog/integrations-page-opnai.png" alt="Select AI service" />
+    </Frame>
+  </Step>
+
+  <Step title="Add credentials">
+    Enter your API key or AWS credentials. Portkey encrypts and stores them securely.
+  </Step>
+
+  <Step title="Name your provider">
+    Give it a memorable slug like `@openai-prod` or `@anthropic-dev`. You'll use this slug in your code.
+  </Step>
+</Steps>
+
+<Card title="AI Provider Setup Guide" icon="key" href="/product/model-catalog/integrations">
+  Detailed instructions for setting up providers and managing credentials
+</Card>
+
+### Step 3: Make your first request
+
+With your provider configured, make requests using the unified API.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize with your Portkey API key
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY"
+)
+
+# Same interface for any provider
+response = portkey.chat.completions.create(
+    model="@openai-prod/gpt-4",  # Provider slug + model name
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript Node.js
+import Portkey from 'portkey-ai';
+
+// Initialize with your Portkey API key
+const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY"
+});
+
+// Same interface for any provider
+const response = await portkey.chat.completions.create({
+    model: "@openai-prod/gpt-4",  // Provider slug + model name
+    messages: [{ role: "user", content: "Hello!" }]
+});
+
+console.log(response.choices[0].message.content);
+```
+</CodeGroup>
+
+**Notice the model string format.** Portkey uses `@provider-slug/model-name` to specify both the provider and model. This keeps your code explicit about which provider serves each request.
+
+## Automatic failover between providers
+
+Failover is Portkey's most powerful feature for production applications. Configure multiple providers and Portkey automatically switches between them when failures occur.
+
+### Understanding failover strategy
+
+Failover works through a configuration object that defines your provider hierarchy and trigger conditions.
+
+```json
+{
+  "strategy": {
+    "mode": "fallback",
+    "on_status_codes": [429, 500, 502, 503, 504]
+  },
+  "targets": [
+    {
+      "provider": "@openai-prod",
+      "override_params": {"model": "gpt-4"}
+    },
+    {
+      "provider": "@anthropic-prod",
+      "override_params": {"model": "claude-3-opus-20240229"}
+    },
+    {
+      "provider": "@bedrock-prod",
+      "override_params": {"model": "anthropic.claude-3-sonnet"}
+    }
+  ]
+}
+```
+
+**The strategy defines behavior.** Set `mode` to "fallback" and specify which status codes trigger failover. Common triggers include rate limits (429) and server errors (500-504).
+
+**Targets execute in order.** Portkey tries OpenAI first. If it fails with a trigger status code, Portkey immediately tries Anthropic. If Anthropic fails, it moves to Bedrock.
+
+**Override params customize each target.** Since different providers use different model names, override_params lets you specify the correct model for each provider.
+
+### Implementing failover in code
+
+Save your configuration in Portkey's dashboard to get a config ID. Then reference it in your code.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    config="pc-failover-prod"  # Your saved config ID
+)
+
+# Request automatically fails over between providers
+response = portkey.chat.completions.create(
+    messages=[{"role": "user", "content": "Analyze this quarterly report..."}]
+)
+
+# You get a successful response regardless of which provider served it
+print(f"Response from: {response.provider}")
+print(response.choices[0].message.content)
+```
+
+```javascript Node.js
+const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY",
+    config: "pc-failover-prod"  // Your saved config ID
+});
+
+// Request automatically fails over between providers
+const response = await portkey.chat.completions.create({
+    messages: [{ role: "user", content: "Analyze this quarterly report..." }]
+});
+
+// You get a successful response regardless of which provider served it
+console.log(`Response from: ${response.provider}`);
+console.log(response.choices[0].message.content);
+```
+</CodeGroup>
+
+### Monitoring failover behavior
+
+Portkey's observability dashboard shows exactly what happens during failover. You can see which providers were attempted, why they failed, and which one ultimately succeeded.
+
+**Each attempt appears in the trace.** Failed requests show their status codes and error messages. The successful request shows response time and tokens used.
+
+<Card title="Tracing Guide" icon="route" href="/product/observability/traces">
+  Learn how to trace requests across multiple providers
+</Card>
+
+## Intelligent retry logic
+
+Retries handle temporary failures without failing over to another provider. Configure automatic retries with exponential backoff.
+
+### Configuring retry behavior
+
+Specify retry attempts and which status codes should trigger retries.
+
+```json
+{
+  "retry": {
+    "attempts": 5,
+    "on_status_codes": [429, 500, 502, 503, 504]
+  },
+  "provider": "@openai-prod"
+}
+```
+
+**Attempts control persistence.** Set between 1 and 5 attempts based on your latency tolerance. More attempts mean better reliability but potentially longer wait times.
+
+**Status codes determine triggers.** Rate limits (429) and server errors (500-504) are common retry triggers. Client errors (400-404) typically shouldn't trigger retries.
+
+### Exponential backoff timing
+
+Portkey automatically implements exponential backoff between retries. Each retry waits longer than the previous one.
+
+| Retry Attempt | Wait Time | Cumulative Time |
+|--------------|-----------|-----------------|
+| 1st retry | 1 second | 1 second |
+| 2nd retry | 2 seconds | 3 seconds |
+| 3rd retry | 4 seconds | 7 seconds |
+| 4th retry | 8 seconds | 15 seconds |
+| 5th retry | 16 seconds | 31 seconds |
+
+**Backoff prevents thundering herd.** By waiting progressively longer, retries avoid overwhelming a recovering service.
+
+### Combining retries with failover
+
+Use both strategies together for maximum reliability. Retry transient failures on the primary provider, then failover if retries exhaust.
+
+```json
+{
+  "strategy": {
+    "mode": "fallback"
+  },
+  "retry": {
+    "attempts": 3
+  },
+  "targets": [
+    {"provider": "@openai-prod"},
+    {"provider": "@anthropic-prod"}
+  ]
+}
+```
+
+**Each target gets its own retries.** Portkey retries OpenAI up to 3 times. If all fail, it moves to Anthropic and retries there up to 3 times.
+
+## Unified error handling
+
+Handle errors consistently regardless of which provider generated them.
+
+### Standard error codes
+
+All providers return these standardized codes for most errors.
+
+| Code | Description | Recommended Action |
+|------|-------------|-------------------|
+| 400 | Bad Request | Fix request parameters |
+| 401 | Unauthorized | Check API credentials |
+| 403 | Forbidden | Verify permissions |
+| 408 | Request Timeout | Retry with backoff |
+| 412 | Budget Exhausted | Increase budget limits |
+| 429 | Rate Limited | Retry with backoff or failover |
+| 446 | Guardrail Failed | Review content filters |
+| 500-504 | Server Error | Retry or failover |
+
+
+### Implementing error handlers
+
+Write one [config](/product/ai-gateway/configs) handler that works for all providers.
+
+For example, if you want to implement fallback if you get rate limited on one particular Provider. You can simply attach a config on your request like this:
+
+
+```json
+{
+  "strategy": {
+    "mode": "fallback"
+  },
+  "on_status_codes":[412],
+  "targets": [
+    {
+      "provider": "@openai-provider",
+    },
+    {
+      "provider": "@anthripic-provider",
+    }
+  ]
+}
+```
+
+You can pass this config in your request like this:
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***" // Supports a string config id or a config object
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***" # Supports a string config id or a config object
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+
+```js
+const openai = new OpenAI({
+  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "openai",
+    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+    config: "CONFIG_ID" // Fetched from the UI
+  })
+});
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```python
+client = OpenAI(
+    api_key="OPENAI_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+        config="CONFIG_ID"
+    )
+)
+```
+  </Tab>
+<Tab title="cURL">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [{
+        "role": "user",
+        "content": "Hello!"
+      }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+
+
+
+**One handler for all providers.** This rate limit handler works whether the request went to OpenAI, Anthropic, or Bedrock.
+
+## Streaming responses
+
+Stream responses consistently across all providers. The streaming interface remains the same regardless of backend.
+
+<CodeGroup>
+```python Python
+# Streaming works identically for all providers
+stream = portkey.chat.completions.create(
+    model="@openai-prod/gpt-4",
+    messages=[{"role": "user", "content": "Write a detailed analysis..."}],
+    stream=True
+)
+
+# Process chunks as they arrive
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)
+```
+
+```javascript Node.js
+// Streaming works identically for all providers
+const stream = await portkey.chat.completions.create({
+    model: "@openai-prod/gpt-4",
+    messages: [{ role: "user", content: "Write a detailed analysis..." }],
+    stream: true
+});
+
+// Process chunks as they arrive
+for await (const chunk of stream) {
+    if (chunk.choices[0]?.delta?.content) {
+        process.stdout.write(chunk.choices[0].delta.content);
+    }
+}
+```
+</CodeGroup>
+
+**Streaming reduces perceived latency.** Users see output immediately instead of waiting for the complete response. This improves user experience for long generations.
+
+**Failover works with streaming.** If a stream fails mid-generation, Portkey can failover to another provider and restart the stream automatically.
+
+## Batch processing for scale
+
+Process thousands of requests efficiently using Portkey's unified batch API. This works across providers, even those without native batch support.
+
+### Understanding batch modes
+
+Portkey offers two batch processing modes to fit different needs.
+
+**Provider batch mode uses native endpoints.** When available, Portkey uses the provider's batch API (like OpenAI's batch endpoint). This typically offers discounted pricing but has a 24-hour completion window.
+
+**Portkey batch mode works universally.** For immediate processing or providers without batch support, Portkey manages batching at the gateway level. Requests process in groups of 25 with 5-second intervals.
+
+<Card title="Batch Processing Guide" icon="layer-group" href="/product/ai-gateway/batches">
+  Complete documentation for batch inference at scale
+</Card>
+
+
+## Load balancing across keys
+
+Distribute requests across multiple API keys or providers to maximize throughput and avoid rate limits.
+
+### Configuring load distribution
+
+Set weights to control traffic distribution between targets.
+
+```json
+{
+  "strategy": {
+    "mode": "loadbalance"
+  },
+  "targets": [
+    {
+      "provider": "@openai-prod-1",
+      "weight": 0.5
+    },
+    {
+      "provider": "@openai-prod-2",
+      "weight": 0.3
+    },
+    {
+      "provider": "@anthropic-prod",
+      "weight": 0.2
+    }
+  ]
+}
+```
+
+**Weights determine probability.** A weight of 0.5 means 50% of requests go to that target. Weights are normalized automatically, so they don't need to sum to 1.0.
+
+**Multiple keys prevent rate limits.** By spreading load across multiple OpenAI keys, you effectively multiply your rate limit. Three keys with 10,000 RPM each give you 30,000 RPM total.
+
+### Dynamic weight adjustment
+
+Adjust weights without changing code by updating the config in Portkey's dashboard.
+
+**Gradually migrate providers.** Start with 90% OpenAI and 10% Anthropic. Gradually shift traffic as you validate the new provider.
+
+**Handle provider issues.** If one provider experiences degraded performance, reduce its weight to minimize impact while maintaining some traffic for monitoring.
+
+## Monitoring and observability
+
+Portkey provides comprehensive observability for all your LLM requests. Monitor performance, costs, and errors across all providers from a single dashboard.
+
+<Frame>
+  <img src="/images/product/dashboard.png" alt="Unified observability dashboard" />
+</Frame>
+
+**Track key metrics in real-time.** Monitor request volumes, success rates, latency percentiles, and token usage. Compare performance across providers to optimize routing.
+
+**Analyze costs across providers.** See exactly how much each provider costs and identify optimization opportunities. Set budget alerts to prevent overspending.
+
+**Debug issues with detailed logs.** Every request is logged with complete details including inputs, outputs, tokens, and latency. Filter logs by provider, status, or custom metadata.
+
+<Card title="Analytics Dashboard" icon="chart-line" href="/product/observability/analytics">
+  Deep dive into analytics and monitoring capabilities
+</Card>
+
+## Dynamic configuration updates
+
+Update your routing logic without touching code. Modify configs through Portkey's dashboard and changes apply immediately.
+
+### When to update configs
+
+- **Add new providers.** When you get access to a new model or provider, add it to your fallback chain without deployment.
+
+- **Adjust retry logic.** If you're seeing more transient errors, increase retry attempts. If latency is critical, reduce them.
+
+- **Shift traffic gradually.** Use load balancing to gradually migrate from one provider to another while monitoring performance.
+
+- **Respond to incidents.** If a provider experiences an outage, temporarily remove it from rotation or reduce its weight.
+
+### Config versioning
+
+Portkey maintains version history for all configs. You can rollback to previous versions if issues arise.
+
+**Test changes safely.** Create a new config version and test with a small percentage of traffic before full rollout.
+
+**Audit changes.** Every config change is logged with timestamp and author for compliance and debugging.
+
+## What you've built
+
+By implementing this guide, your engineering team now has:
+
+- **Single API interface.** One SDK and consistent methods for all LLM providers. No more provider-specific code scattered through your application.
+
+- **Automatic failover.** When providers fail, requests seamlessly route to backups. Your application stays online even during provider outages.
+
+- **Unified error handling.** Consistent error codes across all providers. One error handler works everywhere.
+
+- **Intelligent retries.** Automatic exponential backoff for transient failures. No custom retry loops needed.
+
+- **Production observability.** Complete visibility into requests, costs, and performance across all providers.
+
+- **Dynamic configuration.** Update routing logic, add providers, or adjust limits without code changes or deployments.
+
+## Next steps
+
+Explore these advanced capabilities to further enhance your LLM infrastructure.
+
+<CardGroup cols={2}>
+  <Card title="Conditional Routing" icon="route" href="/product/ai-gateway/conditional-routing">
+    Route requests based on metadata, user tiers, or custom rules
+  </Card>
+
+
+  <Card title="Guardrails" icon="shield" href="/product/guardrails">
+    Add content filters and safety checks to all requests
+  </Card>
+
+</CardGroup>
+
+## Getting help
+
+Need assistance implementing this guide? We're here to help.
+
+**Enterprise support.** Contact enterprise@portkey.ai for dedicated support and onboarding assistance.
+
+**Community.** Join our [Discord community](https://discord.gg/portkey) to discuss best practices with other engineers.
+
+**Documentation.** Find detailed API references and guides at [docs.portkey.ai](https://docs.portkey.ai).

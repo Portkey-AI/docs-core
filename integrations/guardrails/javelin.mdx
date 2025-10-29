@@ -1,0 +1,361 @@
+---
+title: "Javelin"
+description: "Javelin provides comprehensive AI security guardrails including Trust & Safety, Prompt Injection Detection, and Language Detection for enterprise AI agents & applications."
+---
+
+[Javelin](https://getjavelin.com) is a cutting-edge AI production platform designed for LLM-forward enterprises, providing centralized guardrails and distributed team controls. It offers comprehensive security features including trust & safety filtering, prompt injection detection, and language detection.
+
+To get started with Javelin, visit their documentation:
+<Card title="Get Started with Javelin" href="https://docs.getjavelin.io/"/>
+
+## Using Javelin with Portkey
+
+### 1. Add Javelin Credentials to Portkey
+
+* Navigate to the `Plugins` page under `Sidebar`
+* Click on the edit button for the Javelin integration
+* Add your Javelin API key, domain information, and application name (refer to [Javelin's documentation](https://docs.getjavelin.io/) for how to obtain these credentials)
+* The application name is **required** as it determines which guardrails policy will be applied
+
+<Note>
+Javelin's unified guardrails approach automatically applies all enabled guardrails configured in your Javelin application policy. You manage which guardrails are active (Trust & Safety, Prompt Injection Detection, Language Detection, etc.) and their thresholds directly in the Javelin platform.
+</Note>
+
+### 2. Add Javelin's Guardrail Check
+
+* Navigate to the `Guardrails` page and click the `Create` button
+* Search for "Javelin Guardrails" and click `Add`
+* Set any actions you want on your check, and create the Guardrail!
+
+<Note>
+    Guardrail Actions allow you to orchestrate your guardrails logic. You can learn about them [here](/product/guardrails#there-are-6-types-of-guardrail-actions)
+</Note>
+
+| Check Name | Description | Parameters | Supported Hooks |
+|------------|-------------|------------|-----------------|
+| Javelin Guardrails | Auto-applies all enabled guardrails in your Javelin application policy including Trust & Safety, Prompt Injection Detection, Language Detection, and more | None - configured via Javelin policy | `beforeRequestHook`, `afterRequestHook` |
+
+**Guardrails Applied (configured in Javelin platform):**
+- **Trust & Safety**: Detect harmful content across categories including violence, weapons, hate speech, crime, sexual content, and profanity
+- **Prompt Injection Detection**: Detect prompt injection attempts and jailbreak techniques to prevent model manipulation
+- **Language Detection**: Detect the language of input text with confidence scores and enforce allowed languages
+- **Custom Guardrails**: Any additional guardrails configured in your Javelin application policy
+
+### 3. Add Guardrail ID to a Config and Make Your Request
+
+* When you save a Guardrail, you'll get an associated Guardrail ID - add this ID to the `input_guardrails` or `output_guardrails` params in your Portkey Config
+* Create these Configs in Portkey UI, save them, and get an associated Config ID to attach to your requests. [More here](/product/ai-gateway/configs).
+
+Here's an example config:
+
+```json
+{
+  "input_guardrails": ["javelin-guardrails-id-xxx"],
+  "output_guardrails": ["javelin-guardrails-id-xxx"]
+}
+```
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***" // Supports a string config id or a config object
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***" # Supports a string config id or a config object
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+
+```js
+const openai = new OpenAI({
+  apiKey: 'OPENAI_API_KEY',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    config: "CONFIG_ID"
+  })
+});
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```py
+client = OpenAI(
+    api_key="OPENAI_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
+        config="CONFIG_ID"
+    )
+)
+```
+  </Tab>
+<Tab title="cURL">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [{
+        "role": "user",
+        "content": "Hello!"
+      }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+For more, refer to the [Config documentation](/product/ai-gateway/configs).
+
+Your requests are now protected by Javelin's AI security platform and you can see the results and any actions you take directly on Portkey logs! More detailed logs for your requests will also be available on your Javelin dashboard.
+
+---
+
+## Using Raw Guardrails with Javelin
+
+You can define Javelin guardrails directly in your code for more programmatic control without using the Portkey UI. This "raw guardrails" approach lets you dynamically configure guardrails based on your application's needs.
+
+<Note>
+    We recommend that you create guardrails using the Portkey UI whenever possible. Raw guardrails are more complex and require you to manage credentials and configurations directly in your code.
+</Note>
+
+<Accordion title="Key Configuration Properties">
+
+### Unified Javelin Guardrails
+
+Javelin now provides a unified guardrails endpoint that automatically applies all enabled guardrails in your application policy. This simplifies configuration and ensures all your security checks are consistently applied.
+
+| Guardrail Name | ID | Description | Parameters |
+| -------------- | -- | ----------- | ---------- |
+| Javelin Guardrails | `javelin.guardrails` | Auto-applies all enabled guardrails in your Javelin application policy (Trust & Safety, Prompt Injection Detection, Language Detection, etc.) | None - configured via Javelin policy |
+
+### Implementation Properties
+
+- **`type`**: Always set to `"guardrail"` for guardrail checks
+- **`id`**: A unique identifier for your guardrail
+- **`credentials`**: Authentication details for Javelin
+  - `apiKey`: Your Javelin API key
+  - `domain`: Your Javelin backend URL (e.g., `api-dev.javelin.live`)
+  - `application`: **Required** - Application name for policy-specific guardrails
+- **`checks`**: Array of guardrail checks to run
+  - `id`: Use `javelin.guardrails` for the unified endpoint
+  - `parameters`: Not needed - all configuration is managed in Javelin policy
+- **`deny`**: Whether to block the request if guardrail fails (true/false)
+- **`async`**: Whether to run guardrail asynchronously (true/false)
+- **`on_success`/`on_fail`**: Optional callbacks for success/failure scenarios
+  - `feedback`: Data for logging and analytics
+  - `weight`: Importance of this feedback (0-1)
+  - `value`: Feedback score (-10 to 10)
+
+</Accordion>
+
+### Unified Guardrails Example (Recommended)
+
+```json
+{
+  "before_request_hooks": [
+    {
+      "type": "guardrail",
+      "id": "javelin-unified-guardrails",
+      "credentials": {
+        "apiKey": "your_javelin_api_key",
+        "domain": "api-dev.javelin.live",
+        "application": "my-app"
+      },
+      "checks": [
+        {
+          "id": "javelin.guardrails",
+          "parameters": {}
+        }
+      ],
+      "deny": true,
+      "async": false,
+      "on_success": {
+        "feedback": {
+          "weight": 1,
+          "value": 1,
+          "metadata": {
+            "user": "user_xyz",
+            "check_type": "javelin_unified"
+          }
+        }
+      },
+      "on_fail": {
+        "feedback": {
+          "weight": 1,
+          "value": -1,
+          "metadata": {
+            "user": "user_xyz",
+            "check_type": "javelin_unified"
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+### Multiple Guardrails Configuration Example
+
+You can apply Javelin guardrails to both inputs and outputs:
+
+```json
+{
+  "before_request_hooks": [
+    {
+      "type": "guardrail",
+      "id": "javelin-input-guardrails",
+      "credentials": {
+        "apiKey": "your_javelin_api_key",
+        "domain": "api-dev.javelin.live",
+        "application": "my-app"
+      },
+      "checks": [
+        {
+          "id": "javelin.guardrails"
+        }
+      ],
+      "deny": true,
+      "async": false
+    }
+  ],
+  "after_request_hooks": [
+    {
+      "type": "guardrail",
+      "id": "javelin-output-guardrails",
+      "credentials": {
+        "apiKey": "your_javelin_api_key",
+        "domain": "api-dev.javelin.live",
+        "application": "my-app"
+      },
+      "checks": [
+        {
+          "id": "javelin.guardrails"
+        }
+      ],
+      "deny": true,
+      "async": false
+    }
+  ]
+}
+```
+
+<Note>
+When using raw guardrails, you must provide valid credentials for the Javelin service directly in your config. Make sure to handle these credentials securely and consider using environment variables or secrets management.
+
+The `application` field is **required** as it determines which guardrails policy from your Javelin platform will be applied to your requests.
+</Note>
+
+## How Javelin Unified Guardrails Work
+
+The unified guardrails approach offers several advantages:
+
+### Centralized Policy Management
+- Configure all guardrail rules, thresholds, and behaviors in the Javelin platform
+- Changes to your security policy are instantly reflected across all applications
+- No need to update code or configurations when adjusting security parameters
+
+### Comprehensive Protection
+When you use Javelin guardrails, the system automatically checks for:
+
+1. **Trust & Safety**: Content filtering across violence, weapons, hate speech, crime, sexual content, and profanity
+2. **Prompt Injection Detection**: Protection against manipulation attempts and jailbreaks
+3. **Language Detection**: Language compliance and allowlisting
+4. **Custom Policies**: Any additional guardrails configured in your Javelin application
+
+### Response Structure
+The guardrail returns detailed assessment information including:
+- Which guardrails were triggered
+- Category scores for each assessment
+- Specific violations detected
+- Reject prompts for failed checks
+
+## Portkey Orchestration
+
+When Javelin guardrails detect violations, Portkey can orchestrate your request based on guardrail actions:
+
+### With `deny: false` (Default)
+- Request continues even if guardrails fail
+- Response includes detailed violation information
+- Status code: 246 (non-blocking failure)
+- Useful for logging and monitoring
+
+### With `deny: true`
+- Request is blocked if guardrails fail
+- Error response is returned immediately
+- Status code: 446 (blocking failure)
+- Useful for critical security checks
+
+### Example with Fallback Strategy
+
+```json
+{
+  "strategy": {
+    "mode": "fallback",
+    "on_status_codes": [246, 446]
+  },
+  "targets": [
+    {
+      "provider": "@openai-key-xxx",
+      "override_params": {
+        "model": "gpt-4"
+      }
+    },
+    {
+      "provider": "@anthropic-key-xxx",
+      "override_params": {
+        "model": "claude-3-sonnet"
+      }
+    }
+  ],
+  "input_guardrails": ["javelin-guardrails-id"]
+}
+```
+
+This configuration will:
+1. Check inputs with Javelin guardrails
+2. If violations are detected, try the fallback provider
+3. Log all guardrail results for monitoring
+
+## Key Features
+
+### Trust & Safety
+Javelin's Trust & Safety processor provides comprehensive content filtering across multiple categories:
+- **Violence & Weapons**: Detect content related to violence, weapons, or harmful activities
+- **Hate Speech**: Identify discriminatory language and hate speech
+- **Crime**: Flag content related to criminal activities
+- **Sexual Content**: Detect inappropriate sexual content
+- **Profanity**: Filter profane language and offensive content
+
+### Prompt Injection Detection
+Protect your AI agents & applications from sophisticated manipulation attempts:
+- **Injection Pattern Recognition**: Detect known prompt injection techniques
+- **Jailbreak Detection**: Identify attempts to bypass model safety measures
+- **Malicious Command Filtering**: Block attempts to execute unintended commands
+- **Real-time Analysis**: Process inputs in real-time with configurable thresholds
+
+### Language Detection
+Ensure content compliance with language policies:
+- **Multi-language Support**: Detect content in over 100 languages
+- **Confidence Scoring**: Configurable confidence thresholds for accurate detection
+- **Language Allowlisting**: Restrict content to specific languages
+- **Cultural Compliance**: Maintain cultural and regional content standards
+
+## Get Support
+
+If you face any issues with the Javelin integration, please reach out to Javelin support through their [Get in Touch page](https://www.getjavelin.com/get-in-touch).

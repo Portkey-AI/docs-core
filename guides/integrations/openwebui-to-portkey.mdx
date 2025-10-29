@@ -1,0 +1,421 @@
+---
+title: "Sync Open WebUI Feedback → Portkey"
+description: "How to export thumbs-up/down from Open WebUI and ingest into Portkey using a one-file Python or Node script."
+---
+
+<Info>
+  Run this playbook on-demand to move Open WebUI feedback into the Portkey feedback API with zero infrastructure or product changes.
+</Info>
+
+## Why this cookbook
+Portkey is your control plane for AI observability, governance, and feedback. Open WebUI already captures thumbs-up/thumbs-down signals at the message level. When you need a fast, enterprise-friendly way to push those ratings into the [Portkey feedback API](../../api-reference/admin-api/data-plane/feedback/create-feedback), this guide hands you a no-infra approach. For additional automation options, see the [Open WebUI integration overview](../../integrations/libraries/openwebui).
+
+## What you’ll build (at a glance)
+- **One-file script**: Choose Python or Node to handle the entire fetch-map-post flow.
+- **Manual cadence**: Trigger the sync whenever leadership wants a fresh pulse.
+- **Governed ingestion**: Enforce consistent `trace_id`, `value`, `weight`, and `metadata` across every payload.
+- **Zero changes to Open WebUI**: Leverage existing export endpoints—no patches, no servers.
+
+## Architecture overview
+```text
+Open WebUI  ──(GET feedback)──► Your local script ──(POST /feedback)──► Portkey
+                 admin/user API         map +1/–1, add metadata            store & analyze
+```
+
+## Data mapping for the Portkey feedback API
+| Portkey field | Source in Open WebUI | Notes |
+| --- | --- | --- |
+| `trace_id` | `"{chat_id}:{message_id}"` | Composite identifier that stays unique per message. |
+| `value` | `data.rating` | Map 👍 to `+1`, 👎 to `-1`. Other ratings are ignored. |
+| `weight` | Constant `1` | Keep scoring aligned for executive dashboards. |
+| `metadata` | `data ∪ meta` (plus extras) | Merge native metadata and append `snapshot_chat_id`, `message_index`, `user_id`, etc. |
+
+## Prerequisites
+- **Open WebUI access**: Base URL plus a token with permission to read feedback.
+- **Portkey workspace**: API key for the feedback API and optional custom base URL if you self-host Portkey.
+
+### Environment variables
+```bash
+export OPENWEBUI_BASE_URL="https://openwebui.example.com"
+export OPENWEBUI_TOKEN="OWUI_ADMIN_OR_USER_TOKEN"
+export PORTKEY_API_KEY="pk_live_xxx"
+# Optional for self-hosted control planes
+# export PORTKEY_BASE_URL="https://cp.your-domain.com/v1"
+```
+
+<Note>
+  On Windows PowerShell, set variables with:<br/>
+  ```powershell
+  $env:OPENWEBUI_BASE_URL="https://openwebui.example.com"
+  $env:OPENWEBUI_TOKEN="OWUI_ADMIN_OR_USER_TOKEN"
+  $env:PORTKEY_API_KEY="pk_live_xxx"
+  # Optional: $env:PORTKEY_BASE_URL="https://cp.your-domain.com/v1"
+  ```
+</Note>
+
+## Quick start: manual sync without infra
+<Tabs>
+  <Tab title="Python">
+    ```bash
+    pip install requests
+    # Save the script from the Python section as owui_to_portkey.py
+    python3 owui_to_portkey.py --since $(date -d '2 hours ago' +%s 2>/dev/null || python - <<'PY'
+import time
+print(int(time.time() - 7200))
+PY
+)
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ```bash
+    npm install node-fetch
+    # Save the script from the Node section as owui_to_portkey.mjs
+    node owui_to_portkey.mjs --since=$(date -d '2 hours ago' +%s 2>/dev/null || node -e "console.log(Math.floor(Date.now() / 1000) - 7200)")
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  Dry-run first to review the payloads before sending them into the Portkey feedback API.
+</Tip>
+
+## Single-file scripts (copy-paste ready)
+
+<Tabs>
+<Tab title="Python: `owui_to_portkey.py`">
+
+```python
+#!/usr/bin/env python3
+"""Manual sync from Open WebUI to Portkey feedback API."""
+
+import argparse
+import json
+import os
+import sys
+from typing import Any, Dict, Iterable, List, Optional
+
+import requests
+
+OW_BASE = os.getenv("OPENWEBUI_BASE_URL", "").rstrip("/")
+OW_TOKEN = os.getenv("OPENWEBUI_TOKEN", "")
+PK_KEY = os.getenv("PORTKEY_API_KEY", "")
+PK_BASE = os.getenv("PORTKEY_BASE_URL", "https://api.portkey.ai/v1").rstrip("/")
+PK_URL = f"{PK_BASE}/feedback"
+
+
+def die(message: str) -> None:
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+def fetch_feedbacks(admin: bool = True) -> List[Dict[str, Any]]:
+    if not OW_BASE or not OW_TOKEN:
+        die("Missing OPENWEBUI_BASE_URL or OPENWEBUI_TOKEN")
+
+    path = "/api/v1/evaluations/feedbacks/all/export" if admin else "/api/v1/evaluations/feedbacks/user"
+    url = f"{OW_BASE}{path}"
+    headers = {"Authorization": f"Bearer {OW_TOKEN}", "Content-Type": "application/json"}
+
+    response = requests.get(url, headers=headers, timeout=30)
+    if response.status_code == 401:
+        cookie_headers = {"Cookie": f"token={OW_TOKEN}", "Content-Type": "application/json"}
+        response = requests.get(url, headers=cookie_headers, timeout=30)
+
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, list):
+        die("Unexpected Open WebUI response format")
+    return payload
+
+
+def within_since(item: Dict[str, Any], since_epoch: Optional[int]) -> bool:
+    if not since_epoch:
+        return True
+    timestamp = int(item.get("updated_at") or item.get("created_at") or 0)
+    return timestamp >= since_epoch
+
+
+def map_item(feedback: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    data = feedback.get("data") or {}
+    meta = feedback.get("meta") or {}
+
+    try:
+        rating = int(data.get("rating"))
+    except (TypeError, ValueError):
+        return None
+
+    if rating not in (1, -1):
+        return None
+
+    chat_id = meta.get("chat_id") or "unknown_chat"
+    message_id = meta.get("message_id") or feedback.get("id") or "unknown_msg"
+    trace_id = f"{chat_id}:{message_id}"
+
+    metadata: Dict[str, Any] = {**data, **meta}
+
+    snapshot_chat = (feedback.get("snapshot") or {}).get("chat")
+    if isinstance(snapshot_chat, dict) and snapshot_chat.get("id"):
+        metadata["snapshot_chat_id"] = snapshot_chat["id"]
+
+    for key in ("message_index", "user_id", "version"):
+        if key in feedback and feedback[key] is not None:
+            metadata[key] = feedback[key]
+
+    return {"trace_id": trace_id, "value": rating, "weight": 1, "metadata": metadata}
+
+
+def post_to_portkey(item: Dict[str, Any]) -> None:
+    if not PK_KEY:
+        die("Missing PORTKEY_API_KEY")
+
+    response = requests.post(
+        PK_URL,
+        headers={"x-portkey-api-key": PK_KEY, "Content-Type": "application/json"},
+        json=item,
+        timeout=30,
+    )
+
+    if not response.ok:
+        print(f"[Portkey] {response.status_code} {response.text}", file=sys.stderr)
+    else:
+        print(f"[Portkey] OK {response.json()}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Sync Open WebUI feedback to Portkey")
+    parser.add_argument("--user-scope", action="store_true", help="Use per-user endpoint")
+    parser.add_argument("--since", type=int, help="Only sync items updated_at >= EPOCH_SECONDS")
+    parser.add_argument("--dry-run", action="store_true", help="Print mapped payloads only")
+    args = parser.parse_args()
+
+    feedbacks = fetch_feedbacks(admin=not args.user_scope)
+    filtered = [item for item in feedbacks if within_since(item, args.since)]
+    mapped = [mapped for item in filtered if (mapped := map_item(item))]
+
+    print(f"Fetched {len(feedbacks)}; {len(filtered)} within --since; {len(mapped)} mapped 👍/👎.")
+
+    if args.dry_run:
+        print(json.dumps(mapped, indent=2))
+        return
+
+    for payload in mapped:
+        post_to_portkey(payload)
+
+
+if __name__ == "__main__":
+    main()
+```
+</Tab>
+<Tab title="Node.js: `owui_to_portkey.mjs`">
+
+```javascript
+#!/usr/bin/env node
+import fetch from "node-fetch";
+
+const OW_BASE = (process.env.OPENWEBUI_BASE_URL || "").replace(/\/+$/, "");
+const OW_TOKEN = process.env.OPENWEBUI_TOKEN || "";
+const PK_KEY = process.env.PORTKEY_API_KEY || "";
+const PK_BASE = (process.env.PORTKEY_BASE_URL || "https://api.portkey.ai/v1").replace(/\/+$/, "");
+const PK_URL = `${PK_BASE}/feedback`;
+
+const args = process.argv.slice(2);
+const since = (() => {
+  const sinceArg = args.find((value) => value.startsWith("--since="));
+  return sinceArg ? parseInt(sinceArg.split("=")[1], 10) : null;
+})();
+const userScope = args.includes("--user-scope");
+const dryRun = args.includes("--dry-run");
+
+if (!OW_BASE || !OW_TOKEN) {
+  console.error("Missing OPENWEBUI_BASE_URL or OPENWEBUI_TOKEN");
+  process.exit(1);
+}
+
+if (!PK_KEY && !dryRun) {
+  console.error("Missing PORTKEY_API_KEY");
+  process.exit(1);
+}
+
+const endpoints = {
+  admin: "/api/v1/evaluations/feedbacks/all/export",
+  user: "/api/v1/evaluations/feedbacks/user",
+};
+
+function withinSince(item, threshold) {
+  if (!threshold) return true;
+  const timestamp = Number(item?.updated_at || item?.created_at || 0);
+  return timestamp >= threshold;
+}
+
+function mapItem(feedback) {
+  const data = feedback?.data || {};
+  const meta = feedback?.meta || {};
+  const rating = Number(data?.rating);
+  if (rating !== 1 && rating !== -1) return null;
+
+  const chatId = meta?.chat_id || "unknown_chat";
+  const messageId = meta?.message_id || feedback?.id || "unknown_msg";
+  const trace_id = `${chatId}:${messageId}`;
+
+  const metadata = { ...data, ...meta };
+  const snapshotChat = feedback?.snapshot?.chat;
+  if (snapshotChat?.id) {
+    metadata.snapshot_chat_id = snapshotChat.id;
+  }
+  ["message_index", "user_id", "version"].forEach((key) => {
+    if (feedback?.[key] !== undefined && feedback[key] !== null) {
+      metadata[key] = feedback[key];
+    }
+  });
+
+  return { trace_id, value: rating, weight: 1, metadata };
+}
+
+async function fetchFeedbacks() {
+  const path = userScope ? endpoints.user : endpoints.admin;
+  const url = `${OW_BASE}${path}`;
+
+  let response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${OW_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (response.status === 401) {
+    response = await fetch(url, {
+      headers: {
+        Cookie: `token=${OW_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    });
+  }
+
+  if (!response.ok) {
+    throw new Error(`Open WebUI fetch failed: ${response.status} ${await response.text()}`);
+  }
+
+  const payload = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error("Unexpected Open WebUI response format");
+  }
+  return payload;
+}
+
+async function postToPortkey(item) {
+  const response = await fetch(PK_URL, {
+    method: "POST",
+    headers: {
+      "x-portkey-api-key": PK_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(item),
+  });
+
+  if (!response.ok) {
+    console.error("Portkey error:", response.status, await response.text());
+  } else {
+    console.log("Portkey ok:", await response.json());
+  }
+}
+
+(async () => {
+  const feedbacks = await fetchFeedbacks();
+  const filtered = feedbacks.filter((item) => withinSince(item, since));
+  const mapped = filtered.map(mapItem).filter(Boolean);
+
+  console.log(
+    `Fetched ${feedbacks.length}; ${mapped.length} mapped${since ? ` (since ${since})` : ""}.`
+  );
+
+  if (dryRun) {
+    console.log(JSON.stringify(mapped, null, 2));
+    return;
+  }
+
+  for (const payload of mapped) {
+    await postToPortkey(payload);
+  }
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+</Tab>
+</Tabs>
+
+## How to run (dry-run to production)
+<Steps>
+  <Step title="Dry-run first">
+    Preview mapped payloads before ingesting them into Portkey.
+    ```bash
+    python3 owui_to_portkey.py --dry-run
+    node owui_to_portkey.mjs --dry-run
+    ```
+  </Step>
+  <Step title="Filter by timeframe">
+    Limit ingestion to recent ratings by passing a Unix epoch.
+    ```bash
+    # Linux
+    python3 owui_to_portkey.py --since $(date -d '2 hours ago' +%s)
+    node owui_to_portkey.mjs --since=$(date -d '2 hours ago' +%s)
+
+    # macOS
+    python3 owui_to_portkey.py --since $(date -v-2H +%s)
+    node owui_to_portkey.mjs --since=$(date -v-2H +%s)
+    ```
+  </Step>
+  <Step title="Ship to Portkey feedback API">
+    Remove `--dry-run` to push ratings into Portkey whenever executives need updated insights.
+    ```bash
+    python3 owui_to_portkey.py
+    node owui_to_portkey.mjs
+    ```
+  </Step>
+  <Step title="Switch to user scope when needed">
+    If your token is limited to personal feedback, add `--user-scope`. The mapping logic stays the same.
+    ```bash
+    python3 owui_to_portkey.py --user-scope --since $(date -d '1 hour ago' +%s 2>/dev/null || python - <<'PY'
+import time
+print(int(time.time() - 3600))
+PY
+)
+    node owui_to_portkey.mjs --user-scope --since=$(date -d '1 hour ago' +%s 2>/dev/null || node -e "console.log(Math.floor(Date.now() / 1000) - 3600)")
+    ```
+  </Step>
+</Steps>
+
+## Security & guardrails
+- **Least privilege**: Issue read-only Open WebUI tokens and rotate them regularly.
+- **Secret hygiene**: Set keys via environment variables—never commit them into source control.
+- **Right-sized metadata**: The scripts include light snapshot details (`snapshot_chat_id`). Trim fields if your policies require tighter scoping.
+- **Idempotent reruns**: The `--since` filter keeps repeated executions from flooding Portkey with duplicates.
+
+## Troubleshooting
+<AccordionGroup>
+<Accordion title="401 from Open WebUI">
+The scripts automatically retry with `Cookie: token=...`—validate the token scope if issues persist.
+</Accordion>
+<Accordion title="Empty exports">
+Confirm that ratings exist and that your Open WebUI user has evaluation access.
+</Accordion>
+<Accordion title="Portkey 4xx/5xx">
+Double-check `PORTKEY_API_KEY` and verify `trace_id`, `value`, `weight`, and `metadata` formats.
+</Accordion>
+<Accordion title="High volume">
+Add additional filters (for example by `model_id` or `user_id`) before posting to Portkey.
+</Accordion>
+</AccordionGroup>
+
+## FAQ
+<AccordionGroup>
+<Accordion title="Can I expand scoring later?">
+Yes. Portkey accepts `value` ranges from `-10` to `10`. Adjust the script’s mapping once you adopt richer scales.
+</Accordion>
+<Accordion title="Can I attach more metadata?">
+Absolutely. Append any key/value pairs to `metadata` before the payload posts to Portkey.
+</Accordion>
+<Accordion title="What if I want real-time sync?">
+This cookbook is optimized for on-demand runs. Contact the Portkey team for the managed connector when you’re ready for fully automated synchronization.
+</Accordion>
+</AccordionGroup>

@@ -5,208 +5,737 @@ description: "Use Portkey with Autogen to take your AI Agents to production"
 
 ## Getting Started
 
-### 1\. Install the required packages:
+### 1\. Install the required packages
 
 ```sh
-pip install -qU pyautogen portkey-ai
+pip install -U "autogen-agentchat" "autogen-ext[openai,azure]" portkey-ai
 ```
 
-### **2\.**  Configure your Autogen configs:
+### 2\. Quickstart: Autogen AgentChat with Portkey
 
-```py
-from autogen import AssistantAgent, UserProxyAgent, config_list_from_json
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+```python
+from autogen_agentchat.agents import AssistantAgent
+from autogen_agentchat.ui import Console
+from autogen_core.models import ModelFamily
 
-config = [
-    {
-        "api_key": "OPENAI_API_KEY",
-        "model": "gpt-3.5-turbo",
-        "base_url": PORTKEY_GATEWAY_URL,
-        "api_type": "openai",
-        "default_headers": createHeaders(
-            api_key ="PORTKEY_API_KEY", #Replace with Your Portkey API key
-            provider = "openai",
-        )
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+import asyncio
+
+# Define a model client that talks to Portkey's OpenAI-compatible endpoint.
+# Use a Model Catalog model string: "@provider_slug/model_name"
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-provider-slug/gpt-4o",
+    model_info={
+        "vision": True,
+        "function_calling": True,
+        "json_output": True,
+        "structured_output": True,
+        # Use GPT family for gpt-4o to allow tools + system message
+        "family": ModelFamily.GPT_45,
+    },
+    # Optional headers: attach Portkey Configs, tracing, or metadata
+    default_headers={
+        "x-portkey-config": "pc-xxxx",
+        "x-portkey-trace-id": "trace-id",
     }
-]
+)
+
+
+# Define a simple function tool that the agent can use.
+async def get_weather(city: str) -> str:
+    """Get the weather for a given city."""
+    return f"The weather in {city} is 73 degrees and Sunny."
+
+
+# Create an AssistantAgent with the Portkey-backed model client
+agent = AssistantAgent(
+    name="weather_agent",
+    model_client=model_client,
+    tools=[get_weather],
+    system_message="You are a helpful assistant.",
+    reflect_on_tool_use=True,
+    model_client_stream=True,  # Enable token streaming
+)
+
+
+async def main() -> None:
+    await Console(agent.run_stream(task="What is the weather in New York?"))
+    await model_client.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-## Integration Guide
+<Note>
+#### Model Catalog
 
-Here's a simple Google Colab notebook that demonstrates Autogen with Portkey integration
+- Portkey now uses Model Catalog instead of Virtual Keys. Reference models directly with `model="@provider_slug/model_name"`.
+- Learn more: [Upgrade to Model Catalog](/support/upgrade-to-model-catalog) and [Model Catalog](/product/model-catalog).
+</Note>
 
-[![](/images/guides/colab-badge.svg)](https://dub.sh/Autogen-docs)
 
-## Make your agents Production-ready with Portkey
 
-Portkey makes your Autogen agents reliable, robust, and production-grade with its observability suite and AI Gateway. Seamlessly integrate 1600+ LLMs with your Autogen agents using Portkey. Implement fallbacks, gain granular insights into agent performance and costs, and continuously optimize your AI operations—all with just 2 lines of code.
 
-Let's dive deep! Let's go through each of the use cases!
 
-### 1.[ Interoperability](/product/ai-gateway/universal-api)
+## Production Features
 
-Easily switch between 1600+ LLMs. Call various LLMs such as Anthropic, Gemini, Mistral, Azure OpenAI, Google Vertex AI, AWS Bedrock, and many more by simply changing the `provider ` and `API key` in the `ChatOpenAI` object.
+### 1. Enhanced Observability
 
+Portkey provides comprehensive observability for your Autogen agents, helping you understand exactly what's happening during each execution.
 
 <Tabs>
-    <Tab title="OpenAI to Azure OpenAI">
-    If you are using OpenAI with autogen, your code would look like this:
-```py
-config = [
-    {
-        "api_key": "OPENAI_API_KEY",
-        "model": "gpt-3.5-turbo",
-        "base_url": PORTKEY_GATEWAY_URL,
-        "api_type": "openai",
-        "api_type": "openai", # Portkey conforms to the openai api_type
-        "default_headers": createHeaders(
-            api_key ="PORTKEY_API_KEY", #Replace with Your Portkey API key
-            provider = "openai",
-        )
-    }
-]
-```
-To switch to Azure as your provider, just create a new Azure integration ([here's how](/integrations/llms/azure-openai)) and use the new Azure OpenAI provider.
+  <Tab title="Traces">
 
-```py
-config = [
-    {
-        "api_key": "api-key",
-        "model": "gpt-3.5-turbo",
-        "base_url": PORTKEY_GATEWAY_URL,
-        "api_type": "openai", # Portkey conforms to the openai api_type
-        "default_headers": createHeaders(
-            api_key ="PORTKEY_API_KEY", #Replace with Your Portkey API key
-            provider="@azure-openai"
-        )
+<Frame>
+    <img src="/images/product/product-11-1.webp"/>
+</Frame>
+
+Traces provide a hierarchical view of your agent's execution, showing the sequence of LLM calls, tool invocations, and state transitions.
+
+```python
+from autogen_agentchat.agents import AssistantAgent
+from autogen_agentchat.ui import Console
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.models import ModelFamily
+import asyncio
+
+# Add tracing to your Autogen agents via Portkey headers
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-provider-slug/gpt-4o",
+    model_info={"family": ModelFamily.GPT_45},
+    default_headers={
+        "x-portkey-trace-id": "unique_execution_trace_id"
     }
-]
+)
+
+agent = AssistantAgent(
+    name="observer",
+    model_client=model_client,
+    system_message="You are a helpful assistant."
+)
+
+async def main():
+    await Console(agent.run_stream(task="Say hello"))
+    await model_client.close()
+
+asyncio.run(main())
+```
+
+  </Tab>
+
+  <Tab title="Logs">
+      <Frame>
+          <img src="/images/product/product-2.avif"/>
+      </Frame>
+
+Portkey logs every interaction with LLMs, including:
+
+- Complete request and response payloads
+- Latency and token usage metrics
+- Cost calculations
+- Tool calls and function executions
+
+All logs can be filtered by metadata, trace IDs, models, and more, making it easy to debug specific agent runs.
+  </Tab>
+
+  <Tab title="Metrics & Dashboards">
+      <Frame>
+          <img src="/images/product/dashboard.png"/>
+      </Frame>
+
+Portkey provides built-in dashboards that help you:
+
+- Track cost and token usage across all agent runs
+- Analyze performance metrics like latency and success rates
+- Identify bottlenecks in your agent workflows
+- Compare different agent configurations and LLMs
+
+You can filter and segment all metrics by custom metadata to analyze specific agent types, user groups, or use cases.
+  </Tab>
+
+  <Tab title="Metadata Filtering">
+      <Frame>
+        <img src="/images/metadata.png" alt="Analytics with metadata filters" />
+      </Frame>
+
+Add custom metadata to your Autogen agent calls to enable powerful filtering and segmentation:
+
+```python
+from autogen_agentchat.agents import AssistantAgent
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.models import ModelFamily
+from portkey_ai import createHeaders
+
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-provider-slug/gpt-4o",
+    model_info={"family": ModelFamily.GPT_45},
+    default_headers=createHeaders(
+        metadata={"agent_type": "research_agent"}
+    )
+)
+
+agent = AssistantAgent(
+    name="research_agent",
+    model_client=model_client,
+    system_message="You are a research assistant."
+)
+```
+
+This metadata can be used to filter logs, traces, and metrics on the Portkey dashboard, allowing you to analyze specific agent runs, users, or environments.
+  </Tab>
+</Tabs>
+
+### 2. Reliability - Keep Your Autogen Agents Running Smoothly
+
+When running agents in production, things can go wrong - API rate limits, network issues, or provider outages. Portkey's reliability features ensure your agents keep running smoothly even when problems occur.
+
+It's this simple to enable fallback in your Autogen agents:
+
+```python
+from autogen_agentchat.agents import AssistantAgent
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.models import ModelFamily
+from portkey_ai import createHeaders
+
+# Create a config with fallbacks (recommend creating this in Portkey App)
+config = {
+  "strategy": {"mode": "fallback"},
+  "targets": [
+    {"override_params": {"model": "@your-provider-slug/gpt-4o"}},
+    {"override_params": {"model": "@your-anthropic-provider/claude-3-opus-20240229"}}
+  ]
+}
+
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-provider-slug/gpt-4o",
+    model_info={"family": ModelFamily.GPT_45},
+    default_headers=createHeaders(config=config)
+)
+
+agent = AssistantAgent(
+    name="resilient_agent",
+    model_client=model_client,
+    system_message="You are a helpful assistant."
+)
+```
+
+This configuration will automatically try Claude if the GPT-4o request fails, ensuring your agent can continue operating.
+
+<CardGroup cols="2">
+  <Card title="Automatic Retries" icon="rotate" href="../../product/ai-gateway/automatic-retries">
+    Handles temporary failures automatically. If an LLM call fails, Portkey will retry the same request for the specified number of times - perfect for rate limits or network blips.
+  </Card>
+  <Card title="Request Timeouts" icon="clock" href="../../product/ai-gateway/request-timeouts">
+    Prevent your agents from hanging. Set timeouts to ensure you get responses (or can fail gracefully) within your required timeframes.
+  </Card>
+  <Card title="Conditional Routing" icon="route" href="../../product/ai-gateway/conditional-routing">
+    Send different requests to different providers. Route complex reasoning to GPT-4, creative tasks to Claude, and quick responses to Gemini based on your needs.
+  </Card>
+  <Card title="Fallbacks" icon="shield" href="../../product/ai-gateway/fallbacks">
+    Keep running even if your primary provider fails. Automatically switch to backup providers to maintain availability.
+  </Card>
+  <Card title="Load Balancing" icon="scale-balanced" href="../../product/ai-gateway/load-balancing">
+    Spread requests across multiple API keys or providers. Great for high-volume agent operations and staying within rate limits.
+  </Card>
+</CardGroup>
+
+### 3. Prompting in Autogen Agents
+
+Portkey's Prompt Engineering Studio helps you create, manage, and optimize the prompts used in your Autogen agents. Instead of hardcoding prompts or instructions, use Portkey's prompt rendering API to dynamically fetch and apply your versioned prompts.
+
+<Frame caption="Manage prompts in Portkey's Prompt Library">
+![Prompt Playground Interface](/images/product/ai-gateway/ai-20.webp)
+</Frame>
+
+<Tabs>
+  <Tab title="Prompt Playground">
+
+Prompt Playground is a place to compare, test and deploy perfect prompts for your AI application. It's where you experiment with different models, test variables, compare outputs, and refine your prompt engineering strategy before deploying to production. It allows you to:
+
+1. Iteratively develop prompts before using them in your agents
+2. Test prompts with different variables and models
+3. Compare outputs between different prompt versions
+4. Collaborate with team members on prompt development
+
+This visual environment makes it easier to craft effective prompts for each step in your Autogen agent's workflow.
+  </Tab>
+
+  <Tab title="Using Prompt Templates">
+
+The Prompt Render API retrieves your prompt templates with all parameters configured:
+
+```python
+from autogen_agentchat.agents import AssistantAgent
+from autogen_agentchat.ui import Console
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.models import ModelFamily
+from portkey_ai import Portkey
+import asyncio
+
+# Initialize Portkey admin client to render prompts
+portkey_admin = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+prompt_data = portkey_admin.prompts.render(
+    prompt_id="YOUR_PROMPT_ID",
+    variables={"user_input": "Tell me about artificial intelligence"}
+)
+
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-provider-slug/gpt-4o",
+    model_info={"family": ModelFamily.GPT_45}
+)
+
+agent = AssistantAgent(
+    name="assistant",
+    model_client=model_client,
+    system_message=prompt_data.data.messages[0]["content"]
+)
+
+async def main():
+    await Console(agent.run_stream(task="Tell me about artificial intelligence"))
+    await model_client.close()
+
+asyncio.run(main())
 ```
 </Tab>
-    <Tab title="Anthropic to AWS Bedrock">
-If you are using Anthropic with CrewAI, your code would look like this:
-```py
-config = [
-    {
-        "api_key": "ANTHROPIC_PROVIDER",
-        "model": "gpt-3.5-turbo",
-        "api_type": "openai", # Portkey conforms to the openai api_type
-        "base_url": PORTKEY_GATEWAY_URL,
-        "default_headers": createHeaders(
-            api_key ="PORTKEY_API_KEY", #Replace with Your Portkey API key
-            provider = "anthropic",
-        )
-    }
-]
-```
-To switch to AWS Bedrock as your provider, create a new AWS Bedrock integration ([here's how](/integrations/llms/aws-bedrock)) and use the new AWS Bedrock provider.
 
-```py
-config = [
-    {
-        "api_key": "api-key",
-        "model": "gpt-3.5-turbo",
-        "api_type": "openai", # Portkey conforms to the openai api_type
-        "base_url": PORTKEY_GATEWAY_URL,
-        "default_headers": createHeaders(
-            api_key ="PORTKEY_API_KEY", #Replace with Your Portkey API key
-            provider="@AWS_VIRTUAL_API_KEY"
-        )
+  <Tab title="Prompt Versioning">
+
+You can:
+- Create multiple versions of the same prompt
+- Compare performance between versions
+- Roll back to previous versions if needed
+- Specify which version to use in your code:
+
+```python
+# Use a specific prompt version
+prompt_data = portkey_client.prompts.render(
+    prompt_id="YOUR_PROMPT_ID@version_number",
+    variables={
+        "user_input": "Tell me about quantum computing"
     }
-]
+)
+```
+
+  </Tab>
+
+  <Tab title="Mustache Templating for variables">
+
+Portkey prompts use Mustache-style templating for easy variable substitution:
+
+```
+You are an AI assistant helping with {{task_type}}.
+
+User question: {{user_input}}
+
+Please respond in a {{tone}} tone and include {{required_elements}}.
+```
+
+When rendering, simply pass the variables:
+
+```python
+prompt_data = portkey_client.prompts.render(
+    prompt_id="YOUR_PROMPT_ID",
+    variables={
+        "task_type": "research",
+        "user_input": "Tell me about quantum computing",
+        "tone": "professional",
+        "required_elements": "recent academic references"
+    }
+)
 ```
     </Tab>
   </Tabs>
 
+<Card title="Prompt Engineering Studio" icon="wand-magic-sparkles" href="/product/prompt-library">
+  Learn more about Portkey's prompt management features
+</Card>
 
-### 2\. [Reliability](/product/ai-gateway)
+### 4. Guardrails for Safe Autogen Agents
 
-Agents are _brittle_. Long agentic pipelines with multiple steps can fail at any stage, disrupting the entire process. Portkey solves this by offering built-in **fallbacks** between different LLMs or providers, **load-balancing** across multiple instances or API keys, and implementing automatic **retries** and request **timeouts**. This makes your agents more reliable and resilient.
+Guardrails ensure your Autogen agents operate safely and respond appropriately in all situations.
 
-Here's how you can implement these features using Portkey's config
+**Why Use Guardrails?**
+
+Autogen agents can experience various failure modes:
+- Generating harmful or inappropriate content
+- Leaking sensitive information like PII
+- Hallucinating incorrect information
+- Generating outputs in incorrect formats
+
+Portkey's guardrails protect against these issues by validating both inputs and outputs.
+
+**Implementing Guardrails**
+
+```python
+from autogen_agentchat.agents import AssistantAgent
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.models import ModelFamily
+from portkey_ai import createHeaders
+
+# Create a config with input and output guardrails (recommend using Portkey App)
+config = {
+    "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
+    "output_guardrails": ["guardrails-id-xxx"]
+}
+
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-provider-slug/gpt-4o",
+    model_info={"family": ModelFamily.GPT_45},
+    default_headers=createHeaders(config=config)
+)
+
+agent = AssistantAgent(
+    name="safe_agent",
+    model_client=model_client,
+    system_message="You are a helpful assistant that provides safe responses."
+)
+```
+
+Portkey's guardrails can:
+- Detect and redact PII in both inputs and outputs
+- Filter harmful or inappropriate content
+- Validate response formats against schemas
+- Check for hallucinations against ground truth
+- Apply custom business logic and rules
+
+<Card title="Learn More About Guardrails" icon="shield-check" href="/product/guardrails">
+  Explore Portkey's guardrail features to enhance agent safety
+</Card>
+
+### 5. User Tracking with Metadata
+
+Track individual users through your Autogen agents using Portkey's metadata system.
+
+**What is Metadata in Portkey?**
+
+Metadata allows you to associate custom data with each request, enabling filtering, segmentation, and analytics. The special `_user` field is specifically designed for user tracking.
+
+```python
+from autogen_agentchat.agents import AssistantAgent
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.models import ModelFamily
+from portkey_ai import createHeaders
+
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-provider-slug/gpt-4o",
+    model_info={"family": ModelFamily.GPT_45},
+    default_headers=createHeaders(
+        metadata={
+            "_user": "user_123",
+            "user_name": "John Doe",
+            "user_tier": "premium",
+            "user_company": "Acme Corp"
+        }
+    )
+)
+
+agent = AssistantAgent(
+    name="personalized_agent",
+    model_client=model_client,
+    system_message="You are a personalized assistant."
+)
+```
+
+**Filter Analytics by User**
+
+With metadata in place, you can filter analytics by user and analyze performance metrics on a per-user basis:
+
+<Frame caption="Filter analytics by user">
+  <img src="/images/metadata-filters.png"/>
+</Frame>
+
+This enables:
+- Per-user cost tracking and budgeting
+- Personalized user analytics
+- Team or organization-level metrics
+- Environment-specific monitoring (staging vs. production)
+
+<Card title="Learn More About Metadata" icon="tags" href="/product/observability/metadata">
+  Explore how to use custom metadata to enhance your analytics
+</Card>
+
+### 6. Caching for Efficient Agents
+
+Implement caching to make your Autogen agents more efficient and cost-effective:
+
+<Tabs>
+  <Tab title="Simple Caching">
+```python
+from autogen_agentchat.agents import AssistantAgent
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.models import ModelFamily
+from portkey_ai import createHeaders
+
+portkey_config = {"cache": {"mode": "simple"}}
+
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-provider-slug/gpt-4o",
+    model_info={"family": ModelFamily.GPT_45},
+    default_headers=createHeaders(config=portkey_config)
+)
+
+agent = AssistantAgent(
+    name="cached_agent",
+    model_client=model_client,
+    system_message="You are a helpful assistant."
+)
+```
+
+Simple caching performs exact matches on input prompts, caching identical requests to avoid redundant model executions.
+  </Tab>
+</Tabs>
+
+### 7. Model Interoperability: using different LLMs
+
+One of Portkey's key strengths is providing access to 1600+ LLMs through a unified interface. Here's how to use different providers with Autogen:
+
+<Card title="Supported Providers" icon="server" href="/integrations/llms">
+  See the full list of LLM providers supported by Portkey
+</Card>
+
+<Tabs>
+<Tab title="OpenAI">
+```python
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-openai-provider-slug/gpt-4o",
+)
+```
+</Tab>
+
+<Tab title="Anthropic">
+```python
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-anthropic-provider-slug/claude-3-7-sonnet-latest",
+)
+```
+</Tab>
+
+<Tab title="Google">
+```python
+model_client = OpenAIChatCompletionClient(
+    base_url="https://api.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    model="@your-google-provider-slug/gemini-2.5-pro",
+)
+```
+</Tab>
+
+</Tabs>
 
 
+## Set Up Enterprise Governance for Autogen agents
 
-```py
+**Why Enterprise Governance?**
+If you are using Autogen agents inside your organization, you need to consider several governance aspects:
+- **Cost Management**: Controlling and tracking AI spending across teams
+- **Access Control**: Managing which teams can use specific models
+- **Usage Analytics**: Understanding how AI is being used across the organization
+- **Security & Compliance**: Maintaining enterprise security standards
+- **Reliability**: Ensuring consistent service across all users
+
+Portkey adds a comprehensive governance layer to address these enterprise needs. Let's implement these controls step by step.
+
+**Enterprise Implementation Guide**
+
+Portkey allows you to use 1600+ LLMs with your Autogen setup, with minimal configuration required. Let's set up the core components in Portkey that you'll need for integration.
+
+
+<AccordionGroup>
+  <Accordion title="Step 1: Implement Budget Controls & Rate Limits">
+### Step 1: Implement Budget Controls & Rate Limits
+
+Model Catalog enables you to have granular control over LLM access at the team/department level. This helps you:
+- Set up [budget limits](/product/ai-gateway/virtual-keys/budget-limits)
+- Prevent unexpected usage spikes using Rate limits
+- Track departmental spending
+
+#### Setting Up Department-Specific Controls:
+1. Navigate to [Model Catalog](https://app.portkey.ai/model-catalog) in Portkey dashboard
+2. Create new Provider for each engineering team with budget limits and rate limits
+3. Configure department-specific limits
+
+<Frame>
+<img src="/images/product/model-catalog/create-provider-page.png" width="500"/>
+</Frame>
+
+  </Accordion>
+
+  <Accordion title="Step 2: Define Model Access Rules">
+### Step 2: Define Model Access Rules
+
+As your AI usage scales, controlling which teams can access specific models becomes crucial. You can simply manage AI models in your org by provisioning model at the top integration level.
+
+
+<Frame>
+<img src="/images/product/model-catalog/model-provisioning-page.png" width="500"/>
+</Frame>
+
+
+</Accordion>
+<Accordion title="Step 4: Set Routing Configuration">
+    Portkey allows you to control your routing logic very simply with it's Configs feature. Portkey Configs provide this control layer with things like:
+
+- **Data Protection**: Implement guardrails for sensitive code and data
+- **Reliability Controls**: Add fallbacks, load-balance, retry and smart conditional routing logic
+- **Caching**: Implement Simple and Semantic Caching. and more....
+
+#### Example Configuration:
+Here's a basic configuration to load-balance requests to OpenAI and Anthropic:
+
+```json
 {
-  "retry": {
-    "attempts": 5
-  },
   "strategy": {
-    "mode": "loadbalance" // Choose between "loadbalance" or "fallback"
+		"mode": "load-balance"
   },
   "targets": [
     {
-      "provider": "openai",
-      "api_key": "OpenAI_API_Key"
+			"override_params": {
+				"model": "@YOUR_OPENAI_PROVIDER-SLUG/MODEL_NAME"
+			}
     },
     {
-      "provider": "anthropic",
-      "api_key": "Anthropic_API_Key"
+			"override_params": {
+				"model": "@YOUR_ANTHROPIC_PROVIDER-SLUG/MODEL_NAME"
+			}
     }
   ]
 }
 ```
 
-### 3\. [Metrics](/product/observability)
-
-Agent runs can be costly. Tracking agent metrics is crucial for understanding the performance and reliability of your AI agents. Metrics help identify issues, optimize runs, and ensure that your agents meet their intended goals.
-
-Portkey automatically logs comprehensive metrics for your AI agents, including **cost**, **tokens used**, **latency**, etc. Whether you need a broad overview or granular insights into your agent runs, Portkey's customizable filters provide the metrics you need. For agent-specific observability, add `Trace-id` to the request headers for each agent.
+Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard. You'll need the config ID for connecting to your Autogen setup.
 
 
+<Note>
+Configs can be updated anytime to adjust controls without affecting running applications.
+</Note>
 
-```py
-config = [
-    {
-        "api_key": "OPENAI_API_KEY",
-        "model": "gpt-3.5-turbo",
-        "base_url": PORTKEY_GATEWAY_URL,
-        "api_type": "openai",
-        "default_headers": createHeaders(
-            api_key ="PORTKEY_API_KEY", #Replace with your Portkey API key
-            provider = "openai",
-            trace_id="research_agent1" #Add individual trace-id for your agent
-        )
-    }
-]
+  </Accordion>
+
+  <Accordion title="Step 4: Implement Access Controls">
+### Step 3: Implement Access Controls
+
+Create User-specific API keys that automatically:
+- Track usage per developer/team with the help of metadata
+- Apply appropriate configs to route requests
+- Collect relevant metadata to filter logs
+- Enforce access permissions
+
+
+Create API keys through:
+- [Portkey App](https://app.portkey.ai/)
+- [API Key Management API](/api-reference/admin-api/control-plane/api-keys/create-api-key)
+
+
+Example using Python SDK:
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_ADMIN_API_KEY")
+
+api_key = portkey.api_keys.create(
+    name="frontend-engineering",
+    type="organisation",
+    workspace_id="YOUR_WORKSPACE_ID",
+    defaults={
+        "config_id": "your-config-id",
+        "metadata": {
+            "environment": "development",
+            "department": "engineering",
+            "team": "frontend"
+        }
+    },
+    scopes=["logs.view", "configs.read"]
+)
 ```
 
-### 4\. [Logs](/product/observability/logs)
+For detailed key management instructions, see our [API Keys documentation](/api-reference/admin-api/control-plane/api-keys/create-api-key).
+  </Accordion>
 
-Agent runs are complex. Logs are essential for diagnosing issues, understanding agent behavior, and improving performance. They provide a detailed record of agent activities and tool use, which is crucial for debugging and optimizing processes.
+  <Accordion title="Step 5: Deploy & Monitor">
+### Step 4: Deploy & Monitor
+After distributing API keys to your engineering teams, your enterprise-ready Autogen setup is ready to go. Each developer can now use their designated API keys with appropriate access levels and budget controls.
+Apply your governance setup using the integration steps from earlier sections
+Monitor usage in Portkey dashboard:
+- Cost tracking by engineering team
+- Model usage patterns for AI agent tasks
+- Request volumes
+- Error rates and debugging logs
+</Accordion>
 
-Portkey offers comprehensive logging features that capture detailed information about every action and decision made by your AI agents. Access a dedicated section to view records of agent executions, including parameters, outcomes, function calls, and errors. Filter logs based on multiple parameters such as trace ID, model, tokens used, and metadata.
+</AccordionGroup>
 
-<Frame>
-<img src="/images/autogen/autogen-2.gif" alt="logs" />
-</Frame>
+<Check>
+### Enterprise Features Now Available
+**Autogen agents now have:**
 
-### 5\. [Continuous Improvement](/product/observability/feedback)
+- Departmental budget controls
+- Model access governance
+- Usage tracking & attribution
+- Security guardrails
+- Reliability features
 
-Improve your Agent runs by capturing qualitative & quantitative user feedback on your requests. Portkey's Feedback APIs provide a simple way to get weighted feedback from customers on any request you served, at any stage in your app. You can capture this feedback on a request or conversation level and analyze it by adding meta data to the relevant request.
-
-### 6\. [Caching](/product/ai-gateway/cache-simple-and-semantic)
-
-Agent runs are time-consuming and expensive due to their complex pipelines. Caching can significantly reduce these costs by storing frequently used data and responses. Portkey offers a built-in caching system that stores past responses, reducing the need for agent calls saving both time and money.
-
-
-
-```json
-{
- "cache": {
-    "mode": "semantic" // Choose between "simple" or "semantic"
- }
-}
-```
-
-### 7\. [Security & Compliance](/product/enterprise-offering/security-portkey)
-
-Set budget limits on provider API keys and implement fine-grained user roles and permissions for both the app and the Portkey APIs.
+</Check>
 
 
-## [Portkey Config](/product/ai-gateway/configs)
+## Frequently Asked Questions
 
-Many of these features are driven by Portkey's Config architecture. The Portkey app simplifies creating, managing, and versioning your Configs.
+<AccordionGroup>
+<Accordion title="How does Portkey enhance my Autogen agents?">
+Portkey adds production-grade features to Autogen agents including comprehensive observability (traces, logs, analytics), reliability (fallbacks, retries, load balancing), access to 1600+ LLMs, cost management, and enterprise governance - all without changing your agent logic.
+</Accordion>
 
-For more information on using these features and setting up your Config, please refer to the [Portkey documentation](https://docs.portkey.ai).
+<Accordion title="Can I use any LLM with Autogen through Portkey?">
+Yes! Portkey provides access to 1600+ LLMs from providers like OpenAI, Anthropic, Google, Cohere, and many more. Just change the model ID in your configuration to switch between providers.
+</Accordion>
+
+<Accordion title="How do I track costs for different agents?">
+Portkey automatically tracks costs for all LLM calls. You can segment costs by agent type, user, or custom metadata. Set up AI Provider integrations with budget limits to control spending on Model Catalog.
+</Accordion>
+
+<Accordion title="Does Portkey support all Autogen features?">
+Yes! Portkey works seamlessly with Autogen's tool use and agent workflows. It adds observability and reliability without limiting any Autogen functionality.
+</Accordion>
+
+<Accordion title="How do I debug agent failures?">
+Portkey's detailed logs and traces make debugging easy. You can see the complete execution flow, including failed tool calls, LLM errors, and retry attempts. Filter by trace ID or metadata to find specific issues.
+</Accordion>
+</AccordionGroup>
+
+## Resources
+
+<CardGroup cols="3">
+<Card title="Autogen Documentation" icon="book" href="https://microsoft.github.io/autogen/stable/">
+Learn more about building agents with Autogen
+</Card>
+
+<Card title="Portkey Features" icon="sparkles" href="/product/ai-gateway">
+Explore all Portkey capabilities
+</Card>
+
+<Card title="Get Support" icon="discord" href="https://portkey.ai/community">
+Join our Discord community
+</Card>
+</CardGroup>
+
+

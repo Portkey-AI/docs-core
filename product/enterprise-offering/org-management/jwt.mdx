@@ -7,9 +7,9 @@ description: Configure JWT-based authentication for your organization in Portkey
   This feature is available only on the [Enterprise Plan](/product/enterprise-offering) of Portkey.
 </Info>
 
-Portkey supports JWT-based authentication in addition to API Key authentication. Clients can authenticate API requests using a JWT token, which is validated against a configured JWKS (JSON Web Key Set). This guide explains the requirements and setup process for JWT authentication in Portkey.
+Portkey supports JWT-based authentication in addition to API Key authentication. Clients can authenticate API requests using a JWT token, which is validated against a configured JWKS (JSON Web Key Set).
 
-<Card href="/product/guardrails/list-of-guardrail-checks#basic-%E2%80%94-deterministic-guardrails" title="Validate JWT Token (Guardarail)">
+<Card href="/product/guardrails/list-of-guardrail-checks#basic-%E2%80%94-deterministic-guardrails" title="Validate JWT Token (Guardrail)">
     Validate your JWT Token before making a LLM request using Portkey.
 </Card>
 
@@ -21,14 +21,24 @@ JWT authentication can be configured under **Admin Settings** → **Organisation
 <img src="/images/product/jwt.png"></img>
 </Frame>
 
-
-
 ### JWKS Configuration
 
 To validate JWTs, you must configure one of the following:
 
 - **JWKS URL**: A URL from which the public keys will be dynamically fetched.
 - **JWKS JSON**: A static JSON containing public keys.
+
+## Hard Requirements (Read First)
+
+### JWT Header (JOSE Header)
+- `alg`: Must be `RS256`. Symmetric algorithms like `HS256` are not accepted.
+- `typ`: Must be `JWT`.
+- `kid`: Required. The value in the JWT header must match a `kid` in your JWKS.
+
+### Key Requirements
+- Key type: RSA
+- Key size: 2048 bits or higher
+- Your JWKS must expose only the public key parameters (e.g., `kty`, `n`, `e`, `use`, `alg`, `kid`). Do not include private key material.
 
 ## JWT Requirements
 
@@ -40,11 +50,15 @@ To validate JWTs, you must configure one of the following:
 
 Your JWT payload must contain the following claims:
 
-| **Claim Key**                     | **Description**                          |
-|------------------------------------|------------------------------------------|
-| `portkey_oid` / `organisation_id` | Unique identifier for the organization.  |
-| `portkey_workspace` / `workspace_slug` | Identifier for the workspace.         |
-| `scope` / `scopes`                | Permissions granted by the token.        |
+| **Claim Key**                         | **Description**                                  |
+|--------------------------------------|--------------------------------------------------|
+| `portkey_oid` / `organisation_id`    | Unique identifier for the organization.          |
+| `portkey_workspace` / `workspace_slug` | Identifier for the workspace.                  |
+| `scope` / `scopes`                   | Permissions granted by the token.                |
+| `exp`                                | Expiration time (as a UNIX timestamp, in seconds). |
+
+- `exp` is mandatory. Tokens without `exp` or with expired `exp` are rejected.
+- `iat` and/or `nbf` are recommended but optional.
 
 ### User Identification
 
@@ -53,6 +67,109 @@ Portkey identifies users in the following order of precedence for logging and me
 1. `email_id`
 2. `sub`
 3. `uid`
+
+## End-to-End Working Example (Generate → Configure JWKS → Sign → Call)
+
+The following example uses Node.js and the `jose` library to:
+1) generate an RSA key pair,
+2) create a JWKS containing the public key,
+3) sign a JWT with the private key,
+4) call Portkey with the JWT.
+
+### 1) Prerequisites
+
+```sh
+# Node 18+ recommended
+npm init -y
+npm install jose
+```
+
+### 2) Generate RSA Keys, Create JWKS, and Sign a JWT (NodeJS)
+
+Create `generate-and-sign-jwt.mjs`:
+
+```js
+import { generateKeyPair, exportJWK, SignJWT } from 'jose';
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+
+const { publicKey, privateKey } = await generateKeyPair('RS256');
+
+// Create a public JWK for JWKS
+const publicJwk = await exportJWK(publicKey);
+publicJwk.kty = 'RSA';
+publicJwk.use = 'sig';
+publicJwk.alg = 'RS256';
+publicJwk.kid = randomUUID();
+
+const jwks = { keys: [publicJwk] };
+fs.writeFileSync('jwks.json', JSON.stringify(jwks, null, 2));
+
+const now = Math.floor(Date.now() / 1000);
+
+// Sign a JWT with the private key
+const jwt = await new SignJWT({
+  portkey_oid: '<YOUR_ORG_ID>',
+  portkey_workspace: '<YOUR_WORKSPACE_SLUG>',
+  scope: ['completions.write', 'logs.view'],
+  email_id: 'user@example.com',
+  sub: '<YOUR_USER_ID>'
+})
+  .setProtectedHeader({ alg: 'RS256', kid: publicJwk.kid, typ: 'JWT' })
+  .setIssuedAt(now)
+  .setExpirationTime(now + 60 * 60) // 1 hour
+  .sign(privateKey);
+
+fs.writeFileSync('token.jwt', jwt);
+
+console.log('JWKS written to jwks.json');
+console.log('JWT written to token.jwt');
+console.log('kid:', publicJwk.kid);
+```
+
+Run it:
+
+```sh
+node generate-and-sign-jwt.mjs
+```
+
+This produces:
+- `jwks.json`: A JWKS containing your public key (with a `kid`).
+- `token.jwt`: A signed JWT ready to use with Portkey.
+
+### 3) Add Your Public Key to Portkey (JWKS)
+
+In the Portkey Admin UI:
+- Navigate to **Admin Settings** → **Organisation** → **Authentication**.
+- Choose either:
+  - JWKS URL: Host `jwks.json` at a reachable HTTPS URL and paste that URL.
+  - JWKS JSON: Paste the entire contents of your generated `jwks.json`.
+- Save changes.
+
+Ensure the `kid` in your JWT header matches a key in the configured JWKS.
+
+### 4) Call Portkey Using the Signed JWT
+
+Send the JWT in the `x-portkey-api-key` header.
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $(cat token.jwt)" \
+  -H "x-portkey-provider: @<YOUR_PROVIDER_SLUG>" \
+  -d '{
+    "model": "your-model-id",
+    "messages": [
+      { "role": "user", "content": "Hello!" }
+    ]
+  }'
+```
+
+If your JWT, JWKS, and claims are correct, the request will authenticate and succeed.
+
+<Note>
+If you prefer Python for signing, you can generate the RSA key pair using your preferred method, ensure the public key is present in your JWKS with a matching `kid`, and use a library like `PyJWT` to sign with `RS256` while setting the header `{ "alg": "RS256", "typ": "JWT", "kid": "<your-kid>" }`.
+</Note>
 
 ## Authentication Process
 
@@ -174,17 +291,29 @@ Once the JWT is validated, the server checks for the required **scope**. Scopes 
 
 Scopes can also be prefixed with `portkey.` (e.g., `portkey.completions.write`).
 
-
 <Note>
     JWT tokens with appropriate scopes function identically to workspace API keys, providing access to workspace-specific operations. They cannot be used as organization API keys, which have broader administrative permissions across all workspaces.
 </Note>
+
+#### Example JWT Header
+
+```json
+{
+  "alg": "RS256",
+  "typ": "JWT",
+  "kid": "<YOUR_KID>"
+}
+```
+
+- This matches the signing example (`.setProtectedHeader({ alg: 'RS256', kid: publicJwk.kid, typ: 'JWT' })`).
+- Ensure `kid` exactly matches one key in your configured JWKS.
 
 ## Example JWT Payload
 
 ```json
 {
-  "portkey_oid" : "org_123456",
-  "portkey_workspace": "workspace_abc",
+  "portkey_oid": "3ed1b666-7e3d-416a-9260-da10e1610d1a",
+  "portkey_workspace": "ws-shared-8622d1",
   "scope": ["completions.write", "logs.view"],
   "email_id": "user@example.com",
   "sub": "user-123",
@@ -208,12 +337,14 @@ import Portkey from 'portkey-ai';
 
 const client = new Portkey({
   apiKey: '<JWT_TOKEN>', // Use JWT token instead of API key
+  provider: '@<YOUR_PROVIDER_SLUG>'
+
 });
 
 async function main() {
   const response = await client.chat.completions.create({
     messages: [{ role: "user", content: "Hello, how are you today?" }],
-    model: "gpt-4o",
+    model: "your-model-id",
   });
 
   console.log(response.choices[0].message.content);
@@ -233,11 +364,12 @@ pip install portkey-ai
 from portkey_ai import Portkey
 
 client = Portkey(
-  api_key = "<JWT_TOKEN>" # Use JWT token instead of API key
+  api_key = "<JWT_TOKEN>", # Use JWT token instead of API key,
+  provider = "@<YOUR_PROVIDER_SLUG>"
 )
 
 response = client.chat.completions.create(
-  model="gpt-4o",
+  model="your-model-id",
   messages=[
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Hello!"}
@@ -254,8 +386,9 @@ print(response.choices[0].message)
 curl https://api.portkey.ai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: <JWT_TOKEN>" \
+  -H "x-portkey-provider: @<YOUR_PROVIDER_SLUG>" \
   -d '{
-    "model": "gpt-4o",
+    "model": "your-model-id",
     "messages": [
       { "role": "user", "content": "Hello!" }
     ]
@@ -282,7 +415,7 @@ client = OpenAI(
 )
 
 completion = client.chat.completions.create(
-  model="gpt-4o",
+  model="@<YOUR_PROVIDER_SLUG>/your-model-id",
   messages=[
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Hello!"}
@@ -314,7 +447,7 @@ const openai = new OpenAI({
 async function main() {
   const completion = await openai.chat.completions.create({
     messages: [{ role: 'user', content: 'Say this is a test' }],
-    model: 'gpt-4o',
+    model: '@<YOUR_PROVIDER_SLUG>/your-model-id'
   });
 
   console.log(completion.choices[0].message);
@@ -326,6 +459,30 @@ main();
 </Tab>
 </Tabs>
 
+## Troubleshooting “Invalid API Key” Errors
+
+- **Wrong algorithm**: Only `RS256` is accepted; `HS256` or others will fail.
+- **Missing or mismatched `kid`**: Your JWT header must include a `kid` that matches a key in the JWKS.
+- **Incorrect header usage**: Send the raw JWT in `x-portkey-api-key` without a `Bearer ` prefix.
+- **Expired or missing `exp`**: The `exp` claim is required and must be in the future. Allow for small clock skew.
+- **Private vs Public key mix-up**: Your JWKS must contain only the public key parameters. The private key is used only for signing; never paste it into the JWKS JSON.
+- **Wrong org/workspace identifiers**: `portkey_oid` (or `organisation_id`) and `portkey_workspace` (or `workspace_slug`) must correspond to valid identifiers in your Portkey tenant.
+- **Scopes missing for the API you call**: E.g., chat completions needs `completions.write`.
+- **Unreachable JWKS URL**: If using a URL, it must be publicly reachable by Portkey. For static JSON, ensure the pasted JSON is valid and includes `keys: [...]`.
+
+<Info>
+  All Invalid JWT errors are logged in the Audit Logs.
+  Sample error message:
+  ```
+  "jwtToken": "ey****bt",
+  "error": "Error Verifying JWT token: Signing Key Not Found",
+  ```
+</Info>
+
 ## Caching & Token Revocation
 
 - JWTs are cached until they expire to reduce validation overhead.
+- If you rotate keys:
+  - Publish the new public key in JWKS with a new `kid`.
+  - Start issuing tokens signed by the new private key (with the new `kid`).
+  - Old tokens will remain valid until their `exp` is reached.

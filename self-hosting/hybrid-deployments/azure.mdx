@@ -1,0 +1,439 @@
+---
+title: "Azure"
+description: This enterprise-focused document provides comprehensive instructions for deploying the Portkey software on Azure Kubernetes Service (AKS), tailored to meet the needs of large-scale, mission-critical applications. It includes specific recommendations for component sizing, high availability, and integration with monitoring systems.
+---
+
+<Note>
+  Portkey is also available on the Azure Marketplace. You can deploy Portkey directly through your Azure console, which streamlines procurement and deployment processes.
+
+  [Deploy via Azure Marketplace →](https://azuremarketplace.microsoft.com/en-in/marketplace/apps/portkey.enterprise-saas?tab=Overview)
+</Note>
+
+
+## Components and Sizing Recommendations
+
+| Component                               | Options                                         | Sizing Recommendations                                                                                                                                |
+| --------------------------------------- | ------------------------------------------------| ------------------------------------------------------------------------------------------------------------------------------------------------------|
+| AI Gateway                              | Deploy in your AKS cluster using Helm charts.   | Use AKS B2ms worker nodes, each providing at least 2 vCPUs and 4 GiB of memory. For high availability, deploy them across multiple Availability Zones.|
+| Logs Store (optional)                   | Azure Blob Storage or S3-compatible storage     | Each log document is \~10kb in size (uncompressed)                                                                                                    |
+| Cache (Prompts, Configs & Providers)    | Built-in Redis or Azure Cache for Redis         | Deployed within the same VNet as the Portkey Gateway.                                                                                                    |
+
+## Prerequisites
+
+Ensure the following tools and resources are installed and available:
+
+* A running [AKS cluster](https://learn.microsoft.com/en-us/azure/aks/tutorial-kubernetes-deploy-cluster?tabs=azure-cli#create-a-kubernetes-cluster) with at least 2 worker nodes. (**Best Practice:** Use 2 nodes, with one node in each Availability Zone, to ensure high availability.)
+* [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/get-started-with-azure-cli?view=azure-cli-latest)
+* [Kubectl](https://learn.microsoft.com/en-us/azure/aks/tutorial-kubernetes-deploy-cluster?tabs=azure-cli#connect-to-cluster-using-kubectl)  
+* [Helm (v3 or above)](https://helm.sh/docs/intro/install/)  
+
+## Create a Portkey Account
+- Go to the [Portkey](https://portkey.ai) website.  
+- Sign up for a Portkey account.  
+- Once logged in, locate and save your `Organisation ID` for future reference. It can be found in the browser URL:
+  `https://app.portkey.ai/organisation/<organisation_id>/`
+- Contact the Portkey AI team and provide your Organisation ID and the email address used during signup..
+- The Portkey team will share the following information with you:
+    - Docker credentials for the Gateway images (username and password).
+    - License: Client Auth Key.
+
+## Setup Project Environment
+```sh
+cluster_name=<AKS_CLUSTER_NAME>               # Specify the name of the AKS cluster where the gateway will be deployed.
+namespace=<NAMESPACE>                         # Specify the namespace where the gateway should be deployed (for example, portkeyai).
+service_account_name=<SERVICE_ACCOUNT_NAME>   # Provide a name for the Service Account to be associated with Gateway Pod (for example, gateway-sa)
+
+mkdir portkey-gateway
+cd portkey-gateway
+touch values.yaml
+```
+
+### Image Credentials Configuration
+```yaml
+# Update the values.yaml file
+imageCredentials:
+  - name: portkey-enterprise-registry-credentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <PROVIDED BY PORTKEY>
+    password: <PROVIDED BY PORTKEY>
+
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: <SERVICE_NAME>                      # Specify a name for the service
+    PORTKEY_CLIENT_AUTH: <PROVIDED BY PORTKEY>
+    ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>           # This is obtained after signing up for a Portkey account.
+    
+```
+
+## Configure Components 
+Based on the choice of components and their configuration update the `values.yaml`.
+### Cache Store
+The Portkey Gateway deployment includes a Redis instance pre-installed by default. You can either use this built-in Redis or connect to an external cache like `Azure Cache for Redis` or `Azure Managed Redis`.
+
+#### Built-in Redis
+No additional permissions or network configurations are required.
+
+```yaml
+## To use the built-in Redis, add the following configuration to the values.yaml file.
+environment:
+  data:
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+```
+
+### Log Store
+#### Azure Blob Storage
+
+1. (Optional) If not already done, create an Azure Storage Account and a Blob Container to store LLM logs.
+
+2. [Set up](#setting-up-permission) access to the log store. The Gateway supports the following methods for connecting to the Blob Storage:
+    - Managed Identity
+    - Entra ID
+
+    Depending on the chosen Blob Storage access method, update `values.yaml` with the following configuration.
+    <Tabs>
+      <Tab title="Managed Identity">
+        ```yaml
+        ## To enable Managed Identity update values.yaml with following details:-
+        
+        environment:
+          data:
+            LOG_STORE: azure
+            AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>       # Specify the name of the storage account which will be used for storing LLM logs.
+            AZURE_STORAGE_CONTAINER: <STORAGE_CONTAINER>        # Specify the name of the blob store container which will be used for storing LLM logs.
+            AZURE_AUTH_MODE: managed
+        ```
+      </Tab>
+      <Tab title="Entra ID">
+        ```yaml
+        ## To enable Entra ID update values.yaml with following details:-
+        
+        environment:
+          data:
+            LOG_STORE: azure
+            AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>       # Specify the name of the storage account which will be used for storing LLM logs.
+            AZURE_STORAGE_CONTAINER: <STORAGE_CONTAINER>        # Specify the name of the blob store container which will be used for storing LLM logs.
+            AZURE_AUTH_MODE: entra
+            AZURE_ENTRA_CLIENT_ID: <ENTRA_CLIENT_ID>            # Specify client id of the app created during set up of Entra ID access for blob store.
+            AZURE_ENTRA_CLIENT_SECRET: <ENTRA_CLIENT_SECRET>    # Specify client secret of the app created during set up of Entra ID access for blob store.
+            AZURE_ENTRA_TENANT_ID: <ENTRA_TENANT_ID>            # Specify tenant id obtained during set up of Entra ID access for blob store.
+        ```
+      </Tab>
+    </Tabs>
+
+## Network Configuration
+
+**Set up external access to the Gateway**
+
+To ensure the Gateway service is accessible externally, create either an internal or internet-facing Load Balancer.
+
+```yaml   
+service:
+  type: LoadBalancer
+  port: 8787
+  annotations: 
+    # Specify the type of Load Balancer to create - internal or internet-facing 
+    service.beta.kubernetes.io/azure-load-balancer-internal: "false"                      
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-protocol: "http"
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/v1/health"
+
+    # Replace the cidr ranges to make it more restrictive
+    service.beta.kubernetes.io/azure-allowed-ip-ranges: 0.0.0.0/0                                                       
+```
+
+**Note:** If you choose an internal load balancer, it must be exposed via a public-facing service (e.g., Application Gateway, Azure Front Door) to allow the Control Plane to communicate with the Data Plane.
+
+Additionally, Azure Load Balancer supports various annotations to fine-tune its configuration. For a complete list of supported annotations, see the Azure Load Balancer [annotations](https://cloud-provider-azure.sigs.k8s.io/topics/loadbalancer/#loadbalancer-annotations).
+
+### Ensure Outbound Network Access
+
+By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
+
+Example NetworkPolicy for Outbound Access:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+  namespace: portkeyai
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+```
+
+This allows the Gateway to access LLMs hosted within your VNet and outside as well. This also enables connection for the sync service to the Portkey Control Plane.
+
+
+## Deploying Portkey Gateway
+```sh
+# Add the Portkey AI Gateway helm repository
+helm repo add portkey-ai https://portkey-ai.github.io/helm
+helm repo update
+
+# Install the chart
+helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml -n $namespace --create-namespace
+```
+
+## Verify the deployment 
+To confirm that the deployment was successful, follow these steps:
+
+-  Verify that all pods are running correctly.
+  ```sh
+  # 
+  kubectl get pods -n $namespace
+  # You should see all pods with a 'STATUS' of 'Running'.
+  ```
+  **Note:** If pods are in a Pending, CrashLoopBackOff, or other error state, inspect the [pod logs](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/) and [events](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_events/) to diagnose potential issues.
+
+
+- Test Gateway by sending a cURL request. 
+    1.  Port-forward the Gateway pod
+      ```sh
+        kubectl port-forward  <POD_NAME> -n $namespace 9000:8787       # Replace <POD_NAME> with your Gateway pod's actual name.
+      ```
+      
+
+    2. Once port forwarding is active, open a new terminal window or tab and send a test request by running:
+      
+      ```sh
+      # Specify LLM provider and Portkey API keys
+      OPENAI_API_KEY=<OPENAI_API_KEY>                           # Replace <OPENAI_API_KEY> with an actual API key
+      PORTKEY_API_KEY=<PORTKEY_API_KEY>                         # Replace <PORTKEY_API_KEY> with Portkey API key which can be created from Portkey website(https://app.portkey.ai/api-keys).
+      
+      # Configure and send the curl request
+      curl 'http://localhost:9000/v1/chat/completions'`\
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $OPENAI_API_KEY"  \
+      -H "x-portkey-provider: openai" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY"  \
+      -d '{ 
+          "model": "gpt-4o-mini", 
+          "messages": [{"role": "user","content": "What is a fractal?"}]  
+      }'
+      ```
+    3. Test gateway service integration with Load Balancer.
+      ```sh
+      # Replace <LOAD_BALANCER_IP> and <LB_LISTENER_PORT_NUMBER> with the DNS name and listener port of the created load balancer, respectively.
+      curl 'http://<LOAD_BALANCER_IP>:<LB_LISTENER_PORT_NUMBER>/v1/chat/completions' \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $OPENAI_API_KEY"  \
+      -H "x-portkey-provider: openai" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY"  \
+      -d '{
+          "model": "gpt-4o-mini",
+          "messages": [{"role": "user","content": "What is a fractal?"}]
+      }'
+      ```
+
+
+## Integrating Gateway with Control Plane
+Portkey supports the following methods for integrating the Control Plane with the Data Plane/Gateway:
+
+#### IP Whitelisting
+Allows control plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Control Plane. This method requires the Data Plane to have a publicly accessible endpoint.
+To whitelist, add an inbound rule to the Azure NSG/Firewall allowing connections from the Portkey Control Plane's IP (`44.221.117.129`) on required port.
+
+To integrate the Control Plane with the Data Plane, contact the Portkey team and provide the **Public Endpoint** of the Data Plane.
+
+
+## Verifying Gateway Integration with the Control Plane
+
+- Send a test request to Gateway using `curl`.
+- Go to [Portkey website](https://app.portkey.ai/) -> **Logs**.
+- Verify that the test request appears in the logs and that you can view its full details by selecting the log entry.
+
+
+## Uninstalling Portkey Gateway
+```sh
+helm uninstall portkey-ai --namespace $namespace
+```
+
+## Setting up Permission
+
+#### Azure Blob Storage
+To allow the Portkey Gateway to access Azure Blob Storage for log storage, permissions must be granted.
+
+Follow the steps below to set up these permissions according to your selected access method.
+  <Tabs>
+    <Tab title="Managed Identity">
+    1. Specify the details:
+      ```sh
+      CLUSTER_NAME=<CLUSTER_NAME>                             # Specify name of AKS cluster
+      RESOURCE_GROUP=<RESOURCE_GROUP>                         # Specify the name of the resource group that contains the storage account.
+      STORAGE_ACCOUNT_NAME=<STORAGE_ACCOUNT_NAME>             # Specify the name of the storage account which will be used for storing LLM logs.
+      CONTAINER_NAME=<CONTAINER_NAME>                         # Specify the name of the blob store container which will be used for storing LLM logs.
+      
+      ```
+    2. Fetch Identity associated with the AKS cluster.
+      ```sh
+      KUBELET_OBJECT_ID=$(az aks show \
+       --resource-group $RESOURCE_GROUP \
+       --name $CLUSTER_NAME \
+       --query "identityProfile.kubeletidentity.objectId" \
+       --output tsv)
+      ```
+    3. Grant identity a role that allows it to access Blob Storage.
+      ```sh
+      # Fetch storage id of storage account
+      STORAGE_ID=$(az storage account show \
+       --name $STORAGE_ACCOUNT_NAME \
+       --resource-group $RESOURCE_GROUP --query id -o tsv)
+      
+      # Grant Storage Blob Data Contributor to kubelet identity
+      az role assignment create \
+       --assignee-object-id $KUBELET_OBJECT_ID \
+       --assignee-principal-type ServicePrincipal \
+       --role "Storage Blob Data Contributor" \
+       --scope "$STORAGE_ID/blobServices/default/containers/$CONTAINER_NAME"
+
+      ```
+    </Tab>
+  <Tab title="Entra Identity">
+    1. Register an Entra Identity application. 
+      ```sh
+      AZURE_ENTRA_CLIENT_ID=$(az ad app create \
+       --display-name portkey-gateway--logstore-app \
+       --sign-in-audience "AzureADMyOrg" \
+       --query appId -o tsv)           
+      
+      echo $AZURE_ENTRA_CLIENT_ID        
+      ```  
+      Make a note of the value of `AZURE_ENTRA_CLIENT_ID`, as it will be required in defining `values.yaml`. 
+
+    2. Create a client secret for registered app. 
+      ```sh
+      AZURE_ENTRA_CLIENT_SECRET=$(az ad app credential reset \
+       --id $AZURE_ENTRA_CLIENT_ID \
+       --display-name "entra-secret" \
+       --query password -o tsv)
+      
+      echo $AZURE_ENTRA_CLIENT_SECRET  
+      ```
+      Make a note of the value of `AZURE_ENTRA_CLIENT_SECRET`, as it will be required in defining `values.yaml`.
+    
+    3. Retrieve your Tenant ID.
+      ```sh
+      AZURE_ENTRA_TENANT_ID=$(az account show \
+       --query tenantId -o tsv)
+
+      echo $AZURE_ENTRA_TENANT_ID 
+      ``` 
+      Make a note of the value of `AZURE_ENTRA_TENANT_ID`, as it will be required in defining `values.yaml`.
+
+    4. Grant the app a role that allows it to access Blob Storage.
+      ```sh
+      RESOURCE_GROUP=<RESOURCE_GROUP>                         # Specify the name of the resource group that contains the storage account.
+      STORAGE_ACCOUNT_NAME=<STORAGE_ACCOUNT_NAME>             # Specify the name of the storage account which will be used for storing LLM logs.
+      CONTAINER_NAME=<CONTAINER_NAME>                         # Specify the name of the blob store container which will be used for storing LLM logs.
+      
+      # Create a Service Principal for the app.
+      az ad sp create --id $AZURE_ENTRA_CLIENT_ID
+
+      # Fetch storage id of storage account
+      STORAGE_ID=$(az storage account show \
+       --name $STORAGE_ACCOUNT_NAME \
+       --resource-group $RESOURCE_GROUP \
+       --query id -o tsv)
+      
+      # Assign the role to the app.
+      az role assignment create \
+       --assignee $AZURE_ENTRA_CLIENT_ID \
+       --role "Storage Blob Data Contributor" \
+       --scope "$STORAGE_ID/blobServices/default/containers/$CONTAINER_NAME"
+      ```
+  </Tab>
+
+</Tabs>
+    
+
+
+## Examples
+
+**Built-in Redis**
+
+The following sample `values.yaml` below shows how to configure the built-in Redis cache and Azure Blob Storage for log store using Entra ID.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway                                                  
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>                      # REPLACE <CLIENT_AUTH> with client auth shared by Portkey team.
+    ORGANISATIONS_TO_SYNC: <ORGANIZATION_ID>                # REPLACE <ORGANIZATION_ID> with organisation_id of your account.
+    PORT: "8787"
+
+    # Configuration for using built-in redis
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+   
+    # Configuration for enabling Entra ID access to Azure Blob Storage.
+    LOG_STORE: azure
+    AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>       # Specify the name of the storage account which will be used for storing LLM logs.
+    AZURE_STORAGE_CONTAINER: <STORAGE_CONTAINER>        # Specify the name of the blob store container which will be used for storing LLM logs.
+    AZURE_AUTH_MODE: entra
+    AZURE_ENTRA_CLIENT_ID: <ENTRA_CLIENT_ID>            # Specify client id of the app created during set up of Entra ID access for blob store.
+    AZURE_ENTRA_CLIENT_SECRET: <ENTRA_CLIENT_SECRET>    # Specify client secret of the app created during set up of Entra ID access for blob store.
+    AZURE_ENTRA_TENANT_ID: <ENTRA_TENANT_ID>            # Specify tenant id obtained during set up of Entra ID access for blob store.         
+
+
+# Enabling Load Balancer to provide access outside of cluster
+service:
+  type: LoadBalancer
+  port: 8787
+  annotations: 
+    service.beta.kubernetes.io/azure-load-balancer-internal: "false"                      
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-protocol: "http"
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/v1/health"
+    service.beta.kubernetes.io/azure-allowed-ip-ranges: 0.0.0.0/0    
+```
+
+
+
+
+
+
