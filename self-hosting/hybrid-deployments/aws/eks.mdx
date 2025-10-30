@@ -117,7 +117,7 @@ For more information on ElastiCache endpoints, refer to the [AWS resources](http
 
 2. [Set up](#setting-up-iam-permission) access to the log store. The Gateway supports the following methods for connecting to S3 bucket for log storage:
     - IAM Roles for Service Accounts (IRSA)
-
+    - EKS Pod Identity
 
     Depending on the chosen S3 access method, update `values.yaml` with the following configuration.
     <Tabs>
@@ -130,6 +130,21 @@ For more information on ElastiCache endpoints, refer to the [AWS resources](http
           name: <SERVICE_ACCOUNT_NAME>             # Provide the name of service account. Must be same as the name you provided while creating IAM Role in last step.
           annotations:
             eks.amazonaws.com/role-arn: <ROLE_ARN> # Provide the IAM role ARN obtained in previous step.
+
+        environment:
+          data:
+            LOG_STORE: s3_assume
+            LOG_STORE_REGION: "<AWS_BUCKET_REGION>"                     # Specify the AWS region where the S3 log bucket resides (e.g., us-east-1).
+            LOG_STORE_GENERATIONS_BUCKET: "<AWS_BUCKET_NAME>"           # Specify the name of S3 log bucket.
+        ```
+      </Tab>
+      <Tab title="EKS Pod Identity">
+        ```yaml
+        ## To enable EKS Pod Identity update values.yaml with following details:-
+        serviceAccount:
+          create: true
+          automount: true
+          name: <SERVICE_ACCOUNT_NAME>             # Provide the name of service account. Must be same as the name you provided while creating IAM Role in last step.
 
         environment:
           data:
@@ -162,20 +177,50 @@ dataservice:
 
 ## Network Configuration
 
-**Set up external access to the Gateway**
-To ensure the Gateway service is accessible from outside the cluster, create either an internal or internet-facing Load Balancer.
+### Set Up External Access
+
+To make the Gateway service accessible externally, you can set up either of the following:
+
+* **AWS Application Load Balancer** with Kubernetes `Ingress`
+* **AWS Network Load Balancer** with Kubernetes `Service`
 
 **Prerequisites**
-- VPC and Subnet [tagging requirements](https://docs.aws.amazon.com/eks/latest/userguide/network-reqs.html) 
+- VPC and subnet [tagging requirements](https://docs.aws.amazon.com/eks/latest/userguide/network-reqs.html) 
 - Installed and running AWS Load Balancer Controller. For Load Balancer Controller installation details, refer to the AWS [documentation](https://docs.aws.amazon.com/eks/latest/userguide/lbc-helm.html).
 
+#### AWS Application Load Balancer
+To create Application Load Balancer Ingress update the `values.yaml` file with following configuration: 
+```yaml
+ingress:
+  enabled: true
+  # hostname: "gateway.example.com"
+  ingressClassName: "alb"
+  annotations: 
+    alb.ingress.kubernetes.io/load-balancer-name : portkey-gateway
+    alb.ingress.kubernetes.io/scheme: internet-facing                                                 # Set to 'internal' for internal ALB, set to 'internet-facing' for creating an ALB accessible from internet.
+    alb.ingress.kubernetes.io/target-type: ip 
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /v1/health
+    alb.ingress.kubernetes.io/inbound-cidrs: 0.0.0.0/0                                                # Allowed inbound CIDR ranges
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
+
+service:
+  type: ClusterIP
+  port: 8787
+```
+
+Load Balancer Controller provides additional annotations (like TLS, custom health checks etc ) for managing ALB. For a comprehensive list of available annotations, refer to the [AWS Load Balancer Controller documentation](https://kubernetes-sigs.github.io/aws-load-balancer-controller/latest/guide/ingress/annotations/).
+
+
+#### AWS Network Load Balancer
+To create Network Balancer update the `values.yaml` with following configuration: 
 ```yaml
 service:
   type: LoadBalancer
   port: 8787                                              
   annotations: 
-    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"                     # Specify the type of Load Balancer to create. Note that AWS PrivateLink only supports NLB and GWLB for creating endpoint service.
-    service.beta.kubernetes.io/aws-load-balancer-internal: "true"                # Choose whether to create an internal or internet-facing load balancer.
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"                   
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"                                   # Set to 'true' to create an internal NLB, set to 'false' to create an internet-facing NLB.
     service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"     
     service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/v1/health"
     service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "http" 
@@ -435,6 +480,85 @@ Follow the steps below to configure permissions based on your chosen access meth
     ```
 
   </Tab> 
+  <Tab title="EKS Pod Identity">
+    1. (Optional) If the EKS Pod Identity Agent is not already installed on your cluster, install it before proceeding. For detailed, step-by-step instructions, refer to the following AWS [documentation](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html).     
+    2. Create an IAM trust policy to provide Gateway access to IAM Role. 
+      ```sh
+      bucket_name=<S3_BUCKET_NAME>           # Specify the name of S3 bucket which will store logs. Bucket must already be created.
+      role_name=<IAM_ROLE_NAME>              # Provide a name for the role to be associated with Service Account.
+      cat >trust-relationship.json <<EOF
+      {
+          "Version": "2012-10-17",		 	 	 
+          "Statement": [
+              {
+                  "Sid": "AllowEksAuthToAssumeRoleForPodIdentity",
+                  "Effect": "Allow",
+                  "Principal": {
+                      "Service": "pods.eks.amazonaws.com"
+                  },
+                  "Action": [
+                      "sts:AssumeRole",
+                      "sts:TagSession"
+                  ]
+              }
+          ]
+      }
+      EOF
+      ```
+    3. Create an IAM Role to associate with Gateway's service account.
+      ```sh
+      aws iam create-role --role-name $role_name --assume-role-policy-document file://trust-relationship.json 
+      ```
+    4. Create a Pod Identity association that allows the Gateway’s service account to assume the specified IAM role using EKS Pod Identity.
+      ```sh
+      # Retrieve AWS Account ID
+      aws_account_id=$(aws sts get-caller-identity --query Account --output text)
+
+      # Create Pod Identity Association
+      aws eks create-pod-identity-association --cluster-name $cluster_name --role-arn "arn:aws:iam::${aws_account_id}:role/${role_name}" --namespace $namespace --service-account $service_account_name
+      ```
+    5. Attach an IAM policy to the role to grant access to the S3 log store and, optionally, Amazon Bedrock.
+
+      **Amazon S3**
+        ```sh
+        cat >s3-access-policy.json <<EOF
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:PutObject", "s3:GetObject"],
+              "Resource": ["arn:aws:s3:::${bucket_name}/*"]
+            }
+          ]
+        }
+        EOF
+
+        # Attach policy to the IAM role
+        aws iam put-role-policy --role-name $role_name --policy-name s3-access-policy --policy-document file://s3-access-policy.json
+        ```
+
+      **(Optional) Amazon Bedrock**
+        ```sh
+        cat >bedrock-access-policy.json <<EOF
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+              "Resource": ["*"]
+            }
+          ]
+        }
+        EOF
+
+        # Attach policy to the IAM role
+        aws iam put-role-policy --role-name $role_name --policy-name bedrock-access-policy --policy-document file://bedrock-access-policy.json
+
+        ```
+  </Tab>
+
 </Tabs>
     
 
