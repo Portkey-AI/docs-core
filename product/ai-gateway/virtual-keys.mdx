@@ -1,68 +1,224 @@
 ---
 title: "Virtual Keys"
-description: "Portkey's virtual key system allows you to securely store your LLM API keys in our vault, utilizing a unique virtual identifier to streamline API key management."
-tag: "Deprecated"
+description: "How Portkey's virtual key system works: use one Portkey API key to access multiple AI providers and models"
 ---
 
-<Warning>
-<b> MIGRATION NOTICE </b>
+## What Are Virtual Keys?
 
-We are upgrading the Virtual Key experience with the <b>[Model Catalog](/support/upgrade-to-model-catalog)</b> feature.
+Portkey's virtual key system lets you use **one Portkey API key** to connect to Portkey's gateway, which internally uses your provider credentials to connect to multiple AI providers and models.
 
-With Model Catalog, you can now:
-- Set model level budget & rate limits
-- Inherit budget & rate limits from parent AI provider integrations
-- Set granular, workspace-level access controls
-- Pass the provider slug (previosuly known as `virtual key`) with the model param in your LLM requests
-</Warning>
-
-<CardGroup cols={2}>
-<Card icon="book" title="Upgrade to Model Catalog" href="/support/upgrade-to-model-catalog">Learn how to replace your virtual keys with Model Catalog</Card>
-</CardGroup>
-
----
-
-This feature also provides the following benefits:
-
-* Easier key rotation
-* The ability to generate multiple virtual keys for a single API key
-* Imposition of restrictions [based on cost](/product/ai-gateway/virtual-keys/budget-limits), request volume, and user access
-
-These can be managed within your account under the "Virtual Keys" tab.
-
-## Creating Virtual Keys:
-
-1. Navigate to the "Virtual Keys" page and click the "Add Key" button in the top right corner.
-2. Select your AI provider, name your key uniquely, and note any usage specifics if needed.
+This is the core concept that makes AI gateways powerful:
+- **One API key** (Portkey's) → connects to **multiple providers** (OpenAI, Anthropic, etc.) → accesses **hundreds of models**
+- No need to manage separate API keys for each provider in your code
+- Centralized credential management and governance
 
 <Info>
-    **Tip:** You can register multiple keys for one provider or use different names for the same key for easy identification.
+The Virtual Keys feature has evolved into the **Model Catalog** system, which provides better governance, centralized management, and model-level controls. The core concept remains the same - one key, many providers.
+
+[Learn more about Model Catalog →](/product/model-catalog)
 </Info>
 
-### Azure Virtual Keys
-Azure Virtual Keys allow you to manage multiple Azure deployments under a single virtual key. This feature simplifies API key management and enables flexible usage of different Azure OpenAI models.
-You can create multiple deployments under the same resource group and manage them using a single virtual key.
+## How It Works: Portkey API Key → Gateway → Provider Credentials
 
-<Frame caption="Configure Multiple Azure Deployments">
-  <img src="/images/product/azure-vk.png"/>
-</Frame>
+Portkey uses a two-layer authentication system:
 
-To use the required deployment, simply pass the `alias` of the deployment as the `model` in LLM request body. In case the models is left empty or the  specified alias does not exist, the default deployment is used.
+### 1. Portkey API Key (Your Virtual Key)
+Your **Portkey API Key** is your virtual key - it's the single key you use to authenticate with Portkey's gateway. This key gives you access to all providers and models configured in your account.
 
+**Where to get it:**
+- Go to [Settings → API Keys](https://app.portkey.ai/api-keys)
+- Create a new API key with appropriate permissions
+- Use it in the `x-portkey-api-key` header or `PORTKEY_API_KEY` environment variable
 
-## How are the provider API keys stored?
+**What it does:**
+- Authenticates requests to Portkey's gateway
+- Controls access to Portkey features (completions, prompts, configs, guardrails)
+- Manages permissions (read/write/delete for different features)
+- Tracks usage and analytics
 
-Your API keys are encrypted and stored in secure vaults, accessible only at the moment of a request. Decryption is performed exclusively in isolated workers and only when necessary, ensuring the highest level of data security.
+**Example:**
+```python
+from portkey_ai import Portkey
 
-## How are the provider keys linked to the virtual key?
+# One Portkey API key gives you access to all providers
+portkey = Portkey(api_key="PORTKEY_API_KEY")
 
-We randomly generate virtual keys and link them separately to the securely stored keys. This means, your raw API keys can not be reverse engineered from the virtual keys.
+# Use any provider/model configured in your account
+response = portkey.chat.completions.create(
+    model="@openai-prod/gpt-4o",  # Gateway uses stored OpenAI credentials
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
 
-## Using Virtual Keys
+### 2. Provider Credentials (Stored Securely in Model Catalog)
+Your **provider credentials** (OpenAI API key, Anthropic API key, etc.) are stored securely in Portkey's Model Catalog. The gateway uses these credentials internally - you never expose them in your code.
+
+**How it works:**
+1. Store provider credentials once in Model Catalog (creates an Integration)
+2. Share with workspaces (becomes an AI Provider)
+3. Use provider slug in code: `@provider-slug/model-name`
+4. Gateway automatically uses the stored credentials when you make requests
+
+**Security:**
+- Credentials encrypted in secure vaults
+- Decrypted only in isolated workers during requests
+- Never exposed in logs, responses, or UI
+- Cannot be reverse-engineered from provider slugs
+
+**The Flow:**
+```
+Your Code → Portkey API Key → Portkey Gateway → Provider Credentials → AI Provider → Model
+```
+
+<Card title="Model Catalog" icon="sparkles" href="/product/model-catalog">
+  Learn how to set up providers and manage credentials in Model Catalog
+</Card>
+
+## How Model Catalog Works
+
+Model Catalog organizes AI access in a three-level hierarchy:
+
+### Credentials → Providers → Models
+
+**1. Integrations (Organization Level)**
+- Where credentials are stored
+- Created by org admins
+- Can be shared with multiple workspaces
+- Set default budgets, rate limits, and model allow-lists
+
+**2. AI Providers (Workspace Level)**
+- What workspaces see and use
+- Inherit from org-level Integrations or workspace-only
+- Workspace-specific budgets and rate limits
+- Represented by slugs like `@openai-prod`
+
+**3. Models**
+- Individual AI models you can call
+- Format: `@provider-slug/model-name` (e.g., `@openai-prod/gpt-4o`)
+- Access controlled by model provisioning
+
+<Info>
+**Quick Start:** Add a provider in Model Catalog → AI Providers → Add Provider. Choose existing credentials or create new ones for just your workspace.
+</Info>
+
+<Card title="Manage Credentials" icon="key" href="/product/model-catalog/integrations">
+  For org admins: Learn how to centrally manage credentials and share them across workspaces
+</Card>
+
+## How Credential Storage Works
+
+Portkey stores your provider credentials with enterprise-grade security:
+
+### Encryption & Storage
+- **Encrypted at rest** in secure vaults
+- **Decrypted in-memory** only during request processing
+- **Isolated workers** handle decryption (never in your application)
+- **No exposure** - credentials never appear in logs, responses, or UI
+
+### Key Rotation
+- Update credentials without changing code
+- Rotate keys in Model Catalog → Integrations
+- All workspaces using that Integration automatically get the new key
+- No downtime or code changes required
+
+### Multiple Credentials
+- Store multiple credentials for the same provider
+- Create different providers with different limits (dev, staging, prod)
+- Use same underlying credentials with different governance rules
+
+## Using Providers in Your Code
+
+There are three ways to specify providers. We recommend the model prefix format for clarity and simplicity.
+
+### Method 1: Model Prefix (Recommended)
+
+Specify provider and model together in the `model` parameter. This keeps everything in one place and makes switching between providers/models simple.
+
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+# Recommended: Provider + model together
+response = portkey.chat.completions.create(
+    model="@openai-prod/gpt-4o",  # Provider slug + model name
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+```javascript
+import { Portkey } from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+// Recommended: Provider + model together
+const response = await portkey.chat.completions.create({
+    model: "@openai-prod/gpt-4o",  // Provider slug + model name
+    messages: [{ role: "user", content: "Hello!" }]
+});
+```
+
+### Method 2: Provider Header
+
+Specify provider separately using the `provider` parameter. Remember to include the `@` symbol.
+
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@openai-prod"  # Provider with @ symbol
+)
+
+# Then just specify model name
+response = portkey.chat.completions.create(
+    model="gpt-4o",  # Just the model name
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+```javascript
+import { Portkey } from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@openai-prod"  // Provider with @ symbol
+});
+
+// Then just specify model name
+const response = await portkey.chat.completions.create({
+    model: "gpt-4o",  // Just the model name
+    messages: [{ role: "user", content: "Hello!" }]
+});
+```
+
+### Method 3: Legacy Virtual Key (Backwards Compatible)
+
+The `virtual_key` parameter still works for backwards compatibility, but it's not recommended for new code.
+
+```python
+from portkey_ai import Portkey
+
+# Still works, but not recommended for new code
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    virtual_key="openai-prod"  # Legacy format (no @)
+)
+
+response = portkey.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+<Note>
+**Recommendation:** Use Method 1 (model prefix) - it's explicit, keeps everything in one place, and makes switching between providers/models simple.
+</Note>
 
 ### Using the Portkey SDK
 
-Add the virtual key directly to the initialization configuration for Portkey.
+Add the provider directly to the initialization configuration for Portkey.
+
 <Tabs>
   <Tab title="NodeJS">
 
@@ -78,7 +234,7 @@ const portkey = new Portkey({
   <Tab title="Python">
 
 ```py
-# Construct a client with a virtual key
+# Construct a client with a provider
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
     provider="@PROVIDER"
@@ -87,7 +243,7 @@ portkey = Portkey(
   </Tab>
 </Tabs>
 
-Alternatively, you can override the virtual key during the completions call as follows:
+Alternatively, you can override the provider during the completions call as follows:
 
 <Tabs>
   <Tab title="NodeJS SDK">
@@ -112,7 +268,8 @@ completion = portkey.with_options(provider="@...").chat.completions.create(
 
 ### Using the OpenAI SDK
 
-Add the virtual key directly to the initialization configuration for the OpenAI client.
+Add the provider directly to the initialization configuration for the OpenAI client.
+
 <Tabs>
   <Tab title="NodeJS">
 
@@ -134,7 +291,7 @@ const openai = new OpenAI({
   <Tab title="Python">
 
 ```py
-# Construct a client with a virtual key
+# Construct a client with a provider
 from openai import OpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
@@ -150,29 +307,6 @@ client = OpenAI(
   </Tab>
 </Tabs>
 
-Alternatively, you can override the virtual key during the completions call as follows:
-
-<Tabs>
-  <Tab title="NodeJS SDK">
-
-```js
-const chatCompletion = await portkey.chat.completions.create({
-    messages: [{ role: 'user', content: 'Say this is a test' }],
-    model: 'gpt-3.5-turbo',
-}, {provider:"@OVERRIDING_PROVIDER"});
-```
-  </Tab>
-  <Tab title="Python SDK">
-
-```py
-completion = portkey.with_options(provider="@...").chat.completions.create(
-    messages = [{ "role": 'user', "content": 'Say this is a test' }],
-    model = 'gpt-3.5-turbo'
-)
-```
-  </Tab>
-</Tabs>
-
 ### Using alias with Azure virtual keys:
 
 ```js
@@ -182,12 +316,11 @@ const chatCompletion = await portkey.chat.completions.create({
 }, {provider:"@PROVIDER"});
 ```
 
-
 ### Self-Hosted LLM Virtual Keys
 
-Portkey supports creating virtual keys for your privately hosted LLMs, allowing you to manage them alongside commercial providers.
+Portkey supports creating providers for your privately hosted LLMs, allowing you to manage them alongside commercial providers.
 
-1. When creating a new virtual key, enable the "Local/Privately hosted provider" toggle
+1. When adding a provider in Model Catalog, enable the "Local/Privately hosted provider" toggle
 2. Select the provider API specification your LLM implements (typically OpenAI)
 3. Enter your model's base URL in the "Custom Host" field
 4. Add any required authentication headers and their values
@@ -200,21 +333,341 @@ This allows you to use your self-hosted models with all Portkey features includi
 
 For more details, see [Bring Your Own LLM](/product/ai-gateway/byollm).
 
-## Setting Budget Limits
+## Using Providers in Configs
 
-Portkey provides a simple way to set budget limits for any of your virtual keys and helps you manage your spending on AI providers (and LLMs) - giving you confidence and control over your application's costs.
+Configs also support three methods for specifying providers:
 
-[Budget Limits](/product/ai-gateway/virtual-keys/budget-limits)
+### Method 1: Model in override_params (Recommended)
+
+Specify provider and model together in `override_params`. This works great with multi-provider strategies.
+
+```json
+{
+  "strategy": {
+    "mode": "fallback"
+  },
+  "targets": [
+    {
+      "override_params": {
+        "model": "@openai-prod/gpt-4o"  // Provider + model together
+      }
+    },
+    {
+      "override_params": {
+        "model": "@anthropic/claude-3-sonnet"  // Easy to switch providers
+      }
+    }
+  ]
+}
+```
+
+### Method 2: Provider in Target
+
+Specify provider directly in the target. Remember the `@` symbol.
+
+```json
+{
+  "strategy": {
+    "mode": "single"
+  },
+  "targets": [
+    {
+      "provider": "@openai-prod",  // Provider with @ symbol
+      "override_params": {
+        "model": "gpt-4o"  // Just the model name
+      }
+    }
+  ]
+}
+```
+
+### Method 3: Legacy virtual_key (Backwards Compatible)
+
+The `virtual_key` field still works in configs.
+
+```json
+{
+  "strategy": {
+    "mode": "single"
+  },
+  "targets": [
+    {
+      "virtual_key": "openai-prod"  // Legacy format (no @)
+    }
+  ]
+}
+```
+
+<Note>
+**Recommendation:** Use Method 1 (model in override_params) - it's explicit and works great with multi-provider strategies like fallback and load balancing.
+</Note>
+
+## Budget Limits
+
+Set spending controls to prevent unexpected costs. Budget limits can be applied at the Integration level and cascade to all Providers created from it.
+
+### Types of Budget Limits
+
+**Cost-Based Limits**
+- Set maximum spend in USD (minimum $1)
+- Automatically disables provider when limit reached
+- Track spending in real-time
+
+**Token-Based Limits**
+- Set maximum tokens consumed (minimum 100 tokens)
+- Control usage independent of cost fluctuations
+- Track both input and output tokens
+
+### Setting Budget Limits
+
+**At Integration Level:**
+1. Go to Integrations → Select Integration
+2. Navigate to Workspace Provisioning
+3. Click Edit Budget & Rate Limits for each workspace
+4. Set cost-based or token-based limits
+
+**Per Workspace:**
+- Different budgets for different workspaces
+- Finance team: $500/month
+- Engineering team: $2000/month
+- Marketing team: $300/month
+
+### Alert Thresholds
+
+Set notifications before reaching limits:
+- Cost-based: Alert at 80% of budget (e.g., $400 of $500)
+- Token-based: Alert at 90% of token limit
+- Email notifications sent automatically
+- Continue using until full limit reached
+
+### Periodic Resets
+
+Configure automatic budget resets:
+- **No Reset**: Budget applies until exhausted
+- **Weekly Reset**: Resets every Sunday at 12 AM UTC
+- **Monthly Reset**: Resets on 1st of month at 12 AM UTC
+
+<Note>
+Budget limits cannot be edited once set. To change a limit, duplicate the provider and create a new one with the desired limit.
+</Note>
+
+<Card title="Budget Limits Guide" icon="dollar-sign" href="/product/ai-gateway/virtual-keys/budget-limits">
+  Detailed guide to setting and managing budget limits
+</Card>
+
+## Rate Limits
+
+Control request velocity to manage load, prevent abuse, and ensure fair resource distribution.
+
+### Types of Rate Limits
+
+**Request-Based Limits**
+- Maximum requests per time period
+- Example: 1000 requests/minute
+- Prevents API abuse and DoS attacks
+
+**Token-Based Limits**
+- Maximum tokens consumed per time period
+- Example: 1M tokens/hour
+- Controls usage independent of request count
+
+### Time Windows
+
+Choose from three intervals:
+
+- **Per Minute**: Fine-grained control, resets every minute
+- **Per Hour**: Balanced control, resets hourly
+- **Per Day**: Broad control, resets daily
+
+### Setting Rate Limits
+
+**At Integration Level:**
+1. Go to Integrations → Select Integration
+2. Navigate to Workspace Provisioning
+3. Click Edit Budget & Rate Limits
+4. Set request-based or token-based rate limits
+5. Choose time window (minute/hour/day)
+
+**Example Configuration:**
+- Engineering workspace: 5000 requests/hour
+- Finance workspace: 1000 requests/day
+- Marketing workspace: 200 requests/minute
+
+### Exceeding Rate Limits
+
+When a rate limit is reached:
+- Subsequent requests rejected with error code
+- Clear error message indicating limit exceeded
+- Limit automatically resets after time period
+- No manual intervention needed
+
+<Card title="Rate Limits Guide" icon="gauge" href="/product/ai-gateway/virtual-keys/rate-limits">
+  Detailed guide to setting and managing rate limits
+</Card>
+
+## Model Access Control
+
+Control which models users and workspaces can access through multiple layers of governance.
+
+### Model Provisioning (Integration Level)
+
+When creating an Integration, specify which models are available:
+
+**Allow All Models**
+- Provides access to all models from that provider
+- Useful for development or when you trust the team
+- Less control over costs
+
+**Allow Specific Models (Recommended)**
+- Create an explicit allow-list of approved models
+- Only selected models appear in workspace Model Catalog
+- Better cost control and compliance
+
+**Example:**
+- Production Integration: Only `gpt-4o`, `gpt-4o-mini`
+- Development Integration: All GPT models
+- Research Integration: Experimental models only
+
+### Workspace-Level Access
+
+Control access at the workspace level:
+
+1. **Provision Integrations to Workspaces**
+   - Choose which workspaces can use which Integrations
+   - Each workspace sees only provisioned providers
+   - Instant access revocation
+
+2. **Workspace-Specific Model Lists**
+   - Override Integration model list per workspace
+   - Finance workspace: Only cost-effective models
+   - Engineering workspace: All models for experimentation
+
+### User-Level Access (API Keys)
+
+Control access through API key permissions:
+
+**Model Catalog Permissions:**
+- **Disabled**: Cannot access Model Catalog
+- **Read**: Can view providers and models
+- **Write**: Can create/edit providers
+- **Delete**: Can remove providers
+
+**Example Use Cases:**
+- Developer API key: Read access to Model Catalog
+- Admin API key: Write/Delete access
+- Service account: Read access to specific providers only
+
+### Model Whitelist Guardrail
+
+Use the **Model Whitelist** guardrail to enforce model restrictions at the request level:
+
+**How it works:**
+- Check if the model in the request is in the allowed list
+- Block requests to unapproved models
+- Works as an input guardrail (before request is sent)
+
+**Configuration:**
+```json
+{
+  "before_request_hooks": [{
+    "type": "guardrail",
+    "id": "model-whitelist",
+    "checks": [{
+      "id": "default.modelWhitelist",
+      "parameters": {
+        "models": ["@openai-prod/gpt-4o", "@openai-prod/gpt-4o-mini"],
+        "inverse": false
+      }
+    }],
+    "deny": true
+  }]
+}
+```
+
+**Use Cases:**
+- Enforce model restrictions per API key
+- Prevent accidental use of expensive models
+- Compliance requirements
+
+<Card title="Guardrails" icon="shield-check" href="/product/guardrails">
+  Learn about all guardrail options including Model Whitelist
+</Card>
+
+## Model Rules Guardrail
+
+<Note>
+**Coming Soon:** Model Rules guardrail provides advanced model access control. More details will be added here once the feature documentation is available.
+
+If you have information about Model Rules, please share it and we'll update this section.
+</Note>
+
+Model Rules guardrail enables fine-grained control over model access based on:
+- User roles and permissions
+- Request metadata
+- Dynamic model allow-lists
+- Context-aware access control
+
+## Azure Virtual Keys
+
+Azure Virtual Keys allow you to manage multiple Azure deployments under a single provider. This feature simplifies API key management and enables flexible usage of different Azure OpenAI models.
+
+You can create multiple deployments under the same resource group and manage them using a single provider.
+
+<Frame caption="Configure Multiple Azure Deployments">
+  <img src="/images/product/azure-vk.png"/>
+</Frame>
+
+To use the required deployment, simply pass the `alias` of the deployment as the `model` in LLM request body. In case the models is left empty or the specified alias does not exist, the default deployment is used.
 
 ## Prompt Templates
 
-Choose your Virtual Key within Portkey’s prompt templates, and it will be automatically retrieved and ready for use.
+Choose your Provider within Portkey's prompt templates, and it will be automatically retrieved and ready for use.
 
 ## Langchain / LlamaIndex
 
-Set the virtual key when utilizing Portkey's custom LLM as shown below:
+Set the provider when utilizing Portkey's custom LLM as shown below:
 
 ```py
 # Example in Langchain
-llm = PortkeyLLM(api_key="PORTKEY_API_KEY",provider="@PROVIDER")
+llm = PortkeyLLM(api_key="PORTKEY_API_KEY", provider="@PROVIDER")
 ```
+
+## Quick Reference: Virtual Keys Concept
+
+**The Core Concept (Still True):**
+- ✅ **One Portkey API key** → Access **multiple providers** → Use **hundreds of models**
+- ✅ Provider credentials stored securely, never exposed in code
+- ✅ Centralized management and governance
+
+**What Evolved:**
+| Old Virtual Keys Feature | New Model Catalog System |
+|-------------------------|--------------------------|
+| Create Virtual Key in workspace | Add Provider in Model Catalog |
+| Always enter API keys | Choose existing credentials or create new |
+| `virtual_key` header | `model="@provider/model"` format (recommended) |
+| Budget per virtual key | Budget per workspace (from Integration) |
+| All models accessible | Model allow-list per Integration |
+| Workspace-only | Org-level sharing + workspace-level |
+
+## Related Guides
+
+<CardGroup cols={2}>
+  <Card title="Model Catalog" icon="sparkles" href="/product/model-catalog">
+    Complete guide to Model Catalog features
+  </Card>
+  <Card title="Integrations" icon="key" href="/product/model-catalog/integrations">
+    Managing credentials across workspaces
+  </Card>
+  <Card title="Budget Limits" icon="dollar-sign" href="/product/ai-gateway/virtual-keys/budget-limits">
+    Detailed budget limits guide
+  </Card>
+  <Card title="Rate Limits" icon="gauge" href="/product/ai-gateway/virtual-keys/rate-limits">
+    Detailed rate limits guide
+  </Card>
+  <Card title="Guardrails" icon="shield-check" href="/product/guardrails">
+    Model access control with guardrails
+  </Card>
+  <Card title="Migration Guide" icon="arrow-right" href="/support/upgrade-to-model-catalog">
+    Step-by-step migration from Virtual Keys
+  </Card>
+</CardGroup>
