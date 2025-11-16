@@ -57,7 +57,7 @@ These buckets are specifically tuned for applications handling variable-length L
 
 ## Custom Application Metrics
 
-The Portkey Enterprise Gateway exposes 14 custom metrics designed to provide deep visibility into LLM gateway operations, performance characteristics, and business metrics.
+The Portkey Enterprise Gateway exposes 15 custom metrics designed to provide deep visibility into LLM gateway operations, performance characteristics, and business metrics.
 
 ### Universal Label Schema
 
@@ -250,7 +250,56 @@ rate(llm_cost_sum[1h]) / rate(request_count[1h]) by (provider)
 
 ---
 
-### 8. Authentication Performance Analysis
+### 8. LLM Token Sum Accumulator
+
+**Metric Name**: `llm_token_sum`  
+**Type**: Gauge  
+**Unit**: Tokens
+
+**Technical Description**:
+Real-time accumulator tracking the total number of tokens consumed across all LLM API usage. This gauge provides immediate visibility into token consumption patterns and enables fine-grained usage analysis across multiple dimensions including users, applications, models, and providers.
+
+**Token Tracking Features**:
+- **Multi-Provider Support**: Normalized token tracking across different provider token counting methods
+- **Real-Time Updates**: Immediate token usage visibility for capacity monitoring
+- **Dimensional Analysis**: Token breakdown by any label dimension
+- **Usage Patterns**: Identify token-heavy users, applications, or use cases
+
+**Operational Value**:
+- **Capacity Planning**: Understand token consumption trends for scaling decisions
+- **Usage Attribution**: Identify highest token consumers by user, application, or team
+- **Efficiency Metrics**: Compare tokens consumed vs. API calls for efficiency analysis
+- **Budget Forecasting**: Project token usage for cost estimation (complement to `llm_cost_sum`)
+
+**Key Monitoring Patterns**:
+```promql
+# Tokens consumed per model over time
+rate(llm_token_sum[1h]) by (model, provider)
+
+# Highest token consuming users
+topk(10, sum(rate(llm_token_sum[24h])) by (metadata_user_id))
+
+# Average tokens per request by provider
+rate(llm_token_sum[1h]) / rate(request_count[1h]) by (provider)
+
+# Token efficiency by cache status
+sum(rate(llm_token_sum{cacheStatus="hit"}[1h])) / 
+sum(rate(llm_token_sum[1h])) * 100
+```
+
+**Correlation with Cost**:
+Use `llm_token_sum` in combination with `llm_cost_sum` for comprehensive cost analysis:
+```promql
+# Cost per token by provider
+rate(llm_cost_sum[1h]) / rate(llm_token_sum[1h]) by (provider)
+
+# Token to cost ratio trends
+(rate(llm_token_sum[1h]) / rate(llm_cost_sum[1h])) by (model)
+```
+
+---
+
+### 9. Authentication Performance Analysis
 
 **Metric Name**: `authentication_duration_milliseconds`  
 **Type**: Histogram  
@@ -278,7 +327,7 @@ Measures the complete authentication and authorization pipeline duration, includ
 
 ---
 
-### 9. Rate Limiting Performance Metrics
+### 10. Rate Limiting Performance Metrics
 
 **Metric Name**: `api_key_rate_limit_check_duration_milliseconds`  
 **Type**: Histogram  
@@ -306,7 +355,7 @@ Tracks the performance of hierarchical rate limiting checks across organization,
 
 ---
 
-### 10. Pre-Request Middleware Pipeline Performance
+### 11. Pre-Request Middleware Pipeline Performance
 
 **Metric Name**: `pre_request_processing_duration_milliseconds`  
 **Type**: Histogram  
@@ -336,7 +385,7 @@ Comprehensive timing of the pre-request processing pipeline that prepares reques
 
 ---
 
-### 11. Post-Request Processing Pipeline Performance
+### 12. Post-Request Processing Pipeline Performance
 
 **Metric Name**: `post_request_processing_duration_milliseconds`  
 **Type**: Histogram  
@@ -366,7 +415,7 @@ Measures the duration of post-request processing operations that occur after rec
 
 ---
 
-### 12. Cache System Performance Analysis
+### 13. Cache System Performance Analysis
 
 **Metric Name**: `llm_cache_processing_duration_milliseconds`  
 **Type**: Histogram  
@@ -406,7 +455,7 @@ rate(llm_cache_processing_duration_milliseconds_count[5m]) by (cacheStatus)
 
 ---
 
-### 13. gRPC Request Conversion Performance
+### 14. gRPC Request Conversion Performance
 
 **Metric Name**: `grpc_req_conversion_duration_milliseconds`  
 **Type**: Histogram  
