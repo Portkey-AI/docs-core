@@ -231,28 +231,22 @@ Create these Configs in Portkey UI, save them, and get an associated Config ID t
 
 Now, while instantiating your Portkey client or while sending headers, just pass the Config ID.
 
-<Tabs>
-  <Tab title="NodeJS">
-
-```js
+<CodeGroup>
+```js Node
 const portkey = new Portkey({
     apiKey: "PORTKEY_API_KEY",
     config: "pc-***" // Supports a string config id or a config object
 });
 ```
-  </Tab>
-  <Tab title="Python">
 
-```py
+```py Python
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
     config="pc-***" # Supports a string config id or a config object
 )
 ```
-  </Tab>
-  <Tab title="OpenAI NodeJS">
 
-```js
+```js OpenAI Node
 const openai = new OpenAI({
   apiKey: 'OPENAI_API_KEY',
   baseURL: PORTKEY_GATEWAY_URL,
@@ -262,10 +256,8 @@ const openai = new OpenAI({
   })
 });
 ```
-  </Tab>
-  <Tab title="OpenAI Python">
 
-```py
+```py OpenAI Python
 client = OpenAI(
     api_key="OPENAI_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
     base_url=PORTKEY_GATEWAY_URL,
@@ -276,10 +268,8 @@ client = OpenAI(
     )
 )
 ```
-  </Tab>
-<Tab title="cURL">
 
-```sh
+```sh cURL
 curl https://api.portkey.ai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
@@ -293,8 +283,7 @@ curl https://api.portkey.ai/v1/chat/completions \
       }]
   }'
 ```
-  </Tab>
-</Tabs>
+</CodeGroup>
 
 For more, refer to the [Config documentation](/product/ai-gateway/configs).
 
@@ -435,7 +424,9 @@ Each section contains an array of guardrail execution results, structured as fol
 
 ### Example Hook Results
 
-Here's a simplified example of what the `hook_results` might look like in a response:
+#### Non-Streaming Responses
+
+Here's a simplified example of what the `hook_results` might look like in a non-streaming response:
 
 ```json [expandable]
 "hook_results": {
@@ -606,6 +597,270 @@ This example corresponds to a `config` like:
   ]
 }
 ```
+
+#### Streaming Responses
+
+<Note>
+Portkey now supports hook results in streaming responses for `/chat/completions`, `/completions`, `/embeddings`, and `/messages` endpoints. This allows you to stop streaming or show redacted content if a request violates your guardrail policies, enabling clients to respect content policy guidelines in real-time.
+</Note>
+
+To receive hook results in streaming responses, you must set the `x-portkey-strict-open-ai-compliance` header to `false`.
+
+<CodeGroup>
+```bash cURL - /chat/completions
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: PORTKEY_API_KEY' \
+--header 'x-portkey-config: {"beforeRequestHooks":[{"type":"guardrail","id":"my_solid_guardrail","checks":[{"id":"default.regexMatch","parameters":{"rule": "*asd"}}]}],"retry": {"attempts": 1}}' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@my-openai/gpt-3.5-turbo",
+    "max_tokens": 100,
+    "stream": true,
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant"
+        },
+        {
+            "role": "user",
+            "content": "hello sir how are you?"
+        }
+    ]
+}'
+```
+
+```python Python
+from portkey_ai import AsyncPortkey
+import asyncio
+
+portkey = AsyncPortkey(
+    api_key="PORTKEY_API_KEY",
+    provider="openai",
+    config={
+        "beforeRequestHooks": [
+            {
+                "type": "guardrail",
+                "id": "my_solid_guardrail",
+                "checks": [{"id": "default.regexMatch", "parameters": {"rule": "*"}}],
+            }
+        ],
+        "cache": {"mode": "simple"},
+    },
+)
+
+
+async def main():
+    hook_results = None
+    try:
+        response = await portkey.chat.completions.create(
+            model="@my-openai/gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Hello!"},
+            ],
+            stream=True,
+        )
+        async for chunk in response:
+            if chunk.model_extra and chunk.model_extra.get("hook_results"):
+                hook_results = chunk.model_extra.get("hook_results")
+                if len(hook_results.get("before_request_hooks", [])) > 0:
+                    # Check for deny guardrails or handle as necessary
+                    pass
+            print(chunk.choices, end="", flush=True)
+            print("\n")
+            
+    except Exception as e:
+        print(e)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+```javascript Node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "openai",
+    config: {
+        beforeRequestHooks: [
+            {
+                type: "guardrail",
+                id: "my_solid_guardrail",
+                checks: [{ id: "default.regexMatch", parameters: { rule: "*" } }],
+            }
+        ],
+        cache: { mode: "simple" },
+    },
+});
+
+async function main() {
+    let hookResults = null;
+    try {
+        const response = await portkey.chat.completions.create({
+            model: "@my-openai/gpt-3.5-turbo",
+            messages: [
+                { role: "system", content: "You are a helpful assistant." },
+                { role: "user", content: "Hello!" },
+            ],
+            stream: true,
+        });
+
+        for await (const chunk of response) {
+            if (chunk.model_extra && chunk.model_extra.hook_results) {
+                hookResults = chunk.model_extra.hook_results;
+                if (hookResults.before_request_hooks?.length > 0) {
+                    // Check for deny guardrails or handle as necessary
+                }
+            }
+            process.stdout.write(JSON.stringify(chunk.choices));
+            process.stdout.write("\n");
+        }
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+main();
+```
+
+```python OpenAI Python
+from openai import AsyncOpenAI
+import asyncio
+
+client = AsyncOpenAI(
+    api_key="OPENAI_API_KEY",
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-api-key": "PORTKEY_API_KEY",
+        "x-portkey-config": '{"beforeRequestHooks":[{"type":"guardrail","id":"my_solid_guardrail","checks":[{"id":"default.regexMatch","parameters":{"rule":"*"}}]}]}',
+        "x-portkey-strict-open-ai-compliance": "false"
+    }
+)
+
+
+async def main():
+    hook_results = None
+    try:
+        response = await client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Hello!"},
+            ],
+            stream=True,
+        )
+        async for chunk in response:
+            if chunk.model_extra and chunk.model_extra.get("hook_results"):
+                hook_results = chunk.model_extra.get("hook_results")
+                if len(hook_results.get("before_request_hooks", [])) > 0:
+                    # Check for deny guardrails or handle as necessary
+                    pass
+            print(chunk.choices, end="", flush=True)
+            print("\n")
+            
+    except Exception as e:
+        print(e)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+```javascript OpenAI Node
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: "https://api.portkey.ai/v1",
+    defaultHeaders: {
+        "x-portkey-api-key": process.env.PORTKEY_API_KEY,
+        "x-portkey-config": JSON.stringify({
+            beforeRequestHooks: [
+                {
+                    type: "guardrail",
+                    id: "my_solid_guardrail",
+                    checks: [{ id: "default.regexMatch", parameters: { rule: "*" } }],
+                }
+            ]
+        }),
+        "x-portkey-strict-open-ai-compliance": "false"
+    }
+});
+
+async function main() {
+    let hookResults = null;
+    try {
+        const response = await client.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [
+                { role: "system", content: "You are a helpful assistant." },
+                { role: "user", content: "Hello!" },
+            ],
+            stream: true,
+        });
+
+        for await (const chunk of response) {
+            if (chunk.model_extra && chunk.model_extra.hook_results) {
+                hookResults = chunk.model_extra.hook_results;
+                if (hookResults.before_request_hooks?.length > 0) {
+                    // Check for deny guardrails or handle as necessary
+                }
+            }
+            process.stdout.write(JSON.stringify(chunk.choices));
+            process.stdout.write("\n");
+        }
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+main();
+```
+
+```bash cURL - /messages (Anthropic)
+curl --location 'https://api.portkey.ai/v1/messages' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'x-portkey-config: {"beforeRequestHooks":[{"type":"guardrail","id":"my_solid_guardrail","checks":[{"id":"default.regexMatch","parameters":{"rule": "*asd"}}]}],"retry": {"attempts": 1}}' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@dev-anthropic/claude-haiku-4-5",
+    "max_tokens": 100,
+    "stream": true,
+    "messages": [
+      {
+        "role": "user",
+        "content": "tell me a story?"
+      }
+    ]
+  }'
+```
+</CodeGroup>
+
+**Response chunk for /chat/completions:**
+```json
+data: {"hook_results":{"before_request_hooks":[{"verdict":true,"id":"my_solid_guardrail","transformed":false,"checks":[{"data":{"explanation":"An error occurred while processing the regex: Invalid regular expression: /*/: Nothing to repeat","regexPattern":"*","not":false,"textExcerpt":"hello sir how are you?"},"verdict":false,"id":"default.regexMatch","error":{"name":"SyntaxError","message":"Invalid regular expression: /*/: Nothing to repeat"},"execution_time":0,"created_at":"2025-11-14T08:14:04.772Z","transformed":false,"fail_on_error":false}],"feedback":null,"execution_time":0,"async":false,"type":"guardrail","created_at":"2025-11-14T08:14:04.772Z","deny":false}]}}
+```
+
+**Response chunk for /messages:**
+```
+event: hook_results
+data: {"hook_results":{"before_request_hooks":[{"verdict":true,"id":"my_solid_guardrail","transformed":false,"checks":[{"data":{"explanation":"An error occurred while processing the regex: Invalid regular expression: /*asd/: Nothing to repeat","regexPattern":"*asd","not":false,"textExcerpt":"tell me a story?"},"verdict":false,"id":"default.regexMatch","error":{"name":"SyntaxError","message":"Invalid regular expression: /*asd/: Nothing to repeat"},"execution_time":0,"transformed":false,"created_at":"2025-11-14T09:23:12.457Z","log":null,"fail_on_error":false}],"feedback":null,"execution_time":0,"async":false,"type":"guardrail","created_at":"2025-11-14T09:23:12.457Z","deny":false}]}}
+```
+
+<Note>
+For the `/messages` endpoint (Anthropic), it is not possible to access hook results through the Anthropic SDK because the SDK only parses Anthropic-specific events. Use cURL or raw HTTP requests to access hook results for this endpoint.
+</Note>
+
+**Accessing Hook Results in SDKs**
+
+When using Portkey or OpenAI SDKs with streaming enabled (`stream=True`), the hook results are available in the `.model_extra.hook_results` parameter of the response chunks. This applies to:
+- `.chat.completions.create()` with `stream=True`
+- `.completions.create()` with `stream=True`
+- `.embeddings.create()` with `stream=True`
 ### Important Notes
 
 - If a guardrail is configured to run asynchronously (`async=true`), the `hook_results` will not appear in the API response. The results will only be available in the Portkey logs.
