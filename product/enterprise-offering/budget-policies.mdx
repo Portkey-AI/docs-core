@@ -1,0 +1,264 @@
+---
+title: Budget Policies
+description: Manage usage limits and rate limits policies for your organization
+---
+
+<Info>
+Available on **Enterprise** Self Hosting plan only.
+
+Requires **1.17.0** or higher version of the Gateway.
+</Info>
+
+# Policies
+
+Policies allow you to set usage limits and rate limits for your workspaces. There are two types of policies:
+
+- **Usage Limits Policies**: Control the total usage (cost or tokens) over a period
+- **Rate Limits Policies**: Control the rate of requests or tokens per minute/hour/day
+
+## Policy Structure
+
+Both policy types share common concepts:
+
+### Conditions
+
+Conditions define which requests the policy applies to. Each condition has a `key` and `value`:
+
+**Valid keys:**
+- `api_key` - Apply to a specific API key
+- `workspace_id` - Apply to a workspace
+- `metadata.*` - Apply based on custom metadata fields (e.g., `metadata.user_id`, `metadata.team`)
+
+**Example:**
+```json
+[
+  {
+    "key": "workspace_id",
+    "value": "workspace-123"
+  },
+  {
+    "key": "metadata.team",
+    "value": "engineering"
+  }
+]
+```
+
+### Group By
+
+Group by defines how usage is aggregated. Each group entry has a `key`:
+
+**Valid keys:**
+- `api_key` - Group by API key
+- `workspace_id` - Group by workspace
+- `metadata.*` - Group by custom metadata fields
+
+**Example:**
+```json
+[
+  {
+    "key": "api_key"
+  },
+  {
+    "key": "metadata.user_id"
+  }
+]
+```
+
+### Authentication
+
+All policy endpoints require authentication. You can authenticate using:
+
+- **API Key**: Include in `x-portkey-api-key` header
+
+### Permissions
+
+Policies require the following RBAC permissions:
+- `policies:create` - Create policies
+- `policies:read` - Read policies
+- `policies:update` - Update policies
+- `policies:delete` - Delete policies
+- `policies:list` - List policies
+
+### Base URL
+
+All policy endpoints are under:
+```
+/v1/policies
+```
+
+## Usage Limits Policies
+
+Usage limits policies allow you to set maximum usage (cost or tokens) that can be consumed over a period. When the limit is reached, requests will be blocked until the limit resets.
+
+### Policy Types
+
+Usage limits policies support two types:
+
+- **`cost`**: Limit based on total cost (in dollars)
+- **`tokens`**: Limit based on total tokens consumed
+
+### Validation Rules
+
+1. **Conditions**: Must be a non-empty array. Each condition must have `key` and `value` fields.
+2. **Group By**: Must be a non-empty array. Each group must have a `key` field.
+3. **Valid Keys**: For both `conditions` and `group_by`, valid keys are:
+   - `api_key`
+   - `workspace_id`
+   - Any key starting with `metadata.` (e.g., `metadata.user_id`)
+4. **Alert Threshold**: Must be less than `credit_limit` if provided.
+5. **Workspace**: Workspace ID is required (can be provided via API key or request body).
+
+### Examples
+
+#### 1: Monthly Cost Limit per API Key
+
+Limit each API key to $1000 per month:
+
+```json
+{
+  "name": "Monthly Cost Limit per API Key",
+  "conditions": [
+    {
+      "key": "workspace_id",
+      "value": "workspace-123"
+    }
+  ],
+  "group_by": [
+    {
+      "key": "api_key"
+    }
+  ],
+  "type": "cost",
+  "credit_limit": 1000.0,
+  "alert_threshold": 800.0,
+  "periodic_reset": "monthly"
+}
+```
+
+#### 2: Token Limit by User
+
+Limit tokens per user (via metadata):
+
+```json
+{
+  "name": "Token Limit per User",
+  "conditions": [
+    {
+      "key": "workspace_id",
+      "value": "workspace-123"
+    }
+  ],
+  "group_by": [
+    {
+      "key": "metadata.user_id"
+    }
+  ],
+  "type": "tokens",
+  "credit_limit": 1000000,
+  "periodic_reset": "weekly"
+}
+```
+
+## Rate Limits Policies
+
+Rate limits policies allow you to control the rate of requests or tokens consumed per minute, hour, or day. When the rate limit is exceeded, requests will be throttled.
+
+### Policy Types
+
+Rate limits policies support two types:
+
+- **`requests`**: Limit based on number of requests
+- **`tokens`**: Limit based on number of tokens
+
+### Rate Units
+
+Rate limits can be specified in three units:
+
+- **`rpm`**: Requests/Tokens per minute
+- **`rph`**: Requests/Tokens per hour
+- **`rpd`**: Requests/Tokens per day
+
+### Validation Rules
+
+1. **Conditions**: Must be a non-empty array. Each condition must have `key` and `value` fields.
+2. **Group By**: Must be a non-empty array. Each group must have a `key` field.
+3. **Valid Keys**: For both `conditions` and `group_by`, valid keys are:
+   - `api_key`
+   - `workspace_id`
+   - Any key starting with `metadata.` (e.g., `metadata.user_id`)
+4. **Value**: Must be a numeric value.
+5. **Workspace**: Workspace ID is required (can be provided via API key or request body).
+
+### Examples
+
+#### 1: Requests per Minute per API Key
+
+Limit each API key to 100 requests per minute:
+
+```json
+{
+  "name": "100 RPM per API Key",
+  "conditions": [
+    {
+      "key": "workspace_id",
+      "value": "workspace-123"
+    }
+  ],
+  "group_by": [
+    {
+      "key": "api_key"
+    }
+  ],
+  "type": "requests",
+  "unit": "rpm",
+  "value": 100
+}
+```
+
+#### 2: Tokens per Hour by User
+
+Limit tokens per user (via metadata) to 10,000 per hour:
+
+```json
+{
+  "name": "10K Tokens per Hour per User",
+  "conditions": [
+    {
+      "key": "workspace_id",
+      "value": "workspace-123"
+    }
+  ],
+  "group_by": [
+    {
+      "key": "metadata.user_id"
+    }
+  ],
+  "type": "tokens",
+  "unit": "rph",
+  "value": 10000
+}
+```
+
+#### 3: Daily Request Limit
+
+Limit total requests per day for a workspace:
+
+```json
+{
+  "name": "10K Requests per Day",
+  "conditions": [
+    {
+      "key": "workspace_id",
+      "value": "workspace-123"
+    }
+  ],
+  "group_by": [
+    {
+      "key": "workspace_id"
+    }
+  ],
+  "type": "requests",
+  "unit": "rpd",
+  "value": 10000
+}
+```
