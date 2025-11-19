@@ -1,6 +1,6 @@
 ---
 title: Budget Policies
-description: Manage usage limits and rate limits policies for your organization
+description: Manage usage limits and rate limits policies for your organisation
 ---
 
 <Info>
@@ -11,10 +11,11 @@ Requires **1.17.0** or higher version of the Gateway.
 
 # Policies
 
-Policies allow you to set usage limits and rate limits for your workspaces. There are two types of policies:
+- Policies allow organisations to apply flexible budget and rate limit controls based on dynamic conditions (API keys, metadata, workspace, etc.). 
 
-- **Usage Limits Policies**: Control the total usage (cost or tokens) over a period
-- **Rate Limits Policies**: Control the rate of requests or tokens per minute/hour/day
+- There are two types of policies:
+  1. **Usage Limits Policies**: Control the total usage (cost or tokens) over a period
+  2. **Rate Limits Policies**: Control the rate of requests or tokens per minute/hour/day
 
 ## Policy Structure
 
@@ -97,6 +98,63 @@ Usage limits policies support two types:
 - **`cost`**: Limit based on total cost (in dollars)
 - **`tokens`**: Limit based on total tokens consumed
 
+## Usage Limits Policies
+
+Usage limits policies allow you to set maximum usage (cost or tokens) that can be consumed over a period. When the limit is reached, requests will be blocked until the limit resets.
+
+### Policy Types
+
+Usage limits policies support two types:
+
+- **`cost`**: Limit based on total cost (in dollars)
+- **`tokens`**: Limit based on total tokens consumed
+
+### Parameters
+
+Usage limits policies support the following parameters:
+
+#### `credit_limit` (required)
+
+The maximum usage limit that can be consumed before requests are blocked.
+
+- **Type**: Number (integer or float)
+- **Minimum value**: 
+  - For `cost` type: `1` (represents $1.00)
+  - For `tokens` type: `100` tokens
+- **Units**:
+  - For `cost` type: Value is in USD (dollars)
+  - For `tokens` type: Value is in tokens
+- **Behavior**: When the credit limit is reached, all matching requests will be blocked until the limit resets (if `periodic_reset` is configured) or the policy is updated
+
+#### `alert_threshold` (optional)
+
+An optional threshold that triggers notifications before the credit limit is reached.
+
+- **Type**: Number (integer or float)
+- **Minimum value**: `1`
+- **Units**: 
+  - For `cost` type: Value is in USD (dollars)
+  - For `tokens` type: Value is in tokens
+- **Validation**: Must be less than `credit_limit` if provided
+- **Behavior**: 
+  - When usage reaches this threshold, email notifications are sent to configured recipients
+  - The API key continues to function normally until the full `credit_limit` is reached
+  - Useful for proactive monitoring and budget management
+
+#### `periodic_reset` (optional)
+
+Configures automatic reset of the usage limit at regular intervals.
+
+- **Type**: String (enum)
+- **Valid values**:
+  - `"weekly"` - Budget limits automatically reset every week
+  - `"monthly"` - Budget limits automatically reset every month
+  - Omitted/not provided - No periodic reset (limit applies until exhausted)
+- **Reset timing**:
+  - **Weekly**: Resets occur every Monday at 12:00 AM UTC
+  - **Monthly**: Resets occur on the 1st calendar day of each month at 12:00 AM UTC, regardless of when the policy was created
+- **Behavior**: When a reset occurs, the usage counter resets to zero and the limit becomes available again
+
 ### Validation Rules
 
 1. **Conditions**: Must be a non-empty array. Each condition must have `key` and `value` fields.
@@ -177,6 +235,50 @@ Rate limits can be specified in three units:
 - **`rpm`**: Requests/Tokens per minute
 - **`rph`**: Requests/Tokens per hour
 - **`rpd`**: Requests/Tokens per day
+
+### Parameters
+
+Rate limits policies support the following parameters:
+
+#### `type` (required)
+
+The type of rate limit to enforce.
+
+- **Type**: String (enum)
+- **Valid values**:
+  - `"requests"` - Limit based on number of API requests
+  - `"tokens"` - Limit based on number of tokens consumed
+- **Behavior**: Determines what metric is being rate-limited
+
+#### `unit` (required)
+
+The time interval unit for the rate limit.
+
+- **Type**: String (enum)
+- **Valid values**:
+  - `"rpm"` - Requests/Tokens per minute
+  - `"rph"` - Requests/Tokens per hour
+  - `"rpd"` - Requests/Tokens per day
+- **Behavior**: 
+  - Defines the time window over which the rate limit is calculated
+  - Limits reset automatically at the start of each time period
+  - **Per Minute**: Limits reset every minute, ideal for fine-grained control
+  - **Per Hour**: Limits reset hourly, providing balanced usage control
+  - **Per Day**: Limits reset daily, suitable for broader usage patterns
+
+#### `value` (required)
+
+The maximum number of requests or tokens allowed within the specified time unit.
+
+- **Type**: Number (integer)
+- **Minimum value**: `1` (setting to `0` effectively disables the policy)
+- **Units**:
+  - For `requests` type: Value represents the number of API requests
+  - For `tokens` type: Value represents the number of tokens
+- **Behavior**: 
+  - When the rate limit is exceeded, subsequent requests are throttled/rejected until the time period resets
+  - The limit applies immediately after the policy is created
+  - Rate limits are enforced on a rolling window basis within the specified time unit
 
 ### Validation Rules
 
@@ -262,3 +364,19 @@ Limit total requests per day for a workspace:
   "value": 10000
 }
 ```
+
+## API Reference
+For detailed API documentation, see the following endpoints:
+### Usage Limits Policies
+<Card title="Create Usage Limits Policy" href="/api-reference/admin-api/control-plane/policies/usage-limits/create-usage-limits-policy"/>
+<Card title="List Usage Limits Policies" href="/api-reference/admin-api/control-plane/policies/usage-limits/list-usage-limits-policy"/>
+<Card title="Retrieve Usage Limits Policy" href="/api-reference/admin-api/control-plane/policies/usage-limits/retrieve-usage-limits-policy"/>
+<Card title="Update Usage Limits Policy" href="/api-reference/admin-api/control-plane/policies/usage-limits/update-usage-limits-policy"/>
+<Card title="Delete Usage Limits Policy" href="/api-reference/admin-api/control-plane/policies/usage-limits/delete-usage-limits-policy"/>
+
+### Rate Limits Policies
+<Card title="Create Rate Limits Policy" href="/api-reference/admin-api/control-plane/policies/rate-limits/create-rate-limits-policy"/>
+<Card title="List Rate Limits Policies" href="/api-reference/admin-api/control-plane/policies/rate-limits/list-rate-limits-policy"/>
+<Card title="Retrieve Rate Limits Policy" href="/api-reference/admin-api/control-plane/policies/rate-limits/retrieve-rate-limits-policy"/>
+<Card title="Update Rate Limits Policy" href="/api-reference/admin-api/control-plane/policies/rate-limits/update-rate-limits-policy"/>
+<Card title="Delete Rate Limits Policy" href="/api-reference/admin-api/control-plane/policies/rate-limits/delete-rate-limits-policy"/>
