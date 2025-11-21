@@ -90,6 +90,16 @@ response = portkey.chat.completions.create(
 </Note>
 ```
 
+**Important for cURL:**
+The `x-portkey-provider` header must use the `@` prefix format (e.g., `@anthropic-prod`), not the plain provider name:
+```bash
+# ✅ Correct
+-H "x-portkey-provider: @anthropic-prod"
+
+# ❌ Wrong
+-H "x-portkey-provider: anthropic"
+```
+
 ### Pattern 3: References to Virtual Keys in Text
 
 **Find:**
@@ -269,6 +279,7 @@ After migrating each page:
 3. **Test backwards compatibility** - Legacy `virtual_key` examples should still work
 4. **Consistency** - Same pattern across all pages
 5. **Provider-specific content** - Keep unique features, just update references
+6. **SDK reference link** - Use `/api-reference/sdk/list` (NOT `/api-reference/portkey-sdk-client`)
 
 ---
 
