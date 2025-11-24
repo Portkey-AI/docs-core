@@ -1,0 +1,834 @@
+---
+title: 'Converting STDIO to Remote MCP Servers'
+description: 'Step-by-step guide to converting local STDIO MCP servers to production-ready Streamable HTTP servers'
+icon: 'globe'
+---
+
+<Info>
+This guide covers converting STDIO MCP servers to Streamable HTTP, the current standard for remote MCP deployments (protocol version 2025-03-26). All code examples follow correct initialization patterns to avoid common errors.
+</Info>
+
+## Why Convert to Remote?
+
+<CardGroup cols={2}>
+  <Card title="Cloud Deployment" icon="cloud">
+    Host your server on any cloud platform and make it globally accessible
+  </Card>
+  <Card title="Multi-Client Support" icon="users">
+    Handle multiple concurrent client connections simultaneously
+  </Card>
+  <Card title="Better Integration" icon="plug">
+    Easier integration with web apps, mobile apps, and distributed systems
+  </Card>
+  <Card title="Horizontal Scaling" icon="chart-line">
+    Deploy behind load balancers and scale as needed
+  </Card>
+</CardGroup>
+
+---
+
+## Understanding MCP Transports
+
+### STDIO Transport
+
+**Best for:** Local development, single client
+
+```plaintext
+Client spawns server as subprocess → stdin/stdout communication
+```
+
+**Pros:** Zero network overhead, simple setup  
+**Cons:** Same machine only, no multi-client support
+
+### Streamable HTTP (Recommended)
+
+**Best for:** Production, cloud hosting, multiple clients
+
+```plaintext
+Server runs independently → Clients connect via HTTP
+```
+
+**Pros:** Single endpoint, bidirectional, optional sessions  
+**Cons:** Requires web server configuration
+
+<Tip>
+Streamable HTTP is the current standard (protocol version 2025-03-26). Use this for all new projects!
+</Tip>
+
+### SSE Transport (Legacy)
+
+**Status:** Superseded by Streamable HTTP
+
+<Warning>
+SSE is no longer the standard. Only use for backward compatibility with older clients.
+</Warning>
+
+---
+
+## Prerequisites
+
+<CodeGroup>
+```bash Python
+# Check Python version (need 3.10+)
+python --version
+
+# Install dependencies
+pip install mcp fastapi uvicorn
+
+# Optional: FastMCP for rapid development
+pip install fastmcp
+```
+
+```bash TypeScript
+# Check Node version (need 18+)
+node --version
+
+# Install dependencies
+npm install @modelcontextprotocol/sdk express
+npm install --save-dev @types/express
+```
+</CodeGroup>
+
+---
+
+## 1️⃣ Your Original STDIO Server
+
+Let's start with a typical STDIO server that runs locally:
+
+<CodeGroup>
+```python Python
+# stdio_server.py
+import asyncio
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp.types import Tool, TextContent
+
+server = Server("weather-server", version="1.0.0")
+
+@server.list_tools()
+async def list_tools() -> list[Tool]:
+    return [
+        Tool(
+            name="get_weather",
+            description="Get weather for a location",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string"}
+                },
+                "required": ["location"]
+            }
+        )
+    ]
+
+@server.call_tool()
+async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    if name == "get_weather":
+        location = arguments.get("location", "Unknown")
+        return [TextContent(
+            type="text", 
+            text=f"Weather in {location}: Sunny, 72°F"
+        )]
+    raise ValueError(f"Unknown tool: {name}")
+
+async def main():
+    # STDIO transport - runs as subprocess
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options()
+        )
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+```typescript TypeScript
+// stdio_server.ts
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+
+const server = new Server(
+  { name: "weather-server", version: "1.0.0" },
+  { capabilities: { tools: {} } }
+);
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: "get_weather",
+      description: "Get weather for a location",
+      inputSchema: {
+        type: "object",
+        properties: {
+          location: { type: "string" },
+        },
+        required: ["location"],
+      },
+    },
+  ],
+}));
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name === "get_weather") {
+    const location = request.params.arguments?.location || "Unknown";
+    return {
+      content: [
+        { type: "text", text: `Weather in ${location}: Sunny, 72°F` },
+      ],
+    };
+  }
+  throw new Error(`Unknown tool: ${request.params.name}`);
+});
+
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
+
+main();
+```
+</CodeGroup>
+
+---
+
+## 2️⃣ Convert to Streamable HTTP
+
+<CodeGroup>
+```python FastMCP expandable
+# http_server.py
+from fastmcp import FastMCP
+
+# Create MCP server at startup // [!code highlight]
+mcp = FastMCP("weather-server") // [!code highlight]
+
+# Define your tool (same logic as before!)
+@mcp.tool()
+def get_weather(location: str) -> str:
+    """Get weather for a location."""
+    return f"Weather in {location}: Sunny, 72°F"
+
+if __name__ == "__main__":
+    # FastMCP handles transport initialization // [!code highlight]
+    mcp.run( // [!code highlight]
+        transport="http", // [!code highlight]
+        host="0.0.0.0", // [!code highlight]
+        port=8000, // [!code highlight]
+        path="/mcp" // [!code highlight]
+    ) // [!code highlight]
+```
+
+```python FastAPI expandable
+# http_server_fastapi.py
+import contextlib
+from fastapi import FastAPI
+from fastmcp import FastMCP
+
+# Create MCP server at startup // [!code highlight]
+mcp = FastMCP("weather-server", stateless_http=True) // [!code highlight]
+
+@mcp.tool()
+def get_weather(location: str) -> str:
+    """Get weather for a location."""
+    return f"Weather in {location}: Sunny, 72°F"
+
+# Lifespan manager initializes MCP // [!code highlight]
+@contextlib.asynccontextmanager // [!code highlight]
+async def lifespan(app: FastAPI): // [!code highlight]
+    async with contextlib.AsyncExitStack() as stack: // [!code highlight]
+        await stack.enter_async_context(mcp.session_manager.run()) // [!code highlight]
+        yield // [!code highlight]
+
+# Create FastAPI app with lifespan // [!code highlight]
+app = FastAPI(lifespan=lifespan) // [!code highlight]
+
+# Mount MCP server at /weather endpoint
+app.mount("/weather", mcp.streamable_http_app())
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+```
+
+```typescript TypeScript expandable
+// http_server.ts
+import express from "express";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+
+const app = express();
+app.use(express.json());
+
+// Create MCP server at startup // [!code highlight]
+const server = new Server( // [!code highlight]
+  { name: "weather-server", version: "1.0.0" }, // [!code highlight]
+  { capabilities: { tools: {} } } // [!code highlight]
+); // [!code highlight]
+
+// Register handlers
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: "get_weather",
+      description: "Get weather for a location",
+      inputSchema: {
+        type: "object",
+        properties: { location: { type: "string" } },
+        required: ["location"],
+      },
+    },
+  ],
+}));
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name === "get_weather") {
+    const location = request.params.arguments?.location || "Unknown";
+    return {
+      content: [
+        { type: "text", text: `Weather in ${location}: Sunny, 72°F` },
+      ],
+    };
+  }
+  throw new Error(`Unknown tool: ${request.params.name}`);
+});
+
+// Create transport at startup // [!code highlight]
+const transport = new StreamableHTTPServerTransport({ // [!code highlight]
+  path: "/mcp", // [!code highlight]
+}); // [!code highlight]
+
+// Initialize server with transport // [!code highlight]
+async function initializeServer() { // [!code highlight]
+  await server.connect(transport); // [!code highlight]
+  console.log("✅ MCP server initialized"); // [!code highlight]
+} // [!code highlight]
+
+// Register transport handler
+app.use("/mcp", (req, res) => transport.handleRequest(req, res));
+
+// Start server
+const PORT = 8000;
+app.listen(PORT, async () => {
+  await initializeServer();
+  console.log(`🚀 Server running on http://0.0.0.0:${PORT}/mcp`);
+});
+```
+</CodeGroup>
+
+<Info>
+**FastMCP vs FastAPI:** FastMCP provides a simpler API for quick setups. Use FastAPI when integrating MCP into existing FastAPI applications or when you need more control over the web server configuration.
+</Info>
+
+---
+
+## 3️⃣ Add auth
+
+Most STDIO servers use environment variables for authentication. Convert these to HTTP-based auth patterns for remote servers.
+
+### Example: OAuth Credentials Pattern
+
+**STDIO Version** (environment variables):
+
+```json Claude Desktop Config
+{
+  "mcpServers": {
+    "google-calendar": {
+      "command": "npx",
+      "args": ["@cocal/google-calendar-mcp"],
+      "env": {
+        "GOOGLE_OAUTH_CREDENTIALS": "/path/to/gcp-oauth.keys.json"
+      }
+    }
+  }
+}
+```
+
+**Remote Version** (request headers):
+
+<CodeGroup>
+```python Python
+from fastapi import Header, HTTPException, Depends
+import base64
+import json
+
+def get_credentials(authorization: str = Header(None)) -> dict:
+    """Extract credentials from Authorization header."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid auth")
+    
+    token = authorization.replace("Bearer ", "")
+    try:
+        return json.loads(base64.b64decode(token))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@app.post("/mcp")
+async def handle_mcp(
+    request: Request,
+    credentials: dict = Depends(get_credentials)
+):
+    # Use credentials from request
+    pass
+```
+
+```typescript TypeScript
+function extractCredentials(authHeader: string | undefined): any {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new Error("Invalid authorization");
+  }
+  
+  const token = authHeader.replace("Bearer ", "");
+  try {
+    return JSON.parse(
+      Buffer.from(token, "base64").toString("utf-8")
+    );
+  } catch (error) {
+    throw new Error("Invalid token");
+  }
+}
+
+const authenticateMiddleware = (req: any, res: any, next: any) => {
+  try {
+    req.credentials = extractCredentials(req.headers.authorization);
+    next();
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+};
+
+app.use("/mcp", authenticateMiddleware);
+```
+</CodeGroup>
+
+### Simpler Pattern: API Keys
+
+For basic authentication, use API keys:
+
+<CodeGroup>
+```python Python
+from fastapi import Header, HTTPException, Depends
+import os
+
+async def verify_api_key(authorization: str = Header(None)):
+    """Verify API key from header."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing API key")
+    
+    api_key = authorization.replace("Bearer ", "")
+    if api_key != os.getenv("API_KEY"):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    return api_key
+
+@app.post("/mcp")
+async def handle_mcp(
+    request: Request,
+    api_key: str = Depends(verify_api_key)
+):
+    # Request is authenticated
+    pass
+```
+
+```typescript TypeScript
+const authenticateApiKey = (req: any, res: any, next: any) => {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) {
+    return res.status(401).json({ error: "Missing API key" });
+  }
+  
+  const apiKey = authHeader.replace("Bearer ", "");
+  if (apiKey !== process.env.API_KEY) {
+    return res.status(401).json({ error: "Invalid API key" });
+  }
+  
+  next();
+};
+
+app.use("/mcp", authenticateApiKey);
+```
+</CodeGroup>
+
+---
+
+## 4️⃣ Run Your MCP Server
+
+Start your converted server:
+
+<CodeGroup>
+```bash FastMCP
+python http_server.py
+# Server runs at http://localhost:8000/mcp
+```
+
+```bash FastAPI
+python http_server_fastapi.py
+# Server runs at http://localhost:8000/weather/mcp
+```
+
+```bash TypeScript
+ts-node http_server.ts
+# Server runs at http://localhost:8000/mcp
+```
+</CodeGroup>
+
+---
+
+## 5️⃣ Testing with Hoot 🦉
+
+<Card title="Hoot - MCP Testing Tool" icon="vial" href="https://github.com/Portkey-AI/hoot">
+  Like Postman, but specifically designed for testing MCP servers. Perfect for development!
+</Card>
+
+### Quick Start
+
+```bash Install & Run
+# Run directly (no installation needed!)
+npx -y @portkey-ai/hoot
+
+# Or install globally
+npm install -g @portkey-ai/hoot
+hoot
+```
+
+<Info>
+Hoot opens at `http://localhost:8009`
+</Info>
+
+### Using Hoot
+
+<Steps>
+  <Step title="Start your server">
+    ```bash
+    python http_server.py
+    # Server runs at http://localhost:8000/mcp
+    ```
+  </Step>
+  
+  <Step title="Open Hoot">
+    Navigate to `http://localhost:8009`
+  </Step>
+  
+  <Step title="Connect to your server">
+    - Paste URL: `http://localhost:8000/mcp`
+    - Hoot auto-detects the transport type!
+  </Step>
+  
+  <Step title="Test your tools">
+    - View all available tools
+    - Select `get_weather`
+    - Add parameters: `{"location": "San Francisco"}`
+    - Click "Execute"
+    - See the response!
+  </Step>
+</Steps>
+
+### Hoot Features
+
+<CardGroup cols={2}>
+  <Card title="Auto-Detection" icon="wand-magic-sparkles">
+    Automatically detects HTTP vs SSE
+  </Card>
+  <Card title="Tool Explorer" icon="screwdriver-wrench">
+    View and test all server tools
+  </Card>
+  <Card title="OAuth Support" icon="lock">
+    Handles OAuth 2.1 authentication
+  </Card>
+  <Card title="Beautiful Themes" icon="palette">
+    8 themes with light & dark modes
+  </Card>
+</CardGroup>
+
+---
+
+## Optional: Session Management
+
+<Note>
+Session management is optional in the MCP spec. FastMCP handles it automatically if you need stateful interactions.
+</Note>
+
+<CodeGroup>
+```python FastMCP
+# FastMCP handles sessions automatically
+
+# Stateful mode (maintains session state)
+mcp = FastMCP("weather-server", stateless_http=False)
+
+# Stateless mode (no session state)
+mcp = FastMCP("weather-server", stateless_http=True)
+```
+
+```python FastAPI
+# Manual session management with FastAPI
+from fastmcp import FastMCP
+
+mcp = FastMCP("weather-server", stateless_http=True)
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with mcp.session_manager.run():
+        yield
+
+app = FastAPI(lifespan=lifespan)
+```
+
+```typescript TypeScript
+import { randomUUID } from "crypto";
+
+const transports = new Map<string, StreamableHTTPServerTransport>();
+
+async function getOrCreateTransport(
+  sessionId: string | undefined,
+  isInitialize: boolean
+): Promise<StreamableHTTPServerTransport> {
+  
+  if (sessionId && transports.has(sessionId)) {
+    return transports.get(sessionId)!;
+  }
+  
+  if (!sessionId && isInitialize) {
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+    });
+    
+    transport.onSessionInitialized = (newSessionId) => {
+      transports.set(newSessionId, transport);
+    };
+    
+    await server.connect(transport);
+    return transport;
+  }
+  
+  throw new Error("Invalid session");
+}
+
+app.post("/mcp", async (req, res) => {
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+  const isInitialize = req.body?.method === "initialize";
+  
+  try {
+    const transport = await getOrCreateTransport(sessionId, isInitialize);
+    await transport.handleRequest(req, res);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+```
+</CodeGroup>
+
+---
+
+## Optional: CORS Configuration
+
+<Warning>
+Only add CORS if you need to support browser-based clients. For server-to-server communication, CORS isn't necessary.
+</Warning>
+
+<CodeGroup>
+```python FastMCP
+# CORS with FastMCP
+mcp.run(
+    transport="http",
+    host="0.0.0.0",
+    port=8000,
+    cors_allow_origins=["https://yourdomain.com"]
+)
+```
+
+```python FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://yourdomain.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Mcp-Session-Id"],
+)
+```
+
+```typescript TypeScript
+import cors from "cors";
+
+app.use(cors({
+  origin: ["https://yourdomain.com"],
+  credentials: true,
+  exposedHeaders: ["Mcp-Session-Id"],
+}));
+```
+</CodeGroup>
+
+---
+
+## Deployment
+
+<CardGroup cols={3}>
+  <Card title="Docker" icon="docker" href="#docker">
+    Containerize for any platform
+  </Card>
+  <Card title="Fly.io" icon="plane" href="#flyio">
+    Deploy in seconds
+  </Card>
+  <Card title="Cloud Run" icon="google" href="#cloud-run">
+    Serverless on GCP
+  </Card>
+</CardGroup>
+
+### Docker
+
+<CodeGroup>
+```dockerfile Python
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["python", "http_server.py"]
+```
+
+```dockerfile TypeScript
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --production
+COPY . .
+RUN npm run build
+EXPOSE 8000
+CMD ["node", "dist/http_server.js"]
+```
+</CodeGroup>
+
+### Quick Deploy
+
+<CodeGroup>
+```bash Fly.io
+# Install Fly CLI
+curl -L https://fly.io/install.sh | sh
+
+# Deploy
+fly launch
+fly deploy
+```
+
+```bash Cloud Run
+gcloud run deploy mcp-server \
+  --source . \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated
+```
+</CodeGroup>
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Can't connect to server" icon="link-slash" defaultOpen>
+    **Check:**
+    - Server is running on the correct port
+    - Firewall allows connections
+    - URL is correct (including `/mcp` path)
+    
+    **Test with curl:**
+    ```bash
+    curl -X POST http://localhost:8000/mcp \
+      -H "Content-Type: application/json" \
+      -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    ```
+  </Accordion>
+
+  <Accordion title="Tools not showing up" icon="screwdriver-wrench">
+    **Solution:** Ensure tool handlers are registered before the server starts
+    
+    ```python Correct Order
+    # Register handlers FIRST
+    @mcp.tool()
+    def my_tool():
+        pass
+    
+    # THEN run server
+    mcp.run(transport="http")
+    ```
+  </Accordion>
+
+  <Accordion title="Session errors" icon="circle-xmark">
+    **Solution:** Client must store and send session ID correctly
+    
+    ```python Session Handling
+    # Extract from initialization response
+    session_id = response.headers.get("Mcp-Session-Id")
+    
+    # Include in all subsequent requests
+    headers = {"Mcp-Session-Id": session_id}
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Summary
+
+<Check>
+**You've successfully converted your STDIO server to a remote Streamable HTTP server!**
+</Check>
+
+### Key Principles
+
+<CardGroup cols={2}>
+  <Card title="Use HTTP Transport" icon="globe">
+    Replace STDIO with Streamable HTTP for remote access
+  </Card>
+  <Card title="Header-Based Auth" icon="key">
+    Convert environment variables to HTTP headers
+  </Card>
+  <Card title="Initialize at Startup" icon="power-off">
+    Server and transport created once at startup
+  </Card>
+  <Card title="Test Thoroughly" icon="vial">
+    Use Hoot to verify all tools work correctly
+  </Card>
+</CardGroup>
+
+### What We Covered
+
+1. ✅ Original STDIO server structure
+2. ✅ Converting to Streamable HTTP
+3. ✅ Auth conversion from env vars to headers
+4. ✅ Running your converted server
+5. ✅ Testing with Hoot
+
+### Resources
+
+<CardGroup cols={2}>
+  <Card title="MCP Specification" icon="book" href="https://modelcontextprotocol.io/specification">
+    Official protocol documentation
+  </Card>
+  <Card title="Python SDK" icon="python" href="https://github.com/modelcontextprotocol/python-sdk">
+    Examples and source code
+  </Card>
+  <Card title="TypeScript SDK" icon="js" href="https://github.com/modelcontextprotocol/typescript-sdk">
+    Examples and source code
+  </Card>
+  <Card title="Hoot Testing Tool" icon="vial" href="https://github.com/Portkey-AI/hoot">
+    Test your MCP servers
+  </Card>
+  <Card title="FastMCP" icon="rocket" href="https://github.com/jlowin/fastmcp">
+    High-level Python framework
+  </Card>
+</CardGroup>
+
+<Tip>
+**Building something cool?** Share it with the MCP community and let us know how this guide helped!
+</Tip>
