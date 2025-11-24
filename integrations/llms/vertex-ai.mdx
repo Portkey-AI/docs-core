@@ -1113,6 +1113,46 @@ main();
 - `imagegeneration@005`
 - `imagegeneration@002`
 
+## Custom Metadata Labels
+<Warning>
+The recommended way to attribute costs and track usage is to use [metadata](/product/observability/metadata) which allows your workflows to be vendor agnostic
+</Warning>
+Vertex AI supports adding custom labels to your API calls for attribution. 
+Pass labels in your request body or configure them in your gateway config using `override_params`.
+
+<Tabs>
+  <Tab title="Python">
+```python
+completion = portkey.chat.completions.create(
+    messages=[{"role": "user", "content": "Say this is a test"}],
+    model="@VERTEX_PROVIDER/gemini-1.5-pro-latest",
+    labels={"service_id": "backend-api", "environment": "production"}
+)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```javascript
+const completion = await portkey.chat.completions.create({
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: '@VERTEX_PROVIDER/gemini-1.5-pro-latest',
+    labels: { service_id: "backend-api", environment: "production" }
+});
+```
+  </Tab>
+  <Tab title="Config">
+```json
+{
+  "provider": "vertex-ai",
+  "override_params": {
+    "labels": { "service_id": "backend-api", "environment": "production" }
+  }
+}
+```
+  </Tab>
+</Tabs>
+
+---
+
 ## Grounding with Google Search
 
 Vertex AI supports grounding with Google Search. This is a feature that allows you to ground your LLM responses with real-time search results.
@@ -1376,6 +1416,797 @@ The image data is available in the `content_parts` field in the response and it 
 }'
     ```
 </CodeGroup>
+
+---
+
+## Thought Signatures (Tool Calling Verification)
+
+<Note>
+Set `x-portkey-strict-open-ai-compliance` to `false` to receive the `thought_signature` in the response. This header must be included in all requests when using thought signatures.
+</Note>
+
+Google's Gemini 3 Pro model requires passing a `thought_signature` parameter in tool calling conversations for verifying the payload. This signature is returned by the model in the assistant's tool call response and must be included when continuing multi-turn conversations.
+
+<Card href="https://ai.google.dev/gemini-api/docs/thought-signatures" title="Google Gemini Thought Signatures Documentation">
+</Card>
+
+### Single turn conversation
+
+In a single-turn conversation, you make a request with tools defined, and the model returns tool calls with thought signatures.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: @my-vertex-ai-provider' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: your-api-key' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "gemini-3-pro-preview",
+    "max_tokens": 1000,
+    "stream": true,
+    "messages": [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "What is the current time in Bombay?"
+        }
+    ],
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        }
+    ]
+}'
+```
+```py Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@VERTEX_PROVIDER",
+    strict_open_ai_compliance=False
+)
+
+response = portkey.chat.completions.create(
+    model="gemini-3-pro-preview",
+    max_tokens=1000,
+    stream=True,
+    messages=[
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "What is the current time in Bombay?"
+        }
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        }
+    ]
+)
+print(response)
+```
+```ts NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY',
+  provider: '@VERTEX_PROVIDER',
+  strictOpenAiCompliance: false
+});
+
+const response = await portkey.chat.completions.create({
+  model: 'gemini-3-pro-preview',
+  max_tokens: 1000,
+  stream: true,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: 'You are a helpful assistant'
+        }
+      ]
+    },
+    {
+      role: 'user',
+      content: 'What is the current time in Bombay?'
+    }
+  ],
+  tools: [
+    {
+      type: 'function',
+      function: {
+        name: 'get_current_time',
+        description: 'Get the current time for a specific location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g., San Francisco, CA'
+            }
+          },
+          required: [
+            'location'
+          ]
+        }
+      }
+    }
+  ]
+});
+console.log(response);
+```
+```py OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='PORTKEY_API_KEY',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider='@VERTEX_PROVIDER',
+        strict_open_ai_compliance=False
+    )
+)
+
+response = openai.chat.completions.create(
+    model='gemini-3-pro-preview',
+    max_tokens=1000,
+    stream=True,
+    messages=[
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "What is the current time in Bombay?"
+        }
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        }
+    ]
+)
+print(response)
+```
+```js OpenAI NodeJS
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+  apiKey: 'PORTKEY_API_KEY',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: '@VERTEX_PROVIDER',
+    strictOpenAiCompliance: false
+  })
+});
+
+const response = await openai.chat.completions.create({
+  model: 'gemini-3-pro-preview',
+  max_tokens: 1000,
+  stream: true,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: 'You are a helpful assistant'
+        }
+      ]
+    },
+    {
+      role: 'user',
+      content: 'What is the current time in Bombay?'
+    }
+  ],
+  tools: [
+    {
+      type: 'function',
+      function: {
+        name: 'get_current_time',
+        description: 'Get the current time for a specific location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g., San Francisco, CA'
+            }
+          },
+          required: [
+            'location'
+          ]
+        }
+      }
+    }
+  ]
+});
+console.log(response);
+```
+</CodeGroup>
+
+### Multi turn conversation
+
+In multi-turn conversations, you must include the `thought_signature` field in the assistant's tool call when continuing the conversation.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: @my-vertex-ai-provider' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: your-api-key' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "gemini-3-pro-preview",
+    "max_tokens": 1000,
+    "stream": true,
+    "messages": [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "Check the time in Chennai and if it is later than 9Pm get the temperature"
+        },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb",
+                    "type": "function",
+                    "function": {
+                        "name": "get_current_time",
+                        "arguments": "{\"location\":\"Chennai, India\"}",
+                        "thought_signature": "CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw="
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "content": "{ '\''time'\'': '\''10PM'\'' }",
+            "tool_call_id": "toolu_014jEfKqGbfFvRaKfiauxgPv"
+        }
+    ],
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_temperature",
+                "description": "Get the current temperature for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        },
+                        "unit": {
+                            "type": "string",
+                            "enum": [
+                                "Celsius",
+                                "Fahrenheit"
+                            ],
+                            "description": "The temperature unit to use. Infer this from the user'\''s location."
+                        }
+                    },
+                    "required": [
+                        "location",
+                        "unit"
+                    ]
+                }
+            }
+        }
+    ]
+}'
+```
+```py Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@VERTEX_PROVIDER",
+    strict_open_ai_compliance=False
+)
+
+response = portkey.chat.completions.create(
+    model="gemini-3-pro-preview",
+    max_tokens=1000,
+    stream=True,
+    messages=[
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "Check the time in Chennai and if it is later than 9Pm get the temperature"
+        },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb",
+                    "type": "function",
+                    "function": {
+                        "name": "get_current_time",
+                        "arguments": "{\"location\":\"Chennai, India\"}",
+                        "thought_signature": "CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw="
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "content": "{ 'time': '10PM' }",
+            "tool_call_id": "toolu_014jEfKqGbfFvRaKfiauxgPv"
+        }
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_temperature",
+                "description": "Get the current temperature for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        },
+                        "unit": {
+                            "type": "string",
+                            "enum": [
+                                "Celsius",
+                                "Fahrenheit"
+                            ],
+                            "description": "The temperature unit to use. Infer this from the user's location."
+                        }
+                    },
+                    "required": [
+                        "location",
+                        "unit"
+                    ]
+                }
+            }
+        }
+    ]
+)
+print(response)
+```
+```ts NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY',
+  provider: '@VERTEX_PROVIDER'
+});
+
+const response = await portkey.chat.completions.create({
+  model: 'gemini-3-pro-preview',
+  max_tokens: 1000,
+  stream: true,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: 'You are a helpful assistant'
+        }
+      ]
+    },
+    {
+      role: 'user',
+      content: 'Check the time in Chennai and if it is later than 9Pm get the temperature'
+    },
+    {
+      role: 'assistant',
+      tool_calls: [
+        {
+          id: 'portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb',
+          type: 'function',
+          function: {
+            name: 'get_current_time',
+            arguments: '{"location":"Chennai, India"}',
+            thought_signature: 'CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw='
+          }
+        }
+      ]
+    },
+    {
+      role: 'tool',
+      content: "{ 'time': '10PM' }",
+      tool_call_id: 'toolu_014jEfKqGbfFvRaKfiauxgPv'
+    }
+  ],
+  tools: [
+    {
+      type: 'function',
+      function: {
+        name: 'get_current_time',
+        description: 'Get the current time for a specific location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g., San Francisco, CA'
+            }
+          },
+          required: [
+            'location'
+          ]
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_current_temperature',
+        description: 'Get the current temperature for a specific location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g., San Francisco, CA'
+            },
+            unit: {
+              type: 'string',
+              enum: [
+                'Celsius',
+                'Fahrenheit'
+              ],
+              description: 'The temperature unit to use. Infer this from the user\'s location.'
+            }
+          },
+          required: [
+            'location',
+            'unit'
+          ]
+        }
+      }
+    }
+  ]
+});
+console.log(response);
+```
+```py OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='PORTKEY_API_KEY',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider='@VERTEX_PROVIDER'
+    )
+)
+
+response = openai.chat.completions.create(
+    model='gemini-3-pro-preview',
+    max_tokens=1000,
+    stream=True,
+    messages=[
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "Check the time in Chennai and if it is later than 9Pm get the temperature"
+        },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb",
+                    "type": "function",
+                    "function": {
+                        "name": "get_current_time",
+                        "arguments": "{\"location\":\"Chennai, India\"}",
+                        "thought_signature": "CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw="
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "content": "{ 'time': '10PM' }",
+            "tool_call_id": "toolu_014jEfKqGbfFvRaKfiauxgPv"
+        }
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_temperature",
+                "description": "Get the current temperature for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        },
+                        "unit": {
+                            "type": "string",
+                            "enum": [
+                                "Celsius",
+                                "Fahrenheit"
+                            ],
+                            "description": "The temperature unit to use. Infer this from the user's location."
+                        }
+                    },
+                    "required": [
+                        "location",
+                        "unit"
+                    ]
+                }
+            }
+        }
+    ]
+)
+print(response)
+```
+```js OpenAI NodeJS
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+  apiKey: 'PORTKEY_API_KEY',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: '@VERTEX_PROVIDER'
+  })
+});
+
+const response = await openai.chat.completions.create({
+  model: 'gemini-3-pro-preview',
+  max_tokens: 1000,
+  stream: true,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: 'You are a helpful assistant'
+        }
+      ]
+    },
+    {
+      role: 'user',
+      content: 'Check the time in Chennai and if it is later than 9Pm get the temperature'
+    },
+    {
+      role: 'assistant',
+      tool_calls: [
+        {
+          id: 'portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb',
+          type: 'function',
+          function: {
+            name: 'get_current_time',
+            arguments: '{"location":"Chennai, India"}',
+            thought_signature: 'CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw='
+          }
+        }
+      ]
+    },
+    {
+      role: 'tool',
+      content: "{ 'time': '10PM' }",
+      tool_call_id: 'toolu_014jEfKqGbfFvRaKfiauxgPv'
+    }
+  ],
+  tools: [
+    {
+      type: 'function',
+      function: {
+        name: 'get_current_time',
+        description: 'Get the current time for a specific location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g., San Francisco, CA'
+            }
+          },
+          required: [
+            'location'
+          ]
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_current_temperature',
+        description: 'Get the current temperature for a specific location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g., San Francisco, CA'
+            },
+            unit: {
+              type: 'string',
+              enum: [
+                'Celsius',
+                'Fahrenheit'
+              ],
+              description: 'The temperature unit to use. Infer this from the user\'s location.'
+            }
+          },
+          required: [
+            'location',
+            'unit'
+          ]
+        }
+      }
+    }
+  ]
+});
+console.log(response);
+```
+</CodeGroup>
+
+<Note>
+The `thought_signature` is automatically generated by the model and returned in the tool call response. You must preserve this signature when including the assistant's message in subsequent requests.
+</Note>
 
 ---
 
