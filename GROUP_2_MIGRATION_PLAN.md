@@ -51,13 +51,16 @@
 
 1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
 2. Select **[Provider Name]**
-3. Choose existing credentials or create new by entering your API key
-4. Name the provider (e.g., `[provider-slug]`)
+3. Enter your API key/credentials
+4. (Optional) Add **Custom Host** for self-hosted/dedicated endpoints
+5. Name your provider (e.g., `[provider-slug]`)
 
-<Card title="Complete Setup Guide →" href="/product/model-catalog">
-  See all setup options, code examples, and detailed instructions
+<Card title="Complete Setup Guide" icon="book" href="/product/model-catalog">
+  See all setup options and detailed configuration instructions
 </Card>
 ```
+
+**Note:** Custom base URLs are configured in Model Catalog during provider setup, not via runtime parameters like `custom_host`/`customHost` in code.
 
 ### Pattern 2: Code Examples with `virtual_key`
 
@@ -88,6 +91,16 @@ response = portkey.chat.completions.create(
 <Note>
 **Legacy support:** The `virtual_key` parameter still works for backwards compatibility. Use `model="@provider-slug/model-name"` format for new code.
 </Note>
+```
+
+**Important for cURL:**
+The `x-portkey-provider` header must use the `@` prefix format (e.g., `@anthropic-prod`), not the plain provider name:
+```bash
+# ✅ Correct
+-H "x-portkey-provider: @anthropic-prod"
+
+# ❌ Wrong
+-H "x-portkey-provider: anthropic"
 ```
 
 ### Pattern 3: References to Virtual Keys in Text
@@ -228,9 +241,10 @@ response = portkey.chat.completions.create(
 **Current:** Custom host configuration in virtual key creation
 
 **Migration:**
-- Update to explain custom host in "Add Provider" flow
-- Keep all custom host instructions
-- Update code examples
+- Update to explain custom host in "Add Provider" flow (set in Model Catalog UI, not in code)
+- **Do NOT** include code examples with `custom_host`/`customHost` parameters
+- Custom base URLs are configured once in Model Catalog, then used automatically
+- See `integrations/llms/vllm.mdx` and `integrations/llms/local-ai.mdx` as reference patterns
 
 ---
 
@@ -269,6 +283,7 @@ After migrating each page:
 3. **Test backwards compatibility** - Legacy `virtual_key` examples should still work
 4. **Consistency** - Same pattern across all pages
 5. **Provider-specific content** - Keep unique features, just update references
+6. **SDK reference link** - Use `/api-reference/sdk/list` (NOT `/api-reference/portkey-sdk-client`)
 
 ---
 
