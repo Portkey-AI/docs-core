@@ -51,55 +51,36 @@ For this example, create a route handler at `app/api/chat/route.ts` that calls G
 
 
 
-```py
+```js
 // filename="app/api/chat/route.ts"
-
 import { streamText } from 'ai';
-
 import { createOpenAI } from '@ai-sdk/openai';
-
 import { createHeaders, PORTKEY_GATEWAY_URL } from 'portkey-ai';
 
-// Create a OpenAI client
-
+// Create an OpenAI client
 const client = createOpenAI({
-
     baseURL: PORTKEY_GATEWAY_URL,
-
     apiKey: "xx",
-
     headers: createHeaders({
-
         apiKey: "PORTKEY_API_KEY",
-
         virtualKey: "OPENAI_VIRTUAL_KEY"
-
-    }),
-
+    })
 })
 
 // Set the runtime to edge for best performance
-
 export const runtime = 'edge';
 
 export async function POST(req: Request) {
+    const { messages } = await req.json();
 
-  const { messages } = await req.json();
+    // Invoke Chat Completion
+    const response = await streamText({
+        model: client('gpt-3.5-turbo'),
+        messages
+    })
 
-  // Invoke Chat Completion
-
-  const response = await streamText({
-
-    model: client('gpt-3.5-turbo'),
-
-    messages
-
-  })
-
-  // Respond with the stream
-
-  return response.toTextStreamResponse();
-
+    // Respond with the stream
+    return response.toTextStreamResponse();
 }
 ```
 
@@ -112,7 +93,7 @@ Portkey is powered by an [open-source, universal AI Gateway](https://github.com/
 Let’s see how you can switch from GPT-4 to Claude-3-Opus by updating 2 lines of code (without breaking anything else).
 
 1. Add your Anthropic API key or AWS Bedrock secrets to Portkey’s Virtual Keys
-2. Update the virtual key while instantiating your Portkey client
+2. Update the provider slug while instantiating your Portkey client
 3. Update the model name while making your `/chat/completions` call
 4. Add maxTokens field inside streamText invocation (Anthropic requires this field)
 
@@ -120,47 +101,31 @@ Let’s see it in action:
 
 
 
-```py
+```js
 const client = createOpenAI({
-
     baseURL: PORTKEY_GATEWAY_URL,
-
     apiKey: "xx",
-
     headers: createHeaders({
-
         apiKey: "PORTKEY_API_KEY",
-
         virtualKey: "ANTHROPIC_VIRTUAL_KEY"
-
-    }),
-
+    })
 })
 
 // Set the runtime to edge for best performance
-
 export const runtime = 'edge';
 
 export async function POST(req: Request) {
+    const { messages } = await req.json();
 
-  const { messages } = await req.json();
+    // Invoke Chat Completion
+    const response = await streamText({
+        model: client('claude-3-opus-20240229'),
+        messages,
+        maxTokens: 200
+    })
 
-  // Invoke Chat Completion
-
-  const response = await streamText({
-
-    model: client('claude-3-opus-20240229'),
-
-    messages,
-
-    maxTokens: 200
-
-  })
-
-  // Respond with the stream
-
-  return response.toTextStreamResponse();
-
+    // Respond with the stream
+    return response.toTextStreamResponse();
 }
 ```
 
@@ -168,45 +133,30 @@ export async function POST(req: Request) {
 
 Similarly, you can just add your [Google AI Studio API key](https://aistudio.google.com/app/) to Portkey and call Gemini 1.5:
 
-```py
+```js
 const client = createOpenAI({
-
     baseURL: PORTKEY_GATEWAY_URL,
-
     apiKey: "xx",
-
     headers: createHeaders({
-
         apiKey: "PORTKEY_API_KEY",
-
         virtualKey: "GEMINI_VIRTUAL_KEY"
-
-    }),
-
+    })
 })
 
 // Set the runtime to edge for best performance
-
 export const runtime = 'edge';
 
 export async function POST(req: Request) {
+    const { messages } = await req.json();
 
-  const { messages } = await req.json();
+    // Invoke Chat Completion
+    const response = await streamText({
+        model: client('gemini-1.5-flash'),
+        messages
+    })
 
-  // Invoke Chat Completion
-
-  const response = await streamText({
-
-    model: client('gemini-1.5-flash'),
-
-    messages
-
-  })
-
-  // Respond with the stream
-
-  return response.toTextStreamResponse();
-
+    // Respond with the stream
+    return response.toTextStreamResponse();
 }
 ```
 
@@ -216,28 +166,25 @@ The same will follow for all the other providers like **Azure**, **Mistral**, **
 
 Let's create a Client component that will have a form to collect the prompt from the user and stream back the completion. The `useChat` hook will default use the `POST` Route Handler we created earlier (`/api/chat`). However, you can override this default value by passing an `api` prop to useChat(`{ api: '...'}`).
 
-```py
-//"app/page.tsx"
-
+```jsx
+// "app/page.tsx"
 'use client';
 
 import { useChat } from 'ai/react';
 
 export default function Chat() {
+    const { messages, input, handleInputChange, handleSubmit } = useChat();
 
-  const { messages, input, handleInputChange, handleSubmit } = useChat();
-
-  return (
-
-
-      {messages.map((m) => (
-
-
-          {m.role === 'user' ? 'User: ' : 'AI: '}
-
-          {m.content}
-      ))}
-  );
+    return (
+        <div>
+            {messages.map((m) => (
+                <div key={m.id}>
+                    {m.role === 'user' ? 'User: ' : 'AI: '}
+                    {m.content}
+                </div>
+            ))}
+        </div>
+    );
 }
 ```
 
@@ -255,31 +202,19 @@ You can enhance the logging by tracing certain requests, passing custom metadata
 
 While Creating the Client, you can pass any `{"key":"value"}` pairs inside the metadata header. Portkey segments the requests based on the metadata to give you granular insights.
 
-```sh
+```js
 const client = createOpenAI({
-
     baseURL: PORTKEY_GATEWAY_URL,
-
     apiKey: "xx",
-
     headers: createHeaders({
-
-        apiKey: {PORTKEY_API_KEY},
-
-        virtualKey: {GEMINI_VIRTUAL_KEY},
-
+        apiKey: PORTKEY_API_KEY,
+        virtualKey: GEMINI_VIRTUAL_KEY,
         metadata: {
-
-          _user: 'john doe',
-
-          organization_name: 'acme',
-
-          custom_key: 'custom_value'
-
+            _user: 'john doe',
+            organization_name: 'acme',
+            custom_key: 'custom_value'
         }
-
-    }),
-
+    })
 })
 ```
 
@@ -295,13 +230,13 @@ For example, for setting up a fallback from OpenAI to Anthropic, the Gateway Con
 
 
 
-```sh
+```json
 {
-
-  "strategy": { "mode": "fallback" },
-
-  "targets": [{ "virtual_key": "openai-virtual-key" }, { "virtual_key": "anthropic-virtual-key" }]
-
+    "strategy": { "mode": "fallback" },
+    "targets": [
+        { "provider": "@openai-virtual-key" },
+        { "provider": "@anthropic-virtual-key" }
+    ]
 }
 ```
 
@@ -311,21 +246,14 @@ You can save this Config in Portkey app and get an associated Config ID that you
 
 
 
-```sh
+```js
 const client = createOpenAI({
-
     baseURL: PORTKEY_GATEWAY_URL,
-
     apiKey: "xx",
-
     headers: createHeaders({
-
-        apiKey: {PORTKEY_API_KEY},
-
-        config: {CONFIG_ID}
-
-    }),
-
+        apiKey: PORTKEY_API_KEY,
+        config: CONFIG_ID
+    })
 })
 ```
 
@@ -337,21 +265,14 @@ For example, to route your requests between 1 OpenAI and 2 Azure OpenAI accounts
 
 
 
-```sh
+```json
 {
-
-  "strategy": { "mode": "loadbalance" },
-
-  "targets": [
-
-    { "virtual_key": "openai-virtual-key", "weight": 1 },
-
-    { "virtual_key": "azure-virtual-key-1", "weight": 1 },
-
-    { "virtual_key": "azure-virtual-key-2", "weight": 1 }
-
-  ]
-
+    "strategy": { "mode": "loadbalance" },
+    "targets": [
+        { "provider": "@openai-virtual-key", "weight": 1 },
+        { "provider": "@azure-virtual-key-1", "weight": 1 },
+        { "provider": "@azure-virtual-key-2", "weight": 1 }
+    ]
 }
 ```
 
@@ -367,11 +288,9 @@ For Q&A use cases, cache hit rates go as high as 50%. To enable semantic caching
 
 
 
-```sh
+```json
 {
-
-  "cache": { "mode": "semantic" }
-
+    "cache": { "mode": "semantic" }
 }
 ```
 
@@ -396,39 +315,29 @@ To create a Prompt Template,
 ### Trigger the Prompt in the Route Handler
 
 
-```sh
+```js
 import Portkey from 'portkey-ai'
 
 const portkey = new Portkey({
-
     apiKey: "PORTKEY_API_KEY"
-
 })
 
 export async function POST(req: Request) {
+    const { movie } = await req.json();
 
-  const { movie } = await req.json();
-
-  const moviePromptRender = await portkey.prompts.render({
-
+    const moviePromptRender = await portkey.prompts.render({
         promptID: "PROMPT_ID",
-
         variables: { "movie": movie }
-
     })
 
-  const messages = moviePromptRender.data.messages
+    const messages = moviePromptRender.data.messages
 
-  const response = await streamText({
+    const response = await streamText({
+        model: client('gemini-1.5-flash'),
+        messages
+    })
 
-    model: client('gemini-1.5-flash'),
-
-    messages
-
-  })
-
-  return response.toTextStreamResponse();
-
+    return response.toTextStreamResponse();
 }
 ```
 
