@@ -16,10 +16,10 @@ tag: "New"
 
 The Model Catalog fundamentally upgrades the Virtual Key experience by introducing a centralized, organization-level management layer. It addresses key governance pain points you have faced, allowing for:
 
-1.  **Centralized Provider Management:** Create a single (or multiple) provider integration (e.g., for Azure, OpenAI, Bedrock) at the organization level, and securely provision it to multiple workspaces without re-entering credentials.
-2.  **Workspace Provisioning:** Easily control which workspaces have access to which provider integrations, and set distinct budgets and rate limits for each workspace from a single screen.
-3.  **Granular Model Provisioning:** For any given provider integration, you can specify exactly which models (e.g., `gpt-4o`, `claude-4-sonnet`) are available, preventing users from accessing unapproved, expensive, or deprecated models.
-4.  **Simplified Model Calling:** Your developers can now switch between providers and models directly in their API call using a simple `model = "@provider/model_name"` format, without needing to manage different virtual keys or complex configs for simple requests.
+1.  **Store credentials once, share everywhere:** Save your API keys at the org level, then share them with multiple workspaces. No need to re-enter credentials in each workspace.
+2.  **Control who gets access:** Choose which workspaces can use which credentials, and set different budgets/rate limits for each workspace.
+3.  **Control which models are available:** Specify exactly which models each workspace can access (e.g., only `gpt-4o`, not `gpt-4-turbo`), preventing access to expensive or unapproved models.
+4.  **Simpler code:** Developers can now use `model = "@provider/model_name"` format instead of managing separate virtual keys or complex configs.
 
 ### How It Enhances the Virtual Key Experience
 
@@ -53,7 +53,7 @@ With that key point in mind, let's explore the new capabilities this unlocks for
 
 ### For Organization Admins: Central Command & Control
 
-As an Org Admin, you will see a new **Integrations** tab in your organization settings. This is your central hub for managing all LLM providers.
+As an Org Admin, you will see a new [**Integrations**](https://app.portkey.ai/integrations) tab in your organization settings. This is your central hub for managing all LLM providers.
 
 1.  **Connect an Integration:** Instead of creating a virtual key in a workspace, you now "Connect" a provider here. The process of adding credentials is the same. You can create multiple integrations for the same provider (e.g., "Azure-Prod" and "Azure-Dev").
 2.  **Provision to Workspaces:** In the "Workspace Provisioning" step, you'll see a list of all your workspaces. You can toggle access for each one and set specific budgets and rate limits. You can also choose to automatically provision this integration for any new workspaces created in the future.
@@ -63,7 +63,7 @@ There is also a "Workspace-Created" tab to view and manage any integrations crea
 
 #### For Workspace Admins: Inherit and Customize
 
-As a Workspace Admin, you will now see **Model Catalog** on your sidebar. The old "Virtual Keys" will be marked as deprecated.
+As a Workspace Admin, you will now see [**Model Catalog**](https://app.portkey.ai/model-catalog) on your sidebar. The old "Virtual Keys" will be marked as deprecated.
 
 -   **Inherited Providers:** In the "AI Providers" tab, you will automatically see all the integrations your Org Admin has provisioned for your workspace.
 -   **Creating New Providers:** You still have flexibility:
@@ -229,6 +229,66 @@ When you make a request using this config, you don't need to specify a model at 
 
 **What's Better?**
 A seamless, zero-effort migration. Your existing prompt templates have been automatically updated behind the scenes to use the new AI Provider system. They will continue to work exactly as before without any changes on your end. When creating new prompts, you'll now select from a list of AI Providers.
+
+---
+
+#### 5. From "Creating Virtual Keys via API" to "Creating Providers via API"
+
+<CardGroup cols={2}>
+  <Card title="The Old Way">
+    `POST /virtual-keys` - Create virtual key in workspace. No way to share credentials across workspaces.
+  </Card>
+  <Card title="The New Way">
+    Two-step process:
+    1. `POST /integrations` - Store credentials and choose models
+    2. `POST /providers` - Create provider (references Integration)
+    
+    **Bonus:** Share credentials across workspaces and control which models are available.
+  </Card>
+</CardGroup>
+
+**Create a Provider (Virtual Key Equivalent)**
+
+Via API, you create an Integration first (stores credentials), then create a Provider that references it:
+
+```python
+# Step 1: Create Integration (stores credentials and models)
+integration = portkey.integrations.create(
+    name="OpenAI Production",
+    provider="openai",
+    credentials={"api_key": "sk-..."},
+    models=["gpt-4o", "gpt-4o-mini"]  # Choose which models are available
+)
+
+# Step 2: Create Provider in workspace (references Integration)
+provider = portkey.providers.create(
+    workspace_id="workspace-123",
+    name="openai-prod",
+    integration_id=integration.id  # Uses Integration's credentials and models
+)
+```
+
+**That's it!** The provider is ready to use in your code with `@openai-prod/gpt-4o`.
+
+<Note>
+**Via UI:** When you create a provider with new credentials in the UI, it automatically creates a workspace-only Integration behind the scenes. Via API, you create the Integration explicitly.
+</Note>
+
+**Want to share credentials across workspaces?**
+
+When creating the Integration, specify which workspaces should have access. All those workspaces can then create Providers that reference the same Integration.
+
+<Card title="Sharing Credentials Across Workspaces" icon="key" href="/product/model-catalog/integrations">
+  Learn how to create Integrations and share credentials
+</Card>
+
+<Card title="API Reference" icon="code" href="/api-reference/admin-api/control-plane/providers/create-provider">
+  Complete API documentation for creating providers
+</Card>
+
+<Card title="API Reference" icon="key" href="/api-reference/admin-api/control-plane/integrations/create-integration">
+  Complete API documentation for creating integrations
+</Card>
 
 ---
 
