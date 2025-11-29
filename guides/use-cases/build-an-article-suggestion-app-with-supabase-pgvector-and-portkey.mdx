@@ -39,10 +39,10 @@ Get going by setting up 3 things for this tutorial — NodeJS project, Portkey a
 
 Portkey
 
-1. [Sign up](https://portkey.ai/) and login into Portkey dashboard.
-2.  your OpenAI API key and add it to [Portkey Vault](https://portkey.ai/docs/product/ai-gateway-streamline-llm-integrations/virtual-keys).
+1. [Sign up](https://portkey.ai/) and login to Portkey dashboard.
+2. Add your OpenAI API key in [Model Catalog](https://app.portkey.ai/model-catalog) (name it e.g., `openai-prod`).
 
-This will give you a unique identifier, virtual key, that you can reference in the code. More on this later on.
+This gives you a provider slug (`@openai-prod`) that you can reference in the code.
 
 Supabase
 
@@ -92,11 +92,9 @@ Since our app is set to interact with OpenAI (via Portkey) and Supabase pgvector
 
 
 
-```py
+```javascript JavaScript icon="square-js"
 import { Portkey } from 'portkey-ai';
-
 import { createClient } from '@supabase/supabase-js';
-
 import fs from 'fs';
 
 const USER_QUERY = 'How to update my laptop?';
@@ -104,11 +102,8 @@ const USER_QUERY = 'How to update my laptop?';
 const supabase = createClient('https://rbhjxxxxxxxxxkr.supabase.co', process.env['SUPABASE_PROJECT_API_KEY']);
 
 const portkey = new Portkey({
-
-  apiKey: process.env['PORTKEY_API_KEY'],
-
-  virtualKey: process.env['OPENAI_VIRTUAL_KEY']
-
+    apiKey: process.env['PORTKEY_API_KEY'],
+    provider: "@openai-prod"  // Your provider slug from Model Catalog
 });
 ```
 
@@ -144,13 +139,10 @@ You can verify that the table has been created by navigating to Database > Table
 
 We will use the `fs` library to read the `articles.txt` and convert every title on the list into embeddings. With Portkey, generating embeddings is straightforward and same as working with OpenAI SDK and no additional code changes required.
 
-```py
+```javascript JavaScript icon="square-js"
 const response = await portkey.embeddings.create({
-
-  input: String(text),
-
-  model: 'text-embedding-ada-002'
-
+    input: String(text),
+    model: 'text-embedding-ada-002'
 });
 
 return Array.from(response.data[0].embedding);
@@ -160,69 +152,37 @@ Similarly to store embeddings to Supabase:
 
 
 
-```py
+```javascript JavaScript icon="square-js"
 await supabase.from('support_articles').insert({
-
-  content,
-
-  embedding
-
+    content,
+    embedding
 });
 ```
 
 To put everything together — reading from the file, generating embeddings, and storing them supabase.
 
-```py
+```javascript JavaScript icon="square-js"
 async function convertToEmbeddings(text) {
-
-  const response = await portkey.embeddings.create({
-
-    input: String(text),
-
-    model: 'text-embedding-ada-002'
-
-  });
-
-  return Array.from(response.data[0].embedding);
-
+    const response = await portkey.embeddings.create({
+        input: String(text),
+        model: 'text-embedding-ada-002'
+    });
+    return Array.from(response.data[0].embedding);
 }
 
 async function readTitlesFromFile() {
-
-  const titlesPath = './articles.txt';
-
-  const titles = fs
-
-    .readFileSync(titlesPath, 'utf8')
-
-    .split('\n')
-
-    .map((title) => title.trim());
-
-  return titles;
-
+    const titlesPath = './articles.txt';
+    const titles = fs.readFileSync(titlesPath, 'utf8').split('\n').map((title) => title.trim());
+    return titles;
 }
 
 async function storeSupportArticles() {
-
-  const titles = await readTitlesFromFile();
-
-  titles.forEach(async function (title) {
-
-    const content = title;
-
-    const embedding = await convertToEmbeddings(content);
-
-    await supabase.from('support_articles').insert({
-
-      content,
-
-      embedding
-
+    const titles = await readTitlesFromFile();
+    titles.forEach(async function (title) {
+        const content = title;
+        const embedding = await convertToEmbeddings(content);
+        await supabase.from('support_articles').insert({content, embedding});
     });
-
-  });
-
 }
 ```
 
@@ -295,21 +255,14 @@ The supabase client can make an remote procedure calls to invoke our vector simi
 
 
 
-```py
+```javascript JavaScript icon="square-js"
 async function findNearestMatch(queryEmbedding) {
-
-  const { data } = await supabase.rpc('match_documents', {
-
-    query_embedding: queryEmbedding,
-
-    match_threshold: 0.5,
-
-    match_count: 1
-
-  });
-
-  return data;
-
+    const { data } = await supabase.rpc('match_documents', {
+        query_embedding: queryEmbedding,
+        match_threshold: 0.5,
+        match_count: 1
+    });
+    return data;
 }
 ```
 

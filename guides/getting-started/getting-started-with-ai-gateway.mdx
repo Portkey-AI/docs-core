@@ -1,1219 +1,805 @@
 ---
-title: "Getting started with AI Gateway"
+title: "Getting Started with AI Gateway"
+description: "Connect to 1,600+ LLMs through Portkey's unified API with observability, reliability, and cost controls."
 ---
 
-[![](/images/guides/colab-badge.svg)](https://colab.research.google.com/drive/1nQa-9EYcv9-O6VnwLATnVd9Q2wFtthOA?usp=sharing)
+Portkey's AI Gateway provides a unified interface to 1,600+ LLMs with enterprise features: observability, automatic retries, fallbacks, caching, and cost controls—all through a simple API.
 
+## Quick Start
 
-[Portkey](https://app.portkey.ai/) is the Control Panel for AI apps. With it's popular AI Gateway and Observability Suite, hundreds of teams ship reliable, cost-efficient, and fast apps.
+Get started in 3 steps:
 
-## Quickstart
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
 
-Since Portkey is fully compatible with the OpenAI signature, you can connect to the Portkey AI Gateway through OpenAI Client.
+# 1. Install: pip install portkey-ai
+# 2. Add provider in Model Catalog (e.g., @openai-prod)
+# 3. Use it:
 
-* Set the `base_url` as `PORTKEY_GATEWAY_URL`
-* Add `default_headers` to consume the headers needed by Portkey using the `createHeaders` helper method.
+portkey = Portkey(api_key="PORTKEY_API_KEY")
 
-<Tabs>
-  <Tab title="Python">
+response = portkey.chat.completions.create(
+    model="@openai-prod/gpt-4o",  # @provider-slug/model-name
+    messages=[{"role": "user", "content": "What is a fractal?"}]
+)
 
-
-Install the OpenAI and Portkey SDK
-```python
-pip install -qU portkey-ai openai
+print(response.choices[0].message.content)
 ```
-Create the client
 
-```python
-import os
+```javascript JavaScript icon="square-js"
+import Portkey from 'portkey-ai'
+
+// 1. Install: npm install portkey-ai
+// 2. Add provider in Model Catalog (e.g., @openai-prod)
+// 3. Use it:
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+})
+
+const response = await portkey.chat.completions.create({
+    model: "@openai-prod/gpt-4o",  // @provider-slug/model-name
+    messages: [{ role: "user", content: "What is a fractal?" }]
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```python OpenAI Python icon="openai"
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+from portkey_ai import PORTKEY_GATEWAY_URL
 
+# Use OpenAI SDK with Portkey gateway
 client = OpenAI(
-  api_key=os.environ.get("OPENAI_API_KEY"),
-  base_url=PORTKEY_GATEWAY_URL, # 👈 or 'http://localhost:8787/v1'
-  default_headers=createHeaders(
-    provider="openai", # 👈 or 'anthropic', 'together-ai', 'stability-ai', etc
-    api_key=os.environ.get("PORTKEY_API_KEY") # 👈 skip when self-hosting
-  )
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL
+)
+
+response = client.chat.completions.create(
+    model="@openai-prod/gpt-4o",
+    messages=[{"role": "user", "content": "What is a fractal?"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript OpenAI JS icon="openai"
+import OpenAI from 'openai'
+import { PORTKEY_GATEWAY_URL } from 'portkey-ai'
+
+// Use OpenAI SDK with Portkey gateway
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL
+  })
+
+const response = await client.chat.completions.create({
+    model: "@openai-prod/gpt-4o",
+    messages: [{ role: "user", content: "What is a fractal?" }]
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+-d '{
+    "model": "@openai-prod/gpt-4o",
+    "messages": [{"role": "user", "content": "What is a fractal?"}]
+}'
+```
+</CodeGroup>
+
+<Info>
+Portkey also supports Anthropic's native `/messages` endpoint. See [Using with Anthropic SDK](#using-with-anthropic-sdk) below.
+</Info>
+
+## Add Provider in Model Catalog
+
+Before making requests, add a provider:
+
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Select your provider (OpenAI, Anthropic, etc.)
+3. Choose existing credentials or enter your API key
+4. Name your provider (e.g., `openai-prod`)
+
+Your provider slug will be **`@openai-prod`** (the name you chose with `@` prefix).
+
+<Card title="Complete Model Catalog Guide →" href="/product/model-catalog">
+  Set up budgets, rate limits, and manage credentials
+</Card>
+
+## Switch Between Providers
+
+Change the model string to use different providers—same code, different models:
+
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+# OpenAI
+response = portkey.chat.completions.create(
+    model="@openai-prod/gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+# Anthropic
+response = portkey.chat.completions.create(
+    model="@anthropic-prod/claude-sonnet-4-5-20250929",
+    messages=[{"role": "user", "content": "Hello!"}],
+    max_tokens=250  # Required for Anthropic
+)
+
+# Mistral
+response = portkey.chat.completions.create(
+    model="@mistral-prod/mistral-large-latest",
+    messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
-  </Tab>
-  <Tab title="JavaScript / TypeScript">
 
-Install the OpenAI and Portkey SDK
-```javascript
+```javascript JavaScript icon="square-js"
+import Portkey from 'portkey-ai'
 
-npm install --save openai portkey-ai
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" })
+
+// OpenAI
+const openaiResponse = await portkey.chat.completions.create({
+    model: "@openai-prod/gpt-4o",
+    messages: [{ role: "user", content: "Hello!" }]
+})
+
+// Anthropic
+const anthropicResponse = await portkey.chat.completions.create({
+    model: "@anthropic-prod/claude-sonnet-4-5-20250929",
+    messages: [{ role: "user", content: "Hello!" }],
+    max_tokens: 250  // Required for Anthropic
+})
+
+// Mistral
+const mistralResponse = await portkey.chat.completions.create({
+    model: "@mistral-prod/mistral-large-latest",
+    messages: [{ role: "user", content: "Hello!" }]
+})
 ```
-Create the client
-
-```javascript
-import OpenAI from 'openai';
-
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const openai = new OpenAI({
-  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL, // 👈 or 'http://localhost:8787/v1'
-  defaultHeaders: createHeaders({
-    provider: "openai", // 👈 or 'anthropic', 'together-ai', 'stability-ai', etc
-    apiKey: "PORTKEY_API_KEY" // 👈 skip when self-hosting
-  })
-});
-```
-  </Tab>
-  <Tab title="cURL">
-    * Replace the base URL to reflect the AI Gateway (`http://localhost:8787/v1` when running locally or `https://api.portkey.ai/v1` when using the hosted version)
-    * [Add the relevant headers](/api-reference/sdk#rest-headers) to enable the AI gateway features.
-  </Tab>
-  <Tab title="Other SDKs">
-    1. Replace the base URL to reflect the AI Gateway (`http://localhost:8787/v1` when running locally or `https://api.portkey.ai/v1` when using the hosted version)
-    2. [Add the relevant headers](/api-reference/sdk#rest-headers) to enable the AI gateway features.
-  </Tab>
-</Tabs>
-
+</CodeGroup>
 
 ## Examples
 
-### [OpenAI Chat Completion](/provider-endpoints/completions)
+### Vision
 
-Provider: `openai`
-
-Model being tested here: `gpt-4o-mini`
-
-
-<Tabs>
-  <Tab title="Python">
-```python
-import os
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-client = OpenAI(
-  api_key=os.environ.get("OPENAI_API_KEY"),
-  base_url=PORTKEY_GATEWAY_URL, # 👈 or 'http://localhost:8787/v1'
-  default_headers=createHeaders(
-    provider="openai",
-    api_key=os.environ.get("PORTKEY_API_KEY") # 👈 skip when self-hosting
-  )
-)
-
-client.chat.completions.create(
-  model="gpt-4o-mini",
-  messages=[{"role": "user", "content": "What is a fractal?"}],
-)
-```
-  </Tab>
-  <Tab title="JavaScript / TypeScript">
-```javascript
-
-import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const openai = new OpenAI({
-  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL, // 👈 or 'http://localhost:8787/v1'
-  defaultHeaders: createHeaders({
-    provider: "openai",
-    apiKey: "PORTKEY_API_KEY" // 👈 skip when self-hosting
-  })
-});
-
-const chatCompletion = await openai.chat.completions.create({
-  messages: [{ role: 'user', content: 'Say this is a test' }],
-  model: 'gpt-4o-mini',
-});
-```
-  </Tab>
-  <Tab title="cURL">
-```sh
-curl https://api.portkey.ai/v1/chat/completions # 👈 or 'http://localhost:8787/v1'
--H "Content-Type: application/json"
--H "Authorization: Bearer $OPENAI_API_KEY"
--H "x-portkey-provider: openai"
--H "x-portkey-api-key: $PORTKEY_API_KEY" # 👈 skip when self-hosting
--d '{
-    "model": "gpt-4o-mini",
-    "messages": [{"role": "user","content": "What is a fractal?"}]
-}'
-```
-  </Tab>
-</Tabs>
-
-```
-A fractal is a complex geometric shape that can be split into parts, each of which is a reduced-scale  of the whole. Fractals are typically self-similar and independent of scale, meaning they look similar at any zoom level. They often appear in nature, in things like snowflakes, coastlines, and fern leaves. The term "fractal" was coined by mathematician Benoit Mandelbrot in 1975.
-```
-
-### Anthropic
-
-Provider: `anthropic`
-
-Model being tested here: `claude-3-5-sonnet-20240620`
-
-PythonJS/TScURL
-
-<Tabs>
-  <Tab title="Python">
-```python
-import os
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-client = OpenAI(
-  api_key=os.environ.get("OPENAI_API_KEY"),
-  base_url=PORTKEY_GATEWAY_URL, # 👈 or 'http://localhost:8787/v1'
-  default_headers=createHeaders(
-    provider="anthropic",
-    api_key=os.environ.get("PORTKEY_API_KEY") # 👈 skip when self-hosting
-  )
-)
-
-client.chat.completions.create(
-  model="claude-3-5-sonnet-20240620",
-  messages=[{"role": "user", "content": "What is a fractal?"}],
-  max_tokens=250
-)
-```
-  </Tab>
-  <Tab title="JavaScript / TypeScript">
-```javascript
-import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const openai = new OpenAI({
-  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL, // 👈 or 'http://localhost:8787/v1'
-  defaultHeaders: createHeaders({
-    provider: "anthropic",
-    apiKey: "PORTKEY_API_KEY" // 👈 skip when self-hosting
-  })
-});
-
-const chatCompletion = await openai.chat.completions.create({
-  messages: [{ role: 'user', content: 'Say this is a test' }],
-  model: 'claude-3-5-sonnet-20240620',
-  max_tokens: 250
-});
-```
-  </Tab>
-  <Tab title="cURL">
-```sh
-curl https://api.portkey.ai/v1/chat/completions # 👈 or 'http://localhost:8787/v1'
--H "Content-Type: application/json"
--H "Authorization: Bearer $OPENAI_API_KEY"
--H "x-portkey-provider: anthropic"
--H "x-portkey-api-key: $PORTKEY_API_KEY" # 👈 skip when self-hosting
--d '{
-    "model": "claude-3-5-sonnet-20240620",
-    "messages": [{"role": "user","content": "What is a fractal"}],
-    "max_tokens": 250
-}'
-```
-  </Tab>
-</Tabs>
-
-```
-A fractal is a complex geometric shape that can be split into parts, each of which is a reduced-scale  of the whole. Fractals are typically self-similar and independent of scale, meaning they look similar at any zoom level. They often appear in nature, in things like snowflakes, coastlines, and fern leaves. The term "fractal" was coined by mathematician Benoit Mandelbrot in 1975.
-```
-
-### Mistral AI
-
-Provider: `mistral-ai`
-
-Model being tested here: `mistral-medium`
-
-
-<Tabs>
-  <Tab title="Python">
-```python
-import os
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-client = OpenAI(
-  api_key=os.environ.get("OPENAI_API_KEY"),
-  base_url=PORTKEY_GATEWAY_URL, # 👈 or 'http://localhost:8787/v1'
-  default_headers=createHeaders(
-    provider="mistral-ai",
-    api_key=os.environ.get("PORTKEY_API_KEY") # 👈 skip when self-hosting
-  )
-)
-
-client.chat.completions.create(
-  model="mistral-medium",
-  messages=[{"role": "user", "content": "What is a fractal?"}],
-)
-```
-  </Tab>
-  <Tab title="JavaScript / TypeScript">
-```javascript
-import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const openai = new OpenAI({
-  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL, // 👈 or 'http://localhost:8787/v1'
-  defaultHeaders: createHeaders({
-    provider: "mistral-ai",
-    apiKey: "PORTKEY_API_KEY" // 👈 skip when self-hosting
-  })
-});
-
-const chatCompletion = await openai.chat.completions.create({
-  messages: [{ role: 'user', content: 'Say this is a test' }],
-  model: 'mistral-medium',
-});
-```
-  </Tab>
-  <Tab title="curl">
-```curl
-curl https://api.portkey.ai/v1/chat/completions # 👈 or 'http://localhost:8787/v1'
--H "Content-Type: application/json"
--H "Authorization: Bearer $OPENAI_API_KEY"
--H "x-portkey-provider: mistral-ai"
--H "x-portkey-api-key: $PORTKEY_API_KEY" # 👈 skip when self-hosting
--d '{
-    "model": "mistral-medium",
-    "messages": [{"role": "user","content": "What is a fractal"}]
-}'
-```
-  </Tab>
-</Tabs>
-
-```
-A fractal is a complex geometric shape that can be spl
-```
-
-### Together AI
-
-Provider: `together-ai`
-
- Model being tested here: `togethercomputer/llama-2-70b-chat`
-
-
- <Tabs>
-  <Tab title="Python">
-```python
-import os
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-client = OpenAI(
-  api_key=os.environ.get("OPENAI_API_KEY"),
-  base_url=PORTKEY_GATEWAY_URL, # 👈 or 'http://localhost:8787/v1'
-  default_headers=createHeaders(
-    provider="together-ai",
-    api_key=os.environ.get("PORTKEY_API_KEY") # 👈 skip when self-hosting
-  )
-)
-
-client.chat.completions.create(
-  model="togethercomputer/llama-2-70b-chat",
-  messages=[{"role": "user", "content": "What is a fractal?"}],
-)
-```
-  </Tab>
-  <Tab title="JavaScript / TypeScript">
-```javascript
-import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const openai = new OpenAI({
-  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL, // 👈 or 'http://localhost:8787/v1'
-  defaultHeaders: createHeaders({
-    provider: "together-ai",
-    apiKey: "PORTKEY_API_KEY" // 👈 skip when self-hosting
-  })
-});
-
-const chatCompletion = await openai.chat.completions.create({
-  messages: [{ role: 'user', content: 'Say this is a test' }],
-  model: 'togethercomputer/llama-2-70b-chat',
-});
-```
-  </Tab>
-  <Tab title="curl">
-```curl
-curl https://api.portkey.ai/v1/chat/completions # 👈 or 'http://localhost:8787/v1'
--H "Content-Type: application/json"
--H "Authorization: Bearer $OPENAI_API_KEY"
--H "x-portkey-provider: together-ai"
--H "x-portkey-api-key: $PORTKEY_API_KEY" # 👈 skip when self-hosting
--d '{
-    "model": "togethercomputer/llama-2-70b-chat",
-    "messages": [{"role": "user","content": "What is a fractal"}]
-}'
-```
-  </Tab>
-</Tabs>
-
-```
-A fractal is a complex geometric shape that can be spl
-```
-
-### Portkey Supports other Providers
-
-Portkey supports **30+ providers** and all the models within those providers. To use these different providers and models with OpenAI's SDK, you just need to change the `provider` and` model names` in your code with their respective auth keys. It's that easy!
-
-If you want to see all the providers Portkey works with, check out the [list of providers](https://docs.portkey.ai/providers/supported-providers)[.](/guides/integrations)
-
-### [OpenAI Embeddings](/provider-endpoints/embeddings)
-
-PythonNodeJS
-
-<Tabs>
-  <Tab title="Python">
-```python
-import os
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-client = OpenAI(
-  api_key=os.environ.get("OPENAI_API_KEY"),
-  base_url=PORTKEY_GATEWAY_URL, # 👈 or 'http://localhost:8787/v1'
-  default_headers=createHeaders(
-    provider="openai",
-    api_key=os.environ.get("PORTKEY_API_KEY") # 👈 skip when self-hosting
-  )
-)
-
-def get_embedding(text, model="text-embedding-3-small"):
-   text = text.replace("\n", " ")
-   return client.embeddings.create(input = [text], model=model).data[0].embedding
-
-df['ada_embedding'] = df.combined.apply(lambda x: get_embedding(x, model='text-embedding-3-small'))
-df.to_csv('output/embedded_1k_reviews.csv', index=False)
-
-
-
-
-
-```
-  </Tab>
-  <Tab title="NodeJS">
-```js
-
-```
-  </Tab>
-</Tabs>
-### [OpenAI Function Calling](/product/ai-gateway/multimodal-capabilities/function-calling)
-
-OpenAI NodeJSOpenAI PythonNodeJSPythonREST
-
-<Tabs>
-  <Tab title="OpenAI NodeJS">
-```js
-import OpenAI from 'openai'; // We're using the v4 SDK
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const openai = new OpenAI({
-  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: "openai",
-    apiKey: "PORTKEY_API_KEY" // defaults to process.env["PORTKEY_API_KEY"]
-  })
-});
-
-// Generate a chat completion with streaming
-async function getChatCompletionFunctions(){
-  const messages = [{"role": "user", "content": "What is the weather like in Boston today?"}];
-  const tools = [
-      {
-        "type": "function",
-        "function": {
-          "name": "get_current_weather",
-          "description": "Get the current weather in a given location",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "location": {
-                "type": "string",
-                "description": "The city and state, e.g. San Francisco, CA",
-              },
-              "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-            },
-            "required": ["location"],
-          },
-        }
-      }
-  ];
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo",
-    messages: messages,
-    tools: tools,
-    tool_choice: "auto",
-  });
-
-  console.log(response)
-
-}
-await getChatCompletionFunctions();
-```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-openai = OpenAI(
-    api_key='OPENAI_API_KEY',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="openai",
-        api_key="PORTKEY_API_KEY"
-    )
-)
-
-tools = [
-  {
-    "type": "function",
-    "function": {
-      "name": "get_current_weather",
-      "description": "Get the current weather in a given location",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "location": {
-            "type": "string",
-            "description": "The city and state, e.g. San Francisco, CA",
-          },
-          "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-        },
-        "required": ["location"],
-      },
-    }
-  }
-]
-messages = [{"role": "user", "content": "What is the weather like in Boston today?"}]
-completion = openai.chat.completions.create(
-  model="gpt-3.5-turbo",
-  messages=messages,
-  tools=tools,
-  tool_choice="auto"
-)
-
-print(completion)
-```
-  </Tab>
-    <Tab title="NodeJS">
-```js
-import Portkey from 'portkey-ai';
-
-// Initialize the Portkey client
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
-    virtualKey: "VIRTUAL_KEY"   // Add your provider's virtual key
-});
-
-// Generate a chat completion with streaming
-async function getChatCompletionFunctions(){
-  const messages = [{"role": "user", "content": "What is the weather like in Boston today?"}];
-  const tools = [
-      {
-        "type": "function",
-        "function": {
-          "name": "get_current_weather",
-          "description": "Get the current weather in a given location",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "location": {
-                "type": "string",
-                "description": "The city and state, e.g. San Francisco, CA",
-              },
-              "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-            },
-            "required": ["location"],
-          },
-        }
-      }
-  ];
-
-  const response = await portkey.chat.completions.create({
-    model: "gpt-3.5-turbo",
-    messages: messages,
-    tools: tools,
-    tool_choice: "auto",
-  });
-
-  console.log(response)
-
-}
-await getChatCompletionFunctions();
-```
-  </Tab>
-  <Tab title="Python">
-```python
+<CodeGroup>
+```python Python icon="python"
 from portkey_ai import Portkey
 
-# Initialize the Portkey client
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="@VIRTUAL_KEY"   # Add your provider's virtual key
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@openai-prod/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What's in this image?"},
+            {"type": "image_url", "image_url": {"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/800px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"}}
+        ]
+    }],
+    max_tokens=300
 )
 
-tools = [
-  {
-    "type": "function",
-    "function": {
-      "name": "get_current_weather",
-      "description": "Get the current weather in a given location",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "location": {
-            "type": "string",
-            "description": "The city and state, e.g. San Francisco, CA",
-          },
-          "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-        },
-        "required": ["location"],
-      },
-    }
-  }
-]
-messages = [{"role": "user", "content": "What is the weather like in Boston today?"}]
-completion = portkey.chat.completions.create(
-  model="gpt-3.5-turbo",
-  messages=messages,
+print(response.choices[0].message.content)
+```
+
+```javascript JavaScript icon="square-js"
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" })
+
+const response = await portkey.chat.completions.create({
+    model: "@openai-prod/gpt-4o",
+    messages: [{
+        role: "user",
+        content: [
+            { type: "text", text: "What's in this image?" },
+            { type: "image_url", image_url: { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/800px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg" } }
+        ]
+    }],
+    max_tokens: 300
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```python OpenAI Python icon="openai"
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+client = OpenAI(api_key="PORTKEY_API_KEY", base_url=PORTKEY_GATEWAY_URL)
+
+response = client.chat.completions.create(
+    model="@openai-prod/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What's in this image?"},
+            {"type": "image_url", "image_url": {"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/800px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"}}
+        ]
+    }],
+    max_tokens=300
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript OpenAI JS icon="openai"
+import OpenAI from 'openai'
+import { PORTKEY_GATEWAY_URL } from 'portkey-ai'
+
+const client = new OpenAI({ apiKey: "PORTKEY_API_KEY", baseURL: PORTKEY_GATEWAY_URL })
+
+const response = await client.chat.completions.create({
+    model: "@openai-prod/gpt-4o",
+    messages: [{
+        role: "user",
+        content: [
+            { type: "text", text: "What's in this image?" },
+            { type: "image_url", image_url: { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/800px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg" } }
+        ]
+    }],
+    max_tokens: 300
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-prod/gpt-4o",
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "What is in this image?"},
+        {"type": "image_url", "image_url": {"url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/800px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"}}
+      ]
+    }],
+    "max_tokens": 300
+  }'
+```
+</CodeGroup>
+
+### Function Calling
+
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+tools = [{
+        "type": "function",
+        "function": {
+        "name": "get_weather",
+        "description": "Get current weather in a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City and state, e.g. San Francisco, CA"}
+            },
+            "required": ["location"]
+        }
+        }
+}]
+
+response = portkey.chat.completions.create(
+    model="@openai-prod/gpt-4o",
+    messages=[{"role": "user", "content": "What's the weather in Boston?"}],
   tools=tools,
   tool_choice="auto"
 )
 
-print(completion)
+print(response.choices[0].message.tool_calls)
 ```
-  </Tab>
-  <Tab title="cURL">
-```sh
-curl "https://api.portkey.ai/v1/chat/completions" \
+
+```javascript JavaScript icon="square-js"
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" })
+
+const tools = [{
+    type: "function",
+    function: {
+        name: "get_weather",
+        description: "Get current weather in a location",
+        parameters: {
+            type: "object",
+            properties: {
+                location: { type: "string", description: "City and state, e.g. San Francisco, CA" }
+            },
+            required: ["location"]
+        }
+        }
+}]
+
+  const response = await portkey.chat.completions.create({
+    model: "@openai-prod/gpt-4o",
+    messages: [{ role: "user", content: "What's the weather in Boston?" }],
+    tools: tools,
+    tool_choice: "auto"
+})
+
+console.log(response.choices[0].message.tool_calls)
+```
+
+```python OpenAI Python icon="openai"
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+client = OpenAI(api_key="PORTKEY_API_KEY", base_url=PORTKEY_GATEWAY_URL)
+
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get current weather in a location",
+      "parameters": {
+        "type": "object",
+        "properties": {
+                "location": {"type": "string", "description": "City and state, e.g. San Francisco, CA"}
+          },
+            "required": ["location"]
+        }
+    }
+}]
+
+response = client.chat.completions.create(
+    model="@openai-prod/gpt-4o",
+    messages=[{"role": "user", "content": "What's the weather in Boston?"}],
+  tools=tools,
+  tool_choice="auto"
+)
+
+print(response.choices[0].message.tool_calls)
+```
+
+```javascript OpenAI JS icon="openai"
+import OpenAI from 'openai'
+import { PORTKEY_GATEWAY_URL } from 'portkey-ai'
+
+const client = new OpenAI({ apiKey: "PORTKEY_API_KEY", baseURL: PORTKEY_GATEWAY_URL })
+
+const tools = [{
+    type: "function",
+    function: {
+        name: "get_weather",
+        description: "Get current weather in a location",
+        parameters: {
+            type: "object",
+            properties: {
+                location: { type: "string", description: "City and state, e.g. San Francisco, CA" }
+            },
+            required: ["location"]
+        }
+    }
+}]
+
+const response = await client.chat.completions.create({
+    model: "@openai-prod/gpt-4o",
+    messages: [{ role: "user", content: "What's the weather in Boston?" }],
+    tools: tools,
+    tool_choice: "auto"
+})
+
+console.log(response.choices[0].message.tool_calls)
+```
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: openai" \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
   -d '{
-  "model": "gpt-3.5-turbo",
-  "messages": [
-    {
-      "role": "user",
-      "content": "What is the weather like in Boston?"
-    }
-  ],
-  "tools": [
-    {
+    "model": "@openai-prod/gpt-4o",
+    "messages": [{"role": "user", "content": "What is the weather in Boston?"}],
+    "tools": [{
       "type": "function",
       "function": {
-        "name": "get_current_weather",
-        "description": "Get the current weather in a given location",
+        "name": "get_weather",
+        "description": "Get current weather in a location",
         "parameters": {
           "type": "object",
           "properties": {
-            "location": {
-              "type": "string",
-              "description": "The city and state, e.g. San Francisco, CA"
-            },
-            "unit": {
-              "type": "string",
-              "enum": ["celsius", "fahrenheit"]
-            }
+            "location": {"type": "string", "description": "City and state, e.g. San Francisco, CA"}
           },
           "required": ["location"]
         }
       }
-    }
-  ],
+    }],
   "tool_choice": "auto"
-}
-```
-  </Tab>
-
-</Tabs>
-### [OpenAI Chat-Vision](/product/ai-gateway/multimodal-capabilities/vision)
-
-<Tabs>
-  <Tab title="OpenAI NodeJS">
-```js
-import OpenAI from 'openai'; // We're using the v4 SDK
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const openai = new OpenAI({
-  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: "openai",
-    apiKey: "PORTKEY_API_KEY" // defaults to process.env["PORTKEY_API_KEY"]
-  })
-});
-
-// Generate a chat completion with streaming
-async function getChatCompletionFunctions(){
-  const response = await openai.chat.completions.create({
-    model: "gpt-4-vision-preview",
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "What’s in this image?" },
-          {
-            type: "image_url",
-            image_url:
-              "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
-          },
-        ],
-      },
-    ],
-  });
-
-  console.log(response)
-
-}
-await getChatCompletionFunctions();
-```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-openai = OpenAI(
-    api_key='OPENAI_API_KEY',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="openai",
-        api_key="PORTKEY_API_KEY"
-    )
-)
-
-response = openai.chat.completions.create(
-    model="gpt-4-vision-preview",
-    messages=[
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "What’s in this image?"},
-                {
-                    "type": "image_url",
-                    "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
-                },
-            ],
-        }
-    ],
-    max_tokens=300,
-)
-
-print(completion)
-```
-  </Tab>
-    <Tab title="NodeJS">
-```js
-import Portkey from 'portkey-ai';
-
-// Initialize the Portkey client
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
-    virtualKey: "VIRTUAL_KEY"   // Add your provider's virtual key
-});
-
-// Generate a chat completion with streaming
-async function getChatCompletionFunctions(){
-  const response = await portkey.chat.completions.create({
-    model: "gpt-4-vision-preview",
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "What’s in this image?" },
-          {
-            type: "image_url",
-            image_url:
-              "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
-          },
-        ],
-      },
-    ],
-  });
-
-  console.log(response)
-
-}
-await getChatCompletionFunctions();
-```
-  </Tab>
-  <Tab title="Python">
-```python
-from portkey_ai import Portkey
-
-# Initialize the Portkey client
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="@VIRTUAL_KEY"   # Add your provider's virtual key
-)
-
-response = portkey.chat.completions.create(
-    model="gpt-4-vision-preview",
-    messages=[
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "What’s in this image?"},
-                {
-                    "type": "image_url",
-                    "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
-                },
-            ],
-        }
-    ],
-    max_tokens=300,
-)
-
-print(completion)
-```
-  </Tab>
-  <Tab title="cURL">
-```sh
-curl "https://api.portkey.ai/v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: openai" \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -d '{
-    "model": "gpt-4-vision-preview",
-    "messages": [
-      {
-        "role": "user",
-        "content": [
-          {
-            "type": "text",
-            "text": "What’s in this image?"
-          },
-          {
-            "type": "image_url",
-            "image_url": {
-              "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-            }
-          }
-        ]
-      }
-    ],
-    "max_tokens": 300
   }'
 ```
-  </Tab>
+</CodeGroup>
 
-</Tabs>
+### Image Generation
 
-### [Images](/provider-endpoints/images)
-
-<Tabs>
-  <Tab title="OpenAI NodeJS">
-```js
-import OpenAI from 'openai'; // We're using the v4 SDK
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const openai = new OpenAI({
-  apiKey: 'OPENAI_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: "openai",
-    apiKey: "PORTKEY_API_KEY" // defaults to process.env["PORTKEY_API_KEY"]
-  })
-});
-
-async function main() {
-  const image = await openai.images.generate({
-    model: "dall-e-3",
-    prompt: "Lucy in the sky with diamonds"
-  });
-
-  console.log(image.data);
-}
-
-main();
-```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-from IPython.display import display, Image
-
-client = OpenAI(
-    api_key='OPENAI_API_KEY',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="openai",
-        api_key="PORTKEY_API_KEY"
-    )
-)
-
-image = client.images.generate(
-  model="dall-e-3",
-  prompt="Lucy in the sky with diamonds",
-  n=1,
-  size="1024x1024"
-)
-
-# Display the image
-display(Image(url=image.data[0].url))
-```
-  </Tab>
-    <Tab title="NodeJS">
-```js
-import Portkey from 'portkey-ai';
-
-// Initialize the Portkey client
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
-    virtualKey: "VIRTUAL_KEY"   // Add your provider's virtual key
-});
-
-async function main() {
-  const image = await portkey.images.generate({
-    model: "dall-e-3",
-    prompt: "Lucy in the sky with diamonds"
-  });
-
-  console.log(image.data);
-}
-
-main();
-```
-  </Tab>
-  <Tab title="Python">
-```python
+<CodeGroup>
+```python Python icon="python"
 from portkey_ai import Portkey
-from IPython.display import display, Image
 
-# Initialize the Portkey client
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="@VIRTUAL_KEY"   # Add your provider's virtual key
-)
+portkey = Portkey(api_key="PORTKEY_API_KEY")
 
 image = portkey.images.generate(
-  model="dall-e-3",
-  prompt="Lucy in the sky with diamonds"
+    model="@openai-prod/dall-e-3",
+    prompt="A serene mountain landscape at sunset",
+    size="1024x1024"
 )
 
-# Display the image
-display(Image(url=image.data[0].url))
+print(image.data[0].url)
 ```
-  </Tab>
-  <Tab title="cURL">
-```sh
-curl "https://api.portkey.ai/v1/chat/completions" \
+
+```javascript JavaScript icon="square-js"
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" })
+
+const image = await portkey.images.generate({
+    model: "@openai-prod/dall-e-3",
+    prompt: "A serene mountain landscape at sunset",
+    size: "1024x1024"
+})
+
+console.log(image.data[0].url)
+```
+
+```python OpenAI Python icon="openai"
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+client = OpenAI(api_key="PORTKEY_API_KEY", base_url=PORTKEY_GATEWAY_URL)
+
+image = client.images.generate(
+    model="@openai-prod/dall-e-3",
+    prompt="A serene mountain landscape at sunset",
+    size="1024x1024"
+)
+
+print(image.data[0].url)
+```
+
+```javascript OpenAI JS icon="openai"
+import OpenAI from 'openai'
+import { PORTKEY_GATEWAY_URL } from 'portkey-ai'
+
+const client = new OpenAI({ apiKey: "PORTKEY_API_KEY", baseURL: PORTKEY_GATEWAY_URL })
+
+const image = await client.images.generate({
+    model: "@openai-prod/dall-e-3",
+    prompt: "A serene mountain landscape at sunset",
+    size: "1024x1024"
+})
+
+console.log(image.data[0].url)
+```
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-virtual-key: openai-virtual-key" \
   -d '{
-    "model": "dall-e-3",
-    "prompt": "Lucy in the sky with diamonds"
+    "model": "@openai-prod/dall-e-3",
+    "prompt": "A serene mountain landscape at sunset",
+    "size": "1024x1024"
   }'
 ```
-  </Tab>
+</CodeGroup>
 
-</Tabs>
+### Embeddings
 
-### [OpenAI Audio](/provider-endpoints/audio)
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
 
-Here's an example of Text-to-Speech
+portkey = Portkey(api_key="PORTKEY_API_KEY")
 
-<Tabs>
-  <Tab title="OpenAI NodeJS">
-```js
-import fs from "fs";
-import OpenAI from "openai";
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const openai = new OpenAI({
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    apiKey: "PORTKEY_API_KEY",
-    virtualKey: "OPENAI_VIRTUAL_KEY"
-  })
-});
-
-// Transcription
-
-async function transcribe() {
-  const transcription = await openai.audio.transcriptions.create({
-    file: fs.createReadStream("/path/to/file.mp3"),
-    model: "whisper-1",
-  });
-
-  console.log(transcription.text);
-}
-transcribe();
-
-// Translation
-
-async function translate() {
-    const translation = await openai.audio.translations.create({
-        file: fs.createReadStream("/path/to/file.mp3"),
-        model: "whisper-1",
-    });
-    console.log(translation.text);
-}
-translate();
-```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-client = OpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        provider="@OPENAI_VIRTUAL_KEY"
-    )
+embeddings = portkey.embeddings.create(
+    model="@openai-prod/text-embedding-3-small",
+    input=["Hello world", "Goodbye world"]
 )
 
-audio_file= open("/path/to/file.mp3", "rb")
+print(embeddings.data[0].embedding[:5])  # First 5 dimensions
+```
 
-# Transcription
+```javascript JavaScript icon="square-js"
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" })
+
+const embeddings = await portkey.embeddings.create({
+    model: "@openai-prod/text-embedding-3-small",
+    input: ["Hello world", "Goodbye world"]
+})
+
+console.log(embeddings.data[0].embedding.slice(0, 5))  // First 5 dimensions
+```
+
+```python OpenAI Python icon="openai"
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+client = OpenAI(api_key="PORTKEY_API_KEY", base_url=PORTKEY_GATEWAY_URL)
+
+embeddings = client.embeddings.create(
+    model="@openai-prod/text-embedding-3-small",
+    input=["Hello world", "Goodbye world"]
+)
+
+print(embeddings.data[0].embedding[:5])
+```
+
+```javascript OpenAI JS icon="openai"
+import OpenAI from 'openai'
+import { PORTKEY_GATEWAY_URL } from 'portkey-ai'
+
+const client = new OpenAI({ apiKey: "PORTKEY_API_KEY", baseURL: PORTKEY_GATEWAY_URL })
+
+const embeddings = await client.embeddings.create({
+    model: "@openai-prod/text-embedding-3-small",
+    input: ["Hello world", "Goodbye world"]
+})
+
+console.log(embeddings.data[0].embedding.slice(0, 5))
+```
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-prod/text-embedding-3-small",
+    "input": ["Hello world", "Goodbye world"]
+  }'
+```
+</CodeGroup>
+
+### Audio Transcription
+
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+transcription = portkey.audio.transcriptions.create(
+    model="@openai-prod/whisper-1",
+    file=open("/path/to/audio.mp3", "rb")
+)
+
+print(transcription.text)
+```
+
+```javascript JavaScript icon="square-js"
+import Portkey from 'portkey-ai'
+import fs from 'fs'
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" })
+
+const transcription = await portkey.audio.transcriptions.create({
+    model: "@openai-prod/whisper-1",
+    file: fs.createReadStream("/path/to/audio.mp3")
+})
+
+console.log(transcription.text)
+```
+
+```python OpenAI Python icon="openai"
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+client = OpenAI(api_key="PORTKEY_API_KEY", base_url=PORTKEY_GATEWAY_URL)
 
 transcription = client.audio.transcriptions.create(
-  model="whisper-1",
-  file=audio_file
+    model="@openai-prod/whisper-1",
+    file=open("/path/to/audio.mp3", "rb")
 )
+
 print(transcription.text)
-
-# Translation
-
-translation = client.audio.translations.create(
-  model="whisper-1",
-  file=audio_file
-)
-print(translation.text)
 ```
-  </Tab>
-  <Tab title="cURL">
-  For Transcriptions:
-```sh
-curl "https://api.portkey.ai/v1/audio/transcriptions" \
+
+```javascript OpenAI JS icon="openai"
+import OpenAI from 'openai'
+import { PORTKEY_GATEWAY_URL } from 'portkey-ai'
+import fs from 'fs'
+
+const client = new OpenAI({ apiKey: "PORTKEY_API_KEY", baseURL: PORTKEY_GATEWAY_URL })
+
+const transcription = await client.audio.transcriptions.create({
+    model: "@openai-prod/whisper-1",
+    file: fs.createReadStream("/path/to/audio.mp3")
+})
+
+console.log(transcription.text)
+```
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/audio/transcriptions \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: openai" \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H 'Content-Type: multipart/form-data' \
-  --form file=@/path/to/file/audio.mp3 \
-  --form model=whisper-1
+  -F file="@/path/to/audio.mp3" \
+  -F model="@openai-prod/whisper-1"
 ```
-For Translations:
+</CodeGroup>
 
-```sh
-curl "https://api.portkey.ai/v1/audio/translations" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: openai" \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H 'Content-Type: multipart/form-data' \
-  --form file=@/path/to/file/audio.mp3 \
-  --form model=whisper-1
-```
-  </Tab>
+## Using with OpenAI SDK
 
-</Tabs>
+Use your existing OpenAI code with Portkey—just change 2 parameters:
 
-
-### [OpenAI Batch - Create Batch](/provider-endpoints/batch)
-
-<Tabs>
-  <Tab title="OpenAI Node">
-```js
-import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-const client = new OpenAI({
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    apiKey: "PORTKEY_API_KEY",
-    virtualKey: "PROVIDER_VIRTUAL_KEY"
-  })
-});
-
-async function main() {
-  const batch = await client.batches.create({
-    input_file_id: "file-abc123",
-    endpoint: "/v1/chat/completions",
-    completion_window: "24h"
-  });
-
-  console.log(batch);
-}
-
-main();
-```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
+<CodeGroup>
+```python Python icon="python"
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+from portkey_ai import PORTKEY_GATEWAY_URL
 
+# Change base_url and api_key
 client = OpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL
+)
+
+# Use model with @provider-slug prefix
+response = client.chat.completions.create(
+    model="@openai-prod/gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+```javascript JavaScript icon="square-js"
+import OpenAI from 'openai'
+import { PORTKEY_GATEWAY_URL } from 'portkey-ai'
+
+// Change baseURL and apiKey
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL
+})
+
+// Use model with @provider-slug prefix
+const response = await client.chat.completions.create({
+    model: "@openai-prod/gpt-4o",
+    messages: [{ role: "user", content: "Hello!" }]
+})
+```
+</CodeGroup>
+
+## Using with Anthropic SDK
+
+Portkey fully supports Anthropic's native `/messages` endpoint. Use the Anthropic SDK directly with Portkey:
+
+<CodeGroup>
+```python Python icon="python"
+import anthropic
+
+client = anthropic.Anthropic(
         api_key="PORTKEY_API_KEY",
-        provider="@PROVIDER_VIRTUAL_KEY"
+    base_url="https://api.portkey.ai"
     )
+
+message = client.messages.create(
+    model="@anthropic-prod/claude-sonnet-4-5-20250929",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello, Claude!"}]
 )
 
-batch = client.batches.create(
-  input_file_id="file-abc123",
-  endpoint="/v1/chat/completions",
-  completion_window="24h"
-)
+print(message.content[0].text)
 ```
-  </Tab>
-    <Tab title="Portkey Node">
-```js
-import Portkey from 'portkey-ai';
 
-const client = new Portkey({
-  apiKey: 'PORTKEY_API_KEY',
-  virtualKey: 'PROVIDER_VIRTUAL_KEY'
-});
+```javascript JavaScript icon="square-js"
+import Anthropic from '@anthropic-ai/sdk'
 
-async function main() {
-  const batch = await client.batches.create({
-    input_file_id: "file-abc123",
-    endpoint: "/v1/chat/completions",
-    completion_window: "24h"
-  });
+const client = new Anthropic({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai"
+})
 
-  console.log(batch);
-}
+const message = await client.messages.create({
+    model: "@anthropic-prod/claude-sonnet-4-5-20250929",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "Hello, Claude!" }]
+})
 
-main();
+console.log(message.content[0].text)
 ```
-  </Tab>
-  <Tab title="Portkey Python">
-```python
-from portkey_ai import Portkey
 
-client = Portkey(
-  api_key = "PORTKEY_API_KEY",
-  virtual_key = "PROVIDER_VIRTUAL_KEY"
-)
-
-batch = client.batches.create(
-  input_file_id="file-abc123",
-  endpoint="/v1/chat/completions",
-  completion_window="24h"
-)
-```
-  </Tab>
-  <Tab title="cURL">
-```cuRL
-curl https://api.portkey.ai/v1/batches \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-virtual-key: $PORTKEY_PROVIDER_VIRTUAL_KEY" \
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/messages \
   -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
   -d '{
-    "input_file_id": "file-abc123",
-    "endpoint": "/v1/chat/completions",
-    "completion_window": "24h"
+    "model": "@anthropic-prod/claude-sonnet-4-5-20250929",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello, Claude!"}]
   }'
 ```
-  </Tab>
+</CodeGroup>
 
-</Tabs>
+All Portkey features (caching, observability, configs) work with the Anthropic SDK—just add the `x-portkey-*` headers.
 
-### [Files - Upload File](/provider-endpoints/files)
+<Card title="Anthropic Integration Guide →" href="/integrations/llms/anthropic">
+  Learn about prompt caching, extended thinking, and more Anthropic features
+</Card>
 
-<Tabs>
-  <Tab title="OpenAI Node">
-```js
-import fs from "fs";
-import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+## Gateway Features
 
-const client = new OpenAI({
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    apiKey: "PORTKEY_API_KEY",
-    virtualKey: "PROVIDER_VIRTUAL_KEY"
-  })
-});
+Add production features through configs:
 
-async function main() {
-  const file = await client.files.create({
-    file: fs.createReadStream("mydata.jsonl"),
-    purpose: "batch",
-  });
-
-  console.log(file);
-}
-
-main();
-```
-  </Tab>
-    <Tab title="OpenAI Python">
-```python
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-client = OpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        provider="@PROVIDER_VIRTUAL_KEY"
-    )
-)
-
-upload = client.files.create(
-  file=open("mydata.jsonl", "rb"),
-  purpose="batch"
-)
-```
-  </Tab>
-    <Tab title="Portkey Node">
-```js
-import fs from "fs";
-import Portkey from 'portkey-ai';
-
-const client = new Portkey({
-  apiKey: 'PORTKEY_API_KEY',
-  virtualKey: 'PROVIDER_VIRTUAL_KEY'
-});
-
-async function main() {
-  const file = await client.files.create({
-    file: fs.createReadStream("mydata.jsonl"),
-    purpose: "batch",
-  });
-
-  console.log(file);
-}
-
-main();
-```
-  </Tab>
-  <Tab title="Portkey Python">
 ```python
 from portkey_ai import Portkey
 
-client = Portkey(
-  api_key = "PORTKEY_API_KEY",
-  virtual_key = "PROVIDER_VIRTUAL_KEY"
+# Attach a config for retries, caching, fallbacks
+portkey = Portkey(
+        api_key="PORTKEY_API_KEY",
+    config="pc-your-config-id"  # Created in Portkey dashboard
 )
+```
 
-upload = client.files.create(
-  file=open("mydata.jsonl", "rb"),
-  purpose="batch"
-)
-```
-  </Tab>
-  <Tab title="cURL">
-```cuRL
-curl https://api.portkey.ai/v1/files \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-virtual-key: $PORTKEY_PROVIDER_VIRTUAL_KEY" \
-  -F purpose="fine-tune" \
-  -F file="@mydata.jsonl"
-```
-  </Tab>
-</Tabs>
+<CardGroup cols={2}>
+  <Card title="Automatic Retries" icon="rotate" href="/product/ai-gateway/automatic-retries">
+    Retry failed requests with exponential backoff
+  </Card>
+  <Card title="Fallbacks" icon="arrow-rotate-left" href="/product/ai-gateway/fallbacks">
+    Automatically switch to backup providers
+  </Card>
+  <Card title="Caching" icon="database" href="/product/ai-gateway/cache-simple-and-semantic">
+    Cache responses to reduce costs and latency
+  </Card>
+  <Card title="Load Balancing" icon="scale-balanced" href="/product/ai-gateway/load-balancing">
+    Distribute requests across multiple providers
+  </Card>
+</CardGroup>
+
+<Card title="Gateway Configs Guide →" href="/product/ai-gateway/configs">
+  Learn how to create and use configs
+</Card>
+
+## Supported Integrations
+
+Portkey integrates with the entire AI ecosystem:
+
+<CardGroup cols={2}>
+  <Card title="LLM Providers" icon="microchip" href="/integrations/llms">
+    **1,600+ models** from OpenAI, Anthropic, Google, Mistral, Cohere, and 30+ providers
+  </Card>
+  <Card title="Agent Frameworks" icon="robot" href="/integrations/agents">
+    LangChain, CrewAI, AutoGen, OpenAI Agents, Strands, and more
+  </Card>
+  <Card title="Libraries" icon="book" href="/integrations/libraries">
+    LangChain, LlamaIndex, Vercel AI SDK, and popular frameworks
+  </Card>
+  <Card title="Guardrails" icon="shield" href="/integrations/guardrails">
+    Aporia, Pillar, Patronus, and content safety providers
+  </Card>
+  <Card title="Vector Databases" icon="database" href="/integrations/vector-databases">
+    Pinecone, Weaviate, and vector store integrations
+  </Card>
+  <Card title="MCP Servers" icon="server" href="/integrations/mcp-servers">
+    Model Context Protocol servers and tools
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Track costs, latency, and usage
+  </Card>
+  <Card title="Prompt Library" icon="book" href="/product/prompt-library">
+    Manage and version prompts
+  </Card>
+  <Card title="Guardrails" icon="shield" href="/product/guardrails">
+    Add PII detection and content filtering
+  </Card>
+  <Card title="Model Catalog" icon="list" href="/product/model-catalog">
+    Manage providers, budgets, and access
+  </Card>
+</CardGroup>

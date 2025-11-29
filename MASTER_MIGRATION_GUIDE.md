@@ -196,15 +196,15 @@ provider = portkey.providers.create(
 
 ## Part 2: File Groups for Migration
 
-### Group 1: Core Product Pages (Priority: HIGH)
-**Files to update:**
-- `product/ai-gateway/virtual-keys.mdx` - Main Virtual Keys page (needs complete rewrite)
-- `product/ai-gateway/virtual-keys/budget-limits.mdx`
-- `product/ai-gateway/virtual-keys/rate-limits.mdx`
-- `product/ai-gateway/virtual-keys/bedrock-amazon-assumed-role.mdx`
-- `product/model-catalog.mdx` - ✅ Already updated
-- `product/model-catalog/integrations.mdx` - ✅ Already updated
-- `product/ai-gateway.mdx`
+### Group 1: Core Product Pages (Priority: HIGH) ✅ COMPLETE
+**Files updated:**
+- ✅ `product/ai-gateway/virtual-keys.mdx` - Comprehensive Virtual Keys reference
+- ✅ `product/ai-gateway/virtual-keys/budget-limits.mdx`
+- ✅ `product/ai-gateway/virtual-keys/rate-limits.mdx`
+- ✅ `product/ai-gateway/virtual-keys/bedrock-amazon-assumed-role.mdx`
+- ✅ `product/model-catalog.mdx`
+- ✅ `product/model-catalog/integrations.mdx`
+- ✅ `product/ai-gateway.mdx`
 - `introduction/feature-overview.mdx`
 - `support/upgrade-to-model-catalog.mdx` - ✅ Already updated
 
@@ -215,15 +215,18 @@ provider = portkey.providers.create(
 
 ---
 
-### Group 2: LLM Provider Integration Pages (Priority: HIGH)
+### Group 2: LLM Provider Integration Pages (Priority: HIGH) ✅ COMPLETE
 **Pattern:** All files in `integrations/llms/*.mdx`
 
-**Key files:**
-- `integrations/llms/openai.mdx`
-- `integrations/llms/anthropic.mdx`
-- `integrations/llms/azure-openai/azure-openai.mdx`
-- `integrations/llms/bedrock/aws-bedrock.mdx`
-- `integrations/llms/vertex-ai.mdx`
+See `GROUP_2_MIGRATION_PLAN.md` for details.
+
+**Key files updated:**
+- ✅ `integrations/llms/openai.mdx`
+- ✅ `integrations/llms/anthropic.mdx`
+- ✅ `integrations/llms/azure-openai/azure-openai.mdx`
+- ✅ `integrations/llms/bedrock/aws-bedrock.mdx`
+- ✅ `integrations/llms/vertex-ai.mdx`
+- ✅ All other provider pages
 - Plus 50+ other provider pages
 
 **Migration Strategy:**
@@ -234,15 +237,26 @@ provider = portkey.providers.create(
 
 ---
 
-### Group 3: Library Integration Pages (Priority: MEDIUM)
-**Pattern:** All files in `integrations/libraries/*.mdx`
+### Group 3: Library Integration Pages (Priority: MEDIUM) ✅ COMPLETE
+**Pattern:** All files in `integrations/libraries/*.mdx` and `integrations/agents/*.mdx`
 
-**Key files:**
-- `integrations/libraries/langchain-python.mdx`
-- `integrations/libraries/openai-compatible.mdx`
-- `integrations/libraries/cursor.mdx` - ✅ Already updated
-- `integrations/libraries/cline.mdx`
-- Plus 15+ other library pages
+See `GROUP_3_MIGRATION_PLAN.md` for details.
+
+**Library files updated:**
+- ✅ `integrations/libraries/langchain-python.mdx` - Reference implementation
+- ✅ `integrations/libraries/langchain-js.mdx`
+- ✅ `integrations/libraries/llama-index-python.mdx`
+- ✅ `integrations/libraries/vercel.mdx`
+- ✅ `integrations/libraries/openai-agent-builder.mdx`
+- ✅ `integrations/libraries/openai-agent-builder-python.mdx`
+- ✅ Tool integrations (cursor, cline, etc.) - already used Model Catalog
+
+**Agent files updated:**
+- ✅ `integrations/agents/openai-agents.mdx`, `openai-agents-ts.mdx`
+- ✅ `integrations/agents/openai-swarm.mdx`
+- ✅ `integrations/agents/strands.mdx`, `crewai.mdx`, `llama-agents.mdx`
+- ✅ `integrations/agents/phidata.mdx`, `langchain-agents.mdx`, `control-flow.mdx`
+- ✅ `integrations/agents/bring-your-own-agents.mdx`, `livekit.mdx`, `pydantic-ai.mdx`
 
 **Migration Strategy:**
 - Update setup steps to use concise "Add Provider" pattern
@@ -251,14 +265,14 @@ provider = portkey.providers.create(
 
 ---
 
-### Group 4: Gateway Feature Pages (Priority: MEDIUM)
-**Files:**
-- `product/ai-gateway/batches.mdx`
-- `product/ai-gateway/load-balancing.mdx`
-- `product/ai-gateway/fallbacks.mdx`
-- `product/ai-gateway/circuit-breaker.mdx`
-- `product/ai-gateway/canary-testing.mdx`
-- `product/ai-gateway/automatic-retries.mdx`
+### Group 4: Gateway Feature Pages (Priority: MEDIUM) ✅ COMPLETE
+**Files updated:**
+- ✅ `product/ai-gateway/batches.mdx`
+- ✅ `product/ai-gateway/load-balancing.mdx` - Already uses `@provider-slug/model` format
+- ✅ `product/ai-gateway/fallbacks.mdx` - Already uses `@provider-slug/model` format
+- ✅ `product/ai-gateway/circuit-breaker.mdx`
+- ✅ `product/ai-gateway/canary-testing.mdx`
+- ✅ `product/ai-gateway/automatic-retries.mdx`
 
 **Migration Strategy:**
 - Update examples to use `model="@provider/model"` in configs
@@ -267,12 +281,15 @@ provider = portkey.providers.create(
 
 ---
 
-### Group 5: Guides and Tutorials (Priority: MEDIUM)
-**Files:**
-- `guides/getting-started/getting-started-with-ai-gateway.mdx`
-- `guides/prompts/llama-prompts.mdx`
-- `guides/integrations/arize-portkey.mdx`
-- `guides/use-cases/*.mdx` (multiple files)
+### Group 5: Guides and Tutorials (Priority: MEDIUM) 🔄 PLAN CREATED
+**Files:** 25 guide files with Virtual Key mentions
+
+See `GROUP_5_MIGRATION_PLAN.md` for full file list and phases.
+
+**High priority:**
+- `guides/getting-started/getting-started-with-ai-gateway.mdx` (6 mentions)
+- `guides/getting-started/101-on-portkey-s-gateway-configs.mdx` (3 mentions)
+- `guides/prompts/llama-prompts.mdx` (14 mentions)
 
 **Migration Strategy:**
 - Update step-by-step instructions
@@ -283,9 +300,11 @@ provider = portkey.providers.create(
 
 ### Group 6: API Reference (Priority: LOW - Backwards Compatible)
 **Files:**
-- `api-reference/inference-api/headers.mdx`
-- `api-reference/inference-api/config-object.mdx`
-- `api-reference/admin-api/control-plane/virtual-keys/*.mdx`
+- `api-reference/inference-api/headers.mdx` (5 mentions)
+- `api-reference/inference-api/config-object.mdx` (4 mentions)
+- `api-reference/inference-api/authentication.mdx` (4 mentions)
+- `api-reference/sdk/*.mdx` (Python, Node, C#)
+- `api-reference/admin-api/control-plane/virtual-keys/*.mdx` (keep as-is, these are VK admin APIs)
 
 **Migration Strategy:**
 - Keep `virtual_key` header documented (backwards compatible)
@@ -309,9 +328,9 @@ provider = portkey.providers.create(
 
 ### Group 8: Enterprise/Admin Pages (Priority: MEDIUM)
 **Files:**
-- `product/administration/configure-virtual-key-access-permissions.mdx`
-- `product/enterprise-offering/access-control-management.mdx`
-- `product/observability/cost-management.mdx`
+- `product/administration/configure-virtual-key-access-permissions.mdx` (15 mentions)
+- `product/enterprise-offering/org-management/api-keys-authn-and-authz.mdx` (14 mentions)
+- `product/observability/cost-management.mdx` (2 mentions)
 
 **Migration Strategy:**
 - Update to reference Model Catalog permissions
@@ -321,7 +340,7 @@ provider = portkey.providers.create(
 
 ### Group 9: Changelog/Historical (Priority: LOW)
 **Files:**
-- `changelog/*.mdx` (multiple files)
+- `changelog/*.mdx` (7 files with mentions)
 - `support/portkeys-december-migration.mdx`
 
 **Migration Strategy:**
@@ -711,29 +730,42 @@ portkey = Portkey(
 
 ## Part 6: Migration Phases
 
-### Phase 1: Foundation (Week 1) ✅
+### Phase 1: Foundation (Week 1) ✅ COMPLETE
 - ✅ Create comprehensive Virtual Keys page
 - ✅ Update core product pages (Group 1)
 - ✅ Create migration templates
 - ✅ Merge duplicate integrations page
 
-### Phase 2: Provider Pages (Week 2-3)
-- Update all LLM provider integration pages (Group 2)
-- Standardize format across all providers
-- Update code examples
+### Phase 2: Provider Pages (Week 2-3) ✅ COMPLETE
+- ✅ Update all LLM provider integration pages (Group 2)
+- ✅ Standardize format across all providers
+- ✅ Update code examples
+- See `GROUP_2_MIGRATION_PLAN.md` for details
 
-### Phase 3: Library Integrations (Week 4)
-- Update library integration pages (Group 3)
-- Update gateway feature pages (Group 4)
+### Phase 3: Library Integrations (Week 4) ✅ COMPLETE
+- ✅ Update library integration pages (Group 3)
+- ✅ Update gateway feature pages (Group 4)
+- ✅ Update all agent integration pages
+- See `GROUP_3_MIGRATION_PLAN.md` for details
 
-### Phase 4: Guides & Enterprise (Week 5)
-- Update guides and tutorials (Group 5)
-- Update enterprise/admin pages (Group 8)
+**Completed files:**
+- `langchain-python.mdx`, `langchain-js.mdx`, `llama-index-python.mdx`
+- `vercel.mdx`, `openai-agent-builder.mdx`, `openai-agent-builder-python.mdx`
+- `openai-agents.mdx`, `openai-agents-ts.mdx`, `openai-swarm.mdx`
+- `strands.mdx`, `crewai.mdx`, `llama-agents.mdx`, `phidata.mdx`
+- `langchain-agents.mdx`, `control-flow.mdx`, `bring-your-own-agents.mdx`
+- `livekit.mdx`, `pydantic-ai.mdx`, `mindsdb.mdx`
 
-### Phase 5: Cleanup (Week 6)
-- Update API reference (Group 6)
-- Update tracing providers (Group 7)
-- Final review and consistency check
+### Phase 4: Guides & Enterprise (Week 5) 🔄 IN PROGRESS
+- 🔄 Update guides and tutorials (Group 5) - Plan created, see `GROUP_5_MIGRATION_PLAN.md`
+- ❌ Update enterprise/admin pages (Group 8) - Not started
+
+**Group 5 scope:** 25 guide files with Virtual Key mentions
+
+### Phase 5: Cleanup (Week 6) ❌ NOT STARTED
+- ❌ Update API reference (Group 6)
+- ❌ Update tracing providers (Group 7) - 6 files
+- ❌ Final review and consistency check
 
 ---
 
