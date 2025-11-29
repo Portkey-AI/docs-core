@@ -11,23 +11,18 @@ description: Generative AI models have revolutionized text generation and opened
 
 This cookbook introduces Portkey’s multimodal AI gateway, which helps you switch between multiple image generation models without any code changes — all with OpenAI SDK. You will learn to set up fallbacks from Stable Diffusion to Dall-E.
 
-### 1\. Integrate Image Gen Models with Portkey
+### 1\. Add Providers in Model Catalog
 
-Begin by storing API keys in the Portkey Vault.
+Begin by adding your API keys in Portkey's Model Catalog.
 
-To save your OpenAI and StabilityAI keys in the Portkey Vault:
+1. Go to [Model Catalog](https://app.portkey.ai/model-catalog)
+2. Click **Add Provider**
+3. Add your **StabilityAI** credentials (name it e.g., `stability-prod`)
+4. Add your **OpenAI** credentials (name it e.g., `openai-prod`)
 
-1. Go to **portkey.ai**
-2. Click **Virtual Keys** and then **Create**
-   1. Enter **Name** and **API Key**,
-   2. Hit **Create**
-3.  the provider slug from the **KEY** column
+For more information, see the [Model Catalog docs](/product/model-catalog).
 
-We successfully have set up virtual keys!
-
-For more information, refer the [docs](https://portkey.ai/docs/product/ai-gateway-streamline-llm-integrations/virtual-keys).
-
-The multi-modal AI gateway will use these virtual keys in the future to apply a fallback mechanism to every request from your app.
+The multi-modal AI gateway will use these provider slugs to apply a fallback mechanism to every request from your app.
 
 ### 2\. Making a call to Stability AI using OpenAI SDK
 
@@ -35,7 +30,7 @@ With Portkey, you can call Stability AI models like SDXL right from inside the O
 
 Import the `openai` and `portkey_ai` libraries to send the requests, whereas the rest of the utility libraries will help decode the base64 response and print them onto Jupyter Notebook.
 
-```python
+```python Python icon="python"
 from IPython.display import display
 from PIL import Image
 from openai import OpenAI
@@ -43,29 +38,20 @@ from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 import requests, io, base64, json
 ```
 
-
-
-```python
+```python Python icon="python"
 PORTKEY_API_KEY = "YOUR_PORTKEY_API_KEY_HERE"
-OPENAI_VIRTUAL_KEY = "YOUR_OPENAI_VIRTUAL_KEY_HERE"
 CONFIG_ID = "YOUR_CONFIG_ID_HERE"
-OPENAI_API_KEY = "REDUNDANT"
 ```
 
 Declare the arguments to pass to the parameters of OpenAI SDK and initialize a client instance.
 
-
-
-```python
-STABILITYAI_VIRTUAL_KEY = "YOUR_STABILITYAI_VIRTUAL_KEY_HERE"
-
+```python OpenAI Python icon="openai"
 client = OpenAI(
-    api_key="REDUNDANT",
+    api_key="X",  # Not used when routing through Portkey
     base_url=PORTKEY_GATEWAY_URL,
     default_headers=createHeaders(
-        provider="stabilityai",
         api_key=PORTKEY_API_KEY,
-        virtual_key=STABILITYAI_VIRTUAL_KEY
+        provider="stabilityai"
     )
 )
 ```
@@ -76,7 +62,7 @@ To generate an image:
 
 
 
-```python
+```python Python icon="python"
 image = client.images.generate(
     model="stable-diffusion-v1-6",
     prompt="Kraken in the milkyway galaxy",
@@ -101,23 +87,17 @@ From the Portkey Dashboard, open **Configs** and then click **Create**. In the c
 
 
 
-```json
+```json Config
 {
     "strategy": {"mode": "fallback"},
     "targets": [
-        {
-            "provider": "@stability-ai-virtualkey",
-            "override_params": {"model": "stable-diffusion-v1-6"}
-        },
-        {
-            "provider": "@open-ai-virtual-key",
-            "override_params": {"model": "dall-e-3"}
-        }
+        {"override_params": {"model": "@stability-prod/stable-diffusion-v1-6"}},
+        {"override_params": {"model": "@openai-prod/dall-e-3"}}
     ]
 }
 ```
 
-These configs tell the AI gateway to follow an `fallback` strategy, where the primary target to forward requests to is _Stability AI_ (automatically inferred from the provider slug) and then to _OpenAI_. The `override_params` let’s you override the default models for the provider. Finally, surprise surprise! — we also enabled caching with just one more key-value pair.
+These configs tell the AI gateway to follow a `fallback` strategy, where the primary target is _Stability AI_ and the fallback is _OpenAI_. The `override_params` let you specify the model in `@provider-slug/model-name` format.
 
 Learn about [Gateway Configs](https://portkey.ai/docs/product/ai-gateway-streamline-llm-integrations/configs) and [Caching](https://portkey.ai/docs/product/ai-gateway-streamline-llm-integrations/cache-simple-and-semantic) from the docs.
 
@@ -129,9 +109,9 @@ Finally, the requests will be sent like we did with OpenAI SDK earlier, but with
 
 
 
-```python
+```python OpenAI Python icon="openai"
 client = OpenAI(
-    api_key=OPENAI_API_KEY,
+    api_key="X",  # Not used when routing through Portkey
     base_url=PORTKEY_GATEWAY_URL,
     default_headers=createHeaders(
         api_key=PORTKEY_API_KEY,
