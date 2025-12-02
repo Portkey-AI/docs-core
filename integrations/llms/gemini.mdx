@@ -2137,6 +2137,389 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
 Gemini grounding mode may not work via Portkey SDK. Contact support@portkey.ai for assistance.
 </Info>
 
+## Image Generation (nano banana 🍌)
+
+Gemini models like `gemini-3-pro-image-preview` support native image generation capabilities. You can generate images by setting `modalities` to include `"image"` in your request.
+
+<Note>
+You must set [`strict_open_ai_compliance=False`](/product/ai-gateway/strict-open-ai-compliance) in the headers to use image generation, as the response format includes non-standard fields like `content_parts`.
+</Note>
+
+The generated image data is returned in the `content_parts` field of the response and can be used in multi-turn conversations for iterative image editing.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+    provider="@google",  # Your Google Provider Slug
+    strict_open_ai_compliance=False
+)
+
+# Create the request
+response = portkey.chat.completions.create(
+    model="gemini-3-pro-image-preview",
+    max_tokens=32768,
+    stream=False,
+    modalities=["image"],
+    messages=[
+        {
+            "role": "system",
+            "content": "You are a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Create a picture of a cat eating a nano-banana in a fancy restaurant under the Gemini constellation."
+                }
+            ]
+        }
+    ]
+)
+print(response)
+
+# To access the generated image data:
+# The image will be in response.choices[0].message.content_parts
+# Each content_part with type "image" contains base64-encoded image data
+```
+```typescript NodeJS
+import Portkey from 'portkey-ai';
+
+// Initialize the Portkey client
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
+    provider: "@google", // Your Google Provider Slug
+    strictOpenAiCompliance: false
+});
+
+// Generate an image
+async function generateImage() {
+    const response = await portkey.chat.completions.create({
+        model: "gemini-3-pro-image-preview",
+        max_tokens: 32768,
+        stream: false,
+        modalities: ["image"],
+        messages: [
+            {
+                role: "system",
+                content: "You are a helpful assistant."
+            },
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: "Create a picture of a cat eating a nano-banana in a fancy restaurant under the Gemini constellation."
+                    }
+                ]
+            }
+        ]
+    });
+    console.log(response);
+
+    // To access the generated image data:
+    // The image will be in response.choices[0].message.content_parts
+    // Each content_part with type "image" contains base64-encoded image data
+}
+
+generateImage();
+```
+```javascript OpenAI NodeJS
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+    apiKey: 'GEMINI_API_KEY',
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "@google", // Your Google Provider Slug
+        apiKey: "PORTKEY_API_KEY",
+        strictOpenAiCompliance: false
+    })
+});
+
+async function generateImage() {
+    const response = await openai.chat.completions.create({
+        model: "gemini-3-pro-image-preview",
+        max_tokens: 32768,
+        stream: false,
+        modalities: ["image"],
+        messages: [
+            {
+                role: "system",
+                content: "You are a helpful assistant."
+            },
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: "Create a picture of a cat eating a nano-banana in a fancy restaurant under the Gemini constellation."
+                    }
+                ]
+            }
+        ]
+    });
+
+    console.log(response);
+}
+
+generateImage();
+```
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='GEMINI_API_KEY',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@google", // Your Google Provider Slug
+        api_key="PORTKEY_API_KEY",
+        strict_open_ai_compliance=False
+    )
+)
+
+response = openai.chat.completions.create(
+    model="gemini-3-pro-image-preview",
+    max_tokens=32768,
+    stream=False,
+    modalities=["image"],
+    messages=[
+        {
+            "role": "system",
+            "content": "You are a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Create a picture of a cat eating a nano-banana in a fancy restaurant under the Gemini constellation."
+                }
+            ]
+        }
+    ]
+)
+
+print(response)
+```
+```sh cURL
+curl "https://api.portkey.ai/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @YOUR_" \
+  -H "Authorization: $GEMINI_API_KEY" \
+  -H "x-portkey-strict-open-ai-compliance: false" \
+  -d '{
+    "model": "gemini-3-pro-image-preview",
+    "max_tokens": 32768,
+    "stream": false,
+    "modalities": ["image"],
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Create a picture of a cat eating a nano-banana in a fancy restaurant under the Gemini constellation."
+                }
+            ]
+        }
+    ]
+}'
+```
+</CodeGroup>
+
+### Image Generation with Text Response
+
+You can also generate images along with text explanations by including both `"text"` and `"image"` in the modalities array:
+
+<CodeGroup>
+```python Python
+response = portkey.chat.completions.create(
+    model="gemini-3-pro-image-preview",
+    max_tokens=32768,
+    stream=False,
+    modalities=["text", "image"],  # Include both text and image
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Create a picture of a sunset over mountains and describe what you created."
+                }
+            ]
+        }
+    ]
+)
+print(response)
+```
+```typescript NodeJS
+const response = await portkey.chat.completions.create({
+    model: "gemini-3-pro-image-preview",
+    max_tokens: 32768,
+    stream: false,
+    modalities: ["text", "image"],  // Include both text and image
+    messages: [
+        {
+            role: "user",
+            content: [
+                {
+                    type: "text",
+                    text: "Create a picture of a sunset over mountains and describe what you created."
+                }
+            ]
+        }
+    ]
+});
+console.log(response);
+```
+```sh cURL
+curl "https://api.portkey.ai/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: google" \
+  -H "Authorization: $GEMINI_API_KEY" \
+  -H "x-portkey-strict-open-ai-compliance: false" \
+  -d '{
+    "model": "gemini-3-pro-image-preview",
+    "max_tokens": 32768,
+    "stream": false,
+    "modalities": ["text", "image"],
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Create a picture of a sunset over mountains and describe what you created."
+                }
+            ]
+        }
+    ]
+}'
+```
+</CodeGroup>
+
+### Image Editing (Multi-turn)
+
+You can edit generated images by continuing the conversation. Pass the image data from the previous response back in the messages:
+
+<CodeGroup>
+```python Python
+# First, generate an initial image
+initial_response = portkey.chat.completions.create(
+    model="gemini-3-pro-image-preview",
+    max_tokens=32768,
+    modalities=["text", "image"],
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Create a picture of a croissant on a plate."
+                }
+            ]
+        }
+    ]
+)
+
+# Extract the assistant's response with the image
+assistant_message = initial_response.choices[0].message
+
+# Continue the conversation to edit the image
+edit_response = portkey.chat.completions.create(
+    model="gemini-3-pro-image-preview",
+    max_tokens=32768,
+    modalities=["text", "image"],
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Create a picture of a croissant on a plate."
+                }
+            ]
+        },
+        assistant_message,  # Include the previous response with image
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Add some chocolate drizzle on top of the croissant."
+                }
+            ]
+        }
+    ]
+)
+print(edit_response)
+```
+```typescript NodeJS
+// First, generate an initial image
+const initialResponse = await portkey.chat.completions.create({
+    model: "gemini-3-pro-image-preview",
+    max_tokens: 32768,
+    modalities: ["text", "image"],
+    messages: [
+        {
+            role: "user",
+            content: [
+                {
+                    type: "text",
+                    text: "Create a picture of a croissant on a plate."
+                }
+            ]
+        }
+    ]
+});
+
+// Extract the assistant's response with the image
+const assistantMessage = initialResponse.choices[0].message;
+
+// Continue the conversation to edit the image
+const editResponse = await portkey.chat.completions.create({
+    model: "gemini-3-pro-image-preview",
+    max_tokens: 32768,
+    modalities: ["text", "image"],
+    messages: [
+        {
+            role: "user",
+            content: [
+                {
+                    type: "text",
+                    text: "Create a picture of a croissant on a plate."
+                }
+            ]
+        },
+        assistantMessage,  // Include the previous response with image
+        {
+            role: "user",
+            content: [
+                {
+                    type: "text",
+                    text: "Add some chocolate drizzle on top of the croissant."
+                }
+            ]
+        }
+    ]
+});
+console.log(editResponse);
+```
+</CodeGroup>
+
 ## Next Steps
 
 The complete list of features supported in the SDK are available on the link below.

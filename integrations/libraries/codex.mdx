@@ -58,58 +58,30 @@ Click **Create Integration** to complete the integration
 
 
 
-<Step title="Copy the Provider Slug">
+<Step title="Copy the Model Slug">
 Once your Integration is created:
 
 1. Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **Models** tab
-2. Find and click on you your model button (if your model is not visible, you need to edit your integration from the last step)
+2. Find and click on your model (if your model is not visible, you need to edit your integration from the last step)
 3. Copy the **slug** (e.g., `@openai-dev/gpt-4o`)
-
-
-<Note>
-  We recommend clicking the `Run Test Request` button on this step to verify your integration. If you see the error: `You do not have enough permissions to execute this request`, you’ll need to create a **User API Key** for this step to work properly.
-
-  You can create one [here](https://app.portkey.ai/api-keys). You should be able to see simple chat request output on this step.
-</Note>
 
 <Frame>
 <img src="/images/product/model-catalog/model-integration-model-box.png" width="500"/>
 </Frame>
 
 <Note>
-This is your unique identifier - you'll need it for the next step. This slug is basically `@your-provider-slug/your-model-name`
+This slug follows the format `@your-provider-slug/model-name` and you'll need it for configuring Codex CLI.
 </Note>
 
-
 </Step>
 
-<Step title="Create Default Config">
+<Step title="Create Portkey API Key">
 
-Portkey's [config](/product/ai-gateway/configs) is a JSON object used to define routing rules for requests to your gateway. You can create these configs in the Portkey app and reference them in requests via the config ID. For this setup, we’ll create a simple config using your provider (OpenAI) and model (gpt-4o).
-
-1. Go to [Configs](https://app.portkey.ai/configs) in Portkey dashboard
-2. Create new config with:
-    ```json
-    {
-        "override_params": {
-          "model": "@YOUR_SLUG-FROM-LAST_STEP" // example: @openai-test/gpt-4o-mini
-        }
-    }
-    ```
-3. Save and note the Config ID & Name for the next step
-
-<Frame>
-<img src="/images/product/model-catalog/default-config-model-catalog.png" width="600"/>
-</Frame>
-</Step>
-
-<Step title="Configure Portkey API Key">
-Finally, create a Portkey API key:
+Create a Portkey API key:
 
 1. Go to [API Keys](https://app.portkey.ai/api-keys) in Portkey
 2. Create new API key
-3. Select the config that you create from previous step
-4. Generate and save your API key
+3. Generate and save your API key
 
 <Frame>
 <img src="/images/integrations/api-key.png" width="300"/>
@@ -123,57 +95,127 @@ Save your API key securely - you'll need it for OpenAI Codex integration.
 </Steps>
 
 <Check>
-🎉 Voila, Setup complete! You now have everything needed to integrate Portkey with your application.
+🎉 Voila, Setup complete! You now have everything needed to integrate Portkey with OpenAI Codex CLI.
 </Check>
 
 # 2. Integrate Portkey with OpenAI Codex CLI
 
-Now that you have your Portkey components set up, let's connect them to OpenAI Codex CLI. The integration leverages Codex's provider configuration options to route all requests through Portkey's AI Gateway.
+Now that you have your Portkey components set up, let's connect them to OpenAI Codex CLI. The integration leverages Codex's `config.toml` file to define custom model providers that route all requests through Portkey's AI Gateway.
 
 <Note>
-You need your Portkey API Key from [Step 1](#1-setting-up-portkey) before going further.
+For detailed information on Codex CLI configuration options, refer to the [official Codex local configuration documentation](https://developers.openai.com/codex/local-config/).
 </Note>
 
-## Using Portkey Configuration File
+## Understanding wire_api: Chat vs Responses
 
-OpenAI Codex CLI supports a configuration file where you can specify your AI provider settings. Let's set up this configuration to use Portkey:
+OpenAI Codex CLI supports two API protocols via the `wire_api` setting:
 
-1. Create or edit the Codex configuration file at `~/.codex/config.json`:
+| wire_api | Description | Use When |
+|----------|-------------|----------|
+| `responses` | Uses OpenAI's Responses API | Model supports Responses API (e.g., GPT-5, o3, o4-mini) |
+| `chat` | Uses Chat Completions API | Model doesn't support Responses API (e.g., GPT-4o, Claude, Gemini) |
 
-```json
-{
-  "provider": "portkey",
-  "model": "gpt-4o",
-  "providers": {
-    "portkey": {
-      "name": "Portkey",
-      "baseURL": "https://api.portkey.ai/v1",
-      "envKey": "PORTKEY_API_KEY"
-    }
-  }
-}
+<Tip>
+If you plan to use models with different API support, you can configure **multiple providers** in your `config.toml` and switch between them as needed.
+</Tip>
+
+## Configure Codex with config.toml
+
+OpenAI Codex CLI uses a TOML configuration file located at `~/.codex/config.toml`. Let's set up Portkey as a custom model provider.
+
+### Option 1: Single Provider (Responses API)
+
+If you're only using models that support the Responses API (like GPT-5 or o3):
+
+```toml
+# ~/.codex/config.toml
+
+# Set your default model using the Portkey model slug
+model = "@your-provider-slug/gpt-5"
+model_provider = "portkey-responses"
+
+# Portkey provider configuration (Responses API)
+[model_providers.portkey-responses]
+name = "Portkey - Responses API"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+wire_api = "responses"
 ```
 
-2. Set your Portkey API key as an environment variable:
+### Option 2: Single Provider (Chat Completions API)
+
+If you're using models that use the Chat Completions API (like GPT-4o, Claude, Gemini):
+
+```toml
+# ~/.codex/config.toml
+
+# Set your default model using the Portkey model slug
+model = "@your-provider-slug/gpt-4o"
+model_provider = "portkey-chat"
+
+# Portkey provider configuration (Chat Completions API)
+[model_providers.portkey-chat]
+name = "Portkey - Chat API"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+wire_api = "chat"
+```
+
+### Option 3: Multiple Providers (Both APIs)
+
+For maximum flexibility, configure both providers and switch between them:
+
+```toml
+# ~/.codex/config.toml
+
+# Default configuration - using Responses API model
+model = "@your-provider-slug/gpt-5"
+model_provider = "portkey-responses"
+
+# Optional: Set reasoning effort for supported models
+model_reasoning_effort = "medium"
+
+# Portkey provider for Responses API models (GPT-5, o3, o4-mini, etc.)
+[model_providers.portkey-responses]
+name = "Portkey - Responses API"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+wire_api = "responses"
+
+# Portkey provider for Chat Completions API models (GPT-4o, Claude, Gemini, etc.)
+[model_providers.portkey-chat]
+name = "Portkey - Chat API"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+wire_api = "chat"
+```
+
+## Set Environment Variable
+
+Set your Portkey API key as an environment variable:
 
 ```shell
 export PORTKEY_API_KEY="your-portkey-api-key-here"
 ```
 
-> **Note:** This command sets the key only for your current terminal session. You can add the `export` line to your shell's configuration file (e.g., `~/.zshrc`) for persistence, or place it in a `.env` file at the root of your project.
+<Note>
+This command sets the key only for your current terminal session. Add the `export` line to your shell's configuration file (e.g., `~/.zshrc`, `~/.bashrc`) for persistence.
+</Note>
+## Test Your Integration
 
-3. Test your integration:
+Run a simple command to verify everything is working:
 
 ```shell
 codex "explain this repository to me"
 ```
 
+You should see your requests logged in the [Portkey dashboard](https://app.portkey.ai/logs) with full observability.
 
 
 # 3. Set Up Enterprise Governance for OpenAI Codex
 
 **Why Enterprise Governance?**
-If you are using OpenAI Codex inside your orgnaization, you need to consider several governance aspects:
+If you are using OpenAI Codex inside your organization, you need to consider several governance aspects:
 - **Cost Management**: Controlling and tracking AI spending across teams
 - **Access Control**: Managing team access and workspaces
 - **Usage Analytics**: Understanding how AI is being used across the organization
@@ -181,7 +223,7 @@ If you are using OpenAI Codex inside your orgnaization, you need to consider sev
 - **Reliability**: Ensuring consistent service across all users
 - **Model Management**: Managing what models are being used in your setup
 
-Portkey adds a comprehensive governance layer to address these enterprise
+Portkey adds a comprehensive governance layer to address these enterprise needs.
 
 **Enterprise Implementation Guide**
 
@@ -218,7 +260,7 @@ As your AI usage scales, controlling which teams can access specific models beco
 
 </Accordion>
 
-<Accordion title="Step 4: Set Routing Configuration">
+<Accordion title="Step 3: Set Routing Configuration">
     Portkey allows you to control your routing logic very simply with it's Configs feature. Portkey Configs provide this control layer with things like:
 
 - **Data Protection**: Implement guardrails for sensitive code and data
@@ -236,19 +278,19 @@ Here's a basic configuration to load-balance requests to OpenAI and Anthropic:
 	"targets": [
 		{
 			"override_params": {
-				"model": "@YOUR_OPENAI_PROVIDER_SLUG/gpt-model"
+				"model": "@your-openai-slug/gpt-4o"
 			}
 		},
 		{
 			"override_params": {
-				"model": "@YOUR_ANTHROPIC_PROVIDER/claude-sonnet-model"
+				"model": "@your-anthropic-slug/claude-sonnet-4"
 			}
 		}
 	]
 }
 ```
 
-Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard. You'll need the config ID for connecting to OpenAI Codex's setup.
+Create your config on the [Configs page](https://app.portkey.ai/configs) in your Portkey dashboard.
 
 
 <Note>
@@ -258,7 +300,7 @@ Configs can be updated anytime to adjust controls without affecting running appl
   </Accordion>
 
   <Accordion title="Step 4: Implement Access Controls">
-### Step 3: Implement Access Controls
+### Step 4: Implement Access Controls
 
 Create User-specific API keys that automatically:
 - Track usage per developer/team with the help of metadata
@@ -298,7 +340,7 @@ For detailed key management instructions, see our [API Keys documentation](/api-
   </Accordion>
 
   <Accordion title="Step 5: Deploy & Monitor">
-### Step 4: Deploy & Monitor
+### Step 5: Deploy & Monitor
 After distributing API keys to your engineering teams, your enterprise-ready OpenAI Codex setup is ready to go. Each developer can now use their designated API keys with appropriate access levels and budget controls.
 Apply your governance setup using the integration steps from earlier sections
 Monitor usage in Portkey dashboard:
@@ -347,14 +389,13 @@ Portkey's logging dashboard provides detailed logs for every request made to you
 
 ### 3. Unified Access to 250+ LLMs
 
-You can easily switch between 250+ LLMs. Call various LLMs such as Anthropic, Gemini, Mistral, Azure OpenAI, Google Vertex AI, AWS Bedrock, and many more by simply changing the `virtual_key` in your default `config` object.
+You can easily switch between 250+ LLMs. Call various LLMs such as Anthropic, Gemini, Mistral, Azure OpenAI, Google Vertex AI, AWS Bedrock, and many more by simply changing the model slug in your `config.toml`.
 
 
 ### 4. Advanced Metadata Tracking
 Using Portkey, you can add custom metadata to your LLM requests for detailed tracking and analytics. Use metadata tags to filter logs, track usage, and attribute costs across departments and teams.
 
-<Card title="Custom Metadata" icon="coins" href="/product/observability/metadata">
-</Card>
+<Card title="Custom Metadata" icon="coins" href="/product/observability/metadata" />
 
 
 
@@ -419,17 +460,31 @@ Implement real-time protection for your LLM interactions with automatic detectio
 
 # FAQs
 <AccordionGroup>
-<Accordion title="How do I update my Virtual Key limits after creation?">
-  You can update your Virtual Key limits at any time from the Portkey dashboard:1. Go to Virtual Keys section2. Click on the Virtual Key you want to modify3. Update the budget or rate limits4. Save your changes
+<Accordion title="What's the difference between wire_api 'chat' and 'responses'?">
+The `wire_api` setting determines which OpenAI API protocol Codex uses:
+- **`responses`**: Uses OpenAI's newer Responses API, required for models like GPT-5, o3, and o4-mini that support advanced reasoning features
+- **`chat`**: Uses the standard Chat Completions API, compatible with most models including GPT-4o, Claude, Gemini, and others
+
+Choose based on the model you're using - if the model supports the Responses API, use `responses` for full feature support.
 </Accordion>
-<Accordion title="Can I use multiple LLM providers with the same API key?">
-      Yes! You can create multiple Virtual Keys (one for each provider) and attach them to a single config. This config can then be connected to your API key, allowing you to use multiple providers through a single API key.
+<Accordion title="How do I switch between models with different API types?">
+Configure both provider types in your `config.toml`:
+```toml
+[model_providers.portkey-responses]
+wire_api = "responses"
+# ... other settings
+
+[model_providers.portkey-chat]
+wire_api = "chat"
+# ... other settings
+```
+Then use CLI arguments to switch: `codex --model "@slug/model" --provider portkey-chat`
 </Accordion>
 <Accordion title="How do I track costs for different teams?">
 Portkey provides several ways to track team costs:
-- Create separate Virtual Keys for each team
-- Use metadata tags in your configs
-- Set up team-specific API keys
+- Create separate integrations for each team with unique slugs
+- Use metadata tags in your API keys
+- Set up team-specific API keys with metadata
 - Monitor usage in the analytics dashboard
 </Accordion>
 <Accordion title="What happens if a team exceeds their budget limit?">
@@ -441,6 +496,9 @@ When a team reaches their budget limit:
 </Accordion>
 <Accordion title="Can I use Portkey with the open source version of Codex CLI?">
 Yes! Portkey fully integrates with [OpenAI's open source Codex CLI](https://github.com/openai/codex). This gives you the flexibility to leverage both the power of open source with the enterprise controls of Portkey.
+</Accordion>
+<Accordion title="Where can I find more Codex CLI configuration options?">
+For comprehensive configuration options including profiles, feature flags, sandbox settings, and more, refer to the [official Codex CLI configuration documentation](https://developers.openai.com/codex/local-config/).
 </Accordion>
 </AccordionGroup>
 
