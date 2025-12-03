@@ -1,0 +1,237 @@
+---
+title: "AWS AgentCore"
+description: "Run Portkey-powered agents inside Amazon Bedrock AgentCore"
+---
+
+Amazon Bedrock AgentCore is AWS's agentic platform for executing, scaling, and governing AI agents. Because AgentCore can host any OpenAI-compatible framework (Strands, OpenAI Agents, LangGraph, Google ADK, custom code), you can plug Portkey in as the LLM gateway to unlock multi-provider routing, deep observability, and enterprise guardrails without changing your agent logic.
+
+**What you get with this integration**
+- **Unified gateway** for 1600+ models while keeping AgentCore's runtime, gateway, and memory services intact
+- **Production telemetry** with traces, logs, and metrics for every AgentCore invocation via Portkey headers and metadata
+- **Reliability controls** (fallbacks, load balancing, timeouts) that shield your agents from provider failures
+- **Centralized governance** over provider keys, spend, and access policies using Portkey API keys across AgentCore environments
+
+<Card title="AgentCore Developer Guide" href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-get-started-toolkit.html" icon="arrow-up-right-from-square">
+  Review AWS's toolkit for packaging and deploying runtimes, gateway tools, and memory services
+</Card>
+
+---
+
+## Supported Agent Frameworks
+
+Bedrock AgentCore supports any OpenAI-compatible agent framework. Portkey seamlessly integrates with all of them, allowing you to add production-grade observability, reliability, and multi-provider routing to your AgentCore deployments.
+
+<CardGroup cols={2}>
+  <Card title="Strands Agents" href="/integrations/agents/strands" icon="aws">
+    AWS's simple-to-use agent framework with built-in tools and memory
+  </Card>
+  <Card title="LangGraph" href="/integrations/agents/langgraph" icon="diagram-project">
+    Build stateful, multi-actor agent workflows with directed graphs
+  </Card>
+  <Card title="OpenAI Agents SDK (Python)" href="/integrations/agents/openai-agents" icon="python">
+    Develop complex AI agents with tools, planning, and memory in Python
+  </Card>
+  <Card title="OpenAI Agents SDK (TypeScript)" href="/integrations/agents/openai-agents-ts" icon="js">
+    Build production-ready agents with OpenAI's TypeScript SDK
+  </Card>
+</CardGroup>
+
+> Each framework integration guide shows you exactly how to configure Portkey. The steps below demonstrate a generic setup that works with any of these frameworks.
+
+---
+
+## Quick start
+
+<Steps>
+
+
+  <Step title="Create your agent with AgentCore">
+    Start by creating your agent using the AgentCore CLI:
+
+```bash
+agentcore create
+```
+
+This command will prompt you to choose an agent framework:
+- `openai-agents` - OpenAI Agents SDK (Python or TypeScript)
+- `strands-agents` - AWS Strands Agents
+- `langgraph` - LangGraph workflows
+- `google-adk` - Google Agent Development Kit
+
+The CLI will scaffold your agent project with the selected framework and install dependencies including `bedrock_agentcore.runtime` helpers for local testing and deployment.
+
+After creation, add Portkey's SDK to enable multi-provider routing:
+
+```bash
+pip install portkey-ai    # For Python projects
+npm install portkey-ai    # For TypeScript projects
+```
+  </Step>
+  <Step title="Set up Portkey credentials">
+    **Create your Portkey API key with routing configuration:**
+
+1. **Add your AI provider keys**  
+   Go to [Model Catalog Keys](https://app.portkey.ai/model-catalog) in the Portkey dashboard and add your actual AI provider keys (OpenAI, Anthropic, AWS Bedrock, etc.). Each provider key gets a unique slug that you'll reference in configs.
+
+2. **Create a routing configuration**  
+   Go to [Configs](https://app.portkey.ai/configs) to define how requests should be routed. A basic config looks like:
+
+```json
+{
+  "provider": "@openai-key-abc123"
+}
+```
+
+For production setups, add fallbacks, load balancing, and conditional routing:
+
+```json
+{
+  "strategy": {
+    "mode": "fallback"
+  },
+  "targets": [
+    { "provider": "@openai-key-abc123" },
+    { "provider": "@anthropic-key-xyz789" }
+  ]
+}
+```
+
+3. **Generate your Portkey API key**  
+   Go to [API Keys](https://app.portkey.ai/api-keys) to create a new API key. Attach your config as the default routing config to get an API key that automatically routes to your configured providers.
+
+**Store credentials in AWS Secrets Manager:**
+
+Store your Portkey API key in AWS Secrets Manager so your AgentCore runtime can access it securely. Then reference it in your AgentCore environment variables as `PORTKEY_API_KEY`.
+  </Step>
+  <Step title="Wire Portkey into your agent">
+    Wrap your agent runnable with `BedrockAgentCoreApp` and point the underlying OpenAI-compatible client at Portkey. This example uses OpenAI Agents SDK, but the same pattern works with Strands, LangGraph, and other frameworks.
+
+```python
+import os
+from agents import Agent, Runner, set_default_openai_client, set_default_openai_api
+from openai import AsyncOpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+
+# 1. Route LLM calls through Portkey
+# This works with any framework that accepts an OpenAI-compatible client
+portkey_client = AsyncOpenAI(
+    base_url="https://api.portkey.ai/v1",
+    api_key=os.environ["PORTKEY_API_KEY"],
+    default_headers={
+        "x-portkey-provider": "openai",                # or anthropic, google-ai, aws-bedrock, etc.
+        "x-portkey-trace-id": "agentcore-session",     # groups all requests in Portkey logs
+        "x-portkey-metadata": {"agent": "support", "environment": "production"}
+    }
+)
+set_default_openai_client(portkey_client, use_for_tracing=False)
+set_default_openai_api("chat_completions")
+
+# 2. Define your framework-specific agent object
+# (This example uses OpenAI Agents SDK)
+agent = Agent(
+    name="Support Assistant",
+    instructions="Answer user questions using company knowledge.",
+    model="gpt-4o"  # model hint – actual routing is decided by Portkey config
+)
+
+# 3. Expose an AgentCore entrypoint
+app = BedrockAgentCoreApp()
+
+@app.entrypoint
+async def agent_invocation(payload, context):
+    question = payload.get("prompt", "How can I help you today?")
+    result = await Runner.run(agent, question)
+    return {"result": result.final_output}
+
+app.run()
+```
+
+<Note>
+**For framework-specific examples**, see our detailed integration guides:
+- [Strands Agents](/integrations/agents/strands) - AWS's simple agent framework
+- [LangGraph](/integrations/agents/langgraph) - Stateful agent workflows
+- [OpenAI Agents (Python)](/integrations/agents/openai-agents) - Complex agents with tools
+- [OpenAI Agents (TypeScript)](/integrations/agents/openai-agents-ts) - TypeScript agent development
+</Note>
+
+  </Step>
+  <Step title="Deploy to AgentCore Runtime">
+    Deploy your agent to Amazon Bedrock AgentCore Runtime:
+
+```bash
+agentcore deploy
+```
+
+This command will:
+- Consolidate all your code into a zip file
+- Deploy your agent to AgentCore Runtime
+- Configure CloudWatch logging
+- Set up environment variables (including `PORTKEY_API_KEY`)
+
+<Note>
+If you don't already have the required permissions, refer to [IAM Permissions for AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security-iam.html).
+</Note>
+  </Step>
+
+  <Step title="Invoke your deployed agent">
+    Test your deployed agent with a prompt:
+
+```bash
+agentcore invoke '{"prompt": "tell me a joke"}'
+```
+
+All LLM traffic from your agent now flows through Portkey, giving you observability, reliability, and multi-provider routing. Check the [Portkey dashboard](https://app.portkey.ai/logs) to see traces, costs, and performance metrics.
+  </Step>
+</Steps>
+
+<Note>
+AgentCore batches tools, memory, and runtime services. Portkey only replaces the LLM transport, so you can keep using AgentCore Gateway, Memory, and Identity features while benefiting from Portkey's routing and analytics.
+</Note>
+---
+
+## Integration patterns
+
+| Scenario | Recommended approach | Notes |
+| --- | --- | --- |
+| Entire AgentCore app should use Portkey | Register a global Portkey client (as shown above) so every LLM call flows through Portkey | Works with all frameworks—see [Strands](/integrations/agents/strands), [LangGraph](/integrations/agents/langgraph), [OpenAI Agents](/integrations/agents/openai-agents) |
+| Some requests should use native Bedrock models | Keep the global client pointing at Bedrock and wrap specific runs with a custom Portkey-backed model provider | Best for hybrid deployments mixing Bedrock and other providers |
+| Different agents inside the runtime need different providers | Instantiate per-agent model objects with bespoke Portkey headers/configs | Useful for multi-tenant AgentCore applications |
+
+Because AgentCore supports any OpenAI-compatible library, you can reuse the exact Portkey configuration patterns from our framework-specific guides. Whether you're using Strands, LangGraph, OpenAI Agents, or even Google ADK—the integration approach remains consistent.
+
+---
+
+## Production features to enable
+
+### Observability
+Attach trace IDs and metadata directly from your AgentCore entrypoint so Portkey groups every tool call, LLM exchange, and retry under a single execution record.
+Apply Portkey Configs for fallbacks, retries, load balancing, or conditional routing to keep AgentCore agents resilient to provider hiccups. You can attach the config globally via the API key or per-request via `createHeaders`.
+
+### Model interoperability
+Switch providers without touching your AgentCore business logic by swapping the Portkey config or provider slug (`@openai-prod`, `@anthropic-prod`, `@gemini-fast`, etc.). The agent definition stays unchanged.
+
+### Governance & access control
+Distribute Portkey API keys (not raw provider keys) to AgentCore teams, enforce spend budgets, and audit usage across every invocation emitted by the runtime.---
+
+---
+## Compatibility checklist
+
+- ✅ **Agent frameworks**: Strands, OpenAI Agents (Python/TypeScript), LangGraph, CrewAI, Pydantic AI, Google ADK—anything that can target an OpenAI-compatible client
+- ✅ **AgentCore services**: Runtime, Gateway, Memory, Identity all continue to work; Portkey only handles LLM transport
+- ✅ **MCP / A2A tools**: Tool invocations remain unchanged; Portkey runs alongside AgentCore Gateway tool definitions
+- ✅ **Foundation models**: Route to Amazon Bedrock, OpenAI, Anthropic, Google Gemini, Mistral, Cohere, or on-prem models by updating your Portkey config—no redeploy required
+
+<Note>
+For best performance, deploy your Portkey gateway in the same AWS Region as your AgentCore runtime (for example, use `customHost` pointing at a private Portkey data plane) to minimize cross-region latency.
+</Note>
+
+
+## Next steps
+
+1. Monitor test invocations in the [Portkey dashboard](https://app.portkey.ai/logs) to validate tracing, metadata, and costs
+2. Attach Portkey guardrails (PII redaction, schema validation, content filters) if your AgentCore agents need compliance controls
+3. Expand beyond a single model by adding fallbacks or conditional routing rules in Portkey Configs
+4. Coordinate with AWS AgentCore Gateway to expose Portkey-observed tools for deeper analytics across both platforms
+
+Need help? [Book a session with Portkey](https://calendly.com/portkey-ai) to review deployment best practices across Portkey and AgentCore.
