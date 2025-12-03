@@ -1107,6 +1107,133 @@ main();
 - `imagegeneration@005`
 - `imagegeneration@002`
 
+## Video Generation Models
+
+Portkey supports Google's Veo video generation models on Vertex AI. You can generate videos from text prompts using the Portkey SDK.
+
+<Note>
+Video generation on Vertex AI is a long-running operation that requires polling to check for completion. The example below shows how to start generation, poll for completion, and retrieve the final video.
+</Note>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    from portkey_ai import Portkey
+    import base64
+    import time
+
+    # Initialize Portkey client
+    client = Portkey(
+        api_key="PORTKEY_API_KEY",
+        custom_host="https://us-central1-aiplatform.googleapis.com/v1",  # or your region
+        provider="@VERTEX_PROVIDER"
+    )
+
+    # Start video generation
+    operation = client.post(
+        url="projects/PROJECT_ID/locations/us-central1/publishers/google/models/veo-3.1-fast-generate-preview:predictLongRunning",
+        instances=[{"prompt": "A serene mountain landscape at sunset"}],
+        parameters={"sampleCount": "1"}
+    )
+
+    # Get operation name - handle different response structures
+    if hasattr(operation, 'model_dump'):
+        operation_dict = operation.model_dump()
+        operation_name = operation_dict.get("name")
+    else:
+        operation_name = operation.name
+
+    print(f"Started: {operation_name}")
+
+    # Poll for completion
+    while True:
+        check = client.post(
+            url="projects/PROJECT_ID/locations/us-central1/publishers/google/models/veo-3.1-fast-generate-preview:fetchPredictOperation",
+            operationName=operation_name
+        )
+
+        # Handle response properly
+        if hasattr(check, 'model_dump'):
+            status = check.model_dump()
+        else:
+            status = check
+
+        if status.get("done"):
+            print("Complete!")
+            break
+
+        print("Processing...")
+        time.sleep(5)
+
+    # Save video
+    video_b64 = status["response"]["videos"][0]["bytesBase64Encoded"]
+    video_data = base64.b64decode(video_b64)
+
+    with open("output.mp4", "wb") as f:
+        f.write(video_data)
+
+    print(f"Video saved! ({len(video_data) / 1024 / 1024:.1f} MB)")
+    ```
+  </Tab>
+  <Tab title="NodeJS">
+    ```javascript
+    import Portkey from 'portkey-ai';
+    import * as fs from 'fs';
+
+    // Initialize Portkey client
+    const client = new Portkey({
+        apiKey: "PORTKEY_API_KEY",
+        customHost: "https://us-central1-aiplatform.googleapis.com/v1",  // or your region
+        provider: "@VERTEX_PROVIDER"
+    });
+
+    // Start video generation
+    const operation = await client.post({
+        url: "projects/PROJECT_ID/locations/us-central1/publishers/google/models/veo-3.1-fast-generate-preview:predictLongRunning",
+        instances: [{ prompt: "A serene mountain landscape at sunset" }],
+        parameters: { sampleCount: "1" }
+    });
+
+    const operationName = operation.name;
+    console.log(`Started: ${operationName}`);
+
+    // Poll for completion
+    let status;
+    while (true) {
+        const check = await client.post({
+            url: "projects/PROJECT_ID/locations/us-central1/publishers/google/models/veo-3.1-fast-generate-preview:fetchPredictOperation",
+            operationName: operationName
+        });
+
+        status = check;
+
+        if (status.done) {
+            console.log("Complete!");
+            break;
+        }
+
+        console.log("Processing...");
+        await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+
+    // Save video
+    const videoB64 = status.response.videos[0].bytesBase64Encoded;
+    const videoData = Buffer.from(videoB64, 'base64');
+
+    fs.writeFileSync("output.mp4", videoData);
+    console.log(`Video saved! (${videoData.length / 1024 / 1024} MB)`);
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+**Supported Veo Models:**
+- `veo-3.1-fast-generate-preview`
+- `veo-3.0-generate-preview`
+
+Replace `PROJECT_ID` with your Google Cloud project ID and adjust the region as needed.
+</Info>
+
 ## Grounding with Google Search
 
 Vertex AI supports grounding with Google Search. This is a feature that allows you to ground your LLM responses with real-time search results.
@@ -1379,6 +1506,43 @@ The image data is available in the `content_parts` field in the response and it 
 This uses the Gemini computer-use preview model. Set <code>strict_open_ai_compliance</code> to <code>false</code>.
 </Note>
 
+### Important Configuration Notes
+
+<Warning>
+**Region Requirement**: The computer use models require the `vertex_region` to be set to `"global"`. If you get a 404 error about the model not being found, ensure your region is set correctly.
+</Warning>
+
+### Understanding the OpenAI-Compatible Format
+
+Portkey uses the OpenAI function calling signature to ensure compatibility across frameworks. Here's how Google's Computer Use API maps to Portkey:
+
+| Google SDK | Portkey (OpenAI Signature) |
+|------------|----------------------------|
+| `computer_use=types.ComputerUse(environment=...)` | `tools: [{ type: 'function', function: { name: 'computer_use', parameters: { environment: '...' }}}]` |
+| `excluded_predefined_functions=["drag_and_drop"]` | `parameters: { environment: '...', excluded_predefined_functions: ['drag_and_drop'] }` |
+| Multi-turn: append response to messages | Same: append assistant message with tool_calls to messages array |
+
+### Computer Use Tool Configuration
+
+The basic tool configuration for computer use is:
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "computer_use",
+    "parameters": {
+      "environment": "ENVIRONMENT_BROWSER",
+      "excluded_predefined_functions": ["drag_and_drop"]  // Optional: exclude specific functions
+    }
+  }
+}
+```
+
+**Available Parameters:**
+- `environment` (required): Must be `"ENVIRONMENT_BROWSER"` for browser automation
+- `excluded_predefined_functions` (optional): Array of function names to exclude (e.g., `["drag_and_drop", "scroll"]`)
+
 ### Single turn conversation
 <CodeGroup>
 ```ts NodeJS
@@ -1387,6 +1551,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
   apiKey: 'PORTKEY_API_KEY',
   provider: '@VERTEX_PROVIDER',
+  vertexRegion: 'global', // Required for computer use models
   strictOpenAiCompliance: false
 });
 
@@ -1402,7 +1567,11 @@ const response = await portkey.chat.completions.create({
       type: 'function',
       function: {
         name: 'computer_use',
-        parameters: { environment: 'ENVIRONMENT_BROWSER' }
+        parameters: { 
+          environment: 'ENVIRONMENT_BROWSER',
+          // Optional: exclude specific predefined functions
+          // excluded_predefined_functions: ['drag_and_drop']
+        }
       }
     }
   ]
@@ -1415,6 +1584,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
     provider="@VERTEX_PROVIDER",
+    vertex_region="global",  # Required for computer use models
     strict_open_ai_compliance=False
 )
 
@@ -1427,7 +1597,14 @@ response = portkey.chat.completions.create(
     ],
     tools=[{
         "type": "function",
-        "function": {"name": "computer_use", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}
+        "function": {
+            "name": "computer_use", 
+            "parameters": {
+                "environment": "ENVIRONMENT_BROWSER",
+                # Optional: exclude specific predefined functions
+                # "excluded_predefined_functions": ["drag_and_drop"]
+            }
+        }
     }]
 )
 print(response)
@@ -1439,7 +1616,11 @@ import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
 const openai = new OpenAI({
   apiKey: 'PORTKEY_API_KEY',
   baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({ provider: 'vertex-ai', strictOpenAiCompliance: false })
+  defaultHeaders: createHeaders({ 
+    provider: 'vertex-ai', 
+    vertexRegion: 'global', // Required for computer use models
+    strictOpenAiCompliance: false 
+  })
 });
 
 const response = await openai.chat.completions.create({
@@ -1449,7 +1630,17 @@ const response = await openai.chat.completions.create({
     { role: 'system', content: 'You are a helpful assistant' },
     { role: 'user', content: "Go to google.com and search for 'weather in New York'" }
   ],
-  tools: [{ type: 'function', function: { name: 'computer_use', parameters: { environment: 'ENVIRONMENT_BROWSER' } } }]
+  tools: [{ 
+    type: 'function', 
+    function: { 
+      name: 'computer_use', 
+      parameters: { 
+        environment: 'ENVIRONMENT_BROWSER',
+        // Optional: exclude specific predefined functions
+        // excluded_predefined_functions: ['drag_and_drop']
+      } 
+    } 
+  }]
 });
 console.log(response);
 ```
@@ -1460,7 +1651,11 @@ from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 openai = OpenAI(
     api_key='PORTKEY_API_KEY',
     base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(provider='vertex-ai', strict_open_ai_compliance=False)
+    default_headers=createHeaders(
+        provider='vertex-ai',
+        vertex_region='global',  # Required for computer use models
+        strict_open_ai_compliance=False
+    )
 )
 
 response = openai.chat.completions.create(
@@ -1470,13 +1665,24 @@ response = openai.chat.completions.create(
         {"role": "system", "content": "You are a helpful assistant"},
         {"role": "user", "content": "Go to google.com and search for 'weather in New York'"}
     ],
-    tools=[{ "type": "function", "function": { "name": "computer_use", "parameters": { "environment": "ENVIRONMENT_BROWSER" } } }]
+    tools=[{ 
+        "type": "function", 
+        "function": { 
+            "name": "computer_use", 
+            "parameters": { 
+                "environment": "ENVIRONMENT_BROWSER",
+                # Optional: exclude specific predefined functions
+                # "excluded_predefined_functions": ["drag_and_drop"]
+            } 
+        } 
+    }]
 )
 print(response)
 ```
 ```sh cURL
 curl --location 'https://api.portkey.ai/v1/chat/completions' \
 --header 'x-portkey-provider: @my-vertex-ai-provider' \
+--header 'x-portkey-vertex-region: global' \
 --header 'Content-Type: application/json' \
 --header 'x-portkey-api-key: your-api-key' \
 --header 'x-portkey-strict-open-ai-compliance: false' \
@@ -1488,13 +1694,24 @@ curl --location 'https://api.portkey.ai/v1/chat/completions' \
         {"role": "user", "content": "Go to google.com and search for '\''weather in New York'\''"}
     ],
     "tools": [
-        {"type": "function", "function": {"name": "computer_use", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}}
+        {
+            "type": "function", 
+            "function": {
+                "name": "computer_use", 
+                "parameters": {
+                    "environment": "ENVIRONMENT_BROWSER"
+                }
+            }
+        }
     ]
 }'
 ```
 </CodeGroup>
 
 ### Multi turn conversation
+
+When the model returns tool calls, append the assistant's message (including the `tool_calls`) back to your messages array for the next turn. This maintains conversation context.
+
 <CodeGroup>
 ```ts NodeJS
 import Portkey from 'portkey-ai';
@@ -1502,6 +1719,7 @@ import Portkey from 'portkey-ai';
 const portkey = new Portkey({
   apiKey: 'PORTKEY_API_KEY',
   provider: '@VERTEX_PROVIDER',
+  vertexRegion: 'global', // Required for computer use models
   strictOpenAiCompliance: false
 });
 
@@ -1514,7 +1732,7 @@ const response = await portkey.chat.completions.create({
     { role: 'assistant', tool_calls: [ { id: 'portkey-50925c03-b8cc-4057-948b-13a9d9de19e0', type: 'function', function: { name: 'open_web_browser', arguments: '{}' } } ] },
     { role: 'user', content: "I've opened the browser" }
   ],
-  tools: [{ type: 'function', function: { name: 'computerUse', parameters: { environment: 'ENVIRONMENT_BROWSER' } } }]
+  tools: [{ type: 'function', function: { name: 'computer_use', parameters: { environment: 'ENVIRONMENT_BROWSER' } } }]
 });
 console.log(response);
 ```
@@ -1524,6 +1742,7 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
     provider="@VERTEX_PROVIDER",
+    vertex_region="global",  # Required for computer use models
     strict_open_ai_compliance=False
 )
 
@@ -1536,7 +1755,7 @@ response = portkey.chat.completions.create(
         {"role": "assistant", "tool_calls": [{"id": "portkey-50925c03-b8cc-4057-948b-13a9d9de19e0", "type": "function", "function": {"name": "open_web_browser", "arguments": "{}"}}]},
         {"role": "user", "content": "I've opened the browser"}
     ],
-    tools=[{ "type": "function", "function": { "name": "computerUse", "parameters": { "environment": "ENVIRONMENT_BROWSER" } } }]
+    tools=[{ "type": "function", "function": { "name": "computer_use", "parameters": { "environment": "ENVIRONMENT_BROWSER" } } }]
 )
 print(response)
 ```
@@ -1547,7 +1766,11 @@ import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
 const openai = new OpenAI({
   apiKey: 'PORTKEY_API_KEY',
   baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({ provider: 'vertex-ai', strictOpenAiCompliance: false })
+  defaultHeaders: createHeaders({ 
+    provider: 'vertex-ai', 
+    vertexRegion: 'global', // Required for computer use models
+    strictOpenAiCompliance: false 
+  })
 });
 
 const response = await openai.chat.completions.create({
@@ -1559,7 +1782,7 @@ const response = await openai.chat.completions.create({
     { role: 'assistant', tool_calls: [{ id: 'portkey-50925c03-b8cc-4057-948b-13a9d9de19e0', type: 'function', function: { name: 'open_web_browser', arguments: '{}' } }] },
     { role: 'user', content: "I've opened the browser" }
   ],
-  tools: [{ type: 'function', function: { name: 'computerUse', parameters: { environment: 'ENVIRONMENT_BROWSER' } } }]
+  tools: [{ type: 'function', function: { name: 'computer_use', parameters: { environment: 'ENVIRONMENT_BROWSER' } } }]
 });
 console.log(response);
 ```
@@ -1570,7 +1793,11 @@ from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 openai = OpenAI(
     api_key='PORTKEY_API_KEY',
     base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(provider='vertex-ai', strict_open_ai_compliance=False)
+    default_headers=createHeaders(
+        provider='vertex-ai',
+        vertex_region='global',  # Required for computer use models
+        strict_open_ai_compliance=False
+    )
 )
 
 response = openai.chat.completions.create(
@@ -1582,13 +1809,14 @@ response = openai.chat.completions.create(
         {"role": "assistant", "tool_calls": [{"id": "portkey-50925c03-b8cc-4057-948b-13a9d9de19e0", "type": "function", "function": {"name": "open_web_browser", "arguments": "{}"}}]},
         {"role": "user", "content": "I've opened the browser"}
     ],
-    tools=[{ "type": "function", "function": { "name": "computerUse", "parameters": { "environment": "ENVIRONMENT_BROWSER" } } }]
+    tools=[{ "type": "function", "function": { "name": "computer_use", "parameters": { "environment": "ENVIRONMENT_BROWSER" } } }]
 )
 print(response)
 ```
 ```sh cURL
 curl --location 'https://api.portkey.ai/v1/chat/completions' \
 --header 'x-portkey-provider: @my-vertex-ai-provider' \
+--header 'x-portkey-vertex-region: global' \
 --header 'Content-Type: application/json' \
 --header 'x-portkey-api-key: your-api-key' \
 --header 'x-portkey-strict-open-ai-compliance: false' \
@@ -1597,15 +1825,171 @@ curl --location 'https://api.portkey.ai/v1/chat/completions' \
     "stream": false,
     "messages": [
         {"role": "system", "content": "You are a helpful assistant"},
-        {"role": "user", "content": "Go to google.com and search for 'weather in New York'"},
+        {"role": "user", "content": "Go to google.com and search for '\''weather in New York'\''"},
         {"role": "assistant", "tool_calls": [{"id": "portkey-50925c03-b8cc-4057-948b-13a9d9de19e0", "type": "function", "function": {"name": "open_web_browser", "arguments": "{}"}}]},
-        {"role": "user", "content": "I've opened the browser"}
+        {"role": "user", "content": "I'\''ve opened the browser"}
     ],
-    "tools": [{"type": "function", "function": {"name": "computerUse", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}}]
+    "tools": [{"type": "function", "function": {"name": "computer_use", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}}]
 }'
 ```
 </CodeGroup>
 
+### Working with Images in Computer Use
+
+You can attach images to your messages in computer use contexts using the standard OpenAI format with `image_url`:
+
+<CodeGroup>
+```py Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@VERTEX_PROVIDER",
+    vertex_region="global",
+    strict_open_ai_compliance=False
+)
+
+response = portkey.chat.completions.create(
+    model="gemini-2.5-computer-use-preview-10-2025",
+    stream=False,
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What do you see in this screenshot?"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/screenshot.png"}}
+            ]
+        }
+    ],
+    tools=[{
+        "type": "function",
+        "function": {
+            "name": "computer_use",
+            "parameters": {"environment": "ENVIRONMENT_BROWSER"}
+        }
+    }]
+)
+```
+```ts NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY',
+  provider: '@VERTEX_PROVIDER',
+  vertexRegion: 'global',
+  strictOpenAiCompliance: false
+});
+
+const response = await portkey.chat.completions.create({
+  model: 'gemini-2.5-computer-use-preview-10-2025',
+  stream: false,
+  messages: [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What do you see in this screenshot?' },
+        { type: 'image_url', image_url: { url: 'https://example.com/screenshot.png' } }
+      ]
+    }
+  ],
+  tools: [{
+    type: 'function',
+    function: {
+      name: 'computer_use',
+      parameters: { environment: 'ENVIRONMENT_BROWSER' }
+    }
+  }]
+});
+```
+</CodeGroup>
+
+<Note>
+Images can be provided as:
+- Public URLs: `https://example.com/image.png`
+- Base64 data URIs: `data:image/png;base64,iVBORw0KGgo...`
+- Google Cloud Storage URLs: `gs://bucket-name/image.png`
+</Note>
+
+### Safety Settings
+
+Gemini's computer use models support safety settings to control content filtering. In Google's SDK, you configure this with `safety_settings`. With Portkey's OpenAI-compatible format, safety settings are automatically handled by the model defaults.
+
+**Google SDK Mapping:**
+
+| Google SDK | Portkey (OpenAI Format) |
+|------------|-------------------------|
+| `safety_settings=[{"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}]` | Handled automatically by model defaults |
+
+The model will return responses following Google's default safety guidelines. If content is blocked due to safety filters, you'll receive an appropriate error response with details about which safety category triggered the block.
+
+For custom safety configurations beyond the defaults, please contact Portkey support at [support@portkey.ai](mailto:support@portkey.ai).
+
+### Troubleshooting Common Issues
+
+<Accordion title="404 Error: Model not found">
+**Problem:** `Error code: 404 - Publisher Model 'gemini-2.5-computer-use-preview-10-2025' was not found`
+
+**Solution:** Computer use models require the `vertex_region` to be set to `"global"`. Update your configuration:
+
+```python
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@VERTEX_PROVIDER",
+    vertex_region="global",  # Required!
+    strict_open_ai_compliance=False
+)
+```
+</Accordion>
+
+<Accordion title="400 Error: Unknown name 'environment'">
+**Problem:** `Invalid JSON payload received. Unknown name "environment"`
+
+**Solution:** Ensure you're using the correct tool configuration format:
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "computer_use",  // Must be exactly "computer_use"
+    "parameters": {
+      "environment": "ENVIRONMENT_BROWSER"
+    }
+  }
+}
+```
+</Accordion>
+
+<Accordion title="How do I translate Google's SDK to Portkey?">
+Portkey uses OpenAI's function calling signature for cross-framework compatibility. Here's a quick reference:
+
+**Google SDK:**
+```python
+tools=[
+    types.Tool(
+        computer_use=types.ComputerUse(
+            environment=types.Environment.ENVIRONMENT_BROWSER,
+            excluded_predefined_functions=["drag_and_drop"]
+        )
+    )
+]
+```
+
+**Portkey (OpenAI Format):**
+```python
+tools=[{
+    "type": "function",
+    "function": {
+        "name": "computer_use",
+        "parameters": {
+            "environment": "ENVIRONMENT_BROWSER",
+            "excluded_predefined_functions": ["drag_and_drop"]
+        }
+    }
+}]
+```
+</Accordion>
+
+---
 
 #### multi turn conversation
 <CodeGroup>
