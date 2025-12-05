@@ -1231,6 +1231,45 @@ main();
 
 ---
 
+### mTLS Support [Enterprise Only] [Beta]
+OpenAI supports [mTLS for secure communication with the API](https://help.openai.com/en/articles/10876024-openai-mutual-tls-beta-program). Portkey also supports configuring your client key and certificate for secure communication with the API.
+
+<details>
+<summary>Generating Client Key and Certificate</summary>
+Here's a quick script to generate server and client key and certificate:
+```bash
+# 1. create CA key + self-signed CA cert
+openssl genrsa -out my_ca.key 4096
+openssl req -x509 -new -nodes -key my_ca.key -sha256 -days 3650 \
+   -subj "/CN=My Custom CA" \
+   -addext "subjectKeyIdentifier=hash" \
+   -addext "authorityKeyIdentifier=keyid:always,issuer:always" \
+   -out my_ca.pem
+
+# 2. client key + CSR (include SAN)
+openssl genrsa -out client.key 4096
+openssl req -new -key client.key \
+   -subj "/CN=my-client" \
+   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+   -out client.csr
+
+# 3. sign CSR with CA to get client cert
+openssl x509 -req -in client.csr -CA my_ca.pem -CAkey my_ca.key \
+   -CAcreateserial -days 365 -sha256 \
+   -extfile <(printf "subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer:always\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1") \
+   -out client.pem
+
+# you will need to upload the file titled my_ca.pem to OpenAI as your CA certificate
+# you can use the client.key and client.pem files for your client key and certificate in your gateway
+```
+</details>
+
+For self hosted enterprise deployments, you can configure the client key and certificate with the following environment variables:
+```bash
+export OPENAI_MTLS_KEY_PATH="/path/to/client.key"
+export OPENAI_MTLS_CERT_PATH="/path/to/client.pem"
+```
+
 ### Portkey Features
 
 Portkey supports the complete host of it's functionality via the OpenAI SDK so you don't need to migrate away from it.
