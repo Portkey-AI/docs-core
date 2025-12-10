@@ -1,654 +1,275 @@
 ---
 title: 'Vercel AI SDK'
-description: 'Use Portkey with Vercel AI SDK to build production-ready AI apps with full observability, reliability, and 250+ model support'
+description: 'Add observability, reliability, and cost control to Vercel AI apps.'
 ---
 
-Portkey seamlessly integrates with the Vercel AI SDK, enabling you to build production-ready AI applications with enterprise-grade reliability, observability, and governance. Simply point the OpenAI provider to Portkey's gateway and unlock powerful features:
+Portkey integrates natively with the Vercel AI SDK to add production features:
 
-* **Full-stack observability** - Complete tracing and analytics for every request
-* **250+ LLMs** - Switch between OpenAI, Anthropic, Google, AWS Bedrock, and 250+ models
-* **Enterprise reliability** - Fallbacks, load balancing, automatic retries, and circuit breakers
-* **Smart caching** - Reduce costs up to 80% with semantic and simple caching
-* **Production guardrails** - 50+ built-in checks for safety and quality
-* **Prompt management** - Version, test, and deploy prompts from Portkey's studio
-
-<Note>
-**Migrated from `@portkey-ai/vercel-provider`?** 
-
-We've updated our integration to use Vercel's standard OpenAI provider for better compatibility with the rapidly evolving Vercel AI SDK. This new approach gives you access to all Vercel features while maintaining full Portkey functionality.
-</Note>
+- Full observability (costs, latency, logs)
+- Access to 250+ LLMs through one interface
+- Automatic fallbacks, retries, and caching
+- Budget controls and guardrails
 
 ## Quick Start
 
-### 1. Installation
-
-```sh
-npm install ai @ai-sdk/openai
-```
-
-### 2. Get Your Portkey API Key
-
-[Sign up for Portkey](https://app.portkey.ai) and copy your API key from the dashboard. You'll use this to authenticate with Portkey's gateway.
-
-### 3. Configure the OpenAI Provider
-
-Point the OpenAI provider to Portkey's gateway:
-
 ```typescript
-import { createOpenAI } from '@ai-sdk/openai';
-
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY', // Your Portkey API key
-});
-```
-
-### 4. Use Any Model
-
-Use models from your [AI Providers](/product/model-catalog) with the `@provider-slug/model-name` format:
-
-```typescript
+import { createPortkey } from '@portkey-ai/vercel-provider';
 import { generateText } from 'ai';
 
+const portkey = createPortkey({
+  apiKey: 'PORTKEY_API_KEY'
+});
+
 const { text } = await generateText({
-  model: openai('@openai-prod/gpt-4o'),
-  prompt: 'Write a vegetarian lasagna recipe for 4 people.',
+  model: portkey.chatModel('@openai-prod/gpt-4o'),
+  prompt: 'What is Portkey?'
 });
 
 console.log(text);
 ```
 
-That's it! Your Vercel AI SDK app now has full Portkey observability and reliability features.
+All requests now route through Portkey with full observability.
 
-## Core Features
+## Setup
 
-### Text Generation
+### 1. Install Package
 
-Generate text with any model using `generateText`:
-
-<CodeGroup>
-
-```typescript OpenAI Models
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-});
-
-const { text } = await generateText({
-  model: openai('@openai-prod/gpt-4o'),
-  prompt: 'Write a haiku about coding.',
-});
+```sh
+npm install @portkey-ai/vercel-provider
 ```
 
-```typescript Anthropic Models
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
+### 2. Add Provider in Model Catalog
 
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-});
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Select your provider (OpenAI, Anthropic, Google, etc.)
+3. Enter your API keys
+4. Name your provider (e.g., `openai-prod`)
 
-// Use .chat() for chat completion models
-const { text } = await generateText({
-  model: openai.chat('@anthropic-prod/claude-3-5-sonnet-20240620'),
-  prompt: 'Explain quantum computing.',
-});
-```
+Your provider slug is **`@openai-prod`** (or whatever you named it).
 
-```typescript Google Models
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
+<Card title="Model Catalog Guide →" href="/product/model-catalog">
+  Set up budgets, rate limits, and manage credentials
+</Card>
 
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-});
+### 3. Get Portkey API Key
 
-const { text } = await generateText({
-  model: openai.chat('@google-prod/gemini-2.0-flash'),
-  prompt: 'What are the benefits of solar energy?',
-});
-```
+Create your API key at [app.portkey.ai/api-keys](https://app.portkey.ai/api-keys).
 
-</CodeGroup>
+**Pro tip:** Attach a default config to your API key for features like fallbacks and caching—no code changes needed.
 
-<Note>
-Use `openai()` for OpenAI's completion models and `openai.chat()` for chat completion models from any provider (Anthropic, Google, AWS Bedrock, etc.).
-</Note>
-
-### Streaming Text
-
-Stream responses in real-time with `streamText`:
+### 4. Use in Code
 
 ```typescript
-import { streamText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
+import { createPortkey } from '@portkey-ai/vercel-provider';
 
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
+const portkey = createPortkey({
+  apiKey: 'PORTKEY_API_KEY'
 });
 
-const result = streamText({
-  model: openai('@openai-prod/gpt-4o'),
-  prompt: 'Tell me about the Mission burrito debate in San Francisco.',
+// Use provider slug + model name
+const response = await generateText({
+  model: portkey.chatModel('@openai-prod/gpt-4o'),
+  prompt: 'Hello!'
 });
-
-for await (const chunk of result.fullStream) {
-  if (chunk.type === 'text-delta') {
-    process.stdout.write(chunk.textDelta);
-  }
-}
 ```
 
-### Structured Data Generation
+## Vercel Functions
 
-Generate validated, structured outputs with `generateObject`:
-
-
+Works with all Vercel AI functions:
 
 <CodeGroup>
 
-```typescript With Schema Name & Description
-import { generateObject } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { z } from 'zod';
+```typescript generateText
+import { createPortkey } from '@portkey-ai/vercel-provider';
+import { generateText } from 'ai';
 
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
+const portkey = createPortkey({ apiKey: 'PORTKEY_API_KEY' });
+
+const { text } = await generateText({
+  model: portkey.chatModel('@openai-prod/gpt-4o'),
+  prompt: 'What is Portkey?'
 });
 
-const result = await generateObject({
-  model: openai.chat('@openai-prod/gpt-4o'),
-  schemaName: 'Recipe',
-  schemaDescription: 'A recipe for a dish.',
-  schema: z.object({
-    name: z.string(),
-    ingredients: z.array(
-      z.object({
-        name: z.string(),
-        amount: z.string(),
-      })
-    ),
-    steps: z.array(z.string()),
-  }),
-  prompt: 'Generate a lasagna recipe.',
-});
-
-console.log(result.object);
+console.log(text);
 ```
 
-```typescript Standard Format
-import { generateObject } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { z } from 'zod';
+```typescript streamText
+import { createPortkey } from '@portkey-ai/vercel-provider';
+import { streamText } from 'ai';
 
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
+const portkey = createPortkey({ apiKey: 'PORTKEY_API_KEY' });
+
+const result = await streamText({
+  model: portkey.chatModel('@openai-prod/gpt-4o'),
+  prompt: 'Invent a new holiday and describe its traditions.'
 });
 
-const result = await generateObject({
-  model: openai('@openai-prod/gpt-4o'),
-  schema: z.object({
-    recipe: z.object({
-      name: z.string(),
-      ingredients: z.array(
-        z.object({ name: z.string(), amount: z.string() })
-      ),
-      steps: z.array(z.string()),
-    }),
-  }),
-  prompt: 'Generate a lasagna recipe.',
-});
-
-console.log(result.object);
+for await (const chunk of result.textStream) {
+  process.stdout.write(chunk);
+}
 ```
 
 </CodeGroup>
 
 ### Tool Calling
 
-Enable your AI to use tools and functions:
-
 ```typescript
+import { createPortkey } from '@portkey-ai/vercel-provider';
 import { generateText, tool } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-});
+const portkey = createPortkey({ apiKey: 'PORTKEY_API_KEY' });
 
 const result = await generateText({
-  model: openai('@openai-prod/gpt-4o'),
+  model: portkey.chatModel('@openai-prod/gpt-4o'),
   tools: {
     weather: tool({
       description: 'Get the weather in a location',
-      inputSchema: z.object({
-        location: z.string().describe('The location to get the weather for'),
+      parameters: z.object({
+        location: z.string().describe('The location to get the weather for')
       }),
       execute: async ({ location }) => ({
         location,
-        temperature: 72 + Math.floor(Math.random() * 21) - 10,
-      }),
-    }),
+        temperature: 72 + Math.floor(Math.random() * 21) - 10
+      })
+    })
   },
-  prompt: 'What is the weather in San Francisco?',
+  prompt: 'What is the weather in San Francisco?'
 });
-
-console.log(result.text);
-console.log('Tool Calls:', result.toolCalls);
 ```
 
-### Image Generation
+## Switching Providers
 
-Generate images with DALL-E or other image models:
+Change the model string to switch providers:
 
 ```typescript
-import { experimental_generateImage as generateImage } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
+// OpenAI
+portkey.chatModel('@openai-prod/gpt-4o')
 
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-});
+// Anthropic
+portkey.chatModel('@anthropic-prod/claude-sonnet-4')
 
-const { image } = await generateImage({
-  model: openai.image('@openai-prod/dall-e-3'),
-  prompt: 'Santa Claus driving a Cadillac',
-  size: '1024x1024',
-  quality: 'standard',
-});
-
-console.log('Image URL:', image);
+// Google
+portkey.chatModel('@google-prod/gemini-2.0-flash')
 ```
 
-### AI Agents
+No other code changes needed.
 
-Build autonomous agents with tool usage and reasoning:
+## Advanced Features
 
-```typescript
-import { Experimental_Agent as Agent, tool, stepCountIs } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { z } from 'zod';
+For fallbacks, caching, and load balancing, create a [Config](https://app.portkey.ai/configs) and attach it to your API key. The config applies automatically—no code changes required.
 
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-});
+### Fallbacks
 
-const weatherAgent = new Agent({
-  model: openai('@openai-prod/gpt-4o'),
-  tools: {
-    weather: tool({
-      description: 'Get the weather in a location (in Fahrenheit)',
-      inputSchema: z.object({
-        location: z.string().describe('The location to get the weather for'),
-      }),
-      execute: async ({ location }) => ({
-        location,
-        temperature: 72 + Math.floor(Math.random() * 21) - 10,
-      }),
-    }),
-    convertFahrenheitToCelsius: tool({
-      description: 'Convert temperature from Fahrenheit to Celsius',
-      inputSchema: z.object({
-        temperature: z.number().describe('Temperature in Fahrenheit'),
-      }),
-      execute: async ({ temperature }) => ({
-        celsius: Math.round((temperature - 32) * (5 / 9)),
-      }),
-    }),
-  },
-  stopWhen: stepCountIs(20),
-});
-
-const result = await weatherAgent.generate({
-  prompt: 'What is the weather in San Francisco in celsius?',
-});
-
-console.log('Agent\'s answer:', result.text);
-console.log('Steps taken:', result.steps.length);
-```
-
-### Custom Parameters
-
-Fine-tune model behavior with temperature, tokens, and retries:
-
-```typescript
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-});
-
-const result = await generateText({
-  model: openai('@openai-prod/gpt-4o'),
-  maxOutputTokens: 512,
-  temperature: 0.3,
-  maxRetries: 5,
-  prompt: 'Invent a new holiday and describe its traditions.',
-});
-
-console.log(result.text);
-```
-
-## Portkey Headers
-
-Enhance your requests with Portkey's powerful headers:
-
-### Trace ID
-
-Track and debug requests with custom trace IDs:
-
-```typescript
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-  headers: {
-    'x-portkey-trace-id': 'user-123-session-456',
-  },
-});
-```
-
-### Metadata
-
-Add custom metadata for filtering and analytics:
-
-```typescript
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-  headers: {
-    'x-portkey-metadata': JSON.stringify({
-      environment: 'production',
-      user: 'user-123',
-      feature: 'chat',
-    }),
-  },
-});
-```
-
-### Configs via Headers
-
-Apply Portkey configs using the config ID or inline JSON:
-
-<CodeGroup>
-
-```typescript Config ID
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-  headers: {
-    'x-portkey-config': 'pp-config-xxx', // Your config ID
-  },
-});
-```
-
-```typescript Inline Config
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-  headers: {
-    'x-portkey-config': JSON.stringify({
-      strategy: { mode: 'fallback' },
-      targets: [
-        { override_params: { model: '@openai-prod/gpt-4o' } },
-        { override_params: { model: '@anthropic-prod/claude-3-5-sonnet' } }
-      ]
-    }),
-  },
-});
-```
-
-</CodeGroup>
-
-<Card title="Learn more about Portkey Headers" href="/api-reference/inference-api/request-headers" />
-
-## Using AI Providers & Model Catalog
-
-Portkey's [Model Catalog](/product/model-catalog) lets you manage all your AI providers and models from a centralized dashboard with governance, budget limits, and access controls.
-
-### Setting Up Providers
-
-1. Go to the [Model Catalog](https://app.portkey.ai) in Portkey dashboard
-2. Click "Add Provider" and choose your AI service (OpenAI, Anthropic, etc.)
-3. Add your API credentials
-4. Give your provider a unique slug (e.g., `@openai-prod`)
-
-### Using Provider Models
-
-Reference models using the `@provider-slug/model-name` format:
-
-```typescript
-// Use your configured providers
-const { text } = await generateText({
-  model: openai('@openai-prod/gpt-4o'),        // OpenAI
-  prompt: 'Hello!',
-});
-
-const { text: claudeText } = await generateText({
-  model: openai.chat('@anthropic-prod/claude-3-5-sonnet'),  // Anthropic
-  prompt: 'Hello!',
-});
-
-const { text: geminiText } = await generateText({
-  model: openai.chat('@google-prod/gemini-2.0-flash'),  // Google
-  prompt: 'Hello!',
-});
-```
-
-<CardGroup cols={2}>
-  <Card title="Model Catalog" icon="database" href="/product/model-catalog">
-    Centralized management for all your AI providers and models
-  </Card>
-  <Card title="Budget & Rate Limits" icon="gauge" href="/product/model-catalog/integrations">
-    Set spending controls and rate limits for your providers
-  </Card>
-</CardGroup>
-
-## Portkey Configs
-
-Portkey Configs enable advanced routing, reliability, and governance for your AI requests. You can apply configs in two ways:
-
-### Method 1: Inline in Model Name
-
-Reference a saved prompt or config directly in the model name:
-
-```typescript
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-});
-
-// Use a saved prompt with config
-const { text } = await generateText({
-  model: openai('@my-prompt-config/gpt-4o'),
-  prompt: 'User query here',
-});
-```
-
-### Method 2: Via Headers
-
-Pass config ID or inline config via headers:
-
-```typescript
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-  headers: {
-    'x-portkey-config': 'pp-config-xxx', // Your saved config ID
-  },
-});
-```
-
-## Enterprise Features
-
-### Observability & Analytics
-
-Get complete visibility into your AI operations with automatic request logging, performance metrics, and cost tracking:
-
-<Frame>
-  <img src="/images/product/dashboard.png" alt="Portkey Analytics Dashboard" />
-</Frame>
-
-Every request through Portkey is automatically logged with:
-- **Request/response payloads** - Full tracing of inputs and outputs
-- **Performance metrics** - Latency, tokens, and throughput
-- **Cost tracking** - Real-time spend across all providers
-- **Error monitoring** - Automatic error detection and alerts
-
-<Card title="Observability" icon="chart-line" href="/product/observability">
-  Explore Portkey's full observability suite
-</Card>
-
-### AI Gateway Features
-
-Portkey's AI Gateway makes your AI applications production-ready with enterprise reliability:
-
-<CardGroup cols={3}>
-  <Card title="Fallbacks" href="/product/ai-gateway/fallbacks">
-    Automatic failover between models and providers
-  </Card>
-  <Card title="Load Balancing" href="/product/ai-gateway/load-balancing">
-    Distribute traffic across multiple providers
-  </Card>
-  <Card title="Automatic Retries" href="/product/ai-gateway/automatic-retries">
-    Smart retry logic for transient failures
-  </Card>
-  <Card title="Caching" href="/product/ai-gateway/cache-simple-and-semantic">
-    Reduce costs by 80% with semantic caching
-  </Card>
-  <Card title="Request Timeouts" href="/product/ai-gateway/request-timeouts">
-    Handle unresponsive requests gracefully
-  </Card>
-  <Card title="Conditional Routing" href="/product/ai-gateway/conditional-routing">
-    Route requests based on custom logic
-  </Card>
-</CardGroup>
-
-<Card title="AI Gateway" icon="gateway" href="/product/ai-gateway">
-  View all gateway features and capabilities
-</Card>
-
-### Guardrails
-
-Enforce safety, quality, and compliance with real-time guardrails:
+Auto-switch to backup models if the primary fails:
 
 ```json
 {
-  "before_request_hooks": [{
-    "id": "input-guardrail-xxx"
-  }],
-  "after_request_hooks": [{
-    "id": "output-guardrail-xxx"
-  }]
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "override_params": { "model": "@openai-prod/gpt-4o" } },
+    { "override_params": { "model": "@anthropic-prod/claude-sonnet-4" } }
+  ]
 }
 ```
 
-Portkey offers 50+ built-in guardrails including:
-- PII detection and redaction
-- Toxic content filtering
-- Prompt injection protection
-- Custom regex and keyword filters
-- Sensitive data detection
+### Load Balancing
 
-<Card title="Guardrails" icon="shield-halved" href="/product/guardrails">
-  Set up real-time safety and compliance checks
+Distribute requests across providers:
+
+```json
+{
+  "strategy": { "mode": "loadbalance" },
+	"targets": [
+    { "override_params": { "model": "@openai-prod/gpt-4o" }, "weight": 0.7 },
+    { "override_params": { "model": "@anthropic-prod/claude-sonnet-4" }, "weight": 0.3 }
+	]
+}
+```
+
+### Caching
+
+Reduce costs with response caching:
+
+```json
+{
+  "cache": { "mode": "semantic" },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
+```
+
+### Runtime Config
+
+Pass config inline when needed:
+
+```typescript
+const portkey = createPortkey({
+  apiKey: 'PORTKEY_API_KEY',
+  config: {
+    strategy: { mode: 'fallback' },
+    targets: [
+      { override_params: { model: '@openai-prod/gpt-4o' } },
+      { override_params: { model: '@anthropic-prod/claude-sonnet-4' } }
+    ]
+  }
+});
+
+// Model comes from config, so pass empty string
+const { text } = await generateText({
+  model: portkey.chatModel(''),
+  prompt: 'What is Portkey?'
+});
+```
+
+<Card title="Configs Guide →" href="/product/ai-gateway/configs">
+  Fallbacks, retries, caching, load balancing, and more
 </Card>
 
-### Prompt Management
+## Guardrails
 
-Manage, version, and deploy prompts from Portkey's Prompt Studio:
+Add input/output validation via config:
 
-<CardGroup cols={2}>
-  <Card title="Prompt Playground" href="/product/prompt-engineering-studio/prompt-playground">
-    Test prompts across 250+ models side-by-side
-  </Card>
-  <Card title="Prompt Versioning" href="/product/prompt-engineering-studio/prompt-versioning">
-    Version control for all your prompts
-  </Card>
-  <Card title="Prompt Library" href="/product/prompt-engineering-studio/prompt-library">
-    Centralized prompt repository
-  </Card>
-  <Card title="Prompt API" href="/product/prompt-engineering-studio/prompt-api">
-    Deploy prompts via API endpoints
-  </Card>
-</CardGroup>
-
-## Migration Guide
-
-### From `@portkey-ai/vercel-provider`
-
-If you're migrating from the old Portkey Vercel provider package:
-
-**Before:**
-```typescript
-import { createPortkey } from '@portkey-ai/vercel-provider';
-
-const portkey = createPortkey({
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-  config: { /* ... */ }
-});
-
-const { text } = await generateText({
-  model: portkey.chatModel('gpt-4o'),
-  prompt: 'Hello',
-});
+```json
+		{
+  "input_guardrails": ["guardrail-id-xxx"],
+  "output_guardrails": ["guardrail-id-yyy"],
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
 ```
 
-**After:**
-```typescript
-import { createOpenAI } from '@ai-sdk/openai';
+<Card title="Guardrails Guide →" href="/product/guardrails">
+  PII detection, content filtering, and custom rules
+</Card>
 
-const openai = createOpenAI({
-  baseURL: 'https://api.portkey.ai/v1',
-  apiKey: 'YOUR_PORTKEY_API_KEY',
-});
+## Observability
 
-const { text } = await generateText({
-  model: openai('@openai-prod/gpt-4o'),
-  prompt: 'Hello',
-});
-```
+All requests are automatically logged with:
+- Cost and token usage
+- Latency metrics
+- Full request/response payloads
+- Custom metadata
 
-**Key Changes:**
-- Use `@ai-sdk/openai` instead of `@portkey-ai/vercel-provider`
-- Set `baseURL` to Portkey's gateway
-- Reference models using `@provider-slug/model-name` format
-- Pass configs via headers or inline in model names
+<Frame>
+  <img src="/images/product/dashboard.png" alt="Portkey Dashboard" />
+</Frame>
 
-**Benefits:**
-- ✅ Better compatibility with Vercel AI SDK updates
-- ✅ Access to all Vercel AI SDK features immediately
-- ✅ Simpler setup with standard OpenAI provider
-- ✅ More flexible config management
+<Card title="Observability Guide →" href="/product/observability">
+  Track costs, performance, and debug issues
+</Card>
 
-## Support & Resources
+## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="API Reference" icon="book" href="/api-reference/inference-api/introduction">
-    Complete API documentation
+  <Card title="Model Catalog" icon="database" href="/product/model-catalog">
+    Set up providers and budgets
   </Card>
-  <Card title="Discord Community" icon="discord" href="https://portkey.ai/community">
-    Get help from the community
+  <Card title="Configs" icon="gear" href="/product/ai-gateway/configs">
+    Configure fallbacks and routing
   </Card>
-  <Card title="Contact Support" icon="headset" href="/support/contact-us">
-    Reach out to our team
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Track costs and performance
   </Card>
-  <Card title="GitHub" icon="github" href="https://github.com/portkey-ai/gateway">
-    Contribute to Portkey Gateway
+  <Card title="Guardrails" icon="shield" href="/product/guardrails">
+    Add PII detection and filtering
   </Card>
 </CardGroup>
