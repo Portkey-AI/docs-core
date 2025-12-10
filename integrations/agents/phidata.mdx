@@ -1,180 +1,135 @@
 ---
 title: "Phidata"
-description: "Use Portkey with Phidata to take your AI Agents to production"
+description: "Add observability, reliability, and multi-provider support to Phidata agents."
 ---
 
-## Getting started
+Portkey enhances Phidata agents with production features:
 
-### 1\. Install the required packages:
+- Complete observability of agent steps and LLM interactions
+- Built-in reliability with fallbacks, retries, and load balancing
+- Access to 1600+ LLMs through a single integration
+- Cost tracking and optimization
 
-```sh
-pip install phidata portkey-ai
-```
+## Quick Start
 
-### **2\.** Configure your Phidata LLM objects:
-
-```py
+```python
 from phi.llm.openai import OpenAIChat
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 llm = OpenAIChat(
     base_url=PORTKEY_GATEWAY_URL,
-    api_key="OPENAI_API_KEY", #Replace with Your OpenAI Key
-    default_headers=createHeaders(
-        provider="openai",
-        api_key=PORTKEY_API_KEY  # Replace with your Portkey API key
-    )
+    api_key="YOUR_PORTKEY_API_KEY",
+    default_headers=createHeaders(provider="@openai-prod")
 )
 ```
 
-## Integration Guide
+All agent interactions are now logged in your [Portkey dashboard](https://app.portkey.ai/logs).
 
-Here's a simple Colab notebook that demonstrates Phidata with Portkey integration
+[![Open in Colab](/images/guides/colab-badge.svg)](https://dub.sh/Phidata-docs)
 
-[![](/images/guides/colab-badge.svg)](https://dub.sh/Phidata-docs)
+## Setup
 
-## Make your agents Production-ready with Portkey
+<Steps>
+<Step title="Install packages">
+```bash
+pip install phidata portkey-ai
+```
+</Step>
 
-Portkey makes your Phidata agents reliable, robust, and production-grade with its observability suite and AI Gateway. Seamlessly integrate 1600+ LLMs with your Phidata agents using Portkey. Implement fallbacks, gain granular insights into agent performance and costs, and continuously optimize your AI operations—all with just 2 lines of code.
+<Step title="Add provider in Model Catalog">
+Go to [Model Catalog → Add Provider](https://app.portkey.ai/model-catalog). Select your provider, enter API keys, and name it (e.g., `openai-prod`).
 
-Let's dive deep! Let's go through each of the use cases!
+Your provider slug is `@openai-prod`.
+</Step>
 
-### 1\. [Interoperability](/product/ai-gateway/universal-api)
+<Step title="Get Portkey API Key">
+Create an API key at [app.portkey.ai/api-keys](https://app.portkey.ai/api-keys).
 
-Easily switch between 1600+ LLMs. Call various LLMs such as Anthropic, Gemini, Mistral, Azure OpenAI, Google Vertex AI, AWS Bedrock, and many more by simply changing the `provider ` and `API key` in the `ChatOpenAI` object.
+**Pro tip:** Attach a default [config](https://app.portkey.ai/configs) for fallbacks and caching.
+</Step>
 
-<Tabs>
-    <Tab title="OpenAI to Azure OpenAI">
-    If you are using OpenAI with Phidata, your code would look like this:
-```py
+<Step title="Configure Phidata LLM">
+```python
+from phi.llm.openai import OpenAIChat
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
 llm = OpenAIChat(
     base_url=PORTKEY_GATEWAY_URL,
-    api_key="OPENAI_API_KEY", #Replace with Your OpenAI Key
-    default_headers=createHeaders(
-        provider="openai",
-        api_key=userdata.get('PORTKEY_API_KEY')  # Replace with your Portkey API key
-    )
+    api_key="YOUR_PORTKEY_API_KEY",
+    default_headers=createHeaders(provider="@openai-prod")
 )
 ```
-To switch to Azure as your provider, add your Azure details to Portley and create an integration ([here's how](/integrations/llms/azure-openai)).
+</Step>
+</Steps>
 
+## Production Features
 
-```py
-llm = OpenAIChat(
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="api_key", #We will be using Virtual Key
-    default_headers=createHeaders(
-        provider="azure-openai",
-        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        provider="@AZURE_OPENAI_KEY"
-    )
+### Observability
+
+Add trace IDs and metadata for filtering:
+
+```python
+default_headers=createHeaders(
+    provider="@openai-prod",
+    trace_id="research-agent-1",
+    metadata={"agent_type": "research", "_user": "user_123"}
 )
 ```
-</Tab>
-    <Tab title="Anthropic to AWS Bedrock">
-If you are using Anthropic with Phidata, your code would look like this:
-```py
-llm = OpenAIChat(
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="ANTHROPIC_API_KEY", #Replace with Your OpenAI Key
-    default_headers=createHeaders(
-        provider="anthropic",
-        api_key="PORTKEY_API_KEY"  # Replace with your Portkey API key
-    )
-)
-```
-To switch to AWS Bedrock as your provider, add your AWS Bedrock details to Portley and create an integration ([here's how](/integrations/llms/aws-bedrock)).
 
-```py
-llm = OpenAIChat(
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="api_key", #We will be using Virtual Key
-    default_headers=createHeaders(
-        provider="bedrock",
-        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        provider="@BEDROCK_OPENAI_KEY" #Bedrock Virtual Key
-    )
-)
-```
-    </Tab>
-  </Tabs>
+<Frame>
+  <img src="/images/autogen/autogen-4.gif"/>
+</Frame>
 
-### 2\. [Reliability](/product/ai-gateway)
+### Reliability
 
-Agents are _brittle_. Long agentic pipelines with multiple steps can fail at any stage, disrupting the entire process. Portkey solves this by offering built-in **fallbacks** between different LLMs or providers, **load-balancing** across multiple instances or API keys, and implementing automatic **retries** and request **timeouts**. This makes your agents more reliable and resilient.
+Enable fallbacks via [Configs](https://app.portkey.ai/configs):
 
-Here's how you can implement these features using Portkey's config
-
-```py
+```json
 {
-  "retry": {
-    "attempts": 5
-  },
-  "strategy": {
-    "mode": "loadbalance" // Choose between "loadbalance" or "fallback"
-  },
+  "strategy": { "mode": "fallback" },
   "targets": [
-    {
-      "provider": "openai",
-      "api_key": "OpenAI_API_Key"
-    },
-    {
-      "provider": "anthropic",
-      "api_key": "Anthropic_API_Key"
-    }
+    { "override_params": { "model": "@openai-prod/gpt-4o" } },
+    { "override_params": { "model": "@anthropic-prod/claude-sonnet-4" } }
   ]
 }
 ```
 
-### 3\. [Metrics](/product/observability)
+### Caching
 
-Agent runs can be costly. Tracking agent metrics is crucial for understanding the performance and reliability of your AI agents. Metrics help identify issues, optimize runs, and ensure that your agents meet their intended goals.
+Reduce costs with response caching:
 
-Portkey automatically logs comprehensive metrics for your AI agents, including **cost**, **tokens used**, **latency**, etc. Whether you need a broad overview or granular insights into your agent runs, Portkey's customizable filters provide the metrics you need. For agent-specific observability, add `Trace-id` to the request headers for each agent.
-
-```py
-llm2 = ChatOpenAI(
-    api_key="Anthropic_API_Key",
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        provider="anthropic",
-        trace_id="research_agent1" #Add individual trace-id for your agent analytics
-    )
-)
-```
-
-### 4\. [Logs](/product/observability/logs)
-
-Agent runs are complex. Logs are essential for diagnosing issues, understanding agent behavior, and improving performance. They provide a detailed record of agent activities and tool use, which is crucial for debugging and optimizing processes.
-
-Portkey offers comprehensive logging features that capture detailed information about every action and decision made by your AI agents. Access a dedicated section to view records of agent executions, including parameters, outcomes, function calls, and errors. Filter logs based on multiple parameters such as trace ID, model, tokens used, and metadata.
-
-<Frame>
-    <img src="/images/autogen/autogen-4.gif"/>
-</Frame>
-### 5\. [Continuous Improvement](/product/observability/feedback)
-
-Improve your Agent runs by capturing qualitative & quantitative user feedback on your requests. Portkey's Feedback APIs provide a simple way to get weighted feedback from customers on any request you served, at any stage in your app. You can capture this feedback on a request or conversation level and analyze it by adding meta data to the relevant request.
-
-### 6\. [Caching](/product/ai-gateway/cache-simple-and-semantic)
-
-Agent runs are time-consuming and expensive due to their complex pipelines. Caching can significantly reduce these costs by storing frequently used data and responses. Portkey offers a built-in caching system that stores past responses, reducing the need for agent calls saving both time and money.
-
-```py
+```json
 {
- "cache": {
-    "mode": "semantic" // Choose between "simple" or "semantic"
- }
+  "cache": { "mode": "semantic" }
 }
 ```
 
-### 7\. [Security & Compliance](/product/enterprise-offering/security-portkey)
+### Switching Providers
 
-Set budget limits on provider API keys and implement fine-grained user roles and permissions for both the app and the Portkey APIs.
+Change the provider to switch models:
 
-## [Portkey Config](/product/ai-gateway/configs)
+```python
+# OpenAI
+createHeaders(provider="@openai-prod")
 
-Many of these features are driven by Portkey's Config architecture. The Portkey app simplifies creating, managing, and versioning your Configs.
+# Anthropic
+createHeaders(provider="@anthropic-prod")
 
-For more information on using these features and setting up your Config, please refer to the [Portkey documentation](https://docs.portkey.ai).
+# AWS Bedrock
+createHeaders(provider="@bedrock-prod")
+```
+
+<Card title="Supported Providers" icon="server" href="/integrations/llms">
+  See all 1600+ supported models
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Catalog" icon="database" href="/product/model-catalog">
+    Set up providers and budgets
+  </Card>
+  <Card title="Configs" icon="gear" href="/product/ai-gateway/configs">
+    Fallbacks, caching, and routing
+  </Card>
+</CardGroup>
