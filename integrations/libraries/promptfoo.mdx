@@ -1,29 +1,26 @@
 ---
 title: "Promptfoo"
-description: Portkey brings advanced **AI gateway** capabilities, full-stack **observability**, and **prompt management** + **versioning** to your **Promptfoo** projects. This document provides an overview of how to leverage the strengths of both the platforms to streamline your AI development workflow.
+description: "Run Promptfoo evals on 1600+ LLMs with observability and cost tracking via Portkey."
 ---
 
-[**promptfoo**](https://promptfoo.dev/docs/intro) is an open source library (and CLI) for evaluating LLM output quality.
+[Promptfoo](https://promptfoo.dev/docs/intro) is an open source library for evaluating LLM output quality.
 
-#### By using Portkey with Promptfoo you can:
+With Portkey, you can:
+- **Manage prompts** with versioning and call them in Promptfoo
+- **Run evals on 1600+ LLMs** including private/local models
+- **Track costs and metrics** for all eval runs
+- **Avoid rate limits** with load balancing and caching
 
-1. [Manage, version, and collaborate on various prompts with Portkey and easily call them in Promptfoo](/integrations/libraries/promptfoo#id-1.-reference-prompts-from-portkey-in-promptfoo)
-2. [Run Promptfoo on 1600+ LLMs, including locally or privately hosted LLMs](/integrations/libraries/promptfoo#id-2.-route-to-anthropic-google-groq-and-more)
-3. [Log all requests, segment them as needed with custom metadata, and get granular cost, performance metrics for all Promptfoo runs](/integrations/libraries/promptfoo#id-3.-segment-requests-view-cost-and-performance-metrics)
-4. [Avoid Promptfoo rate limits & leverage cache](/integrations/libraries/promptfoo#id-4.-avoid-promptfoo-rate-limits-and-leverage-cache)
+## 1. Reference Portkey Prompts
 
-Let’s see how these work!
+Use prompts stored in Portkey directly in Promptfoo:
 
-## 1\. Reference Prompts from Portkey in Promptfoo
-
-1. Set the `PORTKEY_API_KEY` environment variable in your Promptfoo project
-2. In your configuration YAML, use the `portkey://` prefix for your prompts, followed by your Portkey prompt ID.
-
-For example:
+1. Set `PORTKEY_API_KEY` environment variable
+2. Use `portkey://` prefix with your prompt ID:
 
 ```yaml
 prompts:
-  - portkey://pp-test-promp-669f48
+  - portkey://pp-test-prompt-669f48
 providers:
   - openai:gpt-3.5-turbo-0613
 tests:
@@ -31,235 +28,145 @@ tests:
       topic: ...
 ```
 
-Variables from your Promptfoo test cases will be automatically plugged into the Portkey prompt as variables. The resulting prompt will be rendered and returned to promptfoo, and used as the prompt for the test case.
+Variables from test cases are automatically plugged into the Portkey prompt.
 
 <Note>
-  Note that promptfoo does not follow the temperature, model, and other parameters set in Portkey. You must set them in the providers configuration yourself.
+Promptfoo doesn't follow temperature, model, and other parameters set in Portkey. Set them in the providers configuration.
 </Note>
 
----
+## 2. Route to Any Provider
 
-## 2\. Route to Anthropic, Google, Groq, and More
+Set `PORTKEY_API_KEY` and configure providers with the `portkey:` prefix:
 
-1. Set the `PORTKEY_API_KEY` environment variable
-2. While adding the provider in your config YAML, set the model name with `portkey` prefix (like `portkey:gpt-4o`)
-3. And in the `config`param, set the relevant provider for the above chosen model with `portkeyProvider` (like `portkeyProvider:openai`)
+<CodeGroup>
 
-### For Example, to Call OpenAI
-
-```yaml
+```yaml OpenAI
 providers:
   id: portkey:gpt-4o
   config:
     portkeyProvider: openai
 ```
 
-That's it! With this, all your Promptfoo calls will now start showing up on your Portkey dashboard.
-
-### Let's now call `Anthropic`, `Google`, `Groq`, `Ollama`
-
-
-<Tabs>
-  <Tab title="Anthropic">
-
-```yaml
+```yaml Anthropic
 providers:
-  id: portkey:claude-3-opus20240229
+  id: portkey:claude-3-opus-20240229
   config:
     portkeyProvider: anthropic
-    # You can also add your Anthropic API key to Portkey and pass the virtual key here
-    portkeyVirtualKey: ANTHROPIC_PROVIDER
+    portkeyVirtualKey: "@anthropic-prod"
 ```
 
-  </Tab>
-  <Tab title="Google Gemini">
-
-```yaml
+```yaml Google Gemini
 providers:
   id: portkey:gemini-1.5-flash-latest
   config:
     portkeyProvider: google
-    # You can also add your Gemini API key to Portkey and pass the virtual key here
-    portkeyVirtualKey: GEMINI_PROVIDER
+    portkeyVirtualKey: "@google-prod"
 ```
-  </Tab>
-  <Tab title="Groq">
 
-```yaml
+```yaml Groq
 providers:
   id: portkey:llama3-8b-8192
   config:
     portkeyProvider: groq
-    # You can also add your Groq API key to Portkey and pass the virtual key here
-    portkeyVirtualKey: GROQ_PROVIDER
+    portkeyVirtualKey: "@groq-prod"
 ```
-  </Tab>
-  <Tab title="Ollama">
 
-```yaml
+```yaml Ollama (Local)
 providers:
   id: portkey:llama3
   config:
     portkeyProvider: ollama
     portkeyCustomHost: YOUR_OLLAMA_NGROK_URL
 ```
-  </Tab>
-</Tabs>
 
-### Examples for `Azure OpenAI`, `AWS Bedrock`, `Google Vertex AI`
+</CodeGroup>
 
-<Tabs>
-  <Tab title="Azure OpenAI">
-  #### Using [Virtual Keys](/integrations/llms/azure-openai#id-2.-initialize-portkey-with-the-virtual-key)
+### Cloud Providers (Azure, Bedrock, Vertex)
 
-```yaml
+<CodeGroup>
+
+```yaml Azure OpenAI
 providers:
   id: portkey:xxx
   config:
-    portkeyVirtualKey: YOUR_PORTKEY_AZURE_OPENAI_PROVIDER
+    portkeyVirtualKey: "@azure-openai-prod"
 ```
-#### Without Using Virtual Keys
 
-First, set the `AZURE_OPENAI_API_KEY` environment variable.
-
-```yaml
-providers:
-  id: portkey:xxx
-  config:
-    portkeyProvider: azure-openai
-    portkeyAzureResourceName: AZURE_RESOURCE_NAME
-    portkeyAzureDeploymentId: AZURE_DEPLOYMENT_NAME
-    portkeyAzureApiVersion: AZURE_API_VERSION
-```
-#### Using Client Credentials (JSON Web Token)
-
-You can generate a JSON web token for your client creds, and add it to the `AZURE_OPENAI_API_KEY` environment variable.
-
-```yaml
-providers:
-  id: portkey:xxx
-  config:
-    portkeyProvider: azure-openai
-    portkeyAzureResourceName: AZURE_RESOURCE_NAME
-    portkeyAzureDeploymentId: AZURE_DEPLOYMENT_NAME
-    portkeyAzureApiVersion: AZURE_API_VERSION
-    # Pass your JSON Web Token with AZURE_OPENAI_API_KEY env var
-    portkeyForwardHeaders: [ "Authorization" ]
-```
-  </Tab>
-  <Tab title="AWS Bedrock">
-#### Using [Virtual Keys](/integrations/llms/aws-bedrock#id-2.-initialize-portkey-with-the-virtual-key)
-
-```yaml
+```yaml AWS Bedrock
 providers:
   id: portkey:anthropic.claude-3-sonnet-20240229-v1:0
   config:
-    portkeyVirtualKey: YOUR_PORTKEY_AWS_BEDROCK_PROVIDER
-    # If you're using AWS Security Token Service, you can set it here
-    awsSessionToken: "AWS_SESSION_TOKEN"
+    portkeyVirtualKey: "@bedrock-prod"
 ```
 
-#### Without Using Virtual Keys
-
-First, set the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` env vars.
-
-```yaml
-providers:
-  id: portkey:anthropic.claude-3-sonnet-20240229-v1:0
-  config:
-    portkeyProvider: bedrock
-    portkeyAwsRegion: "us-east-1"
-    portkeyAwsSecretAccessKey: ${AWS_SECRET_ACCESS_KEY}
-    portkeyAwsAccessKeyId: ${AWS_ACCESS_KEY_ID}
-    # You can also set AWS STS (Security Token Service)
-    awsSessionToken: "AWS_SESSION_TOKEN"
-```
-
-  </Tab>
-   <Tab title="Google Vertex AI">
-#### Using [Virtual Keys](/integrations/llms/vertex-ai#id-2.-initialize-portkey-with-the-virtual-key)
-
-Set your Vertex AI access token with the `VERTEX_API_KEY` env var, and pass the rest of your Vertex AI details with Portkey virtual key.
-
-```yaml
+```yaml Google Vertex AI
 providers:
   id: portkey:gemini-1.5-flash-latest
   config:
-    portkeyVirtualKey: YOUR_PORTKEY_GOOGLE_VERTEX_AI_PROVIDER
+    portkeyVirtualKey: "@vertex-prod"
 ```
 
-#### Without Using Virtual Keys
+</CodeGroup>
 
-First, set the `VERTEX_API_KEY`, `VERTEX_PROJECT_ID`, `VERTEX_REGION` env vars.
+## 3. Track Costs & Metrics
+
+Add metadata to segment requests and track costs per team/project:
 
 ```yaml
 providers:
-  id: portkey:xxx
+  id: portkey:claude-3-opus-20240229
   config:
-    portkeyProvider: vertex-ai
-    portkeyVertexProjectId: ${VERTEX_PROJECT_ID}
-    portkeyVertexRegion: ${VERTEX_REGION}
-```
-  </Tab>
-</Tabs>
-
-
----
-
-## 3\. Segment Requests, View Cost & Performance Metrics
-
-Portkey automatically logs all the key details about your requests, including cost, tokens used, response time, request and response bodies, and more.
-
-Using Portkey, you can also send custom metadata with each of your requests to further segment your logs for better analytics. Similarly, you can also trace multiple requests to a single trace ID and filter or view them separately in Portkey logs.
-
-```yaml
-providers:
-  id: portkey:claude-3-opus20240229
-  config:
-    portkeyVirtualKey: ANTHROPIC_PROVIDER
+    portkeyVirtualKey: "@anthropic-prod"
     portkeyMetadata:
       team: alpha9
       prompt: classification
     portkeyTraceId: run_1
 ```
 
-You can filter or group data by these metadata keys on Portkey dashboards.
+Filter and group by these keys in Portkey dashboards.
 
 <Frame>
-  <img src="/images/libraries/promptfoo.gif"/>
+<img src="/images/libraries/promptfoo.gif"/>
 </Frame>
 
----
+## 4. Avoid Rate Limits with Caching
 
-## 4\. Avoid Promptfoo Rate Limits & Leverage Cache
-
-Since promptfoo can make a lot of calls very quickly, you can use a loadbalanced config in Portkey with cache enabled. You can pass the config header in the same YAML.
-
-Here's a sample Config that you can save in the Portkey UI and get a respective config slug:
+Create a config with load balancing and caching for high-volume evals:
 
 ```json
 {
-	"cache": { "mode": "simple" },
-	"strategy": { "mode": "loadbalance" },
-	"targets": [
-		{ "provider":"@ACCOUNT_ONE" },
-		{ "provider":"@ACCOUNT_TWO" },
-		{ "provider":"@ACCOUNT_THREE" }
-	]
+  "cache": { "mode": "simple" },
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "provider": "@openai-key-1" },
+    { "provider": "@openai-key-2" },
+    { "provider": "@openai-key-3" }
+  ]
 }
 ```
 
-And then we can just add the saved Config's slug in the YAML:
+Reference the config in your YAML:
 
 ```yaml
 providers:
-  id: portkey:claude-3-opus20240229
+  id: portkey:claude-3-opus-20240229
   config:
-    portkeyConfig: PORTKEY_CONFIG_SLUG
+    portkeyConfig: pc-your-config-id
 ```
 
 ---
 
-## <Icon icon="road-barrier"/> \[Roadmap\] View the Results of Promptfoo Evals in Portkey
+## Roadmap
 
-We’re building support to view the eval results of promptfoo in Portkey that will let you view the results of promptfoo evals within the feedback section of Portkey.
+🚧 **Coming soon:** View Promptfoo eval results in Portkey's feedback section.
+
+## Next Steps
+
+<CardGroup cols={2}>
+<Card title="Model Catalog" icon="list" href="/product/model-catalog">
+Set up providers
+</Card>
+<Card title="Prompt Management" icon="message" href="/product/prompt-library">
+Version and manage prompts
+</Card>
+</CardGroup>
