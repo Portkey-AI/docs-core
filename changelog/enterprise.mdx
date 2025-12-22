@@ -1,12 +1,166 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [1.17.3]"
+sidebarTitle: "Enterprise Gateway [1.17.10]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="1.17.10" description="2025-12-18">
+
+## v1.17.10
+---
+
+### OpenAI-Compatible Response IDs
+- **Google and Vertex AI**: Response IDs are now generated in OpenAI-compatible format for improved compatibility with OpenAI SDKs and tooling
+  - Chat completion IDs: `chatcmpl-{random}` (previously `portkey-{uuid}`)
+  - Tool call IDs: `call_{random}` (previously `portkey-{uuid}`)
+- This change improves interoperability when using OpenAI-compatible clients with Google/Vertex AI models
+
+### Pricing Updates
+- Added pricing configurations for new models across multiple providers
+
+</Update>
+
+<Update label="1.17.9" description="2025-12-18">
+
+## v1.17.9
+---
+
+### Provider Updates
+- **Azure OpenAI**: Added support for the `/v1/images/edits` endpoint for image editing
+- **Gemini/Vertex AI**: Added support for the `image_config` parameter to control image generation settings. Users can now specify `aspect_ratio` and `image_size` for Gemini's image generation capabilities.
+- **Gemini/Vertex AI**: Fixed web search cost attribution for grounding calls to correctly detect grounding chunks in responses when strict openai compliance flag is not set or set to true
+
+</Update>
+
+<Update label="1.17.8" description="2025-12-18">
+
+## v1.17.8
+---
+
+### Pricing Updates
+- **OpenAI Web Search**: Updated web search cost calculation to align with OpenAI's latest pricing model, consolidating context-based pricing (`web_search_low_context`, `web_search_medium_context`, `web_search_high_context`) into a single `web_search` metric
+
+### Fixes and Improvements
+- **F5 Guardrails**: Fixed API endpoint and improved blocking logic. Requests are now blocked when the scan outcome is `blocked` or `flagged`, and redaction is only applied when explicitly enabled.
+- **Streaming**: Fixed stream response log handling to correctly include annotations in responses
+
+</Update>
+
+<Update label="1.17.7" description="2025-12-12">
+
+## v1.17.7
+---
+
+### New Guardrail: Blocked Tools
+- Added a new guardrail plugin to control which AI tools can be used in requests. Block specific tool types or function names using blocklists or allowlists.
+- Supports blocking tool types: `function`, `web_search_preview`, `web_search`, `file_search`, `code_interpreter`, `computer_use`, `mcp`
+- Supports blocking specific function names by name
+- Can use either blocklist (block specific tools) or allowlist (only allow specific tools) approach
+
+### Redis Cluster Discovery
+- Added support for dynamic Redis cluster endpoint discovery via an HTTPS URL
+- Added support for static Redis cluster endpoints configuration
+- New environment variables:
+    - `REDIS_CLUSTER_ENDPOINTS`: Comma-separated list of static Redis cluster endpoints (e.g., `10.0.1.1:6379,10.0.1.2:6379`)
+    - `REDIS_CLUSTER_DISCOVERY_URL`: HTTPS URL that returns comma-separated Redis cluster endpoints
+    - `REDIS_CLUSTER_DISCOVERY_AUTH`: Optional authorization header for the discovery endpoint
+    - `REDIS_CLUSTER_DISCOVERY_REFRESH_INTERVAL`: Cache refresh interval in milliseconds (default: 5 minutes)
+- Supports IPv4, IPv6, and hostname formats for endpoints
+
+### Semantic Cache Improvements
+- Added configurable embedding dimensions for semantic cache
+- New environment variable: `SEMANTIC_CACHE_EMBEDDING_DIMENSIONS` to set custom embedding dimensions (default: 1536)
+
+### Provider Updates
+- **Anthropic**: Fixed `anthropic-beta` header to be allowed on all routes for the Anthropic provider
+- **Gemini/Vertex AI**: Fixed response handling to correctly concatenate multiple text parts in responses
+
+### Fixes and Improvements
+- Excluded batch and files GET requests from budget exhausted checks
+- Updated F5 guardrails to use `prompts` endpoint instead of `scan`
+- Moved the rate limiter implementation to fixed window rate limiter to avoid continuous token refills.
+
+</Update>
+
+<Update label="1.17.6" description="2025-12-09">
+
+## v1.17.6
+---
+
+### New Provider
+- **Oracle Cloud Infrastructure (OCI)**: Added support for Oracle OCI Generative AI service with request signing authentication. Supports Cohere and Meta Llama models via Oracle's inference API.
+    - [Documentation](/integrations/llms/oracle)
+
+### New Features
+- **Sticky Load Balancing**: Added sticky session support for load balancing configurations. Ensures consistent routing based on configurable hash fields (e.g., user ID, session ID) with configurable TTL.
+    - [Documentation](/product/ai-gateway/load-balancing#sticky-load-balancing)
+
+### Provider Updates
+- **Gemini/Vertex AI**: Added `reasoning_effort` parameter support for controlling thinking behavior. Maps OpenAI's `reasoning_effort` (`minimal`/`low`/`medium`/`high`) to Gemini's `thinkingLevel` (`low`/`high`).
+    - [Documentation](/integrations/llms/gemini#using-reasoning_effort-parameter)
+- **Azure OpenAI**: Added support for v1 preview API version for Azure OpenAI endpoints
+- **Azure OpenAI**: Added pricing support for batch `/responses` endpoint with deployment
+
+### Fixes and Improvements
+- Fixed Vertex AI model preference handling for batch pricing requests
+- Fixed Realtime API to update request body with model from query parameters
+- Fixed OpenTelemetry status code conversion to HTTP status codes
+- Fixed embedding providers to accept array format for input
+- Removed unnecessary text check condition for afterRequestHook in HooksManager
+- Updated Dockerfile npm version to 11.6.4 to fix glob vulnerability
+
+</Update>
+
+<Update label="1.17.5" description="2025-12-01">
+
+## v1.17.5
+---
+
+### Security
+- **SSRF Protection**: Added request validation to prevent Server-Side Request Forgery (SSRF) attacks via configuration URLs
+
+### OpenTelemetry Improvements
+- **W3C Traceparent Fix**: Fixed `traceparent` header parsing to correctly set `parent_span_id` from the incoming span and generate a new `span_id` for the gateway's span. This improves trace linking in distributed tracing tools.
+- **Span Kind**: Added `span.kind = SERVER` attribute to exported spans
+- **Span Name**: Automatically sets `span_name` from HTTP method and path (e.g., `POST /v1/chat/completions`) when `traceparent` is provided
+- [Documentation](/product/observability/traces#w3c-trace-context-support)
+
+### Semantic Cache Improvements
+- Added configurable similarity metric support for Milvus and Pinecone vector stores (COSINE, L2, IP)
+- Fixed semantic cache logic for Milvus to use correct similarity threshold comparisons
+
+### Realtime API Improvements
+- Added support for provider authentication via query parameters (e.g., `model=@provider/model`)
+- Fixed model parameter sanitization in Realtime API handler
+
+### Fixes and Improvements
+- Fixed OpenAI responses stream parsing logic for `createModelResponse` function
+- Updated Jest version to address security vulnerabilities
+
+</Update>
+
+<Update label="1.17.4" description="2025-11-27">
+
+## v1.17.4
+---
+
+### Provider Updates
+- **Azure AI Foundry**: Added support for Anthropic Claude models via Azure AI Foundry, including:
+    - Native `/messages` endpoint support for Anthropic-native features (extended thinking, prompt caching, native streaming)
+    - Support for Claude 4.5 models: `claude-opus-4-5-20251101`, `claude-sonnet-4-5-20250929`, `claude-haiku-4-5-20251001`
+    - [Documentation](/integrations/llms/azure-foundry#using-anthropic-models-on-azure-ai-foundry)
+
+### Fixes and Improvements
+- Fixed cross-region support for Bedrock and Sagemaker - user-specified region now takes priority over credentials region
+- Fixed Azure OpenAI to use deployment name for responses API
+- Fixed TLS configuration in agent store to use 'connect' instead of 'tls'
+- Improved Redis URL handling with fallback to `redis:6379` for empty URLs
+
+</Update>
 
 <Update label="1.17.3" description="2025-11-24">
 

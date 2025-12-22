@@ -1,190 +1,168 @@
 ---
 title: "Instructor"
-description: "With Portkey, you can confidently take your Instructor pipelines to production and get complete observability over all of your calls + make them reliable - all with a 2 LOC change!"
+description: "Add observability and reliability to your Instructor structured output pipelines."
 ---
 
-**Instructor** is a framework for extracting structured outputs from LLMs, available in [Python](https://python.useinstructor.com/) & [JS](https://js.useinstructor.com/).
+[Instructor](https://python.useinstructor.com/) extracts structured outputs from LLMs, available in Python & JS.
 
-## Integrating Portkey with Instructor
+## Quick Start
 
-<Tabs>
-  <Tab title="Instructor Python - OpenAI">
-```python
+<CodeGroup>
+
+```python Python
 import instructor
 from pydantic import BaseModel
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
-portkey = OpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="@OPENAI_PROVIDER",
-        api_key="PORTKEY_API_KEY"
-    )
-)
+client = instructor.from_openai(OpenAI(
+    base_url="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY",
+    default_headers={"x-portkey-provider": "@openai-prod"}
+))
 
 class User(BaseModel):
     name: str
     age: int
 
-client = instructor.from_openai(portkey)
-
-user_info = client.chat.completions.create(
-    model="gpt-4-turbo",
-    max_tokens=1024,
+user = client.chat.completions.create(
+    model="gpt-4o",
     response_model=User,
-    messages=[{"role": "user", "content": "John Doe is 30 years old."}],
+    messages=[{"role": "user", "content": "John Doe is 30 years old."}]
 )
 
-print(user_info.name)
-print(user_info.age)
+print(user.name, user.age)  # John Doe 30
 ```
 
-  </Tab>
-  <Tab title="Instructor JS - OpenAI">
-
-```python
+```javascript JavaScript
 import Instructor from "@instructor-ai/instructor";
 import OpenAI from "openai";
 import { z } from "zod";
-import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai";
-
-const portkey = new OpenAI({
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    apiKey: "PORTKEY_API_KEY",
-    provider:"@OPENAI_API_KEY",
-  }),
-});
 
 const client = Instructor({
-  client: portkey,
-  mode: "TOOLS",
+    client: new OpenAI({
+        baseURL: "https://api.portkey.ai/v1",
+        apiKey: "PORTKEY_API_KEY",
+        defaultHeaders: { "x-portkey-provider": "@openai-prod" }
+    }),
+    mode: "TOOLS"
 });
 
 const UserSchema = z.object({
-  age: z.number().describe("The age of the user"),
-  name: z.string(),
+    name: z.string(),
+    age: z.number()
 });
 
 const user = await client.chat.completions.create({
-  messages: [{ role: "user", content: "Jason Liu is 30 years old" }],
-  model: "claude-3-sonnet-20240229",
-  //  model: "gpt-4",
-  max_tokens: 512,
-  response_model: {
-    schema: UserSchema,
-    name: "User",
-  },
+    model: "gpt-4o",
+    response_model: { schema: UserSchema, name: "User" },
+    messages: [{ role: "user", content: "John Doe is 30 years old." }]
 });
 
-console.log(user);
-```
-  </Tab>
-</Tabs>
-
-## Caching Your Requests
-
-Let's now bring down the cost of running your Instructor pipeline with Portkey caching. You can just create a Config object where you define your cache setting:
-
-```py
-{
-  "cache": {
-    "mode": "simple"
-  }
-}
+console.log(user);  // { name: "John Doe", age: 30 }
 ```
 
-You can write it raw, or use Portkey's Config builder and get a corresponding `config id`. Then, just pass it while instantiating your OpenAI client:
+</CodeGroup>
 
+## Setup
 
-<Tabs>
-  <Tab title="Instructor Python - OpenAI">
-```python
-import instructor
-from pydantic import BaseModel
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+<Steps>
+<Step title="Add Provider">
+Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **Add Provider** → Select your provider → Enter credentials.
+</Step>
 
-cache_config = {
-  "cache": {
-    "mode": "simple"
-  }
-}
+<Step title="Get Portkey API Key">
+Create your API key at [app.portkey.ai/api-keys](https://app.portkey.ai/api-keys).
+</Step>
+</Steps>
 
-portkey = OpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
+## Switch Providers
+
+Change the provider header to use different LLMs:
+
+<CodeGroup>
+
+```python Anthropic
+client = instructor.from_openai(OpenAI(
+    base_url="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY",
+    default_headers={"x-portkey-provider": "@anthropic-prod"}
+))
+
+user = client.chat.completions.create(
+    model="claude-sonnet-4-20250514",
+    response_model=User,
+    messages=[{"role": "user", "content": "John Doe is 30 years old."}]
+)
+```
+
+```python Google
+client = instructor.from_openai(OpenAI(
+    base_url="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY",
+    default_headers={"x-portkey-provider": "@google-prod"}
+))
+
+user = client.chat.completions.create(
+    model="gemini-2.0-flash",
+    response_model=User,
+    messages=[{"role": "user", "content": "John Doe is 30 years old."}]
+)
+```
+
+</CodeGroup>
+
+## Add Caching
+
+Reduce costs with response caching:
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import createHeaders
+
+cache_config = {"cache": {"mode": "simple"}}
+
+client = instructor.from_openai(OpenAI(
+    base_url="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY",
     default_headers=createHeaders(
-        provider="@OPENAI_PROVIDER",
-        api_key="PORTKEY_API_KEY",
-        config=cache_config # Or pass your Config ID saved from Portkey app
+        provider="@openai-prod",
+        config=cache_config  # Or use config ID from Portkey app
     )
-)
-
-class User(BaseModel):
-    name: str
-    age: int
-
-client = instructor.from_openai(portkey)
-
-user_info = client.chat.completions.create(
-    model="gpt-4-turbo",
-    max_tokens=1024,
-    response_model=User,
-    messages=[{"role": "user", "content": "John Doe is 30 years old."}],
-)
-
-print(user_info.name)
-print(user_info.age)
+))
 ```
 
-  </Tab>
-  <Tab title="Instructor JS - OpenAI">
-```python
-import Instructor from "@instructor-ai/instructor";
-import OpenAI from "openai";
-import { z } from "zod";
-import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai";
-
-const cache_config = {
-  "cache": {
-    "mode": "simple"
-  }
-}
-
-const portkey = new OpenAI({
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    apiKey: "PORTKEY_API_KEY",
-    provider:"@OPENAI_API_KEY",
-    config: cache_config // Or pass your Config ID saved from Portkey app
-  }),
-});
+```javascript JavaScript
+const cacheConfig = { cache: { mode: "simple" } };
 
 const client = Instructor({
-  client: portkey,
-  mode: "TOOLS",
+    client: new OpenAI({
+        baseURL: "https://api.portkey.ai/v1",
+        apiKey: "PORTKEY_API_KEY",
+        defaultHeaders: {
+            "x-portkey-provider": "@openai-prod",
+            "x-portkey-config": JSON.stringify(cacheConfig)
+        }
+    }),
+    mode: "TOOLS"
 });
-
-const UserSchema = z.object({
-  age: z.number().describe("The age of the user"),
-  name: z.string(),
-});
-
-const user = await client.chat.completions.create({
-  messages: [{ role: "user", content: "Jason Liu is 30 years old" }],
-  model: "claude-3-sonnet-20240229",
-  //  model: "gpt-4",
-  max_tokens: 512,
-  response_model: {
-    schema: UserSchema,
-    name: "User",
-  },
-});
-
-console.log(user);
 ```
-  </Tab>
-</Tabs>
 
-Similarly, you can add [Fallback](/product/ai-gateway/fallbacks), [Loadbalancing](/product/ai-gateway/load-balancing), [Timeout](/product/ai-gateway/request-timeouts), or [Retry](/product/ai-gateway/automatic-retries) settings to your Configs and make your Instructor requests robust & reliable.
+</CodeGroup>
+
+## Advanced Features
+
+Add [fallbacks](/product/ai-gateway/fallbacks), [load balancing](/product/ai-gateway/load-balancing), [timeouts](/product/ai-gateway/request-timeouts), or [retries](/product/ai-gateway/automatic-retries) via [Portkey Configs](/product/ai-gateway/configs).
+
+<CardGroup cols={2}>
+  <Card title="Configs Guide" icon="gear" href="/product/ai-gateway/configs">
+    Set up routing, caching, and reliability
+  </Card>
+  <Card title="Model Catalog" icon="list" href="/product/model-catalog">
+    Manage providers and credentials
+  </Card>
+</CardGroup>
+
+import AdvancedFeatures from '/snippets/portkey-advanced-features.mdx';
+
+<AdvancedFeatures />
