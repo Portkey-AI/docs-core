@@ -1,32 +1,34 @@
 ---
-title: 'Circuit Breaker'
-description: 'Configure per-strategy circuit protection and failure handling'
+title: "Circuit Breaker"
+description: Automatically stop routing to unhealthy targets until they recover.
 ---
 
 <Info>
-This feature is available on all Portkey [plans](https://portkey.ai/pricing).
+Available on all Portkey [plans](https://portkey.ai/pricing).
 </Info>
 
-## Circuit Breaker Config Schema
+Circuit breakers prevent cascading failures by temporarily blocking requests to targets that are failing.
 
-Each `strategy` in a config may define a `cb_config` with the following fields:
+## Config Schema
 
-- **failure_threshold**: Number of failures after which the circuit opens.
-- **failure_threshold_percentage** *(optional)*: Percentage failure rate to trip the circuit.
-- **cooldown_interval**: Time (in milliseconds) to wait before allowing retries. A minimum of 30 seconds is enforced.
-- **failure_status_codes** *(optional)*: Specific HTTP status codes considered as failures. If not provided, all status codes >500 are considered as failures.
-- **minimum_requests** *(optional)*: Minimum number of requests required before failure rate is evaluated.
+| Field | Description |
+|-------|-------------|
+| `failure_threshold` | Number of failures to open circuit |
+| `failure_threshold_percentage` | Percentage failure rate to trip circuit *(optional)* |
+| `cooldown_interval` | Milliseconds to wait before retrying (min: 30s) |
+| `failure_status_codes` | HTTP codes considered failures *(optional, default: >500)* |
+| `minimum_requests` | Requests required before evaluating failure rate *(optional)* |
 
 <Info>
-- Strategies can inherit `cb_config` from a parent if not set at their level.
-- Targets inherit `cb_config` from their parent strategy.
+- Strategies inherit `cb_config` from parent if not set
+- Targets inherit from their parent strategy
 </Info>
 
 <Warning>
-Strategies using the `conditional` mode are **not considered** in circuit breaker logic. 
+`conditional` mode strategies are **not** evaluated by circuit breaker.
 </Warning>
 
-## Example Config
+## Example
 
 ```json
 {
@@ -36,55 +38,45 @@ Strategies using the `conditional` mode are **not considered** in circuit breake
       "failure_threshold_percentage": 20,
       "minimum_requests": 10,
       "cooldown_interval": 60000,
-      "failure_status_codes": [
-        401,
-        429,
-        500
-      ]
+      "failure_status_codes": [401, 429, 500]
     }
   },
   "targets": [
-    {
-      "virtual_key": "virtual-key-1"
-    },
-    {
-      "virtual_key": "virtual-key-2"
-    }
+    { "override_params": { "model": "@openai-prod/gpt-4o" } },
+    { "override_params": { "model": "@anthropic-prod/claude-3-5-sonnet-20241022" } }
   ]
 }
 ```
 
-## Circuit State Evaluation
+<Info>
+The `@provider-slug/model-name` format automatically routes to the correct provider. Set up providers in [Model Catalog](https://app.portkey.ai/model-catalog).
+</Info>
 
-Circuit breaker logic is evaluated per strategy path. It tracks:
+## How It Works
 
-- Number of failures and successes.
-- The time of the first failure.
-- Whether the total requests meet the `minimum_requests` threshold and calculates failure rate as percentage
+Circuit breaker tracks per strategy path:
+- Failure and success counts
+- Time of first failure
+- Failure rate (when `minimum_requests` threshold met)
 
-The circuit is **OPEN**(unhealthy) if:
-- The failure count exceeds the `failure_threshold`, or
-- The failure rate exceeds `failure_threshold_percentage`.
+**Circuit opens (OPEN)** when:
+- Failure count exceeds `failure_threshold`, or
+- Failure rate exceeds `failure_threshold_percentage`
 
-Once **OPEN**, requests to the affected targets are blocked until the `cooldown_interval` has passed.
-
-When the cooldown period ends, the circuit is **CLOSED** automatically, and failure counters are reset.
+**Circuit closes (CLOSED)** automatically after `cooldown_interval` passes.
 
 ## Runtime Behavior
 
-- At each strategy level, the circuit breaker evaluates the status of all sibling targets.
-- Unhealthy targets (circuit OPEN) are removed from the target list before strategy execution.
-- If no healthy targets remain, circuit breaker is bypassed and all targets are used for routing.
-
 ```mermaid
 flowchart TD
-    A[User sends request] --> B[Gateway selects a strategy]
-    B --> C[Strategy has multiple targets]
-    C --> D{All targets OPEN?}
-    D -->|Yes| E[Ignore circuit breakers]
-    E --> F[Use all targets for routing]
-    D -->|No| G["Use only CLOSED (healthy) targets"]
-    F --> H[Route to best target]
-    G --> H
-    H --> I[Process target]
+    A[Request arrives] --> B[Evaluate strategy targets]
+    B --> C{All targets OPEN?}
+    C -->|Yes| D[Bypass circuit breaker]
+    D --> E[Use all targets]
+    C -->|No| F[Use healthy targets only]
+    E --> G[Route request]
+    F --> G
 ```
+
+- Unhealthy targets removed from routing
+- If all targets are OPEN, circuit breaker is bypassed

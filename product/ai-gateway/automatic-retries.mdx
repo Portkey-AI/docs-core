@@ -1,160 +1,103 @@
 ---
 title: "Automatic Retries"
-description: "LLM APIs often have inexplicable failures. With Portkey, you can rescue a substantial number of your requests with our in-built automatic retries feature. "
+description: Automatically retry failed LLM requests with exponential backoff.
 ---
 
 <Info>
-  This feature is available on all Portkey [plans](https://portkey.ai/pricing).
+Available on all Portkey [plans](https://portkey.ai/pricing).
 </Info>
 
-* Automatic retries are triggered **up to 5 times**
-* Retries can also be triggered only on **specific error codes**
-* Each subsequent retry attempt follows **exponential backoff strategy** to prevent network overload
-* Optionally respects provider's `Retry-After` headers for rate-limited requests
+- Up to **5 retry attempts**
+- Trigger on **specific error codes**
+- **Exponential backoff** to prevent overload
+- Optionally respect provider's `Retry-After` headers
 
-## Enabling Retries
+## Examples
 
-To enable retry, just add the `retry` param to your [config object](/api-reference/config-object).
+<CodeGroup>
 
-### Retry with 5 attempts
-
-```JSON
+```json Basic (5 attempts)
 {
-    "retry": {
-        "attempts": 5
-    },
-    "provider":"@virtual-key-xxx"
+  "retry": { "attempts": 5 },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
 }
 ```
 
-### Retry only on specific error codes
-
-By default, Portkey triggers retries on the following error codes: **\[429, 500, 502, 503, 504\]**
-
-You can change this behaviour by setting the optional `on_status_codes` param in your retry config and manually inputting the error codes on which retry will be triggered.
-
-
-```JSON
+```json Specific Error Codes
 {
-  "retry": {
-    "attempts": 3,
-    "on_status_codes": [ 408, 429, 401 ]
-  },
-  "provider":"@virtual-key-xxx"
+  "retry": { "attempts": 3, "on_status_codes": [429, 503] },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
 }
 ```
+
+```json Respect Retry-After Headers
+{
+  "retry": { "attempts": 3, "on_status_codes": [429], "use_retry_after_headers": true },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
+```
+
+</CodeGroup>
 
 <Info>
-  If the `on_status_codes` param is present, retries will be triggered **only** on the error codes specified in that Config and not on Portkey's default error codes for retries (i.e. \[429, 500, 502, 503, 504\])
+The `@provider-slug/model-name` format automatically routes to the correct provider. Set up providers in [Model Catalog](https://app.portkey.ai/model-catalog).
 </Info>
 
-### Respecting provider's retry headers
+## Retry on Specific Error Codes
 
-Portkey can respect the provider's `retry-after-ms`, `x-ms-retry-after-ms` and `retry-after`response headers when encountering rate limits. This enables more intelligent retry timing based on the provider's response headers rather than using the default exponential backoff strategy.
+Default retry codes: **[429, 500, 502, 503, 504]**
 
-To enable this feature, add the `use_retry_after_headers` parameter to your retry config. By default this behaviour is disabled, and `use_retry_after_headers` is set to `false`.
+Override with `on_status_codes`:
 
-```JSON
+```json
 {
-  "retry": {
-    "attempts": 3,
-    "on_status_codes": [ 429 ],
-    "use_retry_after_headers": true
-  },
-  "provider":"@virtual-key-xxx"
+  "retry": { "attempts": 3, "on_status_codes": [408, 429, 500] },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
 }
 ```
-
-<Info>
-When `use_retry_after_headers` is set to `true` and the provider includes `Retry-After` or `Retry-After-ms` headers in their response, Portkey will use these values to determine the wait time before the next retry attempt, overriding the exponential backoff strategy.
-
-If the provider doesn't include these headers in the response, Portkey will fall back to the standard exponential backoff strategy.
-
-The cumulative retry wait time for a single request is capped at 60 seconds. For example, if the first retry has a wait time of 20 seconds, and the second retry response includes a Retry-After value of 50 seconds, the request will fail since the total wait time (20+50=70) exceeds the 60-second cap. Similarly, if any single Retry-After value exceeds 60 seconds, the request will fail immediately.
-
-</Info>
-
-### Exponential backoff strategy
-
-When not using provider retry headers (or when they're not available), Portkey triggers retries following this exponential backoff strategy:
-
-| Attempt           | Time out between requests |
-| ----------------- | ------------------------- |
-| Initial Call      | Immediately               |
-| Retry 1st attempt | 1 second                  |
-| Retry 2nd attempt | 2 seconds                 |
-| Retry 3rd attempt | 4 seconds                 |
-| Retry 4th attempt | 8 seconds                 |
-| Retry 5th attempt | 16 seconds                |
-
-
-
-
-<Info>
-  This feature is available on all Portkey [plans](https://portkey.ai/pricing).
-</Info>
-
-* Automatic retries are triggered **up to 5 times**
-* Retries can also be triggered only on **specific error codes**
-* And each subsequent retry attempt follows **exponential backoff strategy** to prevent network overload
-
-## Enabling Retries
-
-To enable retry, just add the `retry` param to your [config object](/api-reference/config-object).
-
-### Retry with 5 attempts
-
-```JSON
-{
-    "retry": {
-        "attempts": 5
-    },
-    "provider":"@virtual-key-xxx"
-}
-```
-
-### Retry only on specific error codes
-
-By default, Portkey triggers retries on the following error codes: **\[429, 500, 502, 503, 504\]**
-
-You can change this behaviour by setting the optional `on_status_codes` param in your retry config and manually inputting the error codes on which rety will be triggered.
-
-
-```JSON
-{
-  "retry": {
-    "attempts": 3,
-    "on_status_codes": [ 408, 429, 401 ]
-  },
-  "provider":"@virtual-key-xxx"
-}
-```
-
-<Info>
-  If the `on_status_codes` param is present, retries will be triggered **only** on the error codes specified in that Config and not on Portkey's default error codes for retries (i.e. \[429, 500, 502, 503, 504\])
-</Info>
-
-### Exponential backoff strategy
-
-Here's how Portkey triggers retries following exponential backoff:
-
-| Attempt           | Time out between requests |
-| ----------------- | ------------------------- |
-| Initial Call      | Immediately               |
-| Retry 1st attempt | 1 second                  |
-| Retry 2nd attempt | 2 seconds                 |
-| Retry 3rd attempt | 4 seconds                 |
-| Retry 4th attempt | 8 seconds                 |
-| Retry 5th attempt | 16 seconds                |
-
-### Understanding the Retry Attempt Header
-
-In the response from Portkey, you can find the `x-portkey-retry-attempt-count` header which provides information about retry attempts:
-
-- If the value is `-1`: This means that Portkey exhausted all the retry attempts and the request was unsuccessful
-- If the value is `0`: This means that there were no retries configured
-- If the value is `>0`: This means that Portkey attempted retries and this is the exact number at which the request was successful
 
 <Note>
-Currently, Portkey does not log all the retry attempts individually in the logs dashboard. Instead, the response times from all retry attempts are summed up in the single log entry.
+When `on_status_codes` is set, retries trigger **only** on those codes—not the defaults.
+</Note>
+
+## Respect Provider Retry Headers
+
+Enable `use_retry_after_headers` to use the provider's `retry-after-ms`, `x-ms-retry-after-ms`, or `retry-after` headers instead of exponential backoff.
+
+```json
+{
+  "retry": { "attempts": 3, "on_status_codes": [429], "use_retry_after_headers": true },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
+```
+
+<Info>
+- Falls back to exponential backoff if headers aren't present
+- Cumulative retry wait capped at **60 seconds**
+- Single `Retry-After` value > 60s fails immediately
+</Info>
+
+## Exponential Backoff
+
+| Attempt | Wait Time |
+|---------|-----------|
+| Initial | Immediate |
+| 1st retry | 1 second |
+| 2nd retry | 2 seconds |
+| 3rd retry | 4 seconds |
+| 4th retry | 8 seconds |
+| 5th retry | 16 seconds |
+
+## Retry Attempt Header
+
+Check `x-portkey-retry-attempt-count` in responses:
+
+| Value | Meaning |
+|-------|---------|
+| `-1` | All retries exhausted, request failed |
+| `0` | No retries configured |
+| `>0` | Successful on this retry attempt |
+
+<Note>
+Retry attempts aren't logged individually. Response times are summed in a single log entry.
 </Note>
