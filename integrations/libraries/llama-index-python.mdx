@@ -1,895 +1,442 @@
 ---
 title: "LlamaIndex (Python)"
-description: The **Portkey x LlamaIndex** integration brings advanced **AI gateway** capabilities, full-stack **observability**, and **prompt management** to apps built on LlamaIndex.
+description: "Add Portkey's enterprise features to any LlamaIndex app—observability, reliability, caching, and cost control."
 ---
 
+LlamaIndex provides a framework for building LLM applications with your data. Add Portkey to get production-grade features: full observability, automatic fallbacks, semantic caching, and cost controls—all without changing your LlamaIndex code.
 
+## Quick Start
 
-In a nutshell, Portkey extends the familiar OpenAI schema to make Llamaindex work with **1600+ LLMs** without the need for importing different classes for each provider or having to configure your code separately. Portkey makes your Llamaindex apps _reliable_, _fast_, and _cost-efficient_.
+Add Portkey to any LlamaIndex app with 3 parameters:
 
-## Getting Started
-
-### 1\. Install the Portkey SDK
-
-```sh
-pip install -U portkey-ai
-```
-
-### 2\. Import the necessary classes and functions
-
-Import the `OpenAI` class in Llamaindex as you normally would, along with Portkey's helper functions `createHeaders` and `PORTKEY_GATEWAY_URL`.
-
-```py
+```python
 from llama_index.llms.openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+llm = OpenAI(
+    model="@openai-prod/gpt-4o",        # Provider slug from Model Catalog
+    api_base="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY"           # Your Portkey API key
+)
+
+response = llm.complete("Tell me a joke")
+print(response.text)
 ```
 
-### 3\. Configure model details
+<Frame caption="All requests now appear in Portkey logs">
+    <img src="/images/libraries/langchain-logs.gif"/>
+</Frame>
 
-Configure your model details using Portkey's [**Config object schema**](/api-reference/config-object). This is where you can define the provider and model name, model parameters, set up fallbacks, retries, and more.
+That's it! You now get:
+- ✅ Full observability (costs, latency, logs)
+- ✅ Dynamic model selection per request
+- ✅ Automatic fallbacks and retries (via configs)
+- ✅ Budget controls per team/project
 
-```py
-config = {
-    "provider":"openai",
-    "api_key":"YOUR_OPENAI_API_KEY",
-    "override_params": {
-        "model":"gpt-4o",
-        "max_tokens":64
-    }
-}
+## Why Add Portkey to LlamaIndex?
+
+LlamaIndex handles data indexing and querying. Portkey adds production features:
+
+<CardGroup cols={2}>
+  <Card title="Enterprise Observability" icon="chart-line">
+    Every request logged with costs, latency, tokens. Team-level analytics and debugging.
+  </Card>
+  <Card title="Dynamic Model Selection" icon="shuffle">
+    Switch models per request. Route simple queries to cheap models, complex to advanced—automatically tracked.
+  </Card>
+  <Card title="Production Reliability" icon="shield-check">
+    Automatic fallbacks, smart retries, load balancing—configured once, works everywhere.
+  </Card>
+  <Card title="Cost & Access Control" icon="dollar-sign">
+    Budget limits per team/project. Rate limiting. Centralized credential management.
+  </Card>
+</CardGroup>
+
+## Setup
+
+### 1. Install Packages
+
+```bash
+pip install llama-index-llms-openai portkey-ai
 ```
 
-### 4\. Pass Config details to OpenAI client with necessary headers
+### 2. Add Provider in Model Catalog
 
-```py
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
-    )
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Select your provider (OpenAI, Anthropic, Google, etc.)
+3. Choose existing credentials or create new by entering your API keys
+4. Name your provider (e.g., `openai-prod`)
+
+Your provider slug will be **`@openai-prod`** (or whatever you named it).
+
+<Card title="Complete Model Catalog Guide →" href="/product/model-catalog">
+  Set up budgets, rate limits, and manage credentials
+</Card>
+
+### 3. Get Portkey API Key
+
+Create your Portkey API key at [app.portkey.ai/api-keys](https://app.portkey.ai/api-keys)
+
+### 4. Use in Your Code
+
+Replace your existing LLM initialization:
+
+```python
+# Before (direct to OpenAI)
+from llama_index.llms.openai import OpenAI
+
+llm = OpenAI(
+    model="gpt-4o",
+    api_key="OPENAI_API_KEY"
+)
+
+# After (via Portkey)
+llm = OpenAI(
+    model="@openai-prod/gpt-4o",
+    api_base="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY"
 )
 ```
 
-## Example: OpenAI
+**That's the only change needed!** All your existing LlamaIndex code (indexes, query engines, agents) works exactly the same.
 
-Here are basic integrations examples on using the `complete` and `chat` methods with `streaming` on & off.
+## Switching Between Providers
 
-<Tabs>
-  <Tab title="Chat + Streaming">
+Just change the model string—everything else stays the same:
+
+```python
+from llama_index.llms.openai import OpenAI
+
+# OpenAI
+llm = OpenAI(
+    model="@openai-prod/gpt-4o",
+    api_base="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY"
+)
+
+# Anthropic
+llm = OpenAI(
+    model="@anthropic-prod/claude-sonnet-4",
+    api_base="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY"
+)
+
+# Google Gemini
+llm = OpenAI(
+    model="@google-prod/gemini-2.0-flash",
+    api_base="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY"
+)
+```
+
+<Note>
+Portkey implements OpenAI-compatible APIs for all providers, so you always use `llama_index.llms.openai.OpenAI` regardless of which model you're calling.
+</Note>
+
+## Using with LlamaIndex Chat
+
+LlamaIndex's chat interface works seamlessly:
 
 ```python
 from llama_index.llms.openai import OpenAI
 from llama_index.core.llms import ChatMessage
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
-config = {
-    "provider":"openai",
-    "api_key":"YOUR_OPENAI_API_KEY",
-    "override_params": {
-        "model":"gpt-4o",
-        "max_tokens":64
-    }
-}
-
-#### You can also reference a saved Config ####
-#### config = "pc-anthropic-xx"
-
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
-    )
+llm = OpenAI(
+    model="@openai-prod/gpt-4o",
+    api_base="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY"
 )
 
 messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
+    ChatMessage(role="system", content="You are a helpful assistant"),
+    ChatMessage(role="user", content="What is the capital of France?")
 ]
 
-resp = portkey.chat(messages)
-print(resp)
-
-##### Streaming Mode #####
-
-resp = portkey.stream_chat(messages)
-
-for r in resp:
-    print(r.delta, end="")
+response = llm.chat(messages)
+print(response.message.content)
 ```
-> assistant: Arrr, matey! They call me Captain Barnacle Bill, the most colorful pirate to ever sail the seven seas! With a parrot on me shoulder and a treasure map in me hand, I'm always ready for adventure! What be yer name, landlubber?
 
-  </Tab>
-  <Tab title=" Complete + Streaming">
+## Works With All LlamaIndex Features
+
+✅ **Query Engines** - All query types supported  
+✅ **Chat Engines** - Conversational interfaces  
+✅ **Agents** - Full agent compatibility  
+✅ **Streaming** - Token-by-token streaming  
+✅ **RAG Pipelines** - Retrieval-augmented generation  
+✅ **Workflows** - Complex LLM workflows
+
+### Streaming
 
 ```python
 from llama_index.llms.openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
-config = {
-    "provider":"openai",
-    "api_key":"YOUR_OPENAI_API_KEY",
-    "override_params": {
-        "model":"gpt-4o",
-        "max_tokens":64
-    }
-}
-
-#### You can also reference a saved Config ####
-#### config = "pc-anthropic-xx"
-
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
-    )
+llm = OpenAI(
+    model="@openai-prod/gpt-4o",
+    api_base="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY"
 )
 
-resp=portkey.complete("Paul Graham is ")
-print(resp)
+# Stream completions
+for chunk in llm.stream_complete("Write a short story"):
+    print(chunk.delta, end="", flush=True)
 
-##### Streaming Mode #####
-
-resp=portkey.stream_complete("Paul Graham is ")
-for r in resp:
-    print(r.delta, end="")
+# Stream chat
+messages = [ChatMessage(role="user", content="Tell me a joke")]
+for chunk in llm.stream_chat(messages):
+    print(chunk.delta, end="", flush=True)
 ```
-> a computer scientist, entrepreneur, and venture capitalist. He is best known for co-founding the startup accelerator Y Combinator and for his work on programming languages and web development. Graham is also a prolific writer and has published essays on a wide range of topics, including startups, technology, and education.
-</Tab>
-<Tab title=" Async">
+
+### Async Support
 
 ```python
 import asyncio
 from llama_index.llms.openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-config = {
-    "provider":"openai",
-    "api_key":"YOUR_OPENAI_API_KEY",
-    "override_params": {
-        "model":"gpt-4o",
-        "max_tokens":64
-    }
-}
-
-#### You can also reference a saved Config ####
-#### config = "pc-anthropic-xx"
 
 async def main():
-    portkey = OpenAI(
-        api_base=PORTKEY_GATEWAY_URL,
-        api_key="xx" # Placeholder, no need to set
-        default_headers=createHeaders(
-            api_key="PORTKEY_API_KEY",
-            config=config
-        )
+    llm = OpenAI(
+        model="@openai-prod/gpt-4o",
+        api_base="https://api.portkey.ai/v1",
+        api_key="PORTKEY_API_KEY"
     )
+    
+    # Async completion
+    response = await llm.acomplete("What is 2+2?")
+    print(response.text)
 
-    resp = await portkey.acomplete("Paul Graham is ")
-    print(resp)
-
-    ##### Streaming Mode #####
-
-    resp = await portkey.astream_complete("Paul Graham is ")
-    async for delta in resp:
-        print(delta.delta, end="")
+    # Async streaming
+    async for chunk in await llm.astream_complete("Write a haiku"):
+        print(chunk.delta, end="", flush=True)
 
 asyncio.run(main())
 ```
-  </Tab>
-</Tabs>
 
-## Enabling Portkey Features
+### RAG with Query Engine
 
-By routing your LlamaIndex requests through Portkey, you get access to the following production-grade features:
-
-<CardGroup cols="1">
-  <Card title="Interoperability" href="/integrations/libraries/llama-index-python#id-1.-interoperability-calling-anthropic-gemini-mistral-and-more">
-    <p>Call various LLMs like Anthropic, Gemini, Mistral, Azure OpenAI, Google Vertex AI, and AWS Bedrock with minimal code changes.</p>
-  </Card>
-
-  <Card title="Caching" href="/integrations/libraries/llama-index-python#id-2.-caching">
-    <p>Speed up your requests and save money on LLM calls by storing past responses in the Portkey cache. Choose between Simple and Semantic cache modes.</p>
-  </Card>
-
-  <Card title="Reliability" href="/integrations/libraries/llama-index-python#id-3.-reliability">
-    <p>Set up fallbacks between different LLMs or providers, load balance your requests across multiple instances or API keys, set automatic retries, and request timeouts.</p>
-  </Card>
-
-  <Card title="Observability" href="/integrations/libraries/llama-index-python#id-4.-observability">
-    <p>Portkey automatically logs all the key details about your requests, including cost, tokens used, response time, request and response bodies, and more. Send custom metadata and trace IDs for better analytics and debugging.</p>
-  </Card>
-
-  <Card title="Prompt Management" href="/integrations/libraries/llama-index-python#id-5.-prompt-management">
-    <p>Use Portkey as a centralized hub to store, version, and experiment with prompts across multiple LLMs, and seamlessly retrieve them in your LlamaIndex app for easy integration.</p>
-  </Card>
-
-  <Card title="Continuous Improvement" href="/integrations/libraries/llama-index-python#id-6.-continuous-improvement">
-    <p>Improve your LlamaIndex app by capturing qualitative & quantitative user feedback on your requests.</p>
-  </Card>
-
-  <Card title="Security & Compliance" href="/integrations/libraries/llama-index-python#id-7.-security-and-compliance">
-    <p>Set budget limits on provider API keys and implement fine-grained user roles and permissions for both the app and the Portkey APIs.</p>
-  </Card>
-</CardGroup>
-
-
-Much of these features are driven by **Portkey's Config architecture**. On the Portkey app, we make it easy to help you _create_, _manage_, and _version_ your Configs so that you can reference them easily in Llamaindex.
-
-## Saving Configs in the Portkey App
-
-Head over to the Configs tab in Portkey app where you can save various provider Configs along with the reliability and caching features. Each Config has an associated slug that you can reference in your Llamaindex code.
-
-<Frame>
-    <img src="/images/libraries/libraries-3.avif"/>
-</Frame>
-## Overriding a Saved Config
-
-If you want to use a saved Config from the Portkey app in your LlamaIndex code but need to modify certain parts of it before making a request, you can easily achieve this using Portkey's Configs API. This approach allows you to leverage the convenience of saved Configs while still having the flexibility to adapt them to your specific needs.
-
-#### Here's an example of how you can fetch a saved Config using the Configs API and override the `model` parameter:
-
-```py Overriding Model in a Saved Config
+```python
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-import requests
-import os
 
-def create_config(config_slug,model):
-    url = f'https://api.portkey.ai/v1/configs/{config_slug}'
-    headers = {
-        'x-portkey-api-key': os.environ.get("PORTKEY_API_KEY"),
-        'content-type': 'application/json'
-    }
-    response = requests.get(url, headers=headers).json()
-    config = json.loads(response['config'])
-    config['override_params']['model']=model
-    return config
-
-config=create_config("pc-llamaindex-xx","gpt-4-turbo")
-
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key=os.environ.get("PORTKEY_API_KEY"),
-        config=config
-    )
+# Set up LLM with Portkey
+llm = OpenAI(
+    model="@openai-prod/gpt-4o",
+    api_base="https://api.portkey.ai/v1",
+    api_key="PORTKEY_API_KEY"
 )
 
-messages = [ChatMessage(role="user", content="1729")]
+# Load and index documents
+documents = SimpleDirectoryReader("data").load_data()
+index = VectorStoreIndex.from_documents(documents)
 
-resp = portkey.chat(messages)
-print(resp)
+# Query with Portkey-enabled LLM
+query_engine = index.as_query_engine(llm=llm)
+response = query_engine.query("What is the main topic?")
+print(response)
 ```
 
-In this example:
+## Advanced Features via Configs
 
-1. We define a helper function `get_customized_config` that takes a `config_slug` and a `model` as parameters.
-2. Inside the function, we make a GET request to the Portkey Configs API endpoint to fetch the saved Config using the provided `config_slug`.
-3. We extract the `config` object from the API response.
-4. We update the `model` parameter in the `override_params` section of the Config with the provided `custom_model`.
-5. Finally, we return the customized Config.
-
-We can then use this customized Config when initializing the OpenAI client from LlamaIndex, ensuring that our specific `model` override is applied to the saved Config.
-
-For more details on working with Configs in Portkey, refer to the [**Config documentation**.](/product/ai-gateway/configs)
-
----
-
-## 1\. Interoperability - Calling Anthropic, Gemini, Mistral, and more
-
-Now that we have the OpenAI code up and running, let's see how you can use Portkey to send the request across multiple LLMs - we'll show **Anthropic**, **Gemini**, and **Mistral**. For the full list of providers & LLMs supported, check out [**this doc**](/guides/integrations).
-
-Switching providers just requires **changing 3 lines of code:**
-
-1. Change the `provider name`
-2. Change the `API key`, and
-3. Change the `model name`
-
-
-<Tabs>
-  <Tab title="Anthropic">
+For production features like fallbacks, caching, and load balancing, use Portkey Configs:
 
 ```python
 from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
-config = {
-    "provider":"anthropic",
-    "api_key":"YOUR_ANTHROPIC_API_KEY",
-    "override_params": {
-        "model":"claude-3-opus-20240229",
-        "max_tokens":64
-    }
-}
-
-#### You can also reference a saved Config ####
-#### config = "pc-anthropic-xx"
-
-portkey = OpenAI(
+llm = OpenAI(
+    model="gpt-4o",  # Default model
     api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
+    api_key="PORTKEY_API_KEY",
     default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
+        config="pc_your_config_id"  # Created in Portkey dashboard
     )
 )
-
-messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
-]
-
-resp = portkey.chat(messages)
-print(resp)
 ```
 
-  </Tab>
-  <Tab title="Gemini">
+### Example: Fallbacks
 
 ```python
 from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 config = {
-    "provider":"google",
-    "api_key":"YOUR_GOOGLE_GEMINI_API_KEY",
-    "override_params": {
-        "model":"gemini-1.5-flash-latest",
-        "max_tokens":64
-    }
-}
-
-#### You can also reference a saved Config instead ####
-#### config = "pc-gemini-xx"
-
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
-    )
-)
-
-messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
-]
-
-resp = portkey.chat(messages)
-print(resp)
-```
-  </Tab>
-    <Tab title="Mistral">
-
-```python
-from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-config = {
-    "provider":"mistral-ai",
-    "api_key":"YOUR_MISTRAL_AI_API_KEY",
-    "override_params": {
-        "model":"codestral-latest",
-        "max_tokens":64
-    }
-}
-
-#### You can also reference a saved Config instead ####
-#### config = "pc-mistral-xx"
-
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
-    )
-)
-
-messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
-]
-
-resp = portkey.chat(messages)
-print(resp)
-```
-  </Tab>
-</Tabs>
-
-### Calling Azure, Google Vertex, AWS Bedrock
-
-<Info>
-We recommend saving your cloud details to [**Portkey vault**](/product/ai-gateway/virtual-keys) and getting a corresponding Virtual Key.
-
-[**Explore the Virtual Key documentation here**](/product/ai-gateway/virtual-keys)**.**
-</Info>
-
-
-
-<Tabs>
-  <Tab title="Azure OpenAI">
-
-```python
-from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-config = {
-    "provider:"@AZURE_OPENAI_PORTKEY_PROVIDER"
-}
-
-#### You can also reference a saved Config instead ####
-#### config = "pc-azure-xx"
-
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
-    )
-)
-
-messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
-]
-
-resp = portkey.chat(messages)
-print(resp)
-```
-
-  </Tab>
-  <Tab title="AWS Bedrock">
-
-```python
-from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-config = {
-    "provider:"@AWS_BEDROCK_PORTKEY_PROVIDER"
-}
-
-#### You can also reference a saved Config instead ####
-#### config = "pc-bedrock-xx"
-
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
-    )
-)
-
-messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
-]
-
-resp = portkey.chat(messages)
-print(resp)
-```
-  </Tab>
-    <Tab title="Google Vertex AI">
-    <Info>
-    Vertex AI uses OAuth2 to authenticate its requests, so you need to send the **access token** additionally along with the request - you can do this while by sending it as the `api_key` in the OpenAI client. Run `gcloud auth print-access-token` in your terminal to get your Vertex AI access token.
-
-    </Info>
-
-```python
-from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-config = {
-    "provider:"@VERTEX_AI_PORTKEY_PROVIDER"
-}
-
-#### You can also reference a saved Config instead ####
-#### config = "pc-vertex-xx"
-
-portkey = OpenAI(
-    api_key="YOUR_VERTEX_AI_ACCESS_TOKEN", # Get by running gcloud auth print-access-token in terminal
-    api_base=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
-    )
-)
-
-messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
-]
-
-resp = portkey.chat(messages)
-print(resp)
-```
-  </Tab>
-</Tabs>
-
-### Calling Local or Privately Hosted Models like Ollama
-
-Check out [**Portkey docs for Ollama**](/integrations/llms/ollama) and [**other privately hosted models**](/integrations/llms/byollm).
-
-```py Ollama
-from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-config = {
-    "provider":"ollama",
-    "custom_host":"https://7cc4-3-235-157-146.ngrok-free.app", # Your Ollama ngrok URL
-    "override_params": {
-        "model":"llama3"
-    }
-}
-
-#### You can also reference a saved Config instead ####
-#### config = "pc-azure-xx"
-
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config
-    )
-)
-
-messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
-]
-
-resp = portkey.chat(messages)
-print(resp)
-```
-
-[**Explore full list of the providers supported on Portkey here**](/guides/integrations).
-
----
-
-## 2\. Caching
-
-You can speed up your requests and save money on your LLM requests by storing past responses in the Portkey cache. There are 2 cache modes:
-
-* **Simple:** Matches requests verbatim. Perfect for repeated, identical prompts. Works on **all models** including image generation models.
-* **Semantic:** Matches responses for requests that are semantically similar. Ideal for denoising requests with extra prepositions, pronouns, etc.
-
-To enable Portkey cache, just add the `cache` params to your [config object](https://portkey.ai/docs/api-reference/config-object#cache-object-details).
-
-<Tabs>
-  <Tab title="Simple Cache Config">
-
-```python
-config = {
-    "provider":"mistral-ai",
-    "api_key":"YOUR_MISTRAL_AI_API_KEY",
-    "override_params": {
-        "model":"codestral-latest",
-        "max_tokens":64
-    },
-    "cache": {
-        "mode": "simple",
-        "max_age": 60000
-  }
-}
-```
-
-  </Tab>
-  <Tab title="Semantic Cache Config">
-
-```python
-config = {
-    "provider":"mistral-ai",
-    "api_key":"YOUR_MISTRAL_AI_API_KEY",
-    "override_params": {
-        "model":"codestral-latest",
-        "max_tokens":64
-    },
-    "cache": {
-        "mode": "semantic",
-        "max_age": 60000
-  }
-}
-```
-  </Tab>
-</Tabs>
-[**For more cache settings, check out the documentation here**](/product/ai-gateway/cache-simple-and-semantic)**.**
-
----
-
-## 3\. Reliability
-
-Set up fallbacks between different LLMs or providers, load balance your requests across multiple instances or API keys, set automatic retries, or set request timeouts - all set through **Configs**.
-
-
-<Tabs>
-  <Tab title="Fallback from OpenAI to Anthropic">
-
-```python
-config = {
-    "strategy": {
-      "mode": "fallback"
-    },
+    "strategy": {"mode": "fallback"},
     "targets": [
-    {
-      "provider":"@openai-virtual-key",
-      "override_params": {
-        "model": "gpt-4o"
-      }
-    },
-    {
-      "provider":"@anthropic-virtual-key",
-      "override_params": {
-          "model": "claude-3-opus-20240229",
-          "max_tokens":64
-      }
-    }
-  ]
+        {"override_params": {"model": "@openai-prod/gpt-4o"}},
+        {"override_params": {"model": "@anthropic-prod/claude-sonnet-4"}}
+    ]
 }
+
+llm = OpenAI(
+    model="gpt-4o",
+    api_base=PORTKEY_GATEWAY_URL,
+    api_key="PORTKEY_API_KEY",
+    default_headers=createHeaders(config=config)
+)
+
+# Automatically falls back to Anthropic if OpenAI fails
+response = llm.complete("Hello!")
 ```
-  </Tab>
-    <Tab title="Load Balance 2 API Keys">
+
+### Example: Load Balancing
 
 ```python
 config = {
-    "strategy": {
-      "mode": "loadbalance"
-    },
+    "strategy": {"mode": "loadbalance"},
     "targets": [
-    {
-      "provider":"@openai-virtual-key-1",
-      "weight":1
-    },
-    {
-      "provider":"@openai-virtual-key-2",
-      "weight":1
-    }
-  ]
+        {"override_params": {"model": "@openai-prod/gpt-4o"}, "weight": 0.5},
+        {"override_params": {"model": "@anthropic-prod/claude-sonnet-4"}, "weight": 0.5}
+    ]
 }
+
+llm = OpenAI(
+    model="gpt-4o",
+    api_base=PORTKEY_GATEWAY_URL,
+    api_key="PORTKEY_API_KEY",
+    default_headers=createHeaders(config=config)
+)
+
+# Requests distributed 50/50 between OpenAI and Anthropic
+response = llm.complete("Hello!")
 ```
-  </Tab>
-    <Tab title="Automatic Retries">
+
+### Example: Caching
 
 ```python
 config = {
-    "retry": {
-        "attempts": 5
+    "cache": {
+        "mode": "semantic",  # or "simple" for exact matches
+        "max_age": 3600      # Cache for 1 hour
     },
-    "provider":"@virtual-key-xxx"
+    "override_params": {"model": "@openai-prod/gpt-4o"}
 }
+
+llm = OpenAI(
+    model="gpt-4o",
+    api_base=PORTKEY_GATEWAY_URL,
+    api_key="PORTKEY_API_KEY",
+    default_headers=createHeaders(config=config)
+)
+
+# Responses cached for similar queries
+response = llm.complete("What is machine learning?")
 ```
-  </Tab>
-  <Tab title="Request Timeouts">
 
-```python
-config = {
-  "strategy": { "mode": "fallback" },
-  "request_timeout": 10000,
-  "targets": [
-    { "provider":"@open-ai-xxx" },
-    { "provider":"@azure-open-ai-xxx" }
-  ]
-}
-```
-  </Tab>
+<Card title="Learn About Configs →" href="/product/ai-gateway/configs">
+  Set up fallbacks, retries, caching, load balancing, and more
+</Card>
 
-</Tabs>
+## Observability
 
-Explore deeper documentation for each feature here - [**Fallbacks**](/product/ai-gateway/fallbacks), [**Loadbalancing**](/product/ai-gateway/load-balancing), [**Retries**](/product/ai-gateway/automatic-retries), [**Timeouts**](/product/ai-gateway/request-timeouts).
-
-
-## 4\. Observability
-
-Portkey automatically logs all the key details about your requests, including cost, tokens used, response time, request and response bodies, and more.
-
-Using Portkey, you can also send custom metadata with each of your requests to further segment your logs for better analytics. Similarly, you can also trace multiple requests to a single trace ID and filter or view them separately in Portkey logs.
-
-**Custom Metadata and Trace ID information is sent in**  `default_headers` **.**
-
-<Tabs>
-  <Tab title="Sending Custom Metadata">
+Portkey automatically logs all requests. Add custom metadata for better analytics:
 
 ```python
 from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
-config = "pc-xxxx"
-
-portkey = OpenAI(
+llm = OpenAI(
+    model="@openai-prod/gpt-4o",
     api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
+    api_key="PORTKEY_API_KEY",
     default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config,
         metadata={
-            "_user": "USER_ID",
+            "_user": "user_123",
             "environment": "production",
-            "session_id": "1729"
-        }
+            "feature": "rag_query"
+        },
+        trace_id="unique_trace_id"
     )
 )
-
-messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
-]
-
-resp = portkey.chat(messages)
-print(resp)
 ```
 
-  </Tab>
-  <Tab title="Sending Trace ID">
+Filter and analyze logs by metadata in the Portkey dashboard.
+
+<Card title="Observability Guide →" href="/product/observability">
+  Track costs, performance, and debug issues
+</Card>
+
+## Prompt Management
+
+Use prompts from Portkey's Prompt Library:
 
 ```python
-from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-config = "pc-xxxx"
-
-portkey = OpenAI(
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config=config,
-        trace_id="YOUR_TRACE_ID_HERE"
-    )
-)
-
-messages = [
-    ChatMessage(role="system", content="You are a pirate with a colorful personality"),
-    ChatMessage(role="user", content="What is your name"),
-]
-
-resp = portkey.chat(messages)
-print(resp)
-```
-  </Tab>
-</Tabs>
-
-#### Portkey shows these details separately for each log:
-
-<Frame>
-    <img src="/images/libraries/libraries-4.avif"/>
-</Frame>
-
-[**Check out Observability docs here.**](/product/observability)
-
-
-## 5\. Prompt Management
-
-Portkey features an advanced Prompts platform tailor-made for better prompt engineering. With Portkey, you can:
-
-* **Store Prompts with Access Control and Version Control:** Keep all your prompts organized in a centralized location, easily track changes over time, and manage edit/view permissions for your team.
-* **Parameterize Prompts**: Define variables and [mustache-approved tags](/product/prompt-library/prompt-templates#templating-engine) within your prompts, allowing for dynamic value insertion when calling LLMs. This enables greater flexibility and reusability of your prompts.
-* **Experiment in a Sandbox Environment**: Quickly iterate on different LLMs and parameters to find the optimal combination for your use case, without modifying your LlamaIndex code.
-
-#### Here's how you can leverage Portkey's Prompt Management in your LlamaIndex application:
-
-1. Create your prompt template on the Portkey app, and save it to get an associated `Prompt ID`
-2. Before making a Llamaindex request, render the prompt template using the Portkey SDK
-3. Transform the retrieved prompt to be compatible with LlamaIndex and send the request!
-
-#### Example: Using a Portkey Prompt Template in LlamaIndex
-
-```py Portkey Prompts in LlamaIndex
-import json
-import os
 from llama_index.llms.openai import OpenAI
 from llama_index.core.llms import ChatMessage
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders, Portkey
 
-###  Initialize Portkey client with API key
-
-client = Portkey(api_key=os.environ.get("PORTKEY_API_KEY"))
-
-### Render the prompt template with your prompt ID and variables
-
+# Render prompt from Portkey
+client = Portkey(api_key="PORTKEY_API_KEY")
 prompt_template = client.prompts.render(
-    prompt_id="pp-prompt-id",
-    variables={ "movie":"Dune 2" }
+    prompt_id="pp-your-prompt-id",
+    variables={"topic": "AI"}
 ).data.dict()
 
-config = {
-    "provider:"@GROQ_PROVIDER", # You need to send the virtual key separately
-    "override_params":{
-        "model":prompt_template["model"], # Set the model name based on the value in the prompt template
-        "temperature":prompt_template["temperature"] # Similarly, you can also set other model params
-    }
-}
-
-portkey = OpenAI(
+# Use with LlamaIndex
+llm = OpenAI(
+    model="@openai-prod/gpt-4o",
     api_base=PORTKEY_GATEWAY_URL,
-    api_key="xx" # Placeholder, no need to set
-    default_headers=createHeaders(
-        api_key=os.environ.get("PORTKEY_API_KEY"),
-        config=config
-    )
-)
-
-### Transform the rendered prompt into LlamaIndex-compatible format
-
-messages = [ChatMessage(content=msg["content"], role=msg["role"]) for msg in prompt_template["messages"]]
-
-resp = portkey.chat(messages)
-
-print(resp)
-```
-
-[**Explore Prompt Management docs here**](/product/prompt-library).
-
----
-
-## 6\. Continuous Improvement
-
-Now that you know how to trace & log your Llamaindex requests to Portkey, you can also start capturing user feedback to improve your app!
-
-You can append qualitative as well as quantitative feedback to any `trace ID` with the `portkey.feedback.create` method:
-
-```py Adding Feedback
-from portkey_ai import Portkey
-
-portkey = Portkey(
     api_key="PORTKEY_API_KEY"
 )
 
-feedback = portkey.feedback.create(
-    trace_id="YOUR_LLAMAINDEX_TRACE_ID",
-    value=5,  # Integer between -10 and 10
-    weight=1,  # Optional
-    metadata={
-        # Pass any additional context here like comments, _user and more
-    }
-)
+messages = [
+    ChatMessage(content=msg["content"], role=msg["role"]) 
+    for msg in prompt_template["messages"]
+]
 
-print(feedback)
+response = llm.chat(messages)
+print(response.message.content)
 ```
 
-[**Check out the Feedback documentation for a deeper dive**](/product/observability/feedback).
+<Card title="Prompt Library →" href="/product/prompt-library">
+  Manage, version, and test prompts in Portkey
+</Card>
 
+## Migration from Direct OpenAI
 
-## 7\. Security & Compliance
+Already using LlamaIndex with OpenAI? Just update 3 parameters:
 
-When you onboard more team members to help out on your Llamaindex app - permissioning, budgeting, and access management can become a mess! Using Portkey, you can set **budget limits** on provide API keys and implement **fine-grained user roles** and **permissions** to:
+```python
+# Before
+from llama_index.llms.openai import OpenAI
+import os
 
-* **Control access**: Restrict team members' access to specific features, Configs, or API endpoints based on their roles and responsibilities.
-* **Manage costs**: Set budget limits on API keys to prevent unexpected expenses and ensure that your LLM usage stays within your allocated budget.
-* **Ensure compliance**: Implement strict security policies and audit trails to maintain compliance with industry regulations and protect sensitive data.
-* **Simplify onboarding**: Streamline the onboarding process for new team members by assigning them appropriate roles and permissions, eliminating the need to share sensitive API keys or secrets.
-* **Monitor usage**: Gain visibility into your team's LLM usage, track costs, and identify potential security risks or anomalies through comprehensive monitoring and reporting.
+llm = OpenAI(
+    model="gpt-4o",
+    api_key=os.getenv("OPENAI_API_KEY"),
+    temperature=0.7
+)
 
-<Frame>
-    <img src="/images/libraries/libraries-5.webp"/>
-</Frame>
+# After (add 2 parameters, change 1)
+llm = OpenAI(
+    model="@openai-prod/gpt-4o",          # Add provider slug
+    api_base="https://api.portkey.ai/v1",     # Add this
+    api_key="PORTKEY_API_KEY",             # Change to Portkey key
+    temperature=0.7                         # Keep existing params
+)
+```
 
-[**Read more about Portkey's Security & Enterprise offerings here**](/product/enterprise-offering).
+**Benefits:**
+- Zero code changes to your existing LlamaIndex logic
+- Instant observability for all requests
+- Production-grade reliability features
+- Cost controls and budgets
 
+## Next Steps
 
-## Join Portkey Community
+<CardGroup cols={2}>
+  <Card title="Model Catalog" icon="database" href="/product/model-catalog">
+    Set up providers, budgets, and access control
+  </Card>
+  <Card title="Configs" icon="gear" href="/product/ai-gateway/configs">
+    Configure fallbacks, caching, and routing
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Track costs, performance, and usage
+  </Card>
+  <Card title="Guardrails" icon="shield" href="/product/guardrails">
+    Add PII detection and content filtering
+  </Card>
+</CardGroup>
 
-Join the Portkey Discord to connect with other practitioners, discuss your LlamaIndex projects, and get help troubleshooting your queries.
+For complete SDK documentation:
 
-[**Link to Discord**](https://portkey.ai/community)
-
-For more detailed information on each feature and how to use them, please refer to the [Portkey Documentation](https://portkey.ai/docs).
+<Card title="SDK Reference" icon="code" href="/api-reference/sdk/list">
+  Complete Portkey SDK documentation
+</Card>
