@@ -463,22 +463,22 @@ Resources:
         Size: 1024
       Code:
         ZipFile: |
-  const fs = require('fs');
-  const zlib = require('zlib');
-  const { pipeline } = require('stream');
-  const path = require('path');
-  const https = require('https');
-  const { promisify } = require('util');
-  const { execSync } = require('child_process');
-  const { EKSClient, DescribeClusterCommand } = require('@aws-sdk/client-eks');
+          const fs = require('fs');
+          const zlib = require('zlib');
+          const { pipeline } = require('stream');
+          const path = require('path');
+          const https = require('https');
+          const { promisify } = require('util');
+          const { execSync } = require('child_process');
+          const { EKSClient, DescribeClusterCommand } = require('@aws-sdk/client-eks');
 
           async function unzipAwsCli(zipPath, destPath) {
             // ZIP file format: https://en.wikipedia.org/wiki/ZIP_(file_format)
-    const data = fs.readFileSync(zipPath);
+            const data = fs.readFileSync(zipPath);
             let offset = 0;
 
             // Find end of central directory record
-    const EOCD_SIGNATURE = 0x06054b50;
+            const EOCD_SIGNATURE = 0x06054b50;
             for (let i = data.length - 22; i >= 0; i--) {
                 if (data.readUInt32LE(i) === EOCD_SIGNATURE) {
                     offset = i;
@@ -487,58 +487,58 @@ Resources:
             }
 
             // Read central directory info
-    const numEntries = data.readUInt16LE(offset + 10);
+            const numEntries = data.readUInt16LE(offset + 10);
             let centralDirOffset = data.readUInt32LE(offset + 16);
 
             // Process each file
             for (let i = 0; i < numEntries; i++) {
                 // Read central directory header
-        const signature = data.readUInt32LE(centralDirOffset);
+                const signature = data.readUInt32LE(centralDirOffset);
                 if (signature !== 0x02014b50) {
                     throw new Error('Invalid central directory header');
                 }
 
-        const fileNameLength = data.readUInt16LE(centralDirOffset + 28);
-        const extraFieldLength = data.readUInt16LE(centralDirOffset + 30);
-        const fileCommentLength = data.readUInt16LE(centralDirOffset + 32);
-        const localHeaderOffset = data.readUInt32LE(centralDirOffset + 42);
+                const fileNameLength = data.readUInt16LE(centralDirOffset + 28);
+                const extraFieldLength = data.readUInt16LE(centralDirOffset + 30);
+                const fileCommentLength = data.readUInt16LE(centralDirOffset + 32);
+                const localHeaderOffset = data.readUInt32LE(centralDirOffset + 42);
                 
                 // Get filename
-        const fileName = data.slice(
+                const fileName = data.slice(
                     centralDirOffset + 46,
                     centralDirOffset + 46 + fileNameLength
                 ).toString();
 
                 // Read local file header
-        const localSignature = data.readUInt32LE(localHeaderOffset);
+                const localSignature = data.readUInt32LE(localHeaderOffset);
                 if (localSignature !== 0x04034b50) {
                     throw new Error('Invalid local file header');
                 }
 
-        const localFileNameLength = data.readUInt16LE(localHeaderOffset + 26);
-        const localExtraFieldLength = data.readUInt16LE(localHeaderOffset + 28);
+                const localFileNameLength = data.readUInt16LE(localHeaderOffset + 26);
+                const localExtraFieldLength = data.readUInt16LE(localHeaderOffset + 28);
                 
                 // Get file data
-        const fileDataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength;
-        const compressedSize = data.readUInt32LE(centralDirOffset + 20);
-        const uncompressedSize = data.readUInt32LE(centralDirOffset + 24);
-        const compressionMethod = data.readUInt16LE(centralDirOffset + 10);
+                const fileDataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength;
+                const compressedSize = data.readUInt32LE(centralDirOffset + 20);
+                const uncompressedSize = data.readUInt32LE(centralDirOffset + 24);
+                const compressionMethod = data.readUInt16LE(centralDirOffset + 10);
 
                 // Create directory if needed
-        const fullPath = path.join(destPath, fileName);
-        const directory = path.dirname(fullPath);
+                const fullPath = path.join(destPath, fileName);
+                const directory = path.dirname(fullPath);
                 if (!fs.existsSync(directory)) {
                     fs.mkdirSync(directory, { recursive: true });
                 }
 
                 // Extract file
                 if (!fileName.endsWith('/')) {  // Skip directories
-            const fileData = data.slice(fileDataOffset, fileDataOffset + compressedSize);
+                    const fileData = data.slice(fileDataOffset, fileDataOffset + compressedSize);
                     
                     if (compressionMethod === 0) {  // Stored (no compression)
                         fs.writeFileSync(fullPath, fileData);
                     } else if (compressionMethod === 8) {  // Deflate
-                const inflated = require('zlib').inflateRawSync(fileData);
+                        const inflated = require('zlib').inflateRawSync(fileData);
                         fs.writeFileSync(fullPath, inflated);
                     } else {
                         throw new Error(`Unsupported compression method: ${compressionMethod}`);
@@ -553,12 +553,12 @@ Resources:
 
           async function extractTarGz(source, destination) {
             // First, let's decompress the .gz file
-    const gunzip = promisify(zlib.gunzip);
+            const gunzip = promisify(zlib.gunzip);
             console.log('Reading source file...');
-    const compressedData = fs.readFileSync(source);
+            const compressedData = fs.readFileSync(source);
             
             console.log('Decompressing...');
-    const tarData = await gunzip(compressedData);
+            const tarData = await gunzip(compressedData);
             
             // Now we have the raw tar data
             // Tar files are made up of 512-byte blocks
@@ -566,11 +566,11 @@ Resources:
             
             while (position < tarData.length) {
               // Read header block
-      const header = tarData.slice(position, position + 512);
+              const header = tarData.slice(position, position + 512);
               position += 512;
               
               // Get filename from header (first 100 bytes)
-      const filename = header.slice(0, 100)
+              const filename = header.slice(0, 100)
                                   .toString('utf8')
                                   .replace(/\0/g, '')
                                   .trim();
@@ -578,21 +578,21 @@ Resources:
               if (!filename) break; // End of tar
               
               // Get file size from header (bytes 124-136)
-      const sizeStr = header.slice(124, 136)
+              const sizeStr = header.slice(124, 136)
                                   .toString('utf8')
                                   .replace(/\0/g, '')
                                   .trim();
-      const size = parseInt(sizeStr, 8); // Size is in octal
+              const size = parseInt(sizeStr, 8); // Size is in octal
               
               console.log(`Found file: ${filename} (${size} bytes)`);
               
               if (filename === 'linux-amd64/helm') {
                 console.log('Found helm binary, extracting...');
                 // Extract the file content
-        const content = tarData.slice(position, position + size);
+                const content = tarData.slice(position, position + size);
                 
                 // Write to destination
-        const outputPath = path.join(destination, 'helm');
+                const outputPath = path.join(destination, 'helm');
                 fs.writeFileSync(outputPath, content);
                 console.log(`Helm binary extracted to: ${outputPath}`);
                 return; // We found what we needed
@@ -609,7 +609,7 @@ Resources:
 
           async function downloadFile(url, dest) {
               return new Promise((resolve, reject) => {
-          const file = fs.createWriteStream(dest);
+                  const file = fs.createWriteStream(dest);
                   https.get(url, (response) => {
                       response.pipe(file);
                       file.on('finish', () => {
@@ -621,30 +621,30 @@ Resources:
           }
 
           async function setupBinaries() {
-      const { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } = require("@aws-sdk/client-sts");
-      const { SignatureV4 } = require("@aws-sdk/signature-v4");
-      const { defaultProvider } = require("@aws-sdk/credential-provider-node");
-      const crypto = require('crypto');
+              const { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } = require("@aws-sdk/client-sts");
+              const { SignatureV4 } = require("@aws-sdk/signature-v4");
+              const { defaultProvider } = require("@aws-sdk/credential-provider-node");
+              const crypto = require('crypto');
 
-      const tmpDir = '/tmp/bin';
+              const tmpDir = '/tmp/bin';
               if (!fs.existsSync(tmpDir)) {
                   fs.mkdirSync(tmpDir, { recursive: true });
               }
                 console.log('Setting up AWS CLI...');
-        const awsCliUrl = 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip';
-        const awsZipPath = `${tmpDir}/awscliv2.zip`;
+                const awsCliUrl = 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip';
+                const awsZipPath = `${tmpDir}/awscliv2.zip`;
                 await unzipAwsCli(awsZipPath, tmpDir);
                 execSync(`chmod +x ${tmpDir}/aws/install ${tmpDir}/aws/dist/aws`);
                 execSync(`${tmpDir}/aws/install --update --install-dir /tmp/aws-cli --bin-dir /tmp/aws-bin`, { stdio: 'inherit' });
 
               try {
                 await new Promise((resolve, reject) => {
-          const https = require('https');
-          const fs = require('fs');
+                  const https = require('https');
+                  const fs = require('fs');
                   
-          const file = fs.createWriteStream('/tmp/kubectl');
+                  const file = fs.createWriteStream('/tmp/kubectl');
                   
-          const request = https.get('https://dl.k8s.io/release/v1.32.1/bin/linux/amd64/kubectl', response => {
+                  const request = https.get('https://dl.k8s.io/release/v1.32.1/bin/linux/amd64/kubectl', response => {
                     if (response.statusCode === 302 || response.statusCode === 301) {
                       https.get(response.headers.location, redirectResponse => {
                         redirectResponse.pipe(file);
@@ -681,8 +681,8 @@ Resources:
               }
 
               console.log('Setting up helm...');
-      const helmUrl = 'https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz';
-      const helmTarPath = `${tmpDir}/helm.tar.gz`;
+              const helmUrl = 'https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz';
+              const helmTarPath = `${tmpDir}/helm.tar.gz`;
               await downloadFile(helmUrl, helmTarPath);
               
               await extractTarGz(helmTarPath, tmpDir);
@@ -697,7 +697,7 @@ Resources:
           exports.handler = async (event, context) => {
               try {
 
-          const { CLUSTER_NAME, NODE_GROUP_NAME, CLUSTER_ARN, CHART_VERSION, 
+                  const { CLUSTER_NAME, NODE_GROUP_NAME, CLUSTER_ARN, CHART_VERSION, 
                     PORTKEY_AWS_REGION, PORTKEY_AWS_ACCOUNT_ID, PORTKEYAM_ROLE_ARN, 
                     PORTKEY_DOCKER_USERNAME, PORTKEY_DOCKER_PASSWORD, 
                     PORTKEY_CLIENT_AUTH, ORGANISATIONS_TO_SYNC } = process.env;
@@ -711,13 +711,13 @@ Resources:
 
                   await setupBinaries();
                   
-          const awsCredentialsDir = '/tmp/.aws';
+                  const awsCredentialsDir = '/tmp/.aws';
                   if (!fs.existsSync(awsCredentialsDir)) {
                       fs.mkdirSync(awsCredentialsDir, { recursive: true });
                   }
 
                   // Write AWS credentials file
-          const credentialsContent = `[default]
+                  const credentialsContent = `[default]
           aws_access_key_id = ${process.env.AWS_ACCESS_KEY_ID}
           aws_secret_access_key = ${process.env.AWS_SECRET_ACCESS_KEY}
           aws_session_token = ${process.env.AWS_SESSION_TOKEN}
@@ -727,7 +727,7 @@ Resources:
                   fs.writeFileSync(`${awsCredentialsDir}/credentials`, credentialsContent);
 
                   // Write AWS config file
-          const configContent = `[default]
+                  const configContent = `[default]
           region = ${process.env.PORTKEY_AWS_REGION}
           output = json
           `;
@@ -738,8 +738,8 @@ Resources:
                   process.env.AWS_SHARED_CREDENTIALS_FILE = `${awsCredentialsDir}/credentials`;
 
                   // Define kubeconfig path
-          const kubeconfigDir = `/tmp/${CLUSTER_NAME.trim()}`;
-          const kubeconfigPath = path.join(kubeconfigDir, 'config');
+                  const kubeconfigDir = `/tmp/${CLUSTER_NAME.trim()}`;
+                  const kubeconfigPath = path.join(kubeconfigDir, 'config');
 
                   // Create the directory if it doesn't exist
                   if (!fs.existsSync(kubeconfigDir)) {
@@ -797,7 +797,7 @@ Resources:
                   });
 
                   // Create values.yaml
-          const valuesYAML = `
+                  const valuesYAML = `
           replicaCount: 1
 
           images:
@@ -966,17 +966,17 @@ Resources:
               targetCPUUtilizationPercentage: 80`
 
                   // Write values.yaml
-          const valuesYamlPath = '/tmp/values.yaml';
+                  const valuesYamlPath = '/tmp/values.yaml';
                   fs.writeFileSync(valuesYamlPath, valuesYAML);
 
-          const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
-          const s3Client = new S3Client({ region: process.env.PORTKEY_AWS_REGION });
+                  const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+                  const s3Client = new S3Client({ region: process.env.PORTKEY_AWS_REGION });
                   try {
-            const response = await s3Client.send(new GetObjectCommand({
+                    const response = await s3Client.send(new GetObjectCommand({
                       Bucket: `${process.env.PORTKEY_AWS_ACCOUNT_ID}-${process.env.PORTKEY_AWS_REGION}-portkey-logs`,
                       Key: 'values.yaml'
                     }));
-            const existingValuesYAML = await response.Body.transformToString();
+                    const existingValuesYAML = await response.Body.transformToString();
                     console.log('Found existing values.yaml in S3, using it instead of default');
                     fs.writeFileSync(valuesYamlPath, existingValuesYAML);
                   } catch (error) {
@@ -1066,22 +1066,22 @@ Resources:
 6. **Provides idempotent deployment** - Checks for existing configurations in S3 and uses them if available, allowing the function to be run multiple times for updates without losing custom configurations.
 
 ```javascript portkey-hybrid-eks-cloudformation.lambda.js [expandable]
-  const fs = require('fs');
-  const zlib = require('zlib');
-  const { pipeline } = require('stream');
-  const path = require('path');
-  const https = require('https');
-  const { promisify } = require('util');
-  const { execSync } = require('child_process');
-  const { EKSClient, DescribeClusterCommand } = require('@aws-sdk/client-eks');
+          const fs = require('fs');
+          const zlib = require('zlib');
+          const { pipeline } = require('stream');
+          const path = require('path');
+          const https = require('https');
+          const { promisify } = require('util');
+          const { execSync } = require('child_process');
+          const { EKSClient, DescribeClusterCommand } = require('@aws-sdk/client-eks');
 
           async function unzipAwsCli(zipPath, destPath) {
             // ZIP file format: https://en.wikipedia.org/wiki/ZIP_(file_format)
-    const data = fs.readFileSync(zipPath);
+            const data = fs.readFileSync(zipPath);
             let offset = 0;
 
             // Find end of central directory record
-    const EOCD_SIGNATURE = 0x06054b50;
+            const EOCD_SIGNATURE = 0x06054b50;
             for (let i = data.length - 22; i >= 0; i--) {
                 if (data.readUInt32LE(i) === EOCD_SIGNATURE) {
                     offset = i;
@@ -1090,58 +1090,58 @@ Resources:
             }
 
             // Read central directory info
-    const numEntries = data.readUInt16LE(offset + 10);
+            const numEntries = data.readUInt16LE(offset + 10);
             let centralDirOffset = data.readUInt32LE(offset + 16);
 
             // Process each file
             for (let i = 0; i < numEntries; i++) {
                 // Read central directory header
-        const signature = data.readUInt32LE(centralDirOffset);
+                const signature = data.readUInt32LE(centralDirOffset);
                 if (signature !== 0x02014b50) {
                     throw new Error('Invalid central directory header');
                 }
 
-        const fileNameLength = data.readUInt16LE(centralDirOffset + 28);
-        const extraFieldLength = data.readUInt16LE(centralDirOffset + 30);
-        const fileCommentLength = data.readUInt16LE(centralDirOffset + 32);
-        const localHeaderOffset = data.readUInt32LE(centralDirOffset + 42);
+                const fileNameLength = data.readUInt16LE(centralDirOffset + 28);
+                const extraFieldLength = data.readUInt16LE(centralDirOffset + 30);
+                const fileCommentLength = data.readUInt16LE(centralDirOffset + 32);
+                const localHeaderOffset = data.readUInt32LE(centralDirOffset + 42);
                 
                 // Get filename
-        const fileName = data.slice(
+                const fileName = data.slice(
                     centralDirOffset + 46,
                     centralDirOffset + 46 + fileNameLength
                 ).toString();
 
                 // Read local file header
-        const localSignature = data.readUInt32LE(localHeaderOffset);
+                const localSignature = data.readUInt32LE(localHeaderOffset);
                 if (localSignature !== 0x04034b50) {
                     throw new Error('Invalid local file header');
                 }
 
-        const localFileNameLength = data.readUInt16LE(localHeaderOffset + 26);
-        const localExtraFieldLength = data.readUInt16LE(localHeaderOffset + 28);
+                const localFileNameLength = data.readUInt16LE(localHeaderOffset + 26);
+                const localExtraFieldLength = data.readUInt16LE(localHeaderOffset + 28);
                 
                 // Get file data
-        const fileDataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength;
-        const compressedSize = data.readUInt32LE(centralDirOffset + 20);
-        const uncompressedSize = data.readUInt32LE(centralDirOffset + 24);
-        const compressionMethod = data.readUInt16LE(centralDirOffset + 10);
+                const fileDataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraFieldLength;
+                const compressedSize = data.readUInt32LE(centralDirOffset + 20);
+                const uncompressedSize = data.readUInt32LE(centralDirOffset + 24);
+                const compressionMethod = data.readUInt16LE(centralDirOffset + 10);
 
                 // Create directory if needed
-        const fullPath = path.join(destPath, fileName);
-        const directory = path.dirname(fullPath);
+                const fullPath = path.join(destPath, fileName);
+                const directory = path.dirname(fullPath);
                 if (!fs.existsSync(directory)) {
                     fs.mkdirSync(directory, { recursive: true });
                 }
 
                 // Extract file
                 if (!fileName.endsWith('/')) {  // Skip directories
-            const fileData = data.slice(fileDataOffset, fileDataOffset + compressedSize);
+                    const fileData = data.slice(fileDataOffset, fileDataOffset + compressedSize);
                     
                     if (compressionMethod === 0) {  // Stored (no compression)
                         fs.writeFileSync(fullPath, fileData);
                     } else if (compressionMethod === 8) {  // Deflate
-                const inflated = require('zlib').inflateRawSync(fileData);
+                        const inflated = require('zlib').inflateRawSync(fileData);
                         fs.writeFileSync(fullPath, inflated);
                     } else {
                         throw new Error(`Unsupported compression method: ${compressionMethod}`);
@@ -1156,12 +1156,12 @@ Resources:
 
           async function extractTarGz(source, destination) {
             // First, let's decompress the .gz file
-    const gunzip = promisify(zlib.gunzip);
+            const gunzip = promisify(zlib.gunzip);
             console.log('Reading source file...');
-    const compressedData = fs.readFileSync(source);
+            const compressedData = fs.readFileSync(source);
             
             console.log('Decompressing...');
-    const tarData = await gunzip(compressedData);
+            const tarData = await gunzip(compressedData);
             
             // Now we have the raw tar data
             // Tar files are made up of 512-byte blocks
@@ -1169,11 +1169,11 @@ Resources:
             
             while (position < tarData.length) {
               // Read header block
-      const header = tarData.slice(position, position + 512);
+              const header = tarData.slice(position, position + 512);
               position += 512;
               
               // Get filename from header (first 100 bytes)
-      const filename = header.slice(0, 100)
+              const filename = header.slice(0, 100)
                                   .toString('utf8')
                                   .replace(/\0/g, '')
                                   .trim();
@@ -1181,21 +1181,21 @@ Resources:
               if (!filename) break; // End of tar
               
               // Get file size from header (bytes 124-136)
-      const sizeStr = header.slice(124, 136)
+              const sizeStr = header.slice(124, 136)
                                   .toString('utf8')
                                   .replace(/\0/g, '')
                                   .trim();
-      const size = parseInt(sizeStr, 8); // Size is in octal
+              const size = parseInt(sizeStr, 8); // Size is in octal
               
               console.log(`Found file: ${filename} (${size} bytes)`);
               
               if (filename === 'linux-amd64/helm') {
                 console.log('Found helm binary, extracting...');
                 // Extract the file content
-        const content = tarData.slice(position, position + size);
+                const content = tarData.slice(position, position + size);
                 
                 // Write to destination
-        const outputPath = path.join(destination, 'helm');
+                const outputPath = path.join(destination, 'helm');
                 fs.writeFileSync(outputPath, content);
                 console.log(`Helm binary extracted to: ${outputPath}`);
                 return; // We found what we needed
@@ -1212,7 +1212,7 @@ Resources:
 
           async function downloadFile(url, dest) {
               return new Promise((resolve, reject) => {
-          const file = fs.createWriteStream(dest);
+                  const file = fs.createWriteStream(dest);
                   https.get(url, (response) => {
                       response.pipe(file);
                       file.on('finish', () => {
@@ -1224,20 +1224,20 @@ Resources:
           }
 
           async function setupBinaries() {
-      const { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } = require("@aws-sdk/client-sts");
-      const { SignatureV4 } = require("@aws-sdk/signature-v4");
-      const { defaultProvider } = require("@aws-sdk/credential-provider-node");
-      const crypto = require('crypto');
+              const { STSClient, GetCallerIdentityCommand, AssumeRoleCommand } = require("@aws-sdk/client-sts");
+              const { SignatureV4 } = require("@aws-sdk/signature-v4");
+              const { defaultProvider } = require("@aws-sdk/credential-provider-node");
+              const crypto = require('crypto');
 
-      const tmpDir = '/tmp/bin';
+              const tmpDir = '/tmp/bin';
               if (!fs.existsSync(tmpDir)) {
                   fs.mkdirSync(tmpDir, { recursive: true });
               }
 
                 // Download and setup AWS CLI
                 console.log('Setting up AWS CLI...');
-        const awsCliUrl = 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip';
-        const awsZipPath = `${tmpDir}/awscliv2.zip`;
+                const awsCliUrl = 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip';
+                const awsZipPath = `${tmpDir}/awscliv2.zip`;
                 await downloadFile(awsCliUrl, awsZipPath);
                 // Extract using our custom unzip function
                 await unzipAwsCli(awsZipPath, tmpDir);
@@ -1249,12 +1249,12 @@ Resources:
               try {
                 // Download kubectl binary using Node.js https
                 await new Promise((resolve, reject) => {
-          const https = require('https');
-          const fs = require('fs');
+                  const https = require('https');
+                  const fs = require('fs');
                   
-          const file = fs.createWriteStream('/tmp/kubectl');
+                  const file = fs.createWriteStream('/tmp/kubectl');
                   
-          const request = https.get('https://dl.k8s.io/release/v1.32.1/bin/linux/amd64/kubectl', response => {
+                  const request = https.get('https://dl.k8s.io/release/v1.32.1/bin/linux/amd64/kubectl', response => {
                     if (response.statusCode === 302 || response.statusCode === 301) {
                       https.get(response.headers.location, redirectResponse => {
                         redirectResponse.pipe(file);
@@ -1291,8 +1291,8 @@ Resources:
               }
 
               console.log('Setting up helm...');
-      const helmUrl = 'https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz';
-      const helmTarPath = `${tmpDir}/helm.tar.gz`;
+              const helmUrl = 'https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz';
+              const helmTarPath = `${tmpDir}/helm.tar.gz`;
               await downloadFile(helmUrl, helmTarPath);
               
               await extractTarGz(helmTarPath, tmpDir);
@@ -1307,7 +1307,7 @@ Resources:
           exports.handler = async (event, context) => {
               try {
 
-          const { CLUSTER_NAME, NODE_GROUP_NAME, CLUSTER_ARN, CHART_VERSION, 
+                  const { CLUSTER_NAME, NODE_GROUP_NAME, CLUSTER_ARN, CHART_VERSION, 
                     PORTKEY_AWS_REGION, PORTKEY_AWS_ACCOUNT_ID, PORTKEYAM_ROLE_ARN, 
                     PORTKEY_DOCKER_USERNAME, PORTKEY_DOCKER_PASSWORD, 
                     PORTKEY_CLIENT_AUTH, ORGANISATIONS_TO_SYNC } = process.env;
@@ -1321,13 +1321,13 @@ Resources:
 
                   await setupBinaries();
                   
-          const awsCredentialsDir = '/tmp/.aws';
+                  const awsCredentialsDir = '/tmp/.aws';
                   if (!fs.existsSync(awsCredentialsDir)) {
                       fs.mkdirSync(awsCredentialsDir, { recursive: true });
                   }
 
                   // Write AWS credentials file
-          const credentialsContent = `[default]
+                  const credentialsContent = `[default]
           aws_access_key_id = ${process.env.AWS_ACCESS_KEY_ID}
           aws_secret_access_key = ${process.env.AWS_SECRET_ACCESS_KEY}
           aws_session_token = ${process.env.AWS_SESSION_TOKEN}
@@ -1337,7 +1337,7 @@ Resources:
                   fs.writeFileSync(`${awsCredentialsDir}/credentials`, credentialsContent);
 
                   // Write AWS config file
-          const configContent = `[default]
+                  const configContent = `[default]
           region = ${process.env.PORTKEY_AWS_REGION}
           output = json
           `;
@@ -1348,8 +1348,8 @@ Resources:
                   process.env.AWS_SHARED_CREDENTIALS_FILE = `${awsCredentialsDir}/credentials`;
 
                   // Define kubeconfig path
-          const kubeconfigDir = `/tmp/${CLUSTER_NAME.trim()}`;
-          const kubeconfigPath = path.join(kubeconfigDir, 'config');
+                  const kubeconfigDir = `/tmp/${CLUSTER_NAME.trim()}`;
+                  const kubeconfigPath = path.join(kubeconfigDir, 'config');
 
                   // Create the directory if it doesn't exist
                   if (!fs.existsSync(kubeconfigDir)) {
@@ -1407,7 +1407,7 @@ Resources:
                   });
 
                   // Create values.yaml
-          const valuesYAML = `
+                  const valuesYAML = `
           replicaCount: 1
 
           images:
@@ -1576,17 +1576,17 @@ Resources:
               targetCPUUtilizationPercentage: 80`
 
                   // Write values.yaml
-          const valuesYamlPath = '/tmp/values.yaml';
+                  const valuesYamlPath = '/tmp/values.yaml';
                   fs.writeFileSync(valuesYamlPath, valuesYAML);
 
-          const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
-          const s3Client = new S3Client({ region: process.env.PORTKEY_AWS_REGION });
+                  const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+                  const s3Client = new S3Client({ region: process.env.PORTKEY_AWS_REGION });
                   try {
-            const response = await s3Client.send(new GetObjectCommand({
+                    const response = await s3Client.send(new GetObjectCommand({
                       Bucket: `${process.env.PORTKEY_AWS_ACCOUNT_ID}-${process.env.PORTKEY_AWS_REGION}-portkey-logs`,
                       Key: 'values.yaml'
                     }));
-            const existingValuesYAML = await response.Body.transformToString();
+                    const existingValuesYAML = await response.Body.transformToString();
                     console.log('Found existing values.yaml in S3, using it instead of default');
                     fs.writeFileSync(valuesYamlPath, existingValuesYAML);
                   } catch (error) {
