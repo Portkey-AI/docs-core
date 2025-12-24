@@ -1,0 +1,331 @@
+# User Identity Forwarding
+
+Forward authenticated user information to your MCP servers. No OAuth implementation required.
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "claims_header"
+  }
+}
+```
+
+Your MCP server receives:
+
+```http
+X-User-Claims: {"sub":"user_123","email":"alice@example.com","workspace_id":"ws_abc"}
+```
+
+---
+
+## Why use this?
+
+Your MCP server needs to know *who* is making requests. Without identity forwarding, you'd need to:
+
+1. Implement OAuth token validation
+2. Set up token introspection endpoints
+3. Handle token refresh and expiry
+4. Manage signing keys
+
+With identity forwarding, Portkey handles all of this. Your server just reads a header.
+
+---
+
+## Quick start
+
+### 1. Enable in your MCP server config
+
+```json
+{
+  "name": "my-mcp-server",
+  "url": "https://mcp.example.com",
+  "user_identity_forwarding": {
+    "method": "claims_header"
+  }
+}
+```
+
+### 2. Read the header in your server
+
+```python
+from fastapi import FastAPI, Header
+import json
+
+app = FastAPI()
+
+@app.post("/mcp")
+async def handle_request(x_user_claims: str = Header(None)):
+    user = json.loads(x_user_claims)
+    print(f"Request from: {user['email']}")
+    print(f"Workspace: {user['workspace_id']}")
+```
+
+```typescript
+app.post('/mcp', (req, res) => {
+  const user = JSON.parse(req.headers['x-user-claims']);
+  console.log(`Request from: ${user.email}`);
+  console.log(`Workspace: ${user.workspace_id}`);
+});
+```
+
+That's it. No OAuth, no token validation, no key management.
+
+---
+
+## Forwarding methods
+
+Three ways to forward identity, depending on your security requirements.
+
+### `claims_header` — Simple JSON
+
+Best for: Internal services, trusted networks
+
+```json
+{ "method": "claims_header" }
+```
+
+```http
+X-User-Claims: {"sub":"user_123","workspace_id":"ws_abc","email":"alice@example.com"}
+```
+
+Parse as JSON. No cryptographic verification.
+
+### `bearer` — Original token
+
+Best for: When your server needs to call other APIs as the user
+
+```json
+{ "method": "bearer" }
+```
+
+```http
+Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
+```
+
+Forwards the original OAuth access token. Your server can introspect or use it downstream.
+
+### `jwt_header` — Signed JWT
+
+Best for: Zero-trust environments, public networks
+
+```json
+{ "method": "jwt_header" }
+```
+
+```http
+X-User-JWT: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ik56Ykxz...
+```
+
+Portkey signs a JWT containing user claims. Verify the signature using the JWKS endpoint.
+
+---
+
+## Configuration options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `method` | string | — | `claims_header`, `bearer`, or `jwt_header` |
+| `include_claims` | string[] | See below | Which claims to forward |
+| `header_name` | string | Method-specific | Custom header name |
+| `jwt_expiry_seconds` | number | 300 | JWT validity period (jwt_header only) |
+
+### Default claims
+
+When `include_claims` is not specified:
+
+```json
+["sub", "email", "username", "user_id", "workspace_id", "organisation_id", "scope", "client_id"]
+```
+
+### Default header names
+
+| Method | Default Header |
+|--------|----------------|
+| `claims_header` | `X-User-Claims` |
+| `bearer` | `Authorization` |
+| `jwt_header` | `X-User-JWT` |
+
+---
+
+## Examples
+
+### Forward only workspace context
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["workspace_id", "organisation_id"]
+  }
+}
+```
+
+### Use custom header name
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "header_name": "X-Portkey-User"
+  }
+}
+```
+
+### JWT with 10-minute expiry
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "jwt_header",
+    "jwt_expiry_seconds": 600
+  }
+}
+```
+
+---
+
+## Verifying JWTs
+
+When using `jwt_header`, verify signatures using Portkey's JWKS endpoint.
+
+### Fetch the public key
+
+```bash
+curl https://your-gateway/.well-known/jwks.json
+```
+
+```json
+{
+  "keys": [{
+    "kty": "RSA",
+    "n": "0vx7agoebG...",
+    "e": "AQAB",
+    "kid": "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs",
+    "use": "sig",
+    "alg": "RS256"
+  }]
+}
+```
+
+### Verify in Python
+
+```python
+import jwt
+import requests
+
+# Fetch JWKS
+jwks = requests.get("https://your-gateway/.well-known/jwks.json").json()
+public_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwks["keys"][0])
+
+# Verify JWT
+token = request.headers.get("X-User-JWT")
+claims = jwt.decode(token, public_key, algorithms=["RS256"])
+
+print(claims["sub"])  # user_123
+print(claims["workspace_id"])  # ws_abc
+```
+
+### Verify in Node.js
+
+```typescript
+import jwt from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+
+const client = jwksClient({
+  jwksUri: 'https://your-gateway/.well-known/jwks.json'
+});
+
+function getKey(header, callback) {
+  client.getSigningKey(header.kid, (err, key) => {
+    callback(null, key.getPublicKey());
+  });
+}
+
+const token = req.headers['x-user-jwt'];
+jwt.verify(token, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
+  console.log(decoded.sub);  // user_123
+});
+```
+
+---
+
+## JWT structure
+
+```json
+{
+  "header": {
+    "alg": "RS256",
+    "typ": "JWT",
+    "kid": "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs"
+  },
+  "payload": {
+    "sub": "user_123",
+    "email": "alice@example.com",
+    "workspace_id": "ws_abc",
+    "organisation_id": "org_xyz",
+    "iss": "portkey-mcp-gateway",
+    "iat": 1703345678,
+    "exp": 1703345978
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `kid` | Key ID — matches key in JWKS |
+| `iss` | Issuer — always `portkey-mcp-gateway` |
+| `iat` | Issued at — Unix timestamp |
+| `exp` | Expires at — Unix timestamp |
+
+---
+
+## Security
+
+### Protected headers
+
+Clients cannot spoof identity headers. These headers are stripped from incoming requests before identity is injected:
+
+- `X-User-Claims`
+- `X-User-JWT`
+
+### Header precedence
+
+Identity headers are applied last, overriding any conflicting headers from:
+- `forwardHeaders`
+- `passthroughHeaders`
+- Static `headers` config
+
+---
+
+## Auth source → Available claims
+
+Claims depend on how the user authenticated:
+
+| Auth Method | Available Claims |
+|-------------|------------------|
+| OAuth | `sub`, `email`, `username`, `scope`, `client_id`, `workspace_id`, `organisation_id` |
+| API Key | `workspace_id`, `organisation_id` |
+
+---
+
+## Troubleshooting
+
+### No headers received
+
+1. Check `user_identity_forwarding` is configured on the MCP server
+2. Verify user is authenticated (OAuth or API key)
+3. Restart gateway after config changes
+
+### Claims missing
+
+Only claims present in the token are forwarded. Check which claims your auth method provides.
+
+### JWT verification fails
+
+1. Fetch fresh JWKS — keys may have rotated
+2. Check `kid` in JWT header matches a key in JWKS
+3. Verify gateway has `JWT_PRIVATE_KEY` environment variable set
+
+### Wrong header name
+
+Check `header_name` in config. Default varies by method.
