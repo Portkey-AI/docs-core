@@ -23,21 +23,19 @@ DeepSeek R1 is available across several major cloud providers, and with Portkey'
 
 ### Basic Implementation
 
-```python
+```python Python icon="python"
 from portkey_ai import Portkey
 
 # Initialize Portkey client
 client = Portkey(
     api_key="your-portkey-api-key",
-    provider="@provider-virtual-key"  # Just change this to switch providers
+    provider="@together-prod"  # Just change this to switch providers
 )
 
 # Make completion call - same code for all providers
 response = client.chat.completions.create(
     model="deepseek-ai/DeepSeek-R1",
-    messages=[
-        {"role": "user", "content": "Your prompt here"}
-    ]
+    messages=[{"role": "user", "content": "Your prompt here"}]
 )
 ```
 
@@ -71,27 +69,25 @@ response = client.chat.completions.create(
 ### Accessing DeepSeek Models Across Providers
 
 Portkeu provides a unified API for accessing DeepSeek models across multiple providers. All you need to do start using DeepSeek models is to
-1. Get Your API Key from one of the providers mentioned above
+1. Get your API Key from one of the providers mentioned above
 2. Get your Portkey API key from [Portkey's Dashboard](https://app.portkey.ai)
-2. Create virtual keys in [Portkey's Dashboard](https://app.portkey.ai/virtual-keys). Virtual Keys are an alias over your provider API Keys. You can set budgets limits and rate limits for each virtual key.
+3. Add your provider in [Model Catalog](https://app.portkey.ai/model-catalog). Name it (e.g., `together-prod`) to get a provider slug. You can set budget limits and rate limits for each provider.
 
 Here's how you can use Portkey's unified API
 
-```python
-!pip install porteky-ai
+```bash icon="square-terminal"
+pip install portkey-ai
 ```
 
-```python
+```python Python icon="python"
 client = Portkey(
     api_key="your-portkey-api-key",
-    provider="@your-virtual-key--for-chosen-provider"
+    provider="@together-prod"  # Your provider slug from Model Catalog
 )
 
 response = client.chat.completions.create(
-    model="your_chosen_model", # e.g. "deepseek-ai/DeepSeek-R1" for together-ai
-    messages=[
-        {"role": "user", "content": "Your prompt here"}
-    ]
+    model="deepseek-ai/DeepSeek-R1",  # Model name for together-ai
+    messages=[{"role": "user", "content": "Your prompt here"}]
 )
 
 print(response.choices[0].message.content)
@@ -133,14 +129,14 @@ Here's the link to the cookbook to follow along as well as results of the compar
 
 
 <Steps>
-<Step title="pip Install">
-```py
-!pip install portkey-ai
+<Step title="Install">
+```bash icon="square-terminal"
+pip install portkey-ai
 ```
 </Step>
-<Step title="Set up Virtual keys">
-    ```py
-    # Configuration
+<Step title="Set up Provider Slugs">
+    ```python Python icon="python"
+    # Configuration - use provider slugs from Model Catalog
     MODELS = [
         ["o1", "openai"],
         ["o3-mini", "openai"],
@@ -148,71 +144,64 @@ Here's the link to the cookbook to follow along as well as results of the compar
         ["deepseek-ai/DeepSeek-R1", "together-ai"]
     ]
 
-    VIRTUAL_KEYS = {
-        "openai": "main-258f4d",
-        "anthropic": "tooljet---anthr-4e8bfc",
-        "together-ai": "togetherai-key-f3e18f"
+    # Map provider names to their slugs from Model Catalog
+    PROVIDER_SLUGS = {
+        "openai": "@openai-prod",
+        "anthropic": "@anthropic-prod",
+        "together-ai": "@together-prod"
     }
 
     PORTKEY_API_KEY = "PORTKEY_API_KEY"
     ```
 </Step>
 <Step title="Creating a function to run all the prompts and show the output in a table">
-    ```py
-    from typing import final
+    ```python Python icon="python"
     from portkey_ai import Portkey
     from IPython.display import Markdown, display
     from tabulate import tabulate
 
-
     def final_answer(prompt):
-      def run_comparison_models(prompt):
-          outputs = {}
-          for model, provider in MODELS:
-              client = Portkey(
-                  api_key=PORTKEY_API_KEY,
-                  virtual_key=VIRTUAL_KEYS[provider]
-              )
+        def run_comparison_models(prompt):
+            outputs = {}
+            for model, provider in MODELS:
+                client = Portkey(
+                    api_key=PORTKEY_API_KEY,
+                    provider=PROVIDER_SLUGS[provider]  # Use provider slug
+                )
 
-              # Set the token limit based on the model
-              token_param = 'max_tokens' if model not in ['o1', 'o3-mini'] else 'max_completion_tokens'
-              token_value = 8000  # Adjust the value as necessary
-              try:
-                  response = client.chat.completions.create(
-                      model=model,
-                      messages=[
-                          {"role": "system", "content": "You are a helpful assistant that shows step-by-step reasoning."},
-                          {"role": "user", "content": prompt}
-                      ],
-                      **{token_param: token_value}  # Dynamically set the token parameter
-                  )
-                  outputs[model] = response.choices[0].message.content
-              except Exception as e:
-                  outputs[model] = f"Error: {str(e)}"
-          return outputs
+                # Set the token limit based on the model
+                token_param = 'max_tokens' if model not in ['o1', 'o3-mini'] else 'max_completion_tokens'
+                token_value = 8000
+                try:
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": "You are a helpful assistant that shows step-by-step reasoning."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        **{token_param: token_value}
+                    )
+                    outputs[model] = response.choices[0].message.content
+                except Exception as e:
+                    outputs[model] = f"Error: {str(e)}"
+            return outputs
 
+        def print_model_outputs(outputs):
+            table_data = []
+            for model, output in outputs.items():
+                table_data.append([model, output.strip()])
+            headers = ["Model", "Output"]
+            table = tabulate(table_data, headers, tablefmt="grid")
+            print(table)
 
-      def print_model_outputs(outputs):
-        table_data = []
-        print(outputs)
-        for model, output in outputs.items():
-            table_data.append([model, output.strip()])
-
-        headers = ["Model", "Output"]
-        table = tabulate(table_data, headers, tablefmt="grid")
-        print(table)
-        print()
-
-      final_result=run_comparison_models(prompt)
-      print_model_outputs(final_result)
-
+        final_result = run_comparison_models(prompt)
+        print_model_outputs(final_result)
     ```
 </Step>
 <Step title="Running the function">
-    Do this for how many ever prompts you want to try out.
-    ```py
+    Do this for however many prompts you want to try out.
+    ```python Python icon="python"
     prompt1 = """How many times does the letter 'r' appear in the word 'strrawberrry'?"""
-
     final_answer(prompt1)
     ```
 </Step>
