@@ -1,0 +1,1090 @@
+---
+title: "Using Private MCP Servers with Responses API"
+description: "Client-side tool handling for private MCP servers that aren't accessible to model providers"
+---
+
+When using the Responses API with remote MCP servers, the model provider (OpenAI, Anthropic, etc.) needs to reach the MCP server URL directly. This works great for public MCP servers, but **fails for private servers** behind firewalls, VPNs, or on local networks.
+
+This guide shows you how to use private MCP servers by **offloading tool fetching and invocations to the client side** — giving you full control while still leveraging the Responses API's powerful agentic capabilities.
+
+## The Problem
+
+<Warning>
+**Remote MCP Flow (Provider-Managed)**
+
+Your App → Portkey → OpenAI → ✗ → Private MCP Server
+
+The provider **cannot reach** your private server!
+</Warning>
+
+When you pass an MCP server URL in your Responses API request, the model provider makes the connection. If your MCP server is:
+- Behind a corporate firewall
+- Running on `localhost` or a private network
+- Requires VPN access
+- Not exposed to the public internet
+
+...the provider simply cannot reach it, and the request fails.
+
+## The Solution: Client-Side MCP Handling
+
+Instead of letting the provider connect to your MCP server, you handle all MCP interactions locally:
+
+<Check>
+**Client-Side MCP Flow (You Control Everything)**
+
+Your App ↔ Private MCP Server *(direct connection)*
+
+Your App → Portkey → Provider *(sends function tools, receives tool calls)*
+</Check>
+
+<Steps>
+  <Step title="Fetch tools locally">
+    Your app connects directly to your private MCP server and retrieves available tools
+  </Step>
+  <Step title="Send as function tools">
+    Convert MCP tools to function tool format and include them in your Responses API request
+  </Step>
+  <Step title="Execute tools locally">
+    When the model requests a tool call, your app executes it against your private MCP server
+  </Step>
+  <Step title="Return results">
+    Send tool results back to continue the conversation
+  </Step>
+</Steps>
+
+## Prerequisites
+
+<CodeGroup>
+```bash Python
+pip install portkey-ai mcp
+```
+
+```bash TypeScript
+npm install portkey-ai @modelcontextprotocol/sdk
+```
+</CodeGroup>
+
+## Implementation
+
+### Step 1: Create an MCP Client
+
+First, set up a client that connects to your private MCP server.
+
+<CodeGroup>
+```python Python
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+import asyncio
+
+class MCPClient:
+    def __init__(self, server_url: str, headers: dict = None):
+        self.server_url = server_url
+        self.headers = headers or {}
+        self.session = None
+        self._client = None
+        self._streams = None
+    
+    async def connect(self):
+        """Connect to the MCP server."""
+        self._client = streamablehttp_client(
+            url=self.server_url,
+            headers=self.headers
+        )
+        self._streams = await self._client.__aenter__()
+        read_stream, write_stream, _ = self._streams
+        
+        self.session = ClientSession(read_stream, write_stream)
+        await self.session.__aenter__()
+        await self.session.initialize()
+        
+        return self
+    
+    async def disconnect(self):
+        """Disconnect from the MCP server."""
+        if self.session:
+            await self.session.__aexit__(None, None, None)
+        if self._client:
+            await self._client.__aexit__(None, None, None)
+    
+    async def list_tools(self) -> list:
+        """Fetch all available tools from the MCP server."""
+        result = await self.session.list_tools()
+        return result.tools
+    
+    async def call_tool(self, name: str, arguments: dict) -> str:
+        """Execute a tool on the MCP server."""
+        result = await self.session.call_tool(name, arguments)
+        # Extract text content from the result
+        if result.content:
+            return "\n".join(
+                item.text for item in result.content 
+                if hasattr(item, 'text')
+            )
+        return ""
+```
+
+```typescript TypeScript
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+class MCPClient {
+  private client: Client;
+  private transport!: StreamableHTTPClientTransport;
+  private serverUrl: string;
+  private headers: Record<string, string>;
+
+  constructor(serverUrl: string, headers: Record<string, string> = {}) {
+    this.serverUrl = serverUrl;
+    this.headers = headers;
+    this.client = new Client(
+      { name: "portkey-mcp-client", version: "1.0.0" },
+      { capabilities: {} }
+    );
+  }
+
+  async connect(): Promise<this> {
+    this.transport = new StreamableHTTPClientTransport(
+      new URL(this.serverUrl),
+      { requestInit: { headers: this.headers } }
+    );
+    await this.client.connect(this.transport);
+    return this;
+  }
+
+  async disconnect(): Promise<void> {
+    await this.client.close();
+  }
+
+  async listTools(): Promise<any[]> {
+    const result = await this.client.listTools();
+    return result.tools;
+  }
+
+  async callTool(name: string, arguments_: Record<string, any>): Promise<string> {
+    const result = await this.client.callTool({ name, arguments: arguments_ });
+    if (result.content && Array.isArray(result.content)) {
+      return result.content
+        .filter((item: any) => item.type === "text")
+        .map((item: any) => item.text)
+        .join("\n");
+    }
+    return "";
+  }
+}
+```
+</CodeGroup>
+
+### Step 2: Convert MCP Tools to Function Tools
+
+The Responses API accepts function tools in a specific format. Convert MCP tools to this format:
+
+<CodeGroup>
+```python Python
+def mcp_tools_to_function_tools(mcp_tools: list) -> list:
+    """Convert MCP tools to OpenAI function tool format."""
+    function_tools = []
+    
+    for tool in mcp_tools:
+        function_tools.append({
+            "type": "function",
+            "name": tool.name,
+            "description": tool.description or "",
+            "parameters": tool.inputSchema or {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        })
+    
+    return function_tools
+```
+
+```typescript TypeScript
+function mcpToolsToFunctionTools(mcpTools: any[]): any[] {
+  return mcpTools.map((tool) => ({
+    type: "function",
+    name: tool.name,
+    description: tool.description || "",
+    parameters: tool.inputSchema || {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  }));
+}
+```
+</CodeGroup>
+
+### Step 3: Handle Tool Calls in the Response Loop
+
+When the model wants to call a tool, execute it against your MCP server and return the results:
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+import json
+
+async def run_with_private_mcp(
+    portkey_client: Portkey,
+    mcp_client: MCPClient,
+    user_input: str,
+    model: str = "gpt-4.1"
+) -> str:
+    """Run a conversation with private MCP server tool support."""
+    
+    # Step 1: Fetch tools from your private MCP server
+    mcp_tools = await mcp_client.list_tools()
+    function_tools = mcp_tools_to_function_tools(mcp_tools)
+    
+    print(f"✓ Loaded {len(function_tools)} tools from private MCP server")
+    
+    # Step 2: Initial request to the model
+    response = portkey_client.responses.create(
+        model=model,
+        input=user_input,
+        tools=function_tools
+    )
+    
+    # Step 3: Handle tool calls in a loop
+    while True:
+        # Check if the model wants to call any tools
+        tool_calls = [
+            item for item in response.output 
+            if item.type == "function_call"
+        ]
+        
+        if not tool_calls:
+            # No more tool calls - we're done
+            break
+        
+        # Execute each tool call against your private MCP server
+        tool_results = []
+        for tool_call in tool_calls:
+            print(f"→ Executing tool: {tool_call.name}")
+            
+            # Parse arguments and call the MCP server
+            arguments = json.loads(tool_call.arguments)
+            result = await mcp_client.call_tool(tool_call.name, arguments)
+            
+            tool_results.append({
+                "type": "function_call_output",
+                "call_id": tool_call.call_id,
+                "output": result
+            })
+            
+            print(f"✓ Tool result received")
+        
+        # Step 4: Send results back to continue the conversation
+        response = portkey_client.responses.create(
+            model=model,
+            input=tool_results,
+            tools=function_tools,
+            previous_response_id=response.id
+        )
+    
+    # Extract and return the final text response
+    return response.output_text
+```
+
+```typescript TypeScript
+import { Portkey } from "portkey-ai";
+
+async function runWithPrivateMCP(
+  portkeyClient: Portkey,
+  mcpClient: MCPClient,
+  userInput: string,
+  model: string = "gpt-4.1"
+): Promise<string> {
+  // Step 1: Fetch tools from your private MCP server
+  const mcpTools = await mcpClient.listTools();
+  const functionTools = mcpToolsToFunctionTools(mcpTools);
+
+  console.log(`✓ Loaded ${functionTools.length} tools from private MCP server`);
+
+  // Step 2: Initial request to the model
+  let response = await portkeyClient.responses.create({
+    model,
+    input: userInput,
+    tools: functionTools,
+  });
+
+  // Step 3: Handle tool calls in a loop
+  while (true) {
+    // Check if the model wants to call any tools
+    const toolCalls = response.output.filter(
+      (item: any) => item.type === "function_call"
+    ) as any;
+
+    if (toolCalls.length === 0) {
+      // No more tool calls - we're done
+      break;
+    }
+
+    // Execute each tool call against your private MCP server
+    const toolResults: any[] = [];
+    for (const toolCall of toolCalls) {
+      console.log(`→ Executing tool: ${toolCall.name}`);
+
+      // Parse arguments and call the MCP server
+      const arguments_ = JSON.parse(toolCall.arguments);
+      const result = await mcpClient.callTool(toolCall.name, arguments_);
+
+      toolResults.push({
+        type: "function_call_output",
+        call_id: toolCall.call_id,
+        output: result,
+      });
+
+      console.log(`✓ Tool result received`);
+    }
+
+    // Step 4: Send results back to continue the conversation
+    response = await portkeyClient.responses.create({
+      model,
+      input: toolResults,
+      tools: functionTools,
+      previous_response_id: response.id,
+    });
+  }
+
+  // Extract and return the final text response
+  return response.output_text;
+}
+```
+</CodeGroup>
+
+### Step 4: Putting It All Together
+
+<CodeGroup>
+```python Python
+import asyncio
+from portkey_ai import Portkey
+
+async def main():
+    # Initialize Portkey client
+    portkey = Portkey(
+        api_key="YOUR_PORTKEY_API_KEY",
+        provider="@openai-provider-slug"
+    )
+    
+    # Connect to your private MCP server
+    # This can be localhost, internal IP, or any URL your app can reach
+    mcp = MCPClient(
+        server_url="http://localhost:8000/mcp",  # Your private server
+        headers={"Authorization": "Bearer your-internal-token"}
+    )
+    await mcp.connect()
+    
+    try:
+        # Run a query using your private MCP tools
+        result = await run_with_private_mcp(
+            portkey_client=portkey,
+            mcp_client=mcp,
+            user_input="What's on my calendar for today?",
+            model="gpt-4.1"
+        )
+        
+        print("\n" + "="*50)
+        print("Final Response:")
+        print(result)
+        
+    finally:
+        await mcp.disconnect()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+```typescript TypeScript
+import { Portkey } from "portkey-ai";
+
+async function main() {
+  // Initialize Portkey client
+  const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY",
+    provider: "@openai-provider-slug",
+  });
+
+  // Connect to your private MCP server
+  // This can be localhost, internal IP, or any URL your app can reach
+  const mcp = new MCPClient(
+    "http://localhost:8000/mcp", // Your private server
+    { Authorization: "Bearer your-internal-token" }
+  );
+  await mcp.connect();
+
+  try {
+    // Run a query using your private MCP tools
+    const result = await runWithPrivateMCP(
+      portkey,
+      mcp,
+      "What's on my calendar for today?",
+      "gpt-4.1"
+    );
+
+    console.log("\n" + "=".repeat(50));
+    console.log("Final Response:");
+    console.log(result);
+  } finally {
+    await mcp.disconnect();
+  }
+}
+
+main();
+```
+</CodeGroup>
+
+## Complete Example
+
+<Accordion title="Full Python Implementation">
+
+```python Python
+import asyncio
+import json
+from portkey_ai import Portkey
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+
+class MCPClient:
+    """Client for connecting to private MCP servers."""
+    
+    def __init__(self, server_url: str, headers: dict = None):
+        self.server_url = server_url
+        self.headers = headers or {}
+        self.session = None
+        self._client = None
+        self._streams = None
+    
+    async def connect(self):
+        """Connect to the MCP server."""
+        self._client = streamablehttp_client(
+            url=self.server_url,
+            headers=self.headers
+        )
+        self._streams = await self._client.__aenter__()
+        read_stream, write_stream, _ = self._streams
+        
+        self.session = ClientSession(read_stream, write_stream)
+        await self.session.__aenter__()
+        await self.session.initialize()
+        
+        return self
+    
+    async def disconnect(self):
+        """Disconnect from the MCP server."""
+        if self.session:
+            await self.session.__aexit__(None, None, None)
+        if self._client:
+            await self._client.__aexit__(None, None, None)
+    
+    async def list_tools(self) -> list:
+        """Fetch all available tools from the MCP server."""
+        result = await self.session.list_tools()
+        return result.tools
+    
+    async def call_tool(self, name: str, arguments: dict) -> str:
+        """Execute a tool on the MCP server."""
+        result = await self.session.call_tool(name, arguments)
+        if result.content:
+            return "\n".join(
+                item.text for item in result.content 
+                if hasattr(item, 'text')
+            )
+        return ""
+
+
+def mcp_tools_to_function_tools(mcp_tools: list) -> list:
+    """Convert MCP tools to OpenAI function tool format."""
+    function_tools = []
+    
+    for tool in mcp_tools:
+        function_tools.append({
+            "type": "function",
+            "name": tool.name,
+            "description": tool.description or "",
+            "parameters": tool.inputSchema or {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        })
+    
+    return function_tools
+
+
+async def run_with_private_mcp(
+    portkey_client: Portkey,
+    mcp_client: MCPClient,
+    user_input: str,
+    model: str = "gpt-4.1"
+) -> str:
+    """Run a conversation with private MCP server tool support."""
+    
+    # Fetch tools from your private MCP server
+    mcp_tools = await mcp_client.list_tools()
+    function_tools = mcp_tools_to_function_tools(mcp_tools)
+    
+    print(f"✓ Loaded {len(function_tools)} tools from private MCP server")
+    for tool in function_tools:
+        print(f"  - {tool['name']}: {tool['description'][:50]}...")
+    
+    # Initial request to the model
+    response = portkey_client.responses.create(
+        model=model,
+        input=user_input,
+        tools=function_tools
+    )
+    
+    # Handle tool calls in a loop
+    iteration = 0
+    max_iterations = 10  # Safety limit
+    
+    while iteration < max_iterations:
+        iteration += 1
+        
+        # Check if the model wants to call any tools
+        tool_calls = [
+            item for item in response.output 
+            if item.type == "function_call"
+        ]
+        
+        if not tool_calls:
+            break
+        
+        print(f"\n--- Iteration {iteration} ---")
+        
+        # Execute each tool call against your private MCP server
+        tool_results = []
+        for tool_call in tool_calls:
+            print(f"→ Executing tool: {tool_call.name}")
+            print(f"  Arguments: {tool_call.arguments}")
+            
+            arguments = json.loads(tool_call.arguments)
+            result = await mcp_client.call_tool(tool_call.name, arguments)
+            
+            tool_results.append({
+                "type": "function_call_output",
+                "call_id": tool_call.call_id,
+                "output": result
+            })
+            
+            print(f"✓ Result: {result[:100]}..." if len(result) > 100 else f"✓ Result: {result}")
+        
+        # Send results back to continue the conversation
+        response = portkey_client.responses.create(
+            model=model,
+            input=tool_results,
+            tools=function_tools,
+            previous_response_id=response.id
+        )
+    
+    # Extract the final text response
+    return response.output_text
+
+
+async def main():
+    # Initialize Portkey client
+    portkey = Portkey(
+        api_key="YOUR_PORTKEY_API_KEY",
+        provider="@openai-provider-slug"
+    )
+    
+    # Connect to your private MCP server
+    mcp = MCPClient(
+        server_url="http://localhost:8000/mcp",
+        headers={"Authorization": "Bearer your-internal-token"}
+    )
+    await mcp.connect()
+    
+    try:
+        result = await run_with_private_mcp(
+            portkey_client=portkey,
+            mcp_client=mcp,
+            user_input="What's on my calendar for today?",
+            model="gpt-4.1"
+        )
+        
+        print("\n" + "="*50)
+        print("Final Response:")
+        print(result)
+        
+    finally:
+        await mcp.disconnect()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+</Accordion>
+
+<Accordion title="Full TypeScript Implementation">
+
+```typescript TypeScript
+import { Portkey } from "portkey-ai";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+class MCPClient {
+  private client: Client;
+  private transport!: StreamableHTTPClientTransport;
+  private serverUrl: string;
+  private headers: Record<string, string>;
+
+  constructor(serverUrl: string, headers: Record<string, string> = {}) {
+    this.serverUrl = serverUrl;
+    this.headers = headers;
+    this.client = new Client(
+      { name: "portkey-mcp-client", version: "1.0.0" },
+      { capabilities: {} }
+    );
+  }
+
+  async connect(): Promise<this> {
+    this.transport = new StreamableHTTPClientTransport(new URL(this.serverUrl), {
+      requestInit: { headers: this.headers },
+    });
+    await this.client.connect(this.transport);
+    return this;
+  }
+
+  async disconnect(): Promise<void> {
+    await this.client.close();
+  }
+
+  async listTools(): Promise<any[]> {
+    const result = await this.client.listTools();
+    return result.tools;
+  }
+
+  async callTool(name: string, arguments_: Record<string, any>): Promise<string> {
+    const result = await this.client.callTool({ name, arguments: arguments_ });
+    if (result.content && Array.isArray(result.content)) {
+      return result.content
+        .filter((item: any) => item.type === "text")
+        .map((item: any) => item.text)
+        .join("\n");
+    }
+    return "";
+  }
+}
+
+function mcpToolsToFunctionTools(mcpTools: any[]): any[] {
+  return mcpTools.map((tool) => ({
+    type: "function",
+    name: tool.name,
+    description: tool.description || "",
+    parameters: tool.inputSchema || {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  }));
+}
+
+async function runWithPrivateMCP(
+  portkeyClient: Portkey,
+  mcpClient: MCPClient,
+  userInput: string,
+  model: string = "gpt-4.1"
+): Promise<string> {
+  // Fetch tools from your private MCP server
+  const mcpTools = await mcpClient.listTools();
+  const functionTools = mcpToolsToFunctionTools(mcpTools);
+
+  console.log(`✓ Loaded ${functionTools.length} tools from private MCP server`);
+  for (const tool of functionTools) {
+    const desc = tool.description.substring(0, 50);
+    console.log(`  - ${tool.name}: ${desc}...`);
+  }
+
+  // Initial request to the model
+  let response = await portkeyClient.responses.create({
+    model,
+    input: userInput,
+    tools: functionTools,
+  });
+
+  // Handle tool calls in a loop
+  let iteration = 0;
+  const maxIterations = 10; // Safety limit
+
+  while (iteration < maxIterations) {
+    iteration++;
+
+    // Check if the model wants to call any tools
+    const toolCalls = response.output.filter(
+      (item: any) => item.type === "function_call"
+    ) as any;
+
+    if (toolCalls.length === 0) {
+      break;
+    }
+
+    console.log(`\n--- Iteration ${iteration} ---`);
+
+    // Execute each tool call against your private MCP server
+    const toolResults: any[] = [];
+    for (const toolCall of toolCalls) {
+      console.log(`→ Executing tool: ${toolCall.name}`);
+      console.log(`  Arguments: ${toolCall.arguments}`);
+
+      const arguments_ = JSON.parse(toolCall.arguments);
+      const result = await mcpClient.callTool(toolCall.name, arguments_);
+
+      toolResults.push({
+        type: "function_call_output",
+        call_id: toolCall.call_id,
+        output: result,
+      });
+
+      const displayResult = result.length > 100 ? `${result.substring(0, 100)}...` : result;
+      console.log(`✓ Result: ${displayResult}`);
+    }
+
+    // Send results back to continue the conversation
+    response = await portkeyClient.responses.create({
+      model,
+      input: toolResults,
+      tools: functionTools,
+      previous_response_id: response.id,
+    });
+  }
+
+  // Extract the final text response
+  return response.output_text;
+}
+
+async function main() {
+  // Initialize Portkey client
+  const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY",
+    provider: "@openai-provider-slug",
+  });
+
+  // Connect to your private MCP server
+  const mcp = new MCPClient("http://localhost:8000/mcp", {
+    Authorization: "Bearer your-internal-token",
+  });
+  await mcp.connect();
+
+  try {
+    const result = await runWithPrivateMCP(
+      portkey,
+      mcp,
+      "What's on my calendar for today?",
+      "gpt-4.1"
+    );
+
+    console.log("\n" + "=".repeat(50));
+    console.log("Final Response:");
+    console.log(result);
+  } finally {
+    await mcp.disconnect();
+  }
+}
+
+main();
+```
+
+</Accordion>
+
+## Using with Multiple MCP Servers
+
+You can connect to multiple private MCP servers and combine their tools:
+
+<CodeGroup>
+```python Python
+from typing import Dict
+
+async def run_with_multiple_mcp_servers(
+    portkey_client: Portkey,
+    mcp_clients: Dict[str, MCPClient],  # {"calendar": client1, "database": client2}
+    user_input: str,
+    model: str = "gpt-4.1"
+) -> str:
+    # Collect tools from all servers with prefixed names
+    all_tools = []
+    tool_server_map: Dict[str, tuple] = {}  # Map tool names to their MCP client
+    
+    for server_name, client in mcp_clients.items():
+        mcp_tools = await client.list_tools()
+        
+        for tool in mcp_tools:
+            # Prefix tool names to avoid conflicts
+            prefixed_name = f"{server_name}__{tool.name}"
+            tool_server_map[prefixed_name] = (client, tool.name)
+            
+            all_tools.append({
+                "type": "function",
+                "name": prefixed_name,
+                "description": f"[{server_name}] {tool.description or ''}",
+                "parameters": tool.inputSchema or {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            })
+    
+    print(f"✓ Loaded {len(all_tools)} tools from {len(mcp_clients)} servers")
+    
+    response = portkey_client.responses.create(
+        model=model,
+        input=user_input,
+        tools=all_tools
+    )
+    
+    while True:
+        tool_calls = [
+            item for item in response.output 
+            if item.type == "function_call"
+        ]
+        
+        if not tool_calls:
+            break
+        
+        tool_results = []
+        for tool_call in tool_calls:
+            # Route to the correct MCP server
+            client, original_name = tool_server_map[tool_call.name]
+            
+            arguments = json.loads(tool_call.arguments)
+            result = await client.call_tool(original_name, arguments)
+            
+            tool_results.append({
+                "type": "function_call_output",
+                "call_id": tool_call.call_id,
+                "output": result
+            })
+        
+        response = portkey_client.responses.create(
+            model=model,
+            input=tool_results,
+            tools=all_tools,
+            previous_response_id=response.id
+        )
+    
+    return response.output_text
+
+
+# Usage
+async def main():
+    portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY", provider="@openai-provider-slug")
+    
+    # Connect to multiple private servers
+    calendar_mcp = await MCPClient("http://localhost:8001/mcp").connect()
+    database_mcp = await MCPClient("http://internal-db:8002/mcp").connect()
+    
+    try:
+        result = await run_with_multiple_mcp_servers(
+            portkey_client=portkey,
+            mcp_clients={
+                "calendar": calendar_mcp,
+                "database": database_mcp
+            },
+            user_input="Check my meetings and find related customer records",
+            model="gpt-4.1"
+        )
+        
+        print(result)
+    finally:
+        await calendar_mcp.disconnect()
+        await database_mcp.disconnect()
+```
+
+```typescript TypeScript
+async function runWithMultipleMCPServers(
+  portkeyClient: Portkey,
+  mcpClients: Map<string, MCPClient>,
+  userInput: string,
+  model: string = "gpt-4.1"
+): Promise<string> {
+  // Collect tools from all servers with prefixed names
+  const allTools: any[] = [];
+  const toolServerMap = new Map<string, [MCPClient, string]>();
+
+  for (const [serverName, client] of mcpClients) {
+    const mcpTools = await client.listTools();
+
+    for (const tool of mcpTools) {
+      // Prefix tool names to avoid conflicts
+      const prefixedName = `${serverName}__${tool.name}`;
+      toolServerMap.set(prefixedName, [client, tool.name]);
+
+      allTools.push({
+        type: "function",
+        name: prefixedName,
+        description: `[${serverName}] ${tool.description || ""}`,
+        parameters: tool.inputSchema || {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      });
+    }
+  }
+
+  console.log(`✓ Loaded ${allTools.length} tools from ${mcpClients.size} servers`);
+
+  let response = await portkeyClient.responses.create({
+    model,
+    input: userInput,
+    tools: allTools,
+  });
+
+  while (true) {
+    const toolCalls = response.output.filter(
+      (item: any) => item.type === "function_call"
+    ) as any;
+
+    if (toolCalls.length === 0) break;
+
+    const toolResults: any[] = [];
+    for (const toolCall of toolCalls) {
+      // Route to the correct MCP server
+      const [client, originalName] = toolServerMap.get(toolCall.name)!;
+
+      const arguments_ = JSON.parse(toolCall.arguments);
+      const result = await client.callTool(originalName, arguments_);
+
+      toolResults.push({
+        type: "function_call_output",
+        call_id: toolCall.call_id,
+        output: result,
+      });
+    }
+
+    response = await portkeyClient.responses.create({
+      model,
+      input: toolResults,
+      tools: allTools,
+      previous_response_id: response.id,
+    });
+  }
+
+  return response.output_text;
+}
+
+// Usage
+async function main() {
+  const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY",
+    provider: "@openai-provider-slug",
+  });
+
+  // Connect to multiple private servers
+  const calendarMcp = await new MCPClient("http://localhost:8001/mcp").connect();
+  const databaseMcp = await new MCPClient("http://internal-db:8002/mcp").connect();
+
+  try {
+    const result = await runWithMultipleMCPServers(
+      portkey,
+      new Map([
+        ["calendar", calendarMcp],
+        ["database", databaseMcp],
+      ]),
+      "Check my meetings and find related customer records",
+      "gpt-4.1"
+    );
+
+    console.log(result);
+  } finally {
+    await calendarMcp.disconnect();
+    await databaseMcp.disconnect();
+  }
+}
+```
+</CodeGroup>
+
+## Adding Portkey Features
+
+Since you're using Portkey's client, you get access to all its enterprise features:
+
+### Observability & Logging
+
+```python Python
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    provider="@openai-provider-slug",
+    # Track by user/team/feature
+    metadata={
+        "user_id": "user-123",
+        "team": "engineering",
+        "feature": "private-mcp-tools"
+    },
+    # Add custom trace ID for correlation
+    trace_id="custom-trace-id"
+)
+```
+
+### Fallbacks & Reliability
+
+```python Python
+from portkey_ai import Portkey
+
+# Use gateway configs for fallbacks
+portkey = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    config={
+        "strategy": {
+            "mode": "fallback"
+        },
+        "targets": [
+            {"provider": "openai", "override_params": {"model": "gpt-4.1"}},
+            {"provider": "anthropic", "override_params": {"model": "claude-sonnet-4-20250514"}}
+        ]
+    }
+)
+```
+
+## Benefits of Client-Side MCP Handling
+
+<CardGroup cols={2}>
+<Card title="Access Private Servers" icon="lock">
+Connect to MCP servers on localhost, internal networks, or behind VPNs.
+</Card>
+
+<Card title="Full Control" icon="sliders">
+Implement custom authentication, rate limiting, and error handling.
+</Card>
+
+<Card title="Multiple Servers" icon="diagram-project">
+Combine tools from multiple MCP servers in a single conversation.
+</Card>
+
+<Card title="Portkey Features" icon="chart-line">
+Get observability, caching, fallbacks, and budget controls on all requests.
+</Card>
+</CardGroup>
+
+## When to Use Each Approach
+
+| Approach | Use When |
+|----------|----------|
+| **Remote MCP** (provider-managed) | MCP server is publicly accessible, you want simplicity |
+| **Client-Side MCP** (this guide) | MCP server is private, you need custom auth/routing, you want more control |
+
+## Next Steps
+
+<CardGroup cols={2}>
+<Card title="Remote MCP Docs" icon="globe" href="/product/ai-gateway/remote-mcp">
+Learn about provider-managed remote MCP for public servers.
+</Card>
+
+<Card title="Converting STDIO to HTTP" icon="arrows-rotate" href="/guides/converting-stdio-to-streamable-http">
+Convert local MCP servers to remote HTTP servers.
+</Card>
+
+<Card title="Function Calling" icon="code" href="/guides/getting-started/function-calling">
+Understand the underlying function calling workflow.
+</Card>
+
+<Card title="AI Gateway Features" icon="shield-check" href="/product/ai-gateway">
+Explore Portkey's reliability and observability features.
+</Card>
+</CardGroup>
+
+<Note>
+**Need help?** Join our [Discord community](https://portkey.sh/discord-report) or reach out to [support](mailto:support@portkey.ai).
+</Note>
