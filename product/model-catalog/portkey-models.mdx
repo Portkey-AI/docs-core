@@ -1,10 +1,12 @@
 ---
-title: "Portkey Models Directory"
+title: "Portkey Models"
 description: "Open-source pricing and configuration database for 2,300+ LLMs across 35+ providers"
+api: "GET https://api.portkey.ai/model-configs/pricing/{provider}/{model}"
+authMethod: "none"
 ---
 
 <Info>
-**Portkey Models** is the open-source pricing database that powers cost tracking across the Portkey ecosystem. Query accurate, up-to-date pricing for any model via API.
+**Portkey Models** is a free, open-source pricing database for LLMs. No API key required — just query any model's pricing directly.
 </Info>
 
 <CardGroup cols={3}>
@@ -80,19 +82,136 @@ const costInDollars = (tokens * priceFromAPI) / 100;
 
 ### Get Model Pricing
 
+Returns pricing configuration for a specific model.
+
 ```
 GET https://api.portkey.ai/model-configs/pricing/{provider}/{model}
 ```
 
+#### Path Parameters
+
 <ParamField path="provider" type="string" required>
-  Provider slug in lowercase. Examples: `openai`, `anthropic`, `google`, `azure-openai`, `bedrock`, `together-ai`, `groq`, `deepseek`, `x-ai`
+  Provider identifier. Use lowercase with hyphens.
+  
+  Examples: `openai`, `anthropic`, `google`, `azure-openai`, `bedrock`, `together-ai`, `groq`, `deepseek`, `x-ai`, `mistral-ai`, `cohere`, `fireworks-ai`, `perplexity-ai`, `anyscale`, `deepinfra`, `cerebras`
 </ParamField>
 
 <ParamField path="model" type="string" required>
-  Model identifier exactly as the provider specifies. Examples: `gpt-4o`, `claude-3-5-sonnet-20241022`, `gemini-2.0-flash-001`
+  Model identifier. Use the exact model name as specified by the provider.
+  
+  Examples: `gpt-4o`, `gpt-4-turbo`, `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229`, `gemini-2.0-flash-001`, `gemini-1.5-pro`
 </ParamField>
 
-#### Response
+#### Response Schema
+
+<ResponseField name="pay_as_you_go" type="object">
+  Token-based pricing. All prices in USD **cents per token**.
+  
+  <Expandable title="properties">
+    <ResponseField name="request_token" type="object">
+      Input token pricing.
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token. Example: `0.00025` = $0.0025 per 1K tokens
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="response_token" type="object">
+      Output token pricing.
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="cache_read_input_token" type="object">
+      Prompt cache read pricing (when available).
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="cache_write_input_token" type="object">
+      Prompt cache write pricing (when available).
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="request_audio_token" type="object">
+      Audio input token pricing (for multimodal models).
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="response_audio_token" type="object">
+      Audio output token pricing (for multimodal models).
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="additional_units" type="object">
+      Provider-specific pricing for features beyond tokens.
+      
+      Common units:
+      - `web_search` — Web search tool usage
+      - `file_search` — File search tool usage  
+      - `thinking_token` — Chain-of-thought reasoning tokens
+      - `image_token` — Image generation/processing
+      - `video_duration_seconds_*` — Video generation (by resolution)
+    </ResponseField>
+    
+    <ResponseField name="image" type="object">
+      Image generation pricing by quality and size (for image models).
+      
+      Structure: `{ "quality": { "resolution": { "price": number } } }`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="calculate" type="object">
+  Cost calculation formulas for complex pricing scenarios.
+  
+  <Expandable title="properties">
+    <ResponseField name="request" type="object">
+      Formula for calculating request (input) cost.
+    </ResponseField>
+    <ResponseField name="response" type="object">
+      Formula for calculating response (output) cost.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="currency" type="string">
+  Currency code. Always `USD`.
+</ResponseField>
+
+<ResponseField name="finetune_config" type="object">
+  Fine-tuning pricing (when available).
+  
+  <Expandable title="properties">
+    <ResponseField name="pay_per_token" type="object">
+      Training cost per token.
+    </ResponseField>
+    <ResponseField name="pay_per_hour" type="object">
+      Training cost per hour.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example Responses
 
 <CodeGroup>
 
@@ -101,10 +220,25 @@ GET https://api.portkey.ai/model-configs/pricing/{provider}/{model}
   "pay_as_you_go": {
     "request_token": { "price": 0.00025 },
     "response_token": { "price": 0.001 },
+    "cache_write_input_token": { "price": 0 },
     "cache_read_input_token": { "price": 0.000125 },
     "additional_units": {
       "web_search": { "price": 1 },
       "file_search": { "price": 0.25 }
+    }
+  },
+  "calculate": {
+    "request": {
+      "operation": "sum",
+      "operands": [
+        { "operation": "multiply", "operands": [{ "value": "input_tokens" }, { "value": "rates.request_token" }] },
+        { "operation": "multiply", "operands": [{ "value": "cache_write_tokens" }, { "value": "rates.cache_write_input_token" }] },
+        { "operation": "multiply", "operands": [{ "value": "cache_read_tokens" }, { "value": "rates.cache_read_input_token" }] }
+      ]
+    },
+    "response": {
+      "operation": "multiply",
+      "operands": [{ "value": "output_tokens" }, { "value": "rates.response_token" }]
     }
   },
   "currency": "USD"
@@ -130,7 +264,28 @@ GET https://api.portkey.ai/model-configs/pricing/{provider}/{model}
     "response_token": { "price": 0.001 },
     "additional_units": {
       "thinking_token": { "price": 0.001 },
-      "web_search": { "price": 3.5 }
+      "web_search": { "price": 3.5 },
+      "search": { "price": 3.5 }
+    }
+  },
+  "currency": "USD"
+}
+```
+
+```json OpenAI DALL-E 3 (Image Model)
+{
+  "pay_as_you_go": {
+    "image": {
+      "standard": {
+        "1024x1024": { "price": 4 },
+        "1024x1792": { "price": 8 },
+        "1792x1024": { "price": 8 }
+      },
+      "hd": {
+        "1024x1024": { "price": 8 },
+        "1024x1792": { "price": 12 },
+        "1792x1024": { "price": 12 }
+      }
     }
   },
   "currency": "USD"
@@ -143,23 +298,126 @@ GET https://api.portkey.ai/model-configs/pricing/{provider}/{model}
 
 ### Get Model Configuration
 
+Returns general configuration and capabilities for a specific model.
+
 ```
 GET https://api.portkey.ai/model-configs/general/{provider}/{model}
 ```
 
-Returns model capabilities, parameter limits, and supported features.
+#### Path Parameters
 
-#### Response
+<ParamField path="provider" type="string" required>
+  Provider identifier (e.g., `openai`, `anthropic`, `google`)
+</ParamField>
 
-```json
+<ParamField path="model" type="string" required>
+  Model identifier (e.g., `gpt-4o`, `claude-3-opus`)
+</ParamField>
+
+#### Response Schema
+
+<ResponseField name="params" type="array">
+  Model parameters with their constraints.
+  
+  <Expandable title="item properties">
+    <ResponseField name="key" type="string">
+      Parameter name (e.g., `max_tokens`, `temperature`, `top_p`)
+    </ResponseField>
+    <ResponseField name="defaultValue" type="any">
+      Default value for the parameter.
+    </ResponseField>
+    <ResponseField name="minValue" type="number">
+      Minimum allowed value.
+    </ResponseField>
+    <ResponseField name="maxValue" type="number">
+      Maximum allowed value.
+    </ResponseField>
+    <ResponseField name="type" type="string">
+      Parameter type (e.g., `boolean`, `string`, `array-of-strings`)
+    </ResponseField>
+    <ResponseField name="options" type="array">
+      Available options for enum-type parameters.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="type" type="object">
+  Model type classification.
+  
+  <Expandable title="properties">
+    <ResponseField name="primary" type="string">
+      Primary model type: `chat`, `text`, `embedding`, `image`, `audio`, `moderation`
+    </ResponseField>
+    <ResponseField name="supported" type="array">
+      Supported features: `tools`, `image`, `cache_control`, `json_mode`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="messages" type="object">
+  Message configuration.
+  
+  <Expandable title="properties">
+    <ResponseField name="options" type="array">
+      Supported message roles: `system`, `user`, `assistant`, `developer`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="disablePlayground" type="boolean">
+  If `true`, model is not available in Portkey playground.
+</ResponseField>
+
+<ResponseField name="isDefault" type="boolean">
+  If `true`, this is the default model for the provider.
+</ResponseField>
+
+#### Example Responses
+
+<CodeGroup>
+
+```json OpenAI GPT-4o
 {
   "params": [
-    { "key": "max_tokens", "maxValue": 16384 },
-    { "key": "temperature", "minValue": 0, "maxValue": 2, "defaultValue": 1 }
+    {
+      "key": "max_tokens",
+      "maxValue": 16384
+    },
+    {
+      "key": "response_format",
+      "defaultValue": null,
+      "options": [
+        { "value": null, "name": "Text" },
+        { "value": "json_object", "name": "JSON Object" },
+        { "value": "json_schema", "name": "JSON Schema" }
+      ],
+      "type": "string"
+    },
+    {
+      "key": "temperature",
+      "minValue": 0,
+      "maxValue": 2,
+      "defaultValue": 1
+    }
   ],
   "type": {
     "primary": "chat",
-    "supported": ["tools", "image", "json_mode"]
+    "supported": ["tools", "image"]
+  }
+}
+```
+
+```json Anthropic Claude 3 Opus
+{
+  "params": [
+    {
+      "key": "max_tokens",
+      "maxValue": 4096
+    }
+  ],
+  "type": {
+    "primary": "chat",
+    "supported": ["tools", "image", "cache_control"]
   },
   "messages": {
     "options": ["system", "user", "assistant"]
@@ -167,32 +425,43 @@ Returns model capabilities, parameter limits, and supported features.
 }
 ```
 
+</CodeGroup>
+
 ---
 
-## Pricing Fields
+## Additional Units Reference
 
-### Token Pricing
+Provider-specific pricing for features beyond standard token costs:
 
-| Field | Description |
-|-------|-------------|
-| `request_token` | Input token cost |
-| `response_token` | Output token cost |
-| `cache_read_input_token` | Prompt cache read cost |
-| `cache_write_input_token` | Prompt cache write cost |
-| `request_audio_token` | Audio input cost |
-| `response_audio_token` | Audio output cost |
+| Unit | Description | Providers | Price Range (¢) |
+|------|-------------|-----------|-----------------|
+| `web_search` | Web search tool usage | OpenAI, Azure, Google, Vertex AI, Perplexity | 0.5 - 3.5 |
+| `file_search` | File search tool usage | OpenAI, Azure | 0.25 |
+| `search` | Google search grounding | Google, Vertex AI | 1.4 - 3.5 |
+| `thinking_token` | Chain-of-thought reasoning | Google, Vertex AI | 0.00004 - 0.0012 |
+| `image_token` | Image processing tokens | Google, Vertex AI | 0.003 |
+| `image_1k` | Image generation (1K units) | Google | 3.9 |
+| `megapixels` | Image generation by megapixel | Together AI | 0.0027 - 0.08 |
+| `video_seconds` | Video generation | Vertex AI | 10 - 50 |
+| `video_duration_seconds_720_1280` | Video (720p) | OpenAI Sora | 10 - 30 |
+| `video_duration_seconds_1080_1920` | Video (1080p) | OpenAI Sora | 50 |
+| `routing_units` | Azure OpenAI routing | Azure OpenAI | 0.000014 |
+| `input_image` | Image input | Vertex AI | 0.01 |
+| `input_video_essential` | Video input (essential) | Vertex AI | 0.05 |
+| `input_video_standard` | Video input (standard) | Vertex AI | 0.1 |
+| `input_video_plus` | Video input (plus) | Vertex AI | 0.2 |
 
-### Additional Units
+<Accordion title="Perplexity Context-Based Pricing">
 
-Some models have pricing for features beyond tokens:
+Perplexity has context-dependent web search pricing:
 
-| Unit | Description | Providers |
-|------|-------------|-----------|
-| `web_search` | Web search tool | OpenAI, Google, Perplexity |
-| `file_search` | File search tool | OpenAI, Azure |
-| `thinking_token` | Reasoning tokens | Google, Anthropic |
-| `image_token` | Image processing | Google, Vertex AI |
-| `video_duration_seconds_*` | Video generation | OpenAI Sora |
+| Unit | Price (¢) |
+|------|-----------|
+| `web_search_low_context` | 0.5 - 0.6 |
+| `web_search_medium_context` | 0.8 - 1.0 |
+| `web_search_high_context` | 1.2 - 1.4 |
+
+</Accordion>
 
 ---
 
