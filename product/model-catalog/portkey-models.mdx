@@ -1,0 +1,226 @@
+---
+title: "Portkey Models Directory"
+description: "Open-source pricing and configuration database for 2,300+ LLMs across 35+ providers"
+---
+
+<Info>
+**Portkey Models** is the open-source pricing database that powers cost tracking across the Portkey ecosystem. Query accurate, up-to-date pricing for any model via API.
+</Info>
+
+<CardGroup cols={3}>
+  <Card title="Explore Models" icon="magnifying-glass" href="https://portkey.ai/models">
+    Browse 2,300+ models
+  </Card>
+  <Card title="Model Rankings" icon="ranking-star" href="https://portkey.ai/rankings">
+    Top models by usage
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/Portkey-AI/models">
+    View source & contribute
+  </Card>
+</CardGroup>
+
+---
+
+## Quick Start
+
+Get pricing for any model with a single API call:
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.portkey.ai/model-configs/pricing/openai/gpt-4o
+```
+
+```javascript JavaScript
+const response = await fetch(
+  'https://api.portkey.ai/model-configs/pricing/anthropic/claude-3-5-sonnet-20241022'
+);
+const pricing = await response.json();
+
+console.log(pricing.pay_as_you_go.request_token.price);  // Input cost
+console.log(pricing.pay_as_you_go.response_token.price); // Output cost
+```
+
+```python Python
+import requests
+
+pricing = requests.get(
+    'https://api.portkey.ai/model-configs/pricing/google/gemini-2.0-flash-001'
+).json()
+
+input_cost = pricing['pay_as_you_go']['request_token']['price']
+output_cost = pricing['pay_as_you_go']['response_token']['price']
+```
+
+</CodeGroup>
+
+---
+
+## Understanding Pricing Units
+
+<Warning>
+**Prices are in cents per token, not dollars.**
+</Warning>
+
+| API Response | Per 1K Tokens | Per 1M Tokens |
+|--------------|---------------|---------------|
+| `0.003` | $0.03 | $30 |
+| `0.00025` | $0.0025 | $2.50 |
+| `0.0001` | $0.001 | $1.00 |
+
+**Calculate cost in dollars:**
+
+```javascript
+const costInDollars = (tokens * priceFromAPI) / 100;
+```
+
+---
+
+## API Reference
+
+### Get Model Pricing
+
+```
+GET https://api.portkey.ai/model-configs/pricing/{provider}/{model}
+```
+
+<ParamField path="provider" type="string" required>
+  Provider slug in lowercase. Examples: `openai`, `anthropic`, `google`, `azure-openai`, `bedrock`, `together-ai`, `groq`, `deepseek`, `x-ai`
+</ParamField>
+
+<ParamField path="model" type="string" required>
+  Model identifier exactly as the provider specifies. Examples: `gpt-4o`, `claude-3-5-sonnet-20241022`, `gemini-2.0-flash-001`
+</ParamField>
+
+#### Response
+
+<CodeGroup>
+
+```json OpenAI GPT-4o
+{
+  "pay_as_you_go": {
+    "request_token": { "price": 0.00025 },
+    "response_token": { "price": 0.001 },
+    "cache_read_input_token": { "price": 0.000125 },
+    "additional_units": {
+      "web_search": { "price": 1 },
+      "file_search": { "price": 0.25 }
+    }
+  },
+  "currency": "USD"
+}
+```
+
+```json Anthropic Claude 3.5 Sonnet
+{
+  "pay_as_you_go": {
+    "request_token": { "price": 0.0003 },
+    "response_token": { "price": 0.0015 },
+    "cache_read_input_token": { "price": 0.00003 },
+    "cache_write_input_token": { "price": 0.000375 }
+  },
+  "currency": "USD"
+}
+```
+
+```json Google Gemini 2.5 Pro
+{
+  "pay_as_you_go": {
+    "request_token": { "price": 0.000125 },
+    "response_token": { "price": 0.001 },
+    "additional_units": {
+      "thinking_token": { "price": 0.001 },
+      "web_search": { "price": 3.5 }
+    }
+  },
+  "currency": "USD"
+}
+```
+
+</CodeGroup>
+
+---
+
+### Get Model Configuration
+
+```
+GET https://api.portkey.ai/model-configs/general/{provider}/{model}
+```
+
+Returns model capabilities, parameter limits, and supported features.
+
+#### Response
+
+```json
+{
+  "params": [
+    { "key": "max_tokens", "maxValue": 16384 },
+    { "key": "temperature", "minValue": 0, "maxValue": 2, "defaultValue": 1 }
+  ],
+  "type": {
+    "primary": "chat",
+    "supported": ["tools", "image", "json_mode"]
+  },
+  "messages": {
+    "options": ["system", "user", "assistant"]
+  }
+}
+```
+
+---
+
+## Pricing Fields
+
+### Token Pricing
+
+| Field | Description |
+|-------|-------------|
+| `request_token` | Input token cost |
+| `response_token` | Output token cost |
+| `cache_read_input_token` | Prompt cache read cost |
+| `cache_write_input_token` | Prompt cache write cost |
+| `request_audio_token` | Audio input cost |
+| `response_audio_token` | Audio output cost |
+
+### Additional Units
+
+Some models have pricing for features beyond tokens:
+
+| Unit | Description | Providers |
+|------|-------------|-----------|
+| `web_search` | Web search tool | OpenAI, Google, Perplexity |
+| `file_search` | File search tool | OpenAI, Azure |
+| `thinking_token` | Reasoning tokens | Google, Anthropic |
+| `image_token` | Image processing | Google, Vertex AI |
+| `video_duration_seconds_*` | Video generation | OpenAI Sora |
+
+---
+
+## Supported Providers
+
+<Accordion title="35+ providers supported">
+
+AI21, Anthropic, Anyscale, Azure AI, Azure OpenAI, AWS Bedrock, Cerebras, Cohere, Dashscope, Deepbricks, DeepInfra, DeepSeek, Fireworks AI, GitHub, Google, Groq, Inference.net, Jina, Lambda, Lemonfox AI, Mistral AI, MonsterAPI, Nebius, Nomic, Novita AI, OpenAI, OpenRouter, Oracle, PaLM, Perplexity AI, Predibase, Reka AI, Sagemaker, Segmind, Stability AI, Together AI, Vertex AI, Workers AI, X.AI, Zhipu
+
+</Accordion>
+
+---
+
+## Use with Portkey
+
+Portkey Models powers automatic cost tracking for all requests through the Portkey Gateway. When you make requests via Portkey, costs are calculated automatically using this pricing data.
+
+<CardGroup cols={2}>
+  <Card title="Cost Analytics" icon="chart-line" href="/product/observability/analytics">
+    View real-time spend across all your LLM usage
+  </Card>
+  <Card title="Budget Limits" icon="dollar-sign" href="/product/model-catalog/integrations#3-budget--rate-limits">
+    Set spending caps that automatically enforce limits
+  </Card>
+</CardGroup>
+
+If you have negotiated enterprise rates, you can override the default pricing:
+
+<Card title="Custom Pricing" icon="pen-to-square" href="/product/model-catalog/model-overrides">
+  Set custom input/output costs to match your contracts
+</Card>
