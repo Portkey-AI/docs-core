@@ -231,30 +231,6 @@ service:
 
 Load Balancer Controller provides additional annotations (like TLS, custom health checks etc ) for managing NLB. For a comprehensive list of available annotations, refer to the [AWS Load Balancer Controller documentation](https://kubernetes-sigs.github.io/aws-load-balancer-controller/v2.7/guide/service/annotations/).
 
-### Ensure Outbound Network Access
-
-By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
-
-Example NetworkPolicy for Outbound Access:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-all-egress
-  namespace: portkeyai
-spec:
-  podSelector: {}
-  policyTypes:
-  - Egress
-  egress:
-  - to:
-    - ipBlock:
-        cidr: 0.0.0.0/0
-```
-
-This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Portkey Control Plane.
-
 
 ## Deploying Portkey Gateway
 ```sh
@@ -319,7 +295,73 @@ To confirm that the deployment was successful, follow these steps:
 
 
 ## Integrating Gateway with Control Plane
-Portkey supports the following methods for integrating the Control Plane with the Data Plane/Gateway:
+
+**Ensure Outbound Network Access**
+
+By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
+
+Example NetworkPolicy for Outbound Access:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+  namespace: portkeyai
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+```
+This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Portkey Control Plane.
+
+
+### Outbund Connectivity (Data Plane to Control Plane)
+
+Portkey supports the following methods for integrating the Data Plane with the Control Plane for outbound connectitvity:
+- AWS PrivateLink
+- Over the Internet
+
+#### AWS PrivateLink
+Establishes a secure, private connection between the Control Plane and Data Plane within the AWS network, eliminating exposure to the public internet.
+**Steps to establish AWS PrivateLink connectivity** -
+1. Contact Portkey and provide AWS account ARN so it can be whitelisted by the control plane to initiate the AWS PrivateLink connection.
+2. Once Portkey confirms that whitelisting is complete, go to the [VPC Console](https://console.aws.amazon.com/vpc/).
+3. Select the AWS Region where the Portkey Gateway is deployed.
+4. Navigate to the **Endpoints** section in the VPC console.
+5. Click on **Create endpoint** and enter the required details.
+6. Select the `PrivateLink Ready partner services` category and, under **Service settings**, provide the following details.
+    - For **Service name**, enter `com.amazonaws.vpce.us-east-1.vpce-svc-0c2c1c323d9f56d95`
+    - (Optional) If the Gateway is deployed in a region other than `us-east-1`, select `Enable Cross Region endpoint`, choose the `us-east-1` region, and click the **Verify service** button.
+6. Under **Network settings**
+    - Select the VPC and subnets (at least two in different AZs for high availability) where the endpoint should be created. Ideally, this should be the same VPC where the Gateway is deployed.
+    - Select the security group to associate with the endpoint. The security group must allow inbound connections on port 443 from the Gateway.
+7. After all details are filled in, click on **Create endpoint**.
+8. Wait for the Status to change to `Available`.
+9. Once the status changes to `Available`, click on **Actions** > **Modify private DNS name** > Select **Enable for this endpoint**.
+10. Update the `values.yaml` file with following config.
+    ```yaml
+    environment:
+        create: true
+        secret: true
+        data:
+            ALBUS_BASEPATH: "https://aws-cp.portkey.ai/albus"
+            CONTROL_PLANE_BASEPATH: "https://aws-cp.portkey.ai/api/v1"
+            SOURCE_SYNC_API_BASEPATH: "https://aws-cp.portkey.ai/api/v1/sync"
+            CONFIG_READER_PATH: "https://aws-cp.portkey.ai/api/model-configs" 
+    ```
+11. Re-deploy the gateway.
+    ```sh
+    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n portkeyai  --create-namespace
+    ```
+#### Over the Internet
+- Ensure Gateway deployment has access to Internet.
+
+### Inbound Connectivity (Control Plane to Data Plane)
 - AWS PrivateLink
 - IP Whitelisting 
 
