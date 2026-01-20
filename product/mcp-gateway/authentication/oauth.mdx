@@ -1,0 +1,117 @@
+---
+title: OAuth
+description: Portkey's built-in OAuth 2.1 authentication for MCP Gateway.
+---
+
+Portkey provides built-in OAuth 2.1 authentication for MCP Gateway. When users access MCP servers without an API key, Portkey acts as the OAuth provider and handles the authentication flow.
+
+## When to use
+
+Use Portkey's OAuth when:
+
+- Building browser-based applications where users authenticate interactively
+- Using MCP clients like Claude Desktop or Cursor without API keys
+- You want user-level attribution without managing API keys yourself
+- You need a quick way to get started without configuring an external IdP
+
+## How it works
+
+```
+1. User requests access to an MCP server
+2. No API key provided
+3. Portkey initiates OAuth 2.1 flow with PKCE
+4. User authenticates with Portkey
+5. Portkey issues access token
+6. Token used for subsequent MCP requests
+```
+
+The flow uses OAuth 2.1 with PKCE (Proof Key for Code Exchange) for enhanced security. No client secrets are exposed to browser-based applications.
+
+## Configuration
+
+Portkey's OAuth is enabled by default. No configuration required.
+
+When a request arrives without an API key or bearer token, Portkey automatically initiates the OAuth flow.
+
+## Client integration
+
+### Browser applications
+
+For browser-based apps, redirect users to the authorization endpoint:
+
+```
+https://mcp.portkey.ai/oauth/authorize?
+  response_type=code&
+  client_id=YOUR_CLIENT_ID&
+  redirect_uri=YOUR_REDIRECT_URI&
+  code_challenge=GENERATED_CHALLENGE&
+  code_challenge_method=S256&
+  scope=mcp
+```
+
+After authorization, exchange the code for tokens:
+
+```bash
+curl -X POST https://mcp.portkey.ai/oauth/token \
+  -d "grant_type=authorization_code" \
+  -d "code=AUTHORIZATION_CODE" \
+  -d "redirect_uri=YOUR_REDIRECT_URI" \
+  -d "code_verifier=YOUR_CODE_VERIFIER"
+```
+
+### MCP clients
+
+MCP clients like Claude Desktop and Cursor handle OAuth automatically. When you configure a server URL without an API key, the client initiates the OAuth flow when needed.
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "url": "https://mcp.portkey.ai/linear/mcp"
+    }
+  }
+}
+```
+
+The first time you use a tool, the client opens a browser for authentication.
+
+## Token management
+
+Portkey handles token lifecycle:
+
+- **Access tokens**: Short-lived, used for MCP requests
+- **Refresh tokens**: Long-lived, used to obtain new access tokens
+- **Automatic refresh**: Tokens refreshed transparently before expiration
+
+## Scopes
+
+| Scope | Description |
+|-------|-------------|
+| `mcp` | Access MCP servers provisioned to the user's workspace |
+| `mcp:read` | Read-only access to MCP tools |
+| `mcp:write` | Write access to MCP tools |
+
+## Combining with external OAuth
+
+You can use Portkey's OAuth for some users and external OAuth for others. Portkey determines the authentication method based on what's provided in the request:
+
+| Request contains | Authentication method |
+|------------------|----------------------|
+| Portkey API key | API key authentication |
+| External IdP token | External OAuth validation |
+| Nothing | Portkey OAuth flow |
+
+## Security considerations
+
+- OAuth 2.1 with PKCE prevents authorization code interception
+- Tokens are scoped to specific workspaces
+- Refresh tokens can be revoked instantly
+- All token operations are logged
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [External OAuth](/product/mcp-gateway/authentication/external-oauth) | Use your own identity provider |
+| [API Keys](/product/mcp-gateway/authentication#api-key) | Simpler authentication for programmatic access |
+| [JWT Validation](/product/mcp-gateway/authentication/jwt) | Validate tokens from external IdPs |
