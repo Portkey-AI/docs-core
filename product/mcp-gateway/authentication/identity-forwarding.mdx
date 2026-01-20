@@ -1,0 +1,138 @@
+---
+title: Identity Forwarding
+description: Pass user identity to MCP servers.
+---
+
+Identity forwarding sends authenticated user information to MCP servers. The server can use this for authorization, logging, or personalization without implementing its own authentication.
+
+## When to use
+
+The MCP server needs to know who is making requests. Maybe it enforces access controls based on user roles. Maybe it logs actions for audit. Maybe it personalizes responses.
+
+Without identity forwarding, the MCP server sees requests coming from Portkey, not from individual users. Identity forwarding bridges that gap.
+
+Common scenarios:
+
+- Audit logs on the MCP server need user context
+- MCP server enforces per-user permissions
+- Multi-tenant servers scope data by user or organization
+- Analytics need to track usage by user
+
+## Forwarding methods
+
+### Claims header
+
+Send user claims as a JSON header. Simple and easy to parse.
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["sub", "email", "team_id"],
+    "header_name": "X-User-Claims"
+  }
+}
+```
+
+The MCP server receives:
+
+```
+X-User-Claims: {"sub":"user123","email":"user@example.com","team_id":"team-abc"}
+```
+
+Parse the JSON to get user identity. No cryptographic verification needed on the MCP server side.
+
+### Bearer token
+
+Forward the original access token unchanged.
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "bearer"
+  }
+}
+```
+
+The MCP server receives:
+
+```
+Authorization: Bearer <original-token>
+```
+
+Use when the MCP server can validate tokens against the same IdP that issued them. The server handles validation itself.
+
+### Signed JWT
+
+Portkey generates a new JWT containing user claims, signed with Portkey's private key.
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "jwt_header",
+    "include_claims": ["sub", "email", "team_id", "org_id"],
+    "header_name": "X-User-JWT",
+    "jwt_expiry_seconds": 300
+  }
+}
+```
+
+The MCP server receives:
+
+```
+X-User-JWT: eyJhbGciOiJSUzI1NiIs...
+```
+
+The MCP server verifies the JWT using Portkey's public keys. This provides cryptographic proof that Portkey issued the claims.
+
+## Default claims
+
+If you don't specify `include_claims`, Portkey forwards:
+
+- `sub`
+- `email`
+- `username`
+- `user_id`
+- `team_id` (workspace_id)
+- `org_id` (organisation_id)
+- `scope`
+- `client_id`
+
+## Verifying signed JWTs
+
+For the `jwt_header` method, MCP servers verify tokens using Portkey's public keys:
+
+```
+GET https://mcp.portkey.ai/.well-known/jwks.json
+```
+
+Standard JWT libraries fetch and cache these keys automatically. The MCP server verifies the signature to confirm Portkey issued the claims.
+
+## Self-hosted setup
+
+For `jwt_header` in self-hosted deployments, you need a signing key.
+
+1. Generate an RSA key pair:
+
+```bash
+openssl genrsa -out private.pem 2048
+openssl rsa -in private.pem -pubout -out public.pem
+```
+
+2. Set the environment variable:
+
+```bash
+export JWT_PRIVATE_KEY="$(cat private.pem)"
+```
+
+Portkey exposes the public key at `/.well-known/jwks.json` for MCP servers to verify.
+
+## Performance
+
+JWT signing is cached to avoid expensive cryptographic operations on every request.
+
+- Cache hit: ~0.01ms
+- Cache miss (signing): ~1ms
+- Max 10,000 cached entries with LRU eviction
+
+The cache key includes user identity and included claims. Changing claims invalidates the cache for that user.

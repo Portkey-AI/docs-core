@@ -1,0 +1,123 @@
+---
+title: Authentication
+description: How authentication works in MCP Gateway.
+---
+
+MCP Gateway handles authentication at two layers:
+
+**Gateway Authentication.** How your agents authenticate to Portkey.
+
+**MCP Server Authentication.** How Portkey authenticates to upstream MCP servers.
+
+```
+Your Agent
+    │
+    │ ← Gateway Authentication (your agent proves identity to Portkey)
+    ▼
+Portkey MCP Gateway
+    │
+    │ ← MCP Server Authentication (Portkey proves identity to MCP server)
+    ▼
+MCP Server
+```
+
+These layers are independent. An agent authenticates to Portkey with an API key. Portkey authenticates to Linear with OAuth. The agent never sees Linear's OAuth tokens.
+
+## Gateway authentication
+
+Your agents need to prove their identity to Portkey before accessing MCP servers. Three options:
+
+### API Key
+
+The simplest method. Create an API key in Portkey and include it in requests.
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer pk_xxx"
+  }
+}
+```
+
+API keys are scoped to teams. The key determines which MCP servers the request can access.
+
+Create keys in **Settings > API Keys**.
+
+### OAuth 2.1
+
+For browser-based flows where users authenticate interactively. Portkey acts as the OAuth provider. After authentication, your app receives a token to use for MCP requests.
+
+### External OAuth
+
+Bring your own identity provider. If you use Okta, Auth0, or Azure AD, configure Portkey to validate tokens from your IdP. Your users authenticate with your existing identity system.
+
+This is useful when:
+- You have an existing IdP and want SSO
+- Users who aren't in Portkey need MCP access
+- Compliance requires your own identity infrastructure
+
+See [External OAuth](/product/mcp-gateway/authentication/external-oauth) for setup.
+
+## MCP server authentication
+
+Portkey needs credentials to access upstream MCP servers. Configure this when adding a server.
+
+### OAuth (Automatic)
+
+For MCP servers that support OAuth 2.1 with dynamic client registration. Portkey handles the full OAuth flow.
+
+When a user first calls a tool, Portkey initiates OAuth with the MCP server. The user completes consent (e.g., authorizing access to their Linear account). Portkey stores and refreshes tokens automatically.
+
+Each user gets their own OAuth tokens. User A's Linear access is separate from User B's.
+
+### Client Credentials
+
+For MCP servers using OAuth client credentials grant. You provide a client ID and secret when adding the server. Portkey fetches tokens and handles refresh.
+
+All users share the same credentials to the MCP server. Use this for shared resources, not personal data.
+
+### Custom Headers
+
+For MCP servers using API keys or static tokens. Add headers when configuring the server.
+
+```
+Authorization: Bearer api_key_xxx
+X-API-Key: your_key
+```
+
+Portkey includes these headers with every request. All users share the same credentials.
+
+## Choosing the right method
+
+| Scenario | Gateway Auth | MCP Server Auth |
+|----------|--------------|-----------------|
+| Internal developers using Portkey | API Key | OAuth (per-user) |
+| End customers with your IdP | External OAuth | OAuth (per-user) |
+| Service-to-service access | API Key | Client Credentials or Custom Headers |
+| Shared read-only resources | API Key | Custom Headers |
+
+**Use per-user OAuth** when the MCP server accesses user-specific data (email, repos, messages). Each user authorizes their own access.
+
+**Use shared credentials** when the MCP server provides shared resources (knowledge bases, analytics). All users see the same data.
+
+## Credential isolation
+
+Credentials never cross boundaries.
+
+```
+Agent knows: Portkey API key
+Portkey knows: MCP server OAuth tokens, API keys
+MCP Server knows: Its own credentials
+```
+
+Your agents can't see MCP server credentials. Compromised agent tokens don't expose upstream access. You can rotate MCP server credentials without updating agents.
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [External OAuth](/product/mcp-gateway/authentication/external-oauth) | Use your own identity provider |
+| [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwarding) | Pass user identity to MCP servers |
+| [JWT Validation](/product/mcp-gateway/authentication/jwt) | Validate JWTs from external IdPs |
+| [Forwarding Headers](/product/mcp-gateway/authentication/forwarding-headers) | Pass headers from agents to MCP servers |
+| [Custom Auth](/product/mcp-gateway/authentication/custom-auth) | Configure custom authentication |

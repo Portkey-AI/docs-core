@@ -1,0 +1,105 @@
+---
+title: Forwarding Headers
+description: Pass headers from agent requests to MCP servers.
+---
+
+Header forwarding passes specific headers from agent requests through to MCP servers. Use for distributed tracing, tenant context, or custom metadata that needs to reach the upstream server.
+
+## When to use
+
+Your agent includes headers with context that the MCP server needs. Maybe a trace ID for distributed tracing. Maybe a tenant ID for multi-tenant servers. Maybe custom metadata your server expects.
+
+Without header forwarding, these headers stop at Portkey. With it, they pass through to the MCP server.
+
+Common scenarios:
+
+- **Distributed tracing.** Forward `x-request-id`, `x-trace-id` to correlate logs across services.
+- **Multi-tenancy.** Forward `x-tenant-id`, `x-org-id` for tenant-scoped operations.
+- **User context.** Forward `x-user-id`, `x-user-role` for upstream authorization.
+- **Custom metadata.** Forward application-specific headers your MCP server expects.
+
+## Configuration
+
+Configure `forward_headers` when adding or editing an MCP server.
+
+### Allowlist specific headers
+
+Forward only the headers you specify:
+
+```json
+{
+  "forward_headers": ["x-request-id", "x-trace-id", "x-tenant-id"]
+}
+```
+
+Other headers from the agent request are dropped.
+
+### Forward all except specific headers
+
+Forward everything except headers you exclude:
+
+```json
+{
+  "forward_headers": {
+    "mode": "all-except",
+    "headers": ["user-agent", "referer"]
+  }
+}
+```
+
+## Security
+
+In `all-except` mode, sensitive headers are always blocked regardless of your exclusion list:
+
+- `authorization`
+- `cookie`
+- `set-cookie`
+- `x-api-key`
+- `x-portkey-api-key`
+
+These headers could leak credentials. Portkey blocks them automatically.
+
+## Agent configuration
+
+Include headers in your MCP client:
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "url": "https://mcp.portkey.ai/linear/mcp",
+      "headers": {
+        "Authorization": "Bearer pk_xxx",
+        "x-request-id": "req-12345",
+        "x-tenant-id": "tenant-abc"
+      }
+    }
+  }
+}
+```
+
+Or set headers per request in code:
+
+```python
+import uuid
+
+headers = {
+    "Authorization": "Bearer pk_xxx",
+    "x-request-id": str(uuid.uuid4()),
+    "x-trace-id": current_trace_id
+}
+
+async with streamablehttp_client(url, headers=headers) as (read, write, _):
+    # x-request-id and x-trace-id are forwarded to the MCP server
+    ...
+```
+
+## Header priority
+
+Headers merge in this order. Later values override earlier ones.
+
+1. MCP server auth headers (configured when adding the server)
+2. Static passthrough headers (configured when adding the server)
+3. Forwarded headers from the agent request
+
+If your agent sends `X-Custom: agent-value` and you configured `X-Custom: static-value` as a passthrough header, the agent's value wins.

@@ -1,0 +1,128 @@
+---
+title: JWT Validation
+description: Validate JWTs from external identity providers.
+---
+
+JWT validation lets Portkey verify tokens from your identity provider before processing MCP requests. Use this with [External OAuth](/product/mcp-gateway/authentication/external-oauth) to bring your own IdP.
+
+## Validation methods
+
+### JWKS URI
+
+Fetch public keys from your IdP's JWKS endpoint. This is the standard approach for most identity providers.
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "algorithms": ["RS256", "ES256"]
+  }
+}
+```
+
+Portkey fetches keys and caches them. When a key rotates, Portkey fetches the new key automatically.
+
+### Inline JWKS
+
+Embed public keys directly in the configuration. Use for self-contained deployments without external key fetching.
+
+```json
+{
+  "jwt_validation": {
+    "jwks": {
+      "keys": [{
+        "kty": "RSA",
+        "n": "...",
+        "e": "AQAB",
+        "kid": "key-id",
+        "use": "sig",
+        "alg": "RS256"
+      }]
+    }
+  }
+}
+```
+
+You're responsible for updating keys when they rotate.
+
+### Token introspection
+
+For opaque tokens that require real-time validation. Portkey calls your IdP's introspection endpoint for each request.
+
+```json
+{
+  "jwt_validation": {
+    "introspectEndpoint": "https://your-idp.com/oauth/introspect",
+    "clientId": "portkey-mcp",
+    "clientSecret": "secret"
+  }
+}
+```
+
+Use when you need real-time revocation checking. More latency than JWKS, but tokens are validated against the IdP on every request.
+
+## Configuration options
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `jwksUri` | URL to fetch public keys | - |
+| `jwks` | Inline JWKS object | - |
+| `introspectEndpoint` | Token introspection URL | - |
+| `algorithms` | Allowed signing algorithms | `["RS256"]` |
+| `clockTolerance` | Clock skew tolerance (seconds) | `5` |
+| `cacheMaxAge` | JWKS cache TTL (seconds) | `86400` |
+| `requiredClaims` | Claims that must be present | - |
+| `claimValues` | Expected claim values | - |
+
+## Require specific claims
+
+Tokens must include these claims or they're rejected:
+
+```json
+{
+  "jwt_validation": {
+    "requiredClaims": ["sub", "email", "groups"]
+  }
+}
+```
+
+## Validate claim values
+
+Check that claims have expected values:
+
+```json
+{
+  "jwt_validation": {
+    "claimValues": {
+      "iss": {
+        "values": "https://your-idp.com",
+        "matchType": "exact"
+      },
+      "aud": {
+        "values": ["api", "mcp"],
+        "matchType": "contains"
+      },
+      "scope": {
+        "values": "mcp:read mcp:write",
+        "matchType": "containsAll"
+      }
+    }
+  }
+}
+```
+
+### Match types
+
+| Type | Description |
+|------|-------------|
+| `exact` | Value must match exactly |
+| `contains` | Payload must include at least one value (OR) |
+| `containsAll` | Payload must include all values (AND) |
+| `regex` | Match against a regular expression |
+
+## Caching
+
+- JWKS keys: cached for 24 hours (configurable via `cacheMaxAge`)
+- Introspection results: cached for 5 minutes
+
+Adjust based on your token lifetime and revocation requirements. Shorter cache means more latency but faster revocation. Longer cache means better performance but slower revocation.

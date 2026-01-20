@@ -1,0 +1,86 @@
+---
+title: Custom Auth
+description: Configure custom authentication for MCP servers.
+---
+
+For MCP servers that don't use standard OAuth, configure custom authentication with headers.
+
+## Static headers
+
+When adding an MCP server, you can configure headers that Portkey includes with every request to that server.
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer your_api_key",
+    "X-API-Key": "your_key"
+  }
+}
+```
+
+All requests to this MCP server include these headers. All users share the same credentials.
+
+Use this for:
+- MCP servers that use API keys
+- Internal servers with static tokens
+- Servers where you want shared access
+
+## Passthrough headers
+
+Add static metadata headers separate from authentication:
+
+```json
+{
+  "passthrough_headers": {
+    "X-API-Version": "2024-01",
+    "X-Client": "portkey-gateway"
+  }
+}
+```
+
+These are included alongside auth headers. Use for API versioning, client identification, or metadata the server expects.
+
+## Combining with forwarded headers
+
+You can combine static headers with [forwarded headers](/product/mcp-gateway/authentication/forwarding-headers):
+
+- **Auth headers:** Credentials for the MCP server (static, shared)
+- **Passthrough headers:** Static metadata (API version, client ID)
+- **Forwarded headers:** Per-request context from agents (trace IDs, tenant IDs)
+
+They merge in order. Later values override earlier ones if there's a conflict.
+
+## Example: API key with tracing
+
+Configure the MCP server with:
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer api_key_xxx"
+  },
+  "passthrough_headers": {
+    "X-API-Version": "v2"
+  },
+  "forward_headers": ["x-request-id", "x-trace-id"]
+}
+```
+
+Every request to the MCP server includes:
+- `Authorization: Bearer api_key_xxx` (authentication)
+- `X-API-Version: v2` (static metadata)
+- `x-request-id` and `x-trace-id` (from agent, if provided)
+
+## When to use shared credentials
+
+Shared credentials make sense when:
+- The MCP server provides shared resources (knowledge bases, analytics)
+- All users should see the same data
+- You don't need per-user attribution at the MCP server level
+
+Shared credentials don't make sense when:
+- Users access personal data (email, messages, private repos)
+- Actions need attribution to individual users
+- The MCP server enforces per-user permissions
+
+For per-user access, use OAuth. Each user authorizes their own access, and Portkey manages tokens per user.
