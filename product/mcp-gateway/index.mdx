@@ -20,21 +20,53 @@ MCP servers are everywhere—GitHub, Slack, Linear, Salesforce, internal APIs. E
 
 ## How It Works
 
-```
-┌─────────────┐
-│  Agent A    │──┐
-└─────────────┘  │     ┌─────────────────────────┐     ┌──────────────┐
-                 │     │                         │     │   GitHub     │
-┌─────────────┐  ├────▶│   Portkey MCP Gateway   │────▶├──────────────┤
-│  Agent B    │──┤     │                         │     │   Slack      │
-└─────────────┘  │     │  Auth • Access • Logs   │     ├──────────────┤
-                 │     └─────────────────────────┘     │   Linear     │
-┌─────────────┐  │                                     └──────────────┘
-│  Agent C    │──┘
-└─────────────┘
+```mermaid
+flowchart LR
+    subgraph Clients["Your AI Agents"]
+        Claude["Claude Desktop"]
+        Cursor["Cursor IDE"]
+        Custom["Custom Agent"]
+    end
+
+    subgraph Gateway["Portkey MCP Gateway"]
+        direction TB
+        Validate["1. Validate API Key"]
+        CheckAccess["2. Check Access Permissions"]
+        Authenticate["3. Inject Upstream Credentials"]
+        Proxy["4. Proxy Request"]
+        Log["5. Log & Monitor"]
+        
+        Validate --> CheckAccess --> Authenticate --> Proxy --> Log
+    end
+
+    subgraph Servers["MCP Servers"]
+        GitHub["GitHub MCP"]
+        Slack["Slack MCP"]
+        Linear["Linear MCP"]
+        Notion["Notion MCP"]
+        Internal["Internal APIs"]
+    end
+
+    Claude -->|"API Key"| Gateway
+    Cursor -->|"API Key"| Gateway
+    Custom -->|"API Key"| Gateway
+    
+    Gateway -->|"OAuth/API Key"| GitHub
+    Gateway -->|"OAuth/API Key"| Slack
+    Gateway -->|"OAuth/API Key"| Linear
+    Gateway -->|"OAuth/API Key"| Notion
+    Gateway -->|"OAuth/API Key"| Internal
 ```
 
-Your agents connect to Portkey. Portkey validates permissions, authenticates to the upstream MCP server, proxies the request, and logs the interaction. **Agents never touch upstream credentials.**
+Your agents connect to Portkey with a simple API key. Portkey then:
+
+1. **Validates** the API key and identifies the user/team
+2. **Checks permissions** against your access control policies
+3. **Injects credentials** for the upstream MCP server (OAuth tokens, API keys)
+4. **Proxies** the tool call to the MCP server
+5. **Logs** the full interaction for debugging and compliance
+
+**Agents never touch upstream credentials.** They only need their Portkey API key.
 
 ---
 
@@ -80,9 +112,9 @@ Portkey exposes a standard MCP endpoint. Point any MCP client at it.
 {
   "mcpServers": {
     "portkey": {
-      "url": "https://mcp.portkey.ai/sse",
+      "url": "https://mcp.portkey.ai/{server-slug}/mcp",
       "headers": {
-        "x-portkey-api-key": "YOUR_API_KEY"
+        "Authorization": "Bearer YOUR_API_KEY"
       }
     }
   }
