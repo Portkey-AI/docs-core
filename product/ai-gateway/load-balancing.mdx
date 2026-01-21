@@ -1,114 +1,98 @@
 ---
 title: "Load Balancing"
-description: Load Balancing feature efficiently distributes network traffic across multiple LLMs.
+description: Distribute traffic across multiple LLMs for high availability and optimal performance.
 ---
 
 <Info>
-  This feature is available on all Portkey [plans](https://portkey.ai/pricing).
+Available on all Portkey [plans](https://portkey.ai/pricing).
 </Info>
 
- This ensures high availability and optimal performance of your generative AI apps, preventing any single LLM from becoming a performance bottleneck.
+Distribute traffic across multiple LLMs to prevent any single provider from becoming a bottleneck.
 
-## Enable Load Balancing
+## Examples
 
-To enable Load Balancing, you can modify the `config` object to include a `strategy` with `loadbalance` mode.
+<CodeGroup>
 
-Here's a quick example to **load balance 75-25** between an OpenAI and an Azure OpenAI account
-
-```JSON
+```json Between Providers (model from request)
 {
-  "strategy": {
-      "mode": "loadbalance"
-  },
+  "strategy": { "mode": "loadbalance" },
   "targets": [
-    {
-      "provider":"@openai-virtual-key",
-      "weight": 0.75
-    },
-    {
-      "provider":"@azure-virtual-key",
-      "weight": 0.25
-    }
+    { "provider": "@openai-prod", "weight": 0.7 },
+    { "provider": "@azure-prod", "weight": 0.3 }
   ]
 }
 ```
 
-### You can [create](/product/ai-gateway/configs#creating-configs) and then [use](/product/ai-gateway/configs#using-configs) the config in your requests.
+```json Between Models
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "override_params": { "model": "@openai-prod/gpt-4o" }, "weight": 0.75 },
+    { "override_params": { "model": "@anthropic-prod/claude-3-5-sonnet-20241022" }, "weight": 0.25 }
+  ]
+}
+```
 
-## How Load Balancing Works
+```json Multiple API Keys (same provider)
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "provider": "@openai-key-1", "weight": 1 },
+    { "provider": "@openai-key-2", "weight": 1 },
+    { "provider": "@openai-key-3", "weight": 1 }
+  ]
+}
+```
 
-1. **Defining the Loadbalance Targets & their Weights**: You provide a list of `providers`, and assign a `weight` value to each target. The weights represent the relative share of requests that should be routed to each target.
-2. **Weight Normalization**: Portkey first sums up all the weights you provided for the targets. It then divides each target's weight by the total sum to calculate the normalized weight for that target. This ensures the weights add up to 1 (or 100%), allowing Portkey to distribute the load proportionally.
-For example, let's say you have three targets with weights 5, 3, and 1\. The total sum of weights is 9 (5 + 3 + 1). Portkey will then normalize the weights as follows:
-   * Target 1: 5 / 9 = 0.55 (55% of the traffic)
-   * Target 2: 3 / 9 = 0.33 (33% of the traffic)
-   * Target 3: 1 / 9 = 0.11 (11% of the traffic)
-3. **Request Distribution**: When a request comes in, Portkey routes it to a target LLM based on the normalized weight probabilities. This ensures the traffic is distributed across the LLMs according to the specified weights.
+```json Cost Optimization (cheap vs premium)
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "override_params": { "model": "@openai-prod/gpt-4o-mini" }, "weight": 0.8 },
+    { "override_params": { "model": "@openai-prod/gpt-4o" }, "weight": 0.2 }
+  ]
+}
+```
+
+```json Gradual Migration (old to new model)
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "override_params": { "model": "@anthropic-prod/claude-3-5-sonnet-20241022" }, "weight": 0.9 },
+    { "override_params": { "model": "@anthropic-prod/claude-sonnet-4-20250514" }, "weight": 0.1 }
+  ]
+}
+```
+
+</CodeGroup>
+
+| Pattern | Use Case |
+|---------|----------|
+| **Between Providers** | Route to different providers; model comes from request |
+| **Multiple API Keys** | Distribute load across rate limits from different accounts |
+| **Cost Optimization** | Send most traffic to cheaper models, reserve premium for a portion |
+| **Gradual Migration** | Test new models with small percentage before full rollout |
 
 <Info>
-* Default`weight`value is`1`
-* Minimum`weight`value is`0`
-* If `weight` is not set for a target, the default `weight` value (i.e. `1`) is applied.
-* You can set `"weight":0` for a specific target to stop routing traffic to it without removing it from your Config
+The `@provider-slug/model-name` format automatically routes to the correct provider. Set up providers in [Model Catalog](https://app.portkey.ai/model-catalog).
 </Info>
 
-## Sticky Load Balancing
+[Create](/product/ai-gateway/configs#creating-configs) and [use](/product/ai-gateway/configs#using-configs) configs in your requests.
 
-Sticky load balancing ensures that requests with the same identifier are consistently routed to the same target. This is useful for:
+## How It Works
 
-- Maintaining conversation context across multiple requests
-- Ensuring consistent model behavior for A/B testing
-- Session-based routing for user-specific experiences
+1. **Define targets & weights** — Assign a `weight` to each target. Weights represent relative share of traffic.
+2. **Weight normalization** — Portkey normalizes weights to sum to 100%. Example: weights 5, 3, 1 become 55%, 33%, 11%.
+3. **Request distribution** — Each request routes to a target based on normalized probabilities.
 
-### Configuration
+<Info>
+- Default `weight`: `1`
+- Minimum `weight`: `0` (stops traffic without removing from config)
+- Unset weights default to `1`
+</Info>
 
-Add `sticky_session` to your load balancing strategy:
+## Considerations
 
-```json
-{
-  "strategy": {
-    "mode": "loadbalance",
-    "sticky_session": {
-      "hash_fields": ["metadata.user_id"],
-      "ttl": 3600
-    }
-  },
-  "targets": [
-    {
-      "provider": "@openai-virtual-key",
-      "weight": 0.5
-    },
-    {
-      "provider": "@anthropic-virtual-key", 
-      "weight": 0.5
-    }
-  ]
-}
-```
-
-### Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `hash_fields` | array | Fields to use for generating the sticky session identifier. Supports dot notation for nested fields (e.g., `metadata.user_id`, `metadata.session_id`) |
-| `ttl` | number | Time-to-live in seconds for the sticky session. After this period, a new target may be selected. Default: 3600 (1 hour) |
-
-### How It Works
-
-1. **Identifier Generation**: When a request arrives, Portkey generates a hash from the specified `hash_fields` values
-2. **Target Lookup**: The hash is used to look up the previously assigned target from cache
-3. **Consistent Routing**: If a cached assignment exists and hasn't expired, the request goes to the same target
-4. **New Assignment**: If no cached assignment exists, a new target is selected based on weights and cached for future requests
-
-<Note>
-Sticky sessions use a two-tier cache system (in-memory + Redis) for fast lookups and persistence across gateway instances in distributed deployments.
-</Note>
-
-## Caveats and Considerations
-
-While the Load Balancing feature offers numerous benefits, there are a few things to consider:
-
-1. Ensure the LLMs in your list are compatible with your use case. Not all LLMs offer the same capabilities or respond in the same format.
-2. Be aware of your usage with each LLM. Depending on your weight distribution, your usage with each LLM could vary significantly.
-3. Keep in mind that each LLM has its own latency and pricing. Diversifying your traffic could have implications on the cost and response time.
-4. **Sticky sessions** require Redis for persistence across gateway instances. Without Redis, sticky sessions will only work within a single gateway instance's memory.
+- Ensure LLMs in your list are compatible with your use case
+- Monitor usage per LLM—weight distribution affects spend
+- Each LLM has different latency and pricing
