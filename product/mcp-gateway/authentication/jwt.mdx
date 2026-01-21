@@ -5,7 +5,23 @@ description: Validate JWTs from external identity providers.
 
 JWT validation lets Portkey verify tokens from your identity provider before processing MCP requests. Use this with [External OAuth](/product/mcp-gateway/authentication/external-oauth) to bring your own IdP.
 
-## Validation methods
+## When to Use
+
+Your organization has an existing identity provider (Okta, Auth0, Azure AD, Cognito). Users authenticate through it. You want MCP access to work the same way.
+
+With JWT validation:
+1. Users get a token from your IdP
+2. They include it in MCP requests
+3. Portkey validates the token against your IdP
+4. Valid requests proceed with user identity attached
+
+Portkey never handles user credentials. Your IdP remains the source of truth for identity.
+
+---
+
+## Validation Methods
+
+Configure one validation method per MCP server. Each has different tradeoffs.
 
 ### JWKS URI
 
@@ -20,11 +36,13 @@ Fetch public keys from your IdP's JWKS endpoint. This is the standard approach f
 }
 ```
 
-Portkey fetches keys and caches them. When a key rotates, Portkey fetches the new key automatically.
+Portkey fetches keys and caches them (default: 24 hours). When a key rotates, Portkey automatically refetches the JWKS if verification fails with the cached key.
+
+**Best for:** Most production deployments. Minimal configuration, automatic key rotation.
 
 ### Inline JWKS
 
-Embed public keys directly in the configuration. Use for self-contained deployments without external key fetching.
+Embed public keys directly in the configuration. Use for self-contained deployments or when you can't expose a JWKS endpoint.
 
 ```json
 {
@@ -32,9 +50,9 @@ Embed public keys directly in the configuration. Use for self-contained deployme
     "jwks": {
       "keys": [{
         "kty": "RSA",
-        "n": "...",
+        "n": "0vx7agoebGcQSuu...",
         "e": "AQAB",
-        "kid": "key-id",
+        "kid": "key-id-1",
         "use": "sig",
         "alg": "RS256"
       }]
@@ -45,84 +63,341 @@ Embed public keys directly in the configuration. Use for self-contained deployme
 
 You're responsible for updating keys when they rotate.
 
-### Token introspection
+**Best for:** Air-gapped environments, testing, or when IdP doesn't expose JWKS.
 
-For opaque tokens that require real-time validation. Portkey calls your IdP's introspection endpoint for each request.
+### Token Introspection (RFC 7662)
+
+For opaque tokens that require real-time validation. Portkey calls your IdP's introspection endpoint.
 
 ```json
 {
   "jwt_validation": {
     "introspectEndpoint": "https://your-idp.com/oauth/introspect",
-    "clientId": "portkey-mcp",
-    "clientSecret": "secret"
+    "introspectContentType": "application/json",
+    "introspectCacheMaxAge": 300
   }
 }
 ```
 
-Use when you need real-time revocation checking. More latency than JWKS, but tokens are validated against the IdP on every request.
+The introspection endpoint must return a JSON response with an `active` boolean field per RFC 7662.
 
-## Configuration options
+**Best for:** Opaque tokens, real-time revocation checking, or when you need to validate token status against the IdP on every request.
 
-| Field | Description | Default |
-|-------|-------------|---------|
-| `jwksUri` | URL to fetch public keys | - |
-| `jwks` | Inline JWKS object | - |
-| `introspectEndpoint` | Token introspection URL | - |
-| `algorithms` | Allowed signing algorithms | `["RS256"]` |
-| `clockTolerance` | Clock skew tolerance (seconds) | `5` |
-| `cacheMaxAge` | JWKS cache TTL (seconds) | `86400` |
-| `requiredClaims` | Claims that must be present | - |
-| `claimValues` | Expected claim values | - |
+---
 
-## Require specific claims
+## Configuration Reference
+
+### Core Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `jwksUri` | string | - | URL to fetch public keys |
+| `jwks` | object | - | Inline JWKS object with `keys` array |
+| `introspectEndpoint` | string | - | Token introspection URL (RFC 7662) |
+| `headerKey` | string | `"Authorization"` | Header to read the token from |
+| `algorithms` | string[] | `["RS256"]` | Allowed signing algorithms |
+
+### Timing Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `clockTolerance` | number | `5` | Clock skew tolerance in seconds |
+| `cacheMaxAge` | number | `86400` | JWKS cache TTL in seconds (24 hours) |
+| `maxTokenAge` | string | - | Max token age (e.g., `"30m"`, `"12h"`) |
+
+### Introspection Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `introspectEndpoint` | string | - | Token introspection URL |
+| `introspectContentType` | string | `"application/json"` | Content-Type for introspection requests |
+| `introspectCacheMaxAge` | number | - | Cache introspection results (seconds) |
+
+### Claim Validation Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `requiredClaims` | string[] | - | Claims that must be present |
+| `claimValues` | object | - | Expected claim values with match types |
+| `headerPayloadMatch` | string[] | - | Header claims that must match payload claims |
+
+---
+
+## Custom Token Header
+
+By default, Portkey reads the token from the `Authorization` header. To use a different header:
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "headerKey": "X-Auth-Token"
+  }
+}
+```
+
+Agents then send:
+
+```json
+{
+  "headers": {
+    "X-Auth-Token": "Bearer eyJhbGciOiJSUzI1NiIs..."
+  }
+}
+```
+
+---
+
+## Require Specific Claims
 
 Tokens must include these claims or they're rejected:
 
 ```json
 {
   "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
     "requiredClaims": ["sub", "email", "groups"]
   }
 }
 ```
 
-## Validate claim values
+If a token is missing `sub`, `email`, or `groups`, Portkey returns:
+
+```json
+{
+  "error": "unauthorized",
+  "error_description": "Missing required claims: groups"
+}
+```
+
+---
+
+## Validate Claim Values
 
 Check that claims have expected values:
 
 ```json
 {
   "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
     "claimValues": {
       "iss": {
         "values": "https://your-idp.com",
         "matchType": "exact"
       },
       "aud": {
-        "values": ["api", "mcp"],
+        "values": ["api", "mcp", "portkey"],
         "matchType": "contains"
       },
       "scope": {
-        "values": "mcp:read mcp:write",
+        "values": ["mcp:read", "mcp:write"],
         "matchType": "containsAll"
+      },
+      "email": {
+        "values": "@yourcompany\\.com$",
+        "matchType": "regex"
       }
     }
   }
 }
 ```
 
-### Match types
+### Match Types
 
-| Type | Description |
-|------|-------------|
-| `exact` | Value must match exactly |
-| `contains` | Payload must include at least one value (OR) |
-| `containsAll` | Payload must include all values (AND) |
-| `regex` | Match against a regular expression |
+| Type | Description | Example |
+|------|-------------|---------|
+| `exact` | Value must match exactly | `iss` must equal `"https://your-idp.com"` |
+| `contains` | Payload must include at least one value (OR) | `aud` must include `"api"` OR `"mcp"` OR `"portkey"` |
+| `containsAll` | Payload must include all values (AND) | `scope` must include `"mcp:read"` AND `"mcp:write"` |
+| `regex` | Match against a regular expression | `email` must match `@yourcompany\.com$` |
 
-## Caching
+---
 
-- JWKS keys: cached for 24 hours (configurable via `cacheMaxAge`)
-- Introspection results: cached for 5 minutes
+## Header-Payload Matching
 
-Adjust based on your token lifetime and revocation requirements. Shorter cache means more latency but faster revocation. Longer cache means better performance but slower revocation.
+Ensure that claims in the JWT header match claims in the payload. This provides additional security for tokens that include claims in both locations.
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "headerPayloadMatch": ["kid", "alg"]
+  }
+}
+```
+
+If a specified claim exists in both the header and payload, they must have identical values. If they don't match, the token is rejected.
+
+**Use case:** Some IdPs include certain claims in both the protected header and the payload. This validation ensures consistency and detects tampering.
+
+---
+
+## Caching Behavior
+
+### JWKS Caching
+
+- Keys cached for 24 hours by default (configurable via `cacheMaxAge`)
+- CryptoKeys are pre-imported and cached for performance
+- If signature verification fails with a cached key, Portkey refetches the JWKS (handles key rotation)
+
+### Introspection Caching
+
+- Not cached by default (every request calls the introspection endpoint)
+- Enable caching with `introspectCacheMaxAge` (in seconds)
+- Cached results respect token expiry—expired tokens aren't served from cache
+
+**Example with caching:**
+
+```json
+{
+  "jwt_validation": {
+    "introspectEndpoint": "https://your-idp.com/oauth/introspect",
+    "introspectCacheMaxAge": 300
+  }
+}
+```
+
+With this configuration:
+- First request: calls introspection endpoint, caches result
+- Subsequent requests (within 5 minutes): uses cached result
+- After 5 minutes: calls introspection endpoint again
+
+**Tradeoff:** Shorter cache means more latency but faster revocation detection. Longer cache means better performance but slower revocation response.
+
+---
+
+## Performance Optimizations
+
+Portkey optimizes JWT validation for production workloads:
+
+| Optimization | Description |
+|--------------|-------------|
+| **Fail-fast expiry check** | Checks token expiry before expensive signature verification |
+| **JWKS caching** | Keys cached and pre-imported as CryptoKeys |
+| **Key rotation handling** | Auto-refetch JWKS if key not found |
+| **Introspection caching** | Optional caching of introspection results |
+
+Typical validation latency:
+- JWKS (cache hit): < 1ms
+- JWKS (cache miss): 50-200ms (network fetch)
+- Introspection (uncached): 50-300ms (depends on IdP)
+- Introspection (cached): < 1ms
+
+---
+
+## Example: Okta Integration
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://dev-12345.okta.com/oauth2/aus123/v1/keys",
+    "algorithms": ["RS256"],
+    "clockTolerance": 5,
+    "requiredClaims": ["sub", "email"],
+    "claimValues": {
+      "iss": {
+        "values": "https://dev-12345.okta.com/oauth2/aus123",
+        "matchType": "exact"
+      },
+      "aud": {
+        "values": "api://mcp",
+        "matchType": "exact"
+      }
+    }
+  }
+}
+```
+
+## Example: Auth0 Integration
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-tenant.auth0.com/.well-known/jwks.json",
+    "algorithms": ["RS256"],
+    "requiredClaims": ["sub", "email"],
+    "claimValues": {
+      "iss": {
+        "values": "https://your-tenant.auth0.com/",
+        "matchType": "exact"
+      },
+      "aud": {
+        "values": "https://mcp.yourcompany.com",
+        "matchType": "exact"
+      }
+    }
+  }
+}
+```
+
+## Example: Azure AD Integration
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys",
+    "algorithms": ["RS256"],
+    "requiredClaims": ["sub", "email", "groups"],
+    "claimValues": {
+      "iss": {
+        "values": "https://login.microsoftonline.com/{tenant-id}/v2.0",
+        "matchType": "exact"
+      },
+      "aud": {
+        "values": "{client-id}",
+        "matchType": "exact"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Combining with Identity Forwarding
+
+JWT validation extracts user claims from the token. Identity forwarding passes those claims to MCP servers:
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "requiredClaims": ["sub", "email", "groups"]
+  },
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["sub", "email", "groups"]
+  }
+}
+```
+
+Flow:
+1. User sends request with IdP token
+2. Portkey validates token, extracts claims
+3. Portkey forwards claims to MCP server
+4. MCP server uses claims for authorization/logging
+
+See [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwarding).
+
+---
+
+## Error Responses
+
+| Error | Description |
+|-------|-------------|
+| `Missing Authorization header` | No token provided |
+| `Invalid authorization header format` | Not in `Bearer <token>` format |
+| `JWT validation failed` | Signature invalid or token malformed |
+| `Token is expired` | Token's `exp` claim is in the past |
+| `Token is not yet valid` | Token's `nbf` claim is in the future |
+| `Missing required claims: <claims>` | Token missing required claims |
+| `Token is not active` | Introspection returned `active: false` |
+
+---
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [External OAuth](/product/mcp-gateway/authentication/external-oauth) | Overview of using external IdPs |
+| [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwarding) | Pass validated claims to MCP servers |

@@ -3,36 +3,40 @@ title: External OAuth
 description: Use your own identity provider for gateway authentication.
 ---
 
-External OAuth lets you use your existing identity provider (Okta, Auth0, Azure AD, Cognito) instead of Portkey's built-in authentication.
+External OAuth lets you use your existing identity provider (Okta, Auth0, Azure AD, Cognito) instead of Portkey's built-in authentication. Your users authenticate with their corporate credentials—they don't need Portkey accounts.
 
-## When to use
+## When to Use
 
 Your organization already has an IdP. Your users authenticate through it for other services. You want MCP access to work the same way.
 
 Common scenarios:
 
-- SSO for internal developers using your corporate IdP
-- B2B apps where your customers authenticate through their IdP
-- Compliance requirements that mandate your own identity infrastructure
-- Users who don't have Portkey accounts but need MCP access
+- **SSO for internal developers.** Engineers use corporate credentials to access MCP servers
+- **B2B applications.** Your customers authenticate through their own IdP
+- **Compliance requirements.** Mandate use of your own identity infrastructure
+- **No Portkey accounts.** Users who aren't in Portkey need MCP access
 
-## How it works
+---
+
+## How It Works
 
 ```
 1. User authenticates with your IdP
-2. IdP issues a JWT
-3. User includes JWT in MCP requests to Portkey
-4. Portkey validates JWT against your IdP
+2. IdP issues a JWT (or opaque token)
+3. User includes token in MCP requests to Portkey
+4. Portkey validates token against your IdP
 5. Request proceeds with user identity attached
 ```
 
 Portkey never handles user credentials. Your IdP remains the source of truth for identity.
 
+---
+
 ## Configuration
 
-Configure JWT validation for your MCP gateway. Portkey validates incoming JWTs using your IdP's public keys.
+Configure JWT validation for your MCP server. Portkey validates incoming tokens using your IdP's public keys or introspection endpoint.
 
-### JWKS URI
+### Option 1: JWKS URI (Recommended)
 
 The most common setup. Portkey fetches public keys from your IdP's JWKS endpoint.
 
@@ -46,27 +50,39 @@ The most common setup. Portkey fetches public keys from your IdP's JWKS endpoint
 }
 ```
 
-Portkey caches keys and refreshes them automatically.
+**How it works:**
+- Portkey fetches and caches your IdP's public keys
+- Keys are cached for 24 hours by default
+- If a key rotates, Portkey automatically refetches
+- Validation happens locally (no network call per request)
 
-### Token introspection
+### Option 2: Token Introspection
 
-For opaque tokens that require real-time validation.
+For opaque tokens that require real-time validation, or when you need immediate revocation.
 
 ```json
 {
   "jwt_validation": {
     "introspectEndpoint": "https://your-idp.com/oauth/introspect",
-    "clientId": "portkey-mcp",
-    "clientSecret": "secret"
+    "introspectCacheMaxAge": 300
   }
 }
 ```
 
-Portkey calls the introspection endpoint for each request. Use when you need real-time revocation checking.
+**How it works:**
+- Portkey calls your IdP's introspection endpoint
+- Response is cached for the configured duration (default: no caching)
+- With `introspectCacheMaxAge: 300`, results are cached for 5 minutes
+
+**Caching tradeoff:**
+- No cache: Every request calls introspection endpoint (slower, but immediate revocation)
+- With cache: Better performance, but revocation takes up to cache TTL to take effect
 
 See [JWT Validation](/product/mcp-gateway/authentication/jwt) for full configuration options.
 
-## Client configuration
+---
+
+## Client Configuration
 
 Your agents include your IdP's token instead of a Portkey API key:
 
@@ -83,14 +99,81 @@ Your agents include your IdP's token instead of a Portkey API key:
 }
 ```
 
-## Combining with identity forwarding
+Or in code:
 
-External OAuth pairs well with identity forwarding. Portkey validates the incoming JWT, extracts user claims, and forwards them to MCP servers.
+<Tabs>
+  <Tab title="Python">
+```python
+# Get token from your IdP (example using OIDC)
+token = get_idp_token()  # Your IdP client
+
+headers = {
+    "Authorization": f"Bearer {token}",
+}
+
+async with streamablehttp_client(
+    "https://mcp.portkey.ai/linear/mcp",
+    headers=headers
+) as (read, write, _):
+    # MCP operations...
+```
+  </Tab>
+  <Tab title="TypeScript">
+```typescript
+// Get token from your IdP
+const token = await getIdpToken();  // Your IdP client
+
+const client = new MCPClient({
+  url: "https://mcp.portkey.ai/linear/mcp",
+  headers: {
+    Authorization: `Bearer ${token}`,
+  },
+});
+```
+  </Tab>
+</Tabs>
+
+---
+
+## Validating Claim Values
+
+Ensure tokens are issued by your IdP and intended for MCP access:
 
 ```json
 {
   "jwt_validation": {
-    "jwksUri": "https://your-idp.com/.well-known/jwks.json"
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "algorithms": ["RS256"],
+    "requiredClaims": ["sub", "email"],
+    "claimValues": {
+      "iss": {
+        "values": "https://your-idp.com",
+        "matchType": "exact"
+      },
+      "aud": {
+        "values": ["api://mcp", "https://mcp.yourcompany.com"],
+        "matchType": "contains"
+      }
+    }
+  }
+}
+```
+
+This prevents:
+- Tokens from other IdPs being accepted
+- Tokens intended for other services being used for MCP
+
+---
+
+## Combining with Identity Forwarding
+
+External OAuth pairs naturally with identity forwarding. Portkey validates the incoming JWT, extracts user claims, and forwards them to MCP servers.
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "requiredClaims": ["sub", "email", "groups"]
   },
   "user_identity_forwarding": {
     "method": "claims_header",
@@ -99,24 +182,31 @@ External OAuth pairs well with identity forwarding. Portkey validates the incomi
 }
 ```
 
-The MCP server receives user identity without handling OAuth itself. It can use this for authorization, logging, or personalization.
+The MCP server receives user identity without handling OAuth itself. It can use this for:
+- **Authorization**: Check if user belongs to required groups
+- **Logging**: Audit trail with user identity
+- **Personalization**: Customize responses based on user
 
 See [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwarding).
 
-## Example: Okta integration
+---
 
-1. Create an authorization server in Okta
-2. Create an OAuth app with the scopes you need
-3. Configure Portkey with your JWKS URI
+## IdP-Specific Examples
+
+### Okta
+
+1. Create an authorization server in Okta Admin Console
+2. Create an OAuth application (Web or SPA)
+3. Note your issuer URL (e.g., `https://dev-12345.okta.com/oauth2/default`)
 
 ```json
 {
   "jwt_validation": {
-    "jwksUri": "https://dev-12345.okta.com/oauth2/aus123/v1/keys",
+    "jwksUri": "https://dev-12345.okta.com/oauth2/default/v1/keys",
     "algorithms": ["RS256"],
     "claimValues": {
       "iss": {
-        "values": "https://dev-12345.okta.com/oauth2/aus123",
+        "values": "https://dev-12345.okta.com/oauth2/default",
         "matchType": "exact"
       }
     }
@@ -124,4 +214,141 @@ See [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwardin
 }
 ```
 
-Your users authenticate with Okta. Portkey validates their tokens. MCP access is governed by your existing identity infrastructure.
+### Auth0
+
+1. Create an API in Auth0 Dashboard
+2. Note your tenant domain and API identifier
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-tenant.auth0.com/.well-known/jwks.json",
+    "algorithms": ["RS256"],
+    "claimValues": {
+      "iss": {
+        "values": "https://your-tenant.auth0.com/",
+        "matchType": "exact"
+      },
+      "aud": {
+        "values": "https://your-api-identifier",
+        "matchType": "exact"
+      }
+    }
+  }
+}
+```
+
+### Azure AD / Entra ID
+
+1. Register an application in Azure Portal
+2. Note your tenant ID and client ID
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys",
+    "algorithms": ["RS256"],
+    "claimValues": {
+      "iss": {
+        "values": "https://login.microsoftonline.com/{tenant-id}/v2.0",
+        "matchType": "exact"
+      },
+      "aud": {
+        "values": "{client-id}",
+        "matchType": "exact"
+      }
+    }
+  }
+}
+```
+
+### AWS Cognito
+
+1. Create a User Pool in AWS Console
+2. Note your region and pool ID
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://cognito-idp.{region}.amazonaws.com/{pool-id}/.well-known/jwks.json",
+    "algorithms": ["RS256"],
+    "claimValues": {
+      "iss": {
+        "values": "https://cognito-idp.{region}.amazonaws.com/{pool-id}",
+        "matchType": "exact"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Securing Your Setup
+
+### Validate Issuer and Audience
+
+Always configure `claimValues` to verify `iss` and `aud`:
+
+```json
+{
+  "claimValues": {
+    "iss": {
+      "values": "https://your-idp.com",
+      "matchType": "exact"
+    },
+    "aud": {
+      "values": "your-client-id-or-api-identifier",
+      "matchType": "exact"
+    }
+  }
+}
+```
+
+Without this, tokens intended for other applications might be accepted.
+
+### Require Essential Claims
+
+Ensure tokens have the claims you need:
+
+```json
+{
+  "requiredClaims": ["sub", "email"]
+}
+```
+
+If a claim is missing, the request is rejected.
+
+### Use Short Token Lifetimes
+
+Configure your IdP to issue short-lived access tokens (15-60 minutes). This limits the window if a token is compromised.
+
+---
+
+## Troubleshooting
+
+### "Invalid issuer" Error
+
+The token's `iss` claim doesn't match your configuration. Verify the issuer URL exactly matches—including trailing slashes.
+
+### "Missing required claims" Error
+
+The token doesn't include claims you specified in `requiredClaims`. Check your IdP's token configuration and scopes.
+
+### "Invalid audience" Error
+
+The token's `aud` claim doesn't match your configuration. Ensure you're using the correct API identifier or client ID.
+
+### "JWKS fetch failed" Error
+
+Portkey couldn't fetch keys from your JWKS URI. Verify the URL is accessible and returns valid JWKS JSON.
+
+---
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [JWT Validation](/product/mcp-gateway/authentication/jwt) | Full configuration reference for JWT validation |
+| [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwarding) | Pass validated claims to MCP servers |
+| [Authentication Overview](/product/mcp-gateway/authentication) | Understanding gateway authentication |

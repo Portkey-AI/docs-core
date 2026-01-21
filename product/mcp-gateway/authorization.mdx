@@ -5,11 +5,7 @@ description: Control what users can access at the MCP server and tool level.
 
 Authorization determines what authenticated users can access. While [authentication](/product/mcp-gateway/authentication) verifies *who* a user is, authorization controls *what* they can do.
 
-<Info>
-Authorization features are being actively developed. This page covers current capabilities and upcoming features.
-</Info>
-
-## Authorization layers
+## Authorization Layers
 
 MCP Gateway provides authorization at multiple levels:
 
@@ -21,37 +17,114 @@ MCP Gateway provides authorization at multiple levels:
 
 ---
 
-## Claim-Based Authorization
+## Server-Level Claim-Based Authorization
 
-Control access based on JWT claims. Route users to appropriate servers based on group membership, roles, or other attributes.
+Control access to MCP servers based on JWT claims. This is configured through [JWT Validation](/product/mcp-gateway/authentication/jwt) using `requiredClaims` and `claimValues`.
 
-### Server-level claims
+### Require Specific Claims
 
-Authorize access to an MCP server based on claims in the user's JWT:
+Ensure tokens include specific claims before allowing access:
 
 ```json
 {
-  "authorization": {
-    "required_claims": {
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "requiredClaims": ["sub", "email", "groups"]
+  }
+}
+```
+
+If a token is missing any required claim, access is denied.
+
+### Validate Claim Values
+
+Authorize based on claim values—group membership, roles, or other attributes:
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "claimValues": {
       "groups": {
         "values": ["engineering", "platform"],
-        "match_type": "contains"
+        "matchType": "contains"
+      },
+      "iss": {
+        "values": "https://your-idp.com",
+        "matchType": "exact"
       }
     }
   }
 }
 ```
 
-Users without the required claims receive an authorization error.
+Users whose tokens don't match the required claim values receive an authorization error.
 
-### Match types
+### Match Types
 
-| Type | Description |
-|------|-------------|
-| `exact` | Claim value must match exactly |
-| `contains` | Claim must include at least one value |
-| `containsAll` | Claim must include all values |
-| `regex` | Match against a regular expression |
+| Type | Description | Example |
+|------|-------------|---------|
+| `exact` | Claim value must match exactly | `iss` must equal `"https://your-idp.com"` |
+| `contains` | Claim must include at least one value (OR) | User must be in `engineering` OR `platform` group |
+| `containsAll` | Claim must include all values (AND) | User must have both `mcp:read` AND `mcp:write` scopes |
+| `regex` | Match against a regular expression | Email must match `@yourcompany\.com$` |
+
+### Example: Restrict to Engineering Team
+
+Only allow users in the engineering group:
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "requiredClaims": ["sub", "groups"],
+    "claimValues": {
+      "groups": {
+        "values": ["engineering"],
+        "matchType": "contains"
+      }
+    }
+  }
+}
+```
+
+### Example: Require Admin Role
+
+Only allow users with admin role:
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "claimValues": {
+      "role": {
+        "values": "admin",
+        "matchType": "exact"
+      }
+    }
+  }
+}
+```
+
+### Example: Restrict by Email Domain
+
+Only allow users from your company domain:
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "claimValues": {
+      "email": {
+        "values": "@yourcompany\\.com$",
+        "matchType": "regex"
+      }
+    }
+  }
+}
+```
+
+See [JWT Validation](/product/mcp-gateway/authentication/jwt) for complete configuration options.
 
 ---
 
@@ -70,7 +143,7 @@ Fine-grained authorization at the tool level based on JWT claims. Control tool a
       "required_claims": {
         "role": {
           "values": ["admin", "maintainer"],
-          "match_type": "contains"
+          "matchType": "contains"
         }
       }
     }
@@ -78,7 +151,7 @@ Fine-grained authorization at the tool level based on JWT claims. Control tool a
 }
 ```
 
-This enables scenarios like:
+This will enable scenarios like:
 - Allow read tools for all users, write tools for specific roles
 - Restrict dangerous operations to admins
 - Enable different tool sets for different teams
@@ -103,7 +176,7 @@ Call your custom authorization service before each MCP request. Implement dynami
 }
 ```
 
-Your webhook receives:
+Your webhook will receive:
 - User identity and claims
 - Target MCP server
 - Tool being called
@@ -111,7 +184,7 @@ Your webhook receives:
 
 Return `allow` or `deny` with an optional reason.
 
-This enables:
+This will enable:
 - Dynamic authorization based on external systems
 - Context-aware decisions (time of day, request patterns)
 - Integration with existing authorization infrastructure
@@ -124,23 +197,40 @@ This enables:
 Authorization works alongside [Team Provisioning](/product/mcp-gateway/access-control):
 
 1. **Team Provisioning** controls which workspaces see which servers
-2. **Authorization** adds claim-based rules on top
+2. **JWT Validation** adds claim-based rules on top
 
-A user must pass both checks to access an MCP server or tool.
+A user must pass both checks to access an MCP server.
+
+```
+User Request
+    │
+    ▼
+┌─────────────────────────────┐
+│   Team Provisioning Check   │  Is server provisioned to user's workspace?
+└─────────────────────────────┘
+    │ ✓
+    ▼
+┌─────────────────────────────┐
+│   JWT Claim Validation      │  Does token have required claims/values?
+└─────────────────────────────┘
+    │ ✓
+    ▼
+   Access Granted
+```
 
 ---
 
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Authentication" icon="lock" href="/product/mcp-gateway/authentication">
-    Set up authentication for your MCP Gateway.
+  <Card title="JWT Validation" icon="key" href="/product/mcp-gateway/authentication/jwt">
+    Configure claim validation for authorization.
   </Card>
   <Card title="Team Provisioning" icon="users" href="/product/mcp-gateway/access-control">
     Control workspace access to MCP servers.
   </Card>
-  <Card title="JWT Validation" icon="key" href="/product/mcp-gateway/authentication/jwt">
-    Configure JWT validation for external IdPs.
+  <Card title="Identity Forwarding" icon="id-card" href="/product/mcp-gateway/authentication/identity-forwarding">
+    Pass user identity to MCP servers for downstream authorization.
   </Card>
   <Card title="Tool Provisioning" icon="wrench" href="/product/mcp-gateway/tool-provisioning">
     Enable or disable specific tools.
