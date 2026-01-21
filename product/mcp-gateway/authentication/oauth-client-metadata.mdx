@@ -1,0 +1,173 @@
+---
+title: OAuth Client Metadata
+description: Customize OAuth client metadata for MCP servers.
+---
+
+When Portkey connects to OAuth-protected MCP servers using **OAuth Auto**, it registers as an OAuth client with the server's authorization endpoint. By default, Portkey uses standard client metadata. For compliance or branding requirements, you can customize this.
+
+## When to Use
+
+Customize OAuth client metadata when:
+- The OAuth server requires a pre-registered `software_id` or specific scopes
+- You need custom branding during OAuth consent screens (your company name/logo instead of Portkey's)
+- Compliance requires specific contact info, terms of service, or privacy policy URLs
+- The MCP server expects specific OAuth client configuration
+
+---
+
+## How It Works
+
+When a user first accesses an OAuth-protected MCP server, Portkey initiates the OAuth flow. As part of this process, Portkey presents client metadata to the authorization server (per RFC 7591 - OAuth 2.0 Dynamic Client Registration).
+
+```
+1. User requests tool from MCP server
+2. Portkey initiates OAuth flow with authorization server
+3. Authorization server shows consent screen with client metadata
+4. User sees your company name/logo instead of default Portkey branding
+5. User authorizes access
+6. Flow completes normally
+```
+
+---
+
+## Configuration
+
+Add `oauth_client_metadata` in **Advanced Configuration** when setting up your MCP integration in the MCP Registry.
+
+```json
+{
+  "oauth_client_metadata": {
+    "client_name": "Your Company Name",
+    "client_uri": "https://yourcompany.com",
+    "logo_uri": "https://yourcompany.com/logo.png",
+    "software_id": "com.yourcompany.mcp-gateway",
+    "scope": "mcp:servers:read mcp:tools:execute",
+    "contacts": ["support@yourcompany.com"],
+    "tos_uri": "https://yourcompany.com/terms",
+    "policy_uri": "https://yourcompany.com/privacy"
+  }
+}
+```
+
+---
+
+## Available Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `client_name` | string | Name shown during OAuth consent |
+| `client_uri` | string | Organization's homepage URL |
+| `logo_uri` | string | Logo shown during consent (should be HTTPS) |
+| `scope` | string | Space-separated OAuth scopes to request |
+| `software_id` | string | Unique client identifier (useful for pre-registered clients) |
+| `software_version` | string | Client software version |
+| `grant_types` | string[] | OAuth grant types (default: `["authorization_code", "refresh_token"]`) |
+| `response_types` | string[] | OAuth response types (default: `["code"]`) |
+| `token_endpoint_auth_method` | string | Token endpoint auth method (default: `"none"`) |
+| `contacts` | string[] | Contact email addresses |
+| `tos_uri` | string | Terms of Service URL |
+| `policy_uri` | string | Privacy policy URL |
+
+---
+
+## Default Values
+
+If not customized, Portkey uses:
+
+| Field | Default Value |
+|-------|---------------|
+| `client_name` | `"Portkey (workspaceId/serverId)"` |
+| `client_uri` | `"https://portkey.ai"` |
+| `logo_uri` | Portkey logo |
+| `software_id` | `"ai.portkey.mcp"` |
+| `grant_types` | `["authorization_code", "refresh_token"]` |
+| `response_types` | `["code"]` |
+| `token_endpoint_auth_method` | `"none"` |
+
+---
+
+## Security Notes
+
+### redirect_uris Cannot Be Customized
+
+The `redirect_uris` field is **never customizable**. Portkey always uses its own callback URL for OAuth flows:
+
+```
+<gateway-url>/oauth/upstream-callback
+```
+
+This ensures OAuth tokens are delivered securely to Portkey's gateway, not to an arbitrary URL.
+
+### Fields That Cannot Be Set
+
+The following fields are excluded from customization:
+- `redirect_uris` - Must be gateway-controlled for security
+- `jwks_uri` - Not yet supported
+- `jwks` - Not yet supported
+- `software_statement` - Not yet supported
+
+If you include these fields, they're ignored.
+
+---
+
+## Example: Enterprise Compliance
+
+Your enterprise requires all OAuth registrations to include legal contact information and link to corporate policies:
+
+```json
+{
+  "oauth_client_metadata": {
+    "client_name": "Acme Corp MCP Gateway",
+    "client_uri": "https://acme.com",
+    "logo_uri": "https://acme.com/assets/logo.png",
+    "software_id": "com.acme.mcp-gateway",
+    "software_version": "1.0.0",
+    "scope": "mcp:read mcp:write",
+    "contacts": ["security@acme.com", "legal@acme.com"],
+    "tos_uri": "https://acme.com/legal/terms",
+    "policy_uri": "https://acme.com/legal/privacy"
+  }
+}
+```
+
+When users authorize access, they see "Acme Corp MCP Gateway" with your logo instead of generic Portkey branding.
+
+---
+
+## Example: Pre-Registered Client
+
+Some OAuth servers require clients to be pre-registered with a specific `software_id`:
+
+```json
+{
+  "oauth_client_metadata": {
+    "software_id": "registered-client-12345",
+    "client_name": "Pre-Registered MCP Client"
+  }
+}
+```
+
+---
+
+## Example: Custom Scopes
+
+Request specific OAuth scopes from the MCP server:
+
+```json
+{
+  "oauth_client_metadata": {
+    "scope": "read:projects write:issues admin:webhooks"
+  }
+}
+```
+
+The authorization server will request consent for these specific scopes.
+
+---
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [Authentication Overview](/product/mcp-gateway/authentication) | How authentication layers work |
+| [External MCP Servers](/product/mcp-gateway/external-mcp-servers) | Adding OAuth-protected external servers |

@@ -1,0 +1,290 @@
+---
+title: Forwarding Headers
+description: Pass headers from agent requests to MCP servers.
+---
+
+Header forwarding passes specific headers from agent requests through to MCP servers. Use for distributed tracing, tenant context, or custom metadata that needs to reach the upstream server.
+
+## When to Use
+
+Your agent includes headers with context that the MCP server needs. Maybe a trace ID for distributed tracing. Maybe a tenant ID for multi-tenant servers. Maybe custom metadata your server expects.
+
+Without header forwarding, these headers stop at Portkey. With it, they pass through to the MCP server.
+
+Common scenarios:
+
+- **Distributed tracing.** Forward `x-request-id`, `x-trace-id`, `x-correlation-id` to correlate logs across services.
+- **Multi-tenancy.** Forward `x-tenant-id`, `x-org-id` for tenant-scoped operations.
+- **User context.** Forward `x-user-id`, `x-user-role` for upstream authorization.
+- **Custom metadata.** Forward application-specific headers your MCP server expects.
+
+---
+
+## Configuration
+
+Configure `forward_headers` when adding or editing an MCP server in the MCP Registry.
+
+### Allowlist Specific Headers
+
+Forward only the headers you specify:
+
+```json
+{
+  "forward_headers": ["x-request-id", "x-trace-id", "x-tenant-id"]
+}
+```
+
+Other headers from the agent request are dropped.
+
+### Explicit Allowlist Mode
+
+The same behavior with explicit configuration:
+
+```json
+{
+  "forward_headers": {
+    "mode": "allowlist",
+    "headers": ["x-request-id", "x-trace-id", "x-tenant-id"]
+  }
+}
+```
+
+### Forward All Except Specific Headers
+
+Forward everything except headers you exclude:
+
+```json
+{
+  "forward_headers": {
+    "mode": "all-except",
+    "headers": ["user-agent", "referer", "accept-language"]
+  }
+}
+```
+
+<Warning>
+Use `all-except` mode carefully. It forwards more headers than you might expect, which could leak information or cause conflicts. Prefer explicit allowlists when possible.
+</Warning>
+
+---
+
+## Security
+
+### Protected Headers
+
+These headers are **never forwarded** regardless of your configuration:
+
+| Header | Reason |
+|--------|--------|
+| `authorization` | Could leak gateway credentials |
+| `cookie` | Session data should not leak |
+| `set-cookie` | Response header, not request |
+| `x-api-key` | Could leak API keys |
+| `x-portkey-api-key` | Portkey authentication |
+| `api-key` | Could leak API keys |
+| `apikey` | Could leak API keys |
+| `x-auth-token` | Could leak tokens |
+| `x-access-token` | Could leak tokens |
+
+In `all-except` mode, these are automatically added to the blocklist. You cannot override this behavior.
+
+### Identity Headers Are Protected
+
+If you use [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwarding), identity headers are also protected:
+
+- `X-User-Claims`
+- `X-User-JWT`
+
+This prevents clients from spoofing user identity by sending fake identity headers.
+
+---
+
+## Header Priority
+
+When multiple sources provide headers, they merge in this order (later values override earlier ones):
+
+| Priority | Source | Description |
+|----------|--------|-------------|
+| 1 (lowest) | Forwarded headers | Headers from the agent request |
+| 2 | Auth headers | `headers` configured on the MCP server |
+| 3 | Passthrough headers | `passthrough_headers` configured on the server |
+| 4 (highest) | Identity headers | Headers from [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwarding) |
+
+**Why this order matters:**
+
+- Authentication headers configured on the server cannot be overridden by agents
+- Static passthrough headers take precedence over agent headers
+- Identity headers always win—agents cannot spoof user identity
+
+**Example:**
+
+```
+Agent sends:        X-Custom: agent-value
+Server config:      X-Custom: server-value (in passthrough_headers)
+```
+
+Result: MCP server receives `X-Custom: server-value` (server config wins).
+
+---
+
+## Agent Configuration
+
+Include headers in your MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "url": "https://mcp.portkey.ai/linear/mcp",
+      "headers": {
+        "Authorization": "Bearer pk_xxx",
+        "x-request-id": "req-12345",
+        "x-tenant-id": "tenant-abc"
+      }
+    }
+  }
+}
+```
+
+Or set headers per request in code:
+
+<Tabs>
+  <Tab title="Python">
+```python
+import uuid
+
+headers = {
+    "Authorization": "Bearer pk_xxx",
+    "x-request-id": str(uuid.uuid4()),
+    "x-trace-id": current_trace_id,
+    "x-tenant-id": "tenant-abc"
+}
+
+async with streamablehttp_client(url, headers=headers) as (read, write, _):
+    # x-request-id, x-trace-id, and x-tenant-id forwarded to MCP server
+    ...
+```
+  </Tab>
+  <Tab title="TypeScript">
+```typescript
+import { randomUUID } from 'crypto';
+
+const headers = {
+  "Authorization": "Bearer pk_xxx",
+  "x-request-id": randomUUID(),
+  "x-trace-id": currentTraceId,
+  "x-tenant-id": "tenant-abc"
+};
+
+// Headers forwarded based on forward_headers configuration
+```
+  </Tab>
+</Tabs>
+
+---
+
+## Example: Distributed Tracing
+
+You want to correlate MCP requests with your application's traces.
+
+**Server configuration:**
+
+```json
+{
+  "forward_headers": ["x-request-id", "x-trace-id", "traceparent"]
+}
+```
+
+**Agent request:**
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer pk_xxx",
+    "x-request-id": "req-abc123",
+    "x-trace-id": "trace-xyz789",
+    "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+  }
+}
+```
+
+**MCP server receives:**
+
+```
+x-request-id: req-abc123
+x-trace-id: trace-xyz789
+traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+```
+
+Now your MCP server logs include the same trace IDs as your application.
+
+---
+
+## Example: Multi-Tenant Server
+
+Your internal MCP server needs tenant context to scope data access.
+
+**Server configuration:**
+
+```json
+{
+  "forward_headers": ["x-tenant-id", "x-org-id"]
+}
+```
+
+**Agent request:**
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer pk_xxx",
+    "x-tenant-id": "tenant-acme",
+    "x-org-id": "org-12345"
+  }
+}
+```
+
+**MCP server receives:**
+
+```
+x-tenant-id: tenant-acme
+x-org-id: org-12345
+```
+
+Your server uses these headers to filter data to the correct tenant.
+
+---
+
+## Combining with Identity Forwarding
+
+Header forwarding and identity forwarding serve different purposes:
+
+| Feature | Purpose | Source |
+|---------|---------|--------|
+| **Header Forwarding** | Pass metadata (traces, tenants) | Agent request |
+| **Identity Forwarding** | Pass authenticated user claims | Portkey (from validated token) |
+
+Use both together:
+
+```json
+{
+  "forward_headers": ["x-request-id", "x-trace-id"],
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["sub", "email", "workspace_id"]
+  }
+}
+```
+
+The MCP server receives:
+- `x-request-id` and `x-trace-id` from the agent (for tracing)
+- `X-User-Claims` from Portkey (for user identity)
+
+---
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwarding) | Pass authenticated user claims to MCP servers |
+| [Custom Auth](/product/mcp-gateway/authentication/custom-auth) | Configure static headers for MCP servers |
