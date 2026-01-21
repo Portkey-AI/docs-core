@@ -593,9 +593,9 @@ The `config` object is used to configure API interactions with various providers
 ## Example Configs
 
 ```js
-// Simple config with cache and retry
+// Using provider slug from Model Catalog (recommended)
 {
-  "virtual_key": "***", // Your Virtual Key
+  "provider": "@openai-prod",  // Provider slug from Model Catalog
   "cache": { // Optional
     "mode": "semantic",
     "max_age": 10000
@@ -606,20 +606,18 @@ The `config` object is used to configure API interactions with various providers
   }
 }
 
-// Load balancing with 2 OpenAI keys
+// Using virtual_key (legacy, still supported)
 {
-  "strategy": {
-      "mode": "loadbalance"
-    },
+  "virtual_key": "***",
+  "cache": { "mode": "semantic", "max_age": 10000 }
+}
+
+// Load balancing with provider slugs
+{
+  "strategy": { "mode": "loadbalance" },
   "targets": [
-    {
-      "provider": "openai",
-      "api_key": "sk-***"
-    },
-    {
-      "provider": "openai",
-      "api_key": "sk-***"
-    }
+    { "provider": "@openai-prod" },
+    { "provider": "@openai-backup" }
   ]
 }
 ```
@@ -712,22 +710,20 @@ You can find more examples of schemas [below](/api-reference/inference-api/confi
 ## Examples
 
 <AccordionGroup>
-  <Accordion title="Single Provider with API Key">
+  <Accordion title="Single Provider with Provider Slug (Recommended)">
     ```json
     {
-      "provider": "openai",
-      "api_key": "sk-***"
+      "provider": "@openai-prod"
     }
     ```
   </Accordion>
 
-  <Accordion title="Passing Model & Hyperparameters with Override Option">
+  <Accordion title="Provider Slug with Model & Hyperparameters">
     ```json
     {
-      "provider": "anthropic",
-      "api_key": "xxx",
+      "provider": "@anthropic-prod",
       "override_params": {
-        "model": "claude-3-sonnet-20240229",
+        "model": "claude-sonnet-4-20250514",
         "max_tokens": 512,
         "temperature": 0
       }
@@ -735,18 +731,10 @@ You can find more examples of schemas [below](/api-reference/inference-api/confi
     ```
   </Accordion>
 
-  <Accordion title="Single Provider with Virtual Key">
+  <Accordion title="Provider Slug with Cache and Retry">
     ```json
     {
-      "virtual_key": "***"
-    }
-    ```
-  </Accordion>
-
-  <Accordion title="Single Provider with Virtual Key, Cache and Retry">
-    ```json
-    {
-      "virtual_key": "***",
+      "provider": "@openai-prod",
       "cache": {
         "mode": "semantic",
         "max_age": 10000
@@ -759,21 +747,29 @@ You can find more examples of schemas [below](/api-reference/inference-api/confi
     ```
   </Accordion>
 
-  <Accordion title="Load Balancing with Two OpenAI API Keys">
+  <Accordion title="Load Balancing with Provider Slugs">
     ```json
     {
       "strategy": {
         "mode": "loadbalance"
       },
       "targets": [
-        {
-          "provider": "openai",
-          "api_key": "sk-***"
-        },
-        {
-          "provider": "openai",
-          "api_key": "sk-***"
-        }
+        { "provider": "@openai-prod" },
+        { "provider": "@openai-backup" }
+      ]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Fallback Across Providers">
+    ```json
+    {
+      "strategy": {
+        "mode": "fallback"
+      },
+      "targets": [
+        { "provider": "@openai-prod", "override_params": { "model": "gpt-4o" } },
+        { "provider": "@anthropic-prod", "override_params": { "model": "claude-sonnet-4-20250514" } }
       ]
     }
     ```
@@ -786,26 +782,36 @@ You can find more examples of schemas [below](/api-reference/inference-api/confi
         "mode": "loadbalance"
       },
       "targets": [
-        {
-          "provider": "openai",
-          "api_key": "sk-***"
-        },
+        { "provider": "@openai-prod" },
         {
           "strategy": {
             "mode": "fallback",
-            "on_status_codes": [429, 241]
+            "on_status_codes": [429, 500]
           },
           "targets": [
-            {
-              "virtual_key": "***"
-            },
-            {
-              "virtual_key": "***"
-            }
+            { "provider": "@openai-backup" },
+            { "provider": "@anthropic-prod" }
           ]
         }
       ]
     }
   ```
+  </Accordion>
+
+  <Accordion title="Legacy: Single Provider with API Key">
+    ```json
+    {
+      "provider": "openai",
+      "api_key": "sk-***"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Legacy: Single Provider with Virtual Key">
+    ```json
+    {
+      "virtual_key": "***"
+    }
+    ```
   </Accordion>
 </AccordionGroup>
