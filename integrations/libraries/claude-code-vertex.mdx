@@ -1,0 +1,287 @@
+---
+title: 'Claude Code with Google Vertex AI'
+description: 'Route Claude Code through Google Vertex AI via Portkey for observability, governance, and reliability'
+---
+
+import AdvancedFeatures from '/snippets/portkey-advanced-features.mdx';
+
+Claude Code is Anthropic's agentic coding tool. Route it through Google Vertex AI via Portkey to get:
+
+- **Observability** — Track costs, tokens, latency, and traces for every request
+- **Reliability** — Automatic fallbacks, retries, and caching
+- **Governance** — Budget limits, rate limiting, and team access controls
+
+<Note>
+**Important:** Always use the latest version of Claude Code. Older versions may not work with Portkey's gateway.
+</Note>
+
+## Quick Start
+
+<Steps>
+<Step title="Add Vertex AI Provider in Portkey">
+
+Go to [AI Providers](https://app.portkey.ai/ai-providers) → **Add Provider** → Select **Google Vertex AI**.
+
+Enter your GCP credentials:
+- Service Account JSON key
+- GCP Project ID
+- Region (e.g., `us-central1`)
+
+Create a slug like `vertex-prod`.
+
+<Frame>
+<img src="/images/product/model-catalog/create-provider-page.png" width="500"/>
+</Frame>
+</Step>
+
+<Step title="Get Your Portkey API Key">
+
+Go to [API Keys](https://app.portkey.ai/api-keys) → Generate a new key.
+
+</Step>
+
+<Step title="Configure Claude Code">
+
+Edit `~/.claude/settings.json` (user-level) or `.claude/settings.json` (project-level):
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: @vertex-prod",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-20250514",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-20250514",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-20250514"
+  },
+  "model": "claude-sonnet-4-20250514"
+}
+```
+
+Replace:
+- `YOUR_PORTKEY_API_KEY` with your Portkey API key
+- `@vertex-prod` with your provider slug
+
+<Warning>
+**Model names are required.** Without these settings, Claude Code will use Anthropic Direct API model names which may fail on Vertex AI.
+</Warning>
+</Step>
+</Steps>
+
+That's it! All Claude Code requests now route through Vertex AI via Portkey. Monitor usage in the [Portkey Dashboard](https://app.portkey.ai/logs).
+
+## Forward Headers (Required for Some Features)
+
+Some Claude Code features require the `anthropic-beta` header to reach Vertex AI. Configure this in a [Portkey Config](/product/ai-gateway/configs):
+
+<Steps>
+<Step title="Create a Config">
+
+Go to [Configs](https://app.portkey.ai/configs) → **Create Config**:
+
+```json
+{
+  "provider": "@vertex-prod",
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+Save and copy the Config ID.
+</Step>
+
+<Step title="Update Claude Code Settings">
+
+Add the config to your settings:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-config: YOUR_CONFIG_ID"
+  }
+}
+```
+</Step>
+</Steps>
+
+## Trace Requests
+
+Add trace IDs to group and debug requests in the Portkey Dashboard:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: @vertex-prod\nx-portkey-trace-id: claude-code-session-123"
+  }
+}
+```
+
+Use trace IDs to:
+- Group all requests from a coding session
+- Debug issues by filtering logs
+- Track usage per project or task
+
+## Advanced Configuration
+
+### Fallbacks
+
+Route to backup providers when Vertex AI fails. Create a config with fallback targets:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@vertex-prod" },
+    { "provider": "@anthropic-prod" },
+    { "provider": "@bedrock-prod" }
+  ],
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+### Load Balancing
+
+Distribute requests across multiple regions:
+
+```json
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "provider": "@vertex-us-central", "weight": 0.5 },
+    { "provider": "@vertex-us-east", "weight": 0.5 }
+  ],
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+### Caching
+
+Enable semantic caching to reduce costs and latency for repeated queries:
+
+```json
+{
+  "provider": "@vertex-prod",
+  "cache": { "max_age": 3600 },
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+### Retries
+
+Automatically retry failed requests:
+
+```json
+{
+  "provider": "@vertex-prod",
+  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] },
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+## Budget Limits
+
+Set spending controls at the provider level:
+
+1. Go to [AI Providers](https://app.portkey.ai/ai-providers) → Select your Vertex AI provider
+2. Click **Budget & Limits**
+3. Configure:
+   - **Cost limit**: Maximum spend (e.g., $500/month)
+   - **Token limit**: Maximum tokens (e.g., 10M tokens/week)
+   - **Rate limit**: Requests per minute/hour
+
+<Frame>
+<img src="/images/product/model-catalog/budget-and-limits-page-model-catalog.png" width="500"/>
+</Frame>
+
+Budget limits prevent runaway costs from agentic coding sessions.
+
+## Troubleshooting
+
+### Error: `API Error: 500 Message: fetch failed`
+
+**Cause:** Using the wrong base URL or environment variables.
+
+**Fix:** Ensure you're using:
+- `ANTHROPIC_BASE_URL` (not `ANTHROPIC_VERTEX_BASE_URL`)
+- `https://api.portkey.ai` (not `https://api.portkey.ai/v1`)
+
+❌ **Wrong:**
+```json
+{
+  "env": {
+    "ANTHROPIC_VERTEX_BASE_URL": "https://api.portkey.ai/v1",
+    "CLAUDE_CODE_USE_VERTEX": "1"
+  }
+}
+```
+
+✅ **Correct:**
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: @vertex-prod"
+  }
+}
+```
+
+### Lightning Symbol (⚡) in Logs
+
+**Cause:** Requests are going through as passthrough, meaning Portkey isn't handling them properly.
+
+**Fix:** 
+1. Remove `/v1` from the base URL — use `https://api.portkey.ai`
+2. Ensure `x-portkey-provider` or `x-portkey-config` is set in headers
+3. Verify your Portkey API key is correct
+
+### Claude Code Version Issues
+
+**Cause:** Older versions of Claude Code may not be compatible.
+
+**Fix:** Update to the latest version:
+```bash
+claude update
+```
+
+Or reinstall:
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+## Complete Example
+
+Full configuration with all features enabled:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-config: YOUR_CONFIG_ID\nx-portkey-trace-id: my-project",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-20250514",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-20250514",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-20250514"
+  },
+  "model": "claude-sonnet-4-20250514"
+}
+```
+
+With Portkey Config:
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@vertex-prod" },
+    { "provider": "@anthropic-prod" }
+  ],
+  "cache": { "max_age": 3600 },
+  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] },
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+<AdvancedFeatures />
