@@ -1,6 +1,6 @@
 ---
-title: Budget Policies
-description: Manage usage limits and rate limits policies for your organisation
+title: Usage & Rate Limit Policies
+description: Create fine-grained controls over API usage and rate limits at the workspace level
 ---
 
 <Info>
@@ -9,49 +9,46 @@ Available on **Enterprise** Self Hosting plan only.
 Requires **1.17.0** or higher version of the Gateway.
 </Info>
 
-# Policies
+Policies allow you to create fine-grained controls over API usage and rate limits at the workspace level. You can define conditions to target specific requests and group usage/rate limits by various dimensions.
 
-- Policies allow organisations to apply flexible budget and rate limit controls based on dynamic conditions (API keys, metadata, workspace, etc.). 
+## Policy Types
 
-- There are two types of policies:
-  1. **Usage Limits Policies**: Control the total usage (cost or tokens) over a period
-  2. **Rate Limits Policies**: Control the rate of requests or tokens per minute/hour/day
+### 1. Usage Limit Policies
+Control spend (cost) or token consumption with configurable limits and periodic resets.
+
+### 2. Rate Limit Policies
+Control request throughput with requests-per-minute (rpm), requests-per-hour (rph), or requests-per-day (rpd) limits.
+
+---
 
 ## Policy Structure
 
-Both policy types share common concepts:
-
 ### Conditions
 
-Conditions define which requests the policy applies to. Each condition has a `key` and `value`:
+Conditions determine **which requests** a policy applies to. All conditions must match (AND logic). Each condition supports:
 
-**Valid keys:**
-- `api_key` - Apply to a specific API key
-- `workspace_id` - Apply to a workspace
-- `metadata.*` - Apply based on custom metadata fields (e.g., `metadata._user`, `metadata.team`)
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | The dimension to match against |
+| `value` | string \| string[] | Value(s) to match (OR logic for arrays). Use `"*"` for wildcard. |
+| `excludes` | string \| string[] | Value(s) to exclude from matching |
 
-**Example:**
-```json
-[
-  {
-    "key": "api_key",
-    "value": "*"
-  },
-  {
-    "key": "metadata.team",
-    "value": "engineering"
-  }
-]
-```
+### Supported Condition Keys
+
+| Key | Description | Example Value | Version |
+|-----|-------------|---------------|---------|
+| `api_key` | Match by API key ID | `"uuid_of_api_key"` | 1.17.0+ |
+| `metadata.*` | Match by request metadata | `"metadata._user"` with value `"user123"` | 1.17.0+ |
+| `workspace_id` | Match by workspace | `"workspace id"` | 1.17.0+ |
+| `virtual_key` | Match by virtual key slug | `"virtual key slug"` | 2.0.0+ |
+| `provider` | Match by provider | `"openai"`, `"anthropic"`, `"azure-openai"` | 2.0.0+ |
+| `config` | Match by config slug | `"config slug"` | 2.0.0+ |
+| `prompt` | Match by prompt slug | `"prompt slug"` | 2.0.0+ |
+| `model` | Match by model (with wildcard support) | `"@openai/gpt-4o"`, `"@anthropic/*"` | 2.0.0+ |
 
 ### Group By
 
-Group by defines how usage is aggregated. Each group entry has a `key`:
-
-**Valid keys:**
-- `api_key` - Group by API key
-- `workspace_id` - Group by workspace
-- `metadata.*` - Group by custom metadata fields
+Group by determines **how usage/limits are bucketed**. Each unique combination of group_by values gets its own counter.
 
 **Example:**
 ```json
@@ -65,9 +62,11 @@ Group by defines how usage is aggregated. Each group entry has a `key`:
 ]
 ```
 
-### Authentication
+---
 
-All policy endpoints require authentication. You can authenticate using:
+## Authentication
+
+All policy endpoints require authentication using:
 
 - **API Key**: Include in `x-portkey-api-key` header
 
@@ -87,16 +86,7 @@ All policy endpoints are under:
 /v1/policies
 ```
 
-## Usage Limits Policies
-
-Usage limits policies allow you to set maximum usage (cost or tokens) that can be consumed over a period. When the limit is reached, requests will be blocked until the limit resets.
-
-### Policy Types
-
-Usage limits policies support two types:
-
-- **`cost`**: Limit based on total cost (in dollars)
-- **`tokens`**: Limit based on total tokens consumed
+---
 
 ## Usage Limits Policies
 
@@ -108,14 +98,10 @@ When a usage limit is exceeded, Portkey returns a **412 Precondition Failed** HT
 
 ### Policy Types
 
-Usage limits policies support two types:
-
 - **`cost`**: Limit based on total cost (in dollars)
 - **`tokens`**: Limit based on total tokens consumed
 
 ### Parameters
-
-Usage limits policies support the following parameters:
 
 #### `credit_limit` (required)
 
@@ -128,7 +114,7 @@ The maximum usage limit that can be consumed before requests are blocked.
 - **Units**:
   - For `cost` type: Value is in USD (dollars)
   - For `tokens` type: Value is in tokens
-- **Behavior**: When the credit limit is reached, all matching requests will be blocked until the limit resets (if `periodic_reset` is configured) or the policy is updated
+- **Behaviour**: When the credit limit is reached, all matching requests will be blocked until the limit resets (if `periodic_reset` is configured)
 
 #### `alert_threshold` (optional)
 
@@ -140,7 +126,7 @@ An optional threshold that triggers notifications before the credit limit is rea
   - For `cost` type: Value is in USD (dollars)
   - For `tokens` type: Value is in tokens
 - **Validation**: Must be less than `credit_limit` if provided
-- **Behavior**: 
+- **Behaviour**: 
   - When usage reaches this threshold, email notifications are sent to configured recipients
   - The API key continues to function normally until the full `credit_limit` is reached
   - Useful for proactive monitoring and budget management
@@ -156,97 +142,39 @@ Configures automatic reset of the usage limit at regular intervals.
   - Omitted/not provided - No periodic reset (limit applies until exhausted)
 - **Reset timing**:
   - **Weekly**: Resets occur every Monday at 12:00 AM UTC
-  - **Monthly**: Resets occur on the 1st calendar day of each month at 12:00 AM UTC, regardless of when the policy was created
-- **Behavior**: When a reset occurs, the usage counter resets to zero and the limit becomes available again
+  - **Monthly**: Resets occur on the 1st calendar day of each month at 12:00 AM UTC
+- **Behaviour**: When a reset occurs, the usage counter resets to zero and the limit becomes available again
 
 ### Validation Rules
 
-1. **Conditions**: Must be a non-empty array. Each condition must have `key` and `value` fields.
-2. **Group By**: Must be a non-empty array. Each group must have a `key` field.
-3. **Valid Keys**: For both `conditions` and `group_by`, valid keys are:
-   - `api_key`
-   - `workspace_id`
-   - Any key starting with `metadata.` (e.g., `metadata._user`)
+1. **Conditions**: Each condition must have `key` and `value` fields.
+2. **Group By**: Each group must have a `key` field.
+3. **Valid Keys**: For both `conditions` and `group_by`, valid keys include `api_key`, `workspace_id`, `virtual_key`, `provider`, `config`, `prompt`, `model`, or any key starting with `metadata.`
 4. **Alert Threshold**: Must be less than `credit_limit` if provided.
 5. **Workspace**: Workspace ID is required (can be provided via API key or request body).
 
-### Examples
-
-#### 1: Monthly Cost Limit per API Key
-
-Limit each API key to $1000 per month:
-
-```json
-{
-  "name": "Monthly Cost Limit per API Key",
-  "conditions": [
-    {
-      "key": "api_key",
-      "value": "*"
-    }
-  ],
-  "group_by": [
-    {
-      "key": "api_key"
-    }
-  ],
-  "type": "cost",
-  "credit_limit": 1000.0,
-  "alert_threshold": 800.0,
-  "periodic_reset": "monthly"
-}
-```
-
-#### 2: Token Limit by User
-
-Limit tokens per user (via metadata):
-
-```json
-{
-  "name": "Token Limit per User",
-  "conditions": [
-    {
-      "key": "api_key",
-      "value": "*"
-    }
-  ],
-  "group_by": [
-    {
-      "key": "metadata._user"
-    }
-  ],
-  "type": "tokens",
-  "credit_limit": 1000000,
-  "periodic_reset": "weekly"
-}
-```
+---
 
 ## Rate Limits Policies
 
 Rate limits policies allow you to control the rate of requests or tokens consumed per minute, hour, or day. When the rate limit is exceeded, requests will be throttled.
 
 <Note>
-When a rate limit is exceeded, Portkey returns a **412 Precondition Failed** HTTP status code.
+When a rate limit is exceeded, Portkey returns a **429 Too Many Requests** HTTP status code.
 </Note>
 
 ### Policy Types
-
-Rate limits policies support two types:
 
 - **`requests`**: Limit based on number of requests
 - **`tokens`**: Limit based on number of tokens
 
 ### Rate Units
 
-Rate limits can be specified in three units:
-
 - **`rpm`**: Requests/Tokens per minute
 - **`rph`**: Requests/Tokens per hour
 - **`rpd`**: Requests/Tokens per day
 
 ### Parameters
-
-Rate limits policies support the following parameters:
 
 #### `type` (required)
 
@@ -256,7 +184,7 @@ The type of rate limit to enforce.
 - **Valid values**:
   - `"requests"` - Limit based on number of API requests
   - `"tokens"` - Limit based on number of tokens consumed
-- **Behavior**: Determines what metric is being rate-limited
+- **Behaviour**: Determines what metric is being rate-limited
 
 #### `unit` (required)
 
@@ -267,114 +195,399 @@ The time interval unit for the rate limit.
   - `"rpm"` - Requests/Tokens per minute
   - `"rph"` - Requests/Tokens per hour
   - `"rpd"` - Requests/Tokens per day
-- **Behavior**: 
+- **Behaviour**: 
   - Defines the time window over which the rate limit is calculated
   - Limits reset automatically at the start of each time period
-  - **Per Minute**: Limits reset every minute, ideal for fine-grained control
-  - **Per Hour**: Limits reset hourly, providing balanced usage control
-  - **Per Day**: Limits reset daily, suitable for broader usage patterns
 
 #### `value` (required)
 
 The maximum number of requests or tokens allowed within the specified time unit.
 
 - **Type**: Number (integer)
-- **Minimum value**: `1` (setting to `0` effectively disables the policy)
+- **Minimum value**: `1`
 - **Units**:
   - For `requests` type: Value represents the number of API requests
   - For `tokens` type: Value represents the number of tokens
-- **Behavior**: 
-  - When the rate limit is exceeded, subsequent requests are throttled/rejected until the time period resets
-  - The limit applies immediately after the policy is created
-  - Rate limits are enforced on a rolling window basis within the specified time unit
+- **Behaviour**: When the rate limit is exceeded, subsequent requests are throttled/rejected until the time period resets
 
 ### Validation Rules
 
-1. **Conditions**: Must be a non-empty array. Each condition must have `key` and `value` fields.
-2. **Group By**: Must be a non-empty array. Each group must have a `key` field.
-3. **Valid Keys**: For both `conditions` and `group_by`, valid keys are:
-   - `api_key`
-   - `workspace_id`
-   - Any key starting with `metadata.` (e.g., `metadata._user`)
+1. **Conditions**: Each condition must have `key` and `value` fields.
+2. **Group By**: Each group must have a `key` field.
+3. **Valid Keys**: For both `conditions` and `group_by`, valid keys include `api_key`, `workspace_id`, `virtual_key`, `provider`, `config`, `prompt`, `model`, or any key starting with `metadata.`
 4. **Value**: Must be a numeric value.
 5. **Workspace**: Workspace ID is required (can be provided via API key or request body).
 
-### Examples
+---
 
-#### 1: Requests per Minute per API Key
+## Use Cases
 
-Limit each API key to 100 requests per minute:
+### Use Case 1: Global Workspace Rate Limit
 
-```json
-{
-  "name": "100 RPM per API Key",
-  "conditions": [
-    {
-      "key": "api_key",
-      "value": "*"
-    }
-  ],
-  "group_by": [
-    {
-      "key": "api_key"
-    }
-  ],
-  "type": "requests",
-  "unit": "rpm",
-  "value": 100
-}
-```
-
-#### 2: Tokens per Hour by User
-
-Limit tokens per user (via metadata) to 10,000 per hour:
+Limit all requests in a workspace to 1000 requests per minute.
 
 ```json
 {
-  "name": "10K Tokens per Hour per User",
-  "conditions": [
-    {
-      "key": "api_key",
-      "value": "*"
-    }
-  ],
-  "group_by": [
-    {
-      "key": "metadata._user"
-    }
-  ],
-  "type": "tokens",
-  "unit": "rph",
-  "value": 10000
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [{"key": "api_key", "value": "*"}],
+    "group_by": [{"key": "workspace_id"}],
+    "value": 1000,
+    "type": "requests",
+    "unit": "rpm",
+    "status": "active"
+  }
 }
 ```
 
-#### 3: Daily Request Limit
+---
 
-Limit total requests per day for a workspace:
+### Use Case 2: Per User Rate Limit
+
+Limit each user (identified by `_user` metadata) to 100 requests per minute.
 
 ```json
 {
-  "name": "10K Requests per Day",
-  "conditions": [
-    {
-      "key": "api_key",
-      "value": "*"
-    }
-  ],
-  "group_by": [
-    {
-      "key": "workspace_id"
-    }
-  ],
-  "type": "requests",
-  "unit": "rpd",
-  "value": 10000
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [
+      { "key": "metadata._user", "value": "*" }
+    ],
+    "group_by": [
+      { "key": "metadata._user" }
+    ],
+    "value": 100,
+    "type": "requests",
+    "unit": "rpm",
+    "status": "active"
+  }
 }
 ```
+
+---
+
+### Use Case 3: Per User Monthly Spend Budget
+
+Limit each user to $50/month in API costs.
+
+```json
+{
+  "type": "usage_limits",
+  "policy": {
+    "conditions": [
+      { "key": "metadata._user", "value": "*" }
+    ],
+    "group_by": [
+      { "key": "metadata._user" }
+    ],
+    "credit_limit": 50,
+    "type": "cost",
+    "periodic_reset": "monthly",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 4: Provider Specific Rate Limit
+
+Limit OpenAI requests to 500 RPM, separate from other providers.
+
+```json
+{
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [
+      { "key": "provider", "value": "openai" }
+    ],
+    "group_by": [{"key": "workspace_id"}],
+    "value": 500,
+    "type": "requests",
+    "unit": "rpm",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 5: Model Specific Token Rate Limit
+
+Limit GPT-4o to 100,000 tokens per minute.
+
+```json
+{
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [
+      { "key": "model", "value": "@openai/gpt-4o" }
+    ],
+    "group_by": [{"key": "workspace_id"}],
+    "value": 100000,
+    "type": "tokens",
+    "unit": "rpm",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 6: Limit All Models from a Provider (Wildcard)
+
+Limit all Anthropic models to 50,000 tokens per minute.
+
+```json
+{
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [
+      { "key": "model", "value": "@anthropic/*" }
+    ],
+    "group_by": [{ "key": "provider" }],
+    "value": 50000,
+    "type": "tokens",
+    "unit": "rpm",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 7: Per Virtual Key Weekly Budget
+
+Track and limit spend per virtual key to $100/week.
+
+```json
+{
+  "type": "usage_limits",
+  "policy": {
+    "conditions": [
+      { "key": "virtual_key", "value": "*" }
+    ],
+    "group_by": [
+      { "key": "virtual_key" }
+    ],
+    "credit_limit": 100,
+    "type": "cost",
+    "periodic_reset": "weekly",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 8: Config Specific Rate Limit
+
+Limit requests using a specific gateway config to 200 RPM.
+
+```json
+{
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [
+      { "key": "config", "value": "production-config" }
+    ],
+    "group_by": [{"key": "config"}],
+    "value": 200,
+    "type": "requests",
+    "unit": "rpm",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 9: Prompt Specific Usage Budget
+
+Limit a specific prompt template to 1 million tokens per month.
+
+```json
+{
+  "type": "usage_limits",
+  "policy": {
+    "conditions": [
+      { "key": "prompt", "value": "customer-support-v2" }
+    ],
+    "group_by": [ { "key": "prompt"}],
+    "credit_limit": 1000000,
+    "type": "tokens",
+    "periodic_reset": "monthly",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 10: Multiple Allowed Values (OR Logic)
+
+Allow only specific API keys to use expensive models, with a combined rate limit.
+
+```json
+{
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [
+      { "key": "api_key", "value": ["pk_premium_1", "pk_premium_2", "pk_premium_3"] },
+      { "key": "model", "value": ["@openai/gpt-4o", "@anthropic/claude-3-5-sonnet-20241022"] }
+    ],
+    "group_by": [{ "key": "api_key"}],
+    "value": 100,
+    "type": "requests",
+    "unit": "rpm",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 11: Exclude Specific Models
+
+Apply rate limit to all OpenAI models EXCEPT GPT-4o.
+
+```json
+{
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [
+      { "key": "model", "value": "@openai/*", "excludes": "@openai/gpt-4o" }
+    ],
+    "group_by": [ { "key": "model"} ],
+    "value": 1000,
+    "type": "requests",
+    "unit": "rpm",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 12: Per User, Per Model Budget
+
+Track spend separately for each user AND model combination.
+
+```json
+{
+  "type": "usage_limits",
+  "policy": {
+    "conditions": [
+      { "key": "metadata._user", "value": "*" }
+    ],
+    "group_by": [
+      { "key": "metadata._user" },
+      { "key": "model" }
+    ],
+    "credit_limit": 10,
+    "type": "cost",
+    "periodic_reset": "monthly",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 13: Team Based Provider Quota
+
+Limit each team (from metadata) to specific token quotas per provider.
+
+```json
+{
+  "type": "usage_limits",
+  "policy": {
+    "conditions": [
+      { "key": "metadata._team", "value": "*" }
+    ],
+    "group_by": [
+      { "key": "metadata._team" },
+      { "key": "provider" }
+    ],
+    "credit_limit": 500000,
+    "type": "tokens",
+    "periodic_reset": "weekly",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 14: Exclude Internal API Keys from Limits
+
+Apply rate limits to all API keys except internal ones.
+
+```json
+{
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [
+      { "key": "api_key", "value": "*", "excludes": ["pk_internal_1", "pk_internal_2"] }
+    ],
+    "group_by": [
+      { "key": "api_key" }
+    ],
+    "value": 50,
+    "type": "requests",
+    "unit": "rpm",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Use Case 15: Combined Conditions - Premium Users on Specific Models
+
+Rate limit premium tier users only when using expensive models.
+
+```json
+{
+  "type": "rate_limits",
+  "policy": {
+    "conditions": [
+      { "key": "metadata._tier", "value": "premium" },
+      { "key": "model", "value": ["@openai/gpt-4o", "@openai/o1-preview", "@anthropic/claude-3-5-sonnet-20241022"] }
+    ],
+    "group_by": [
+      { "key": "metadata._user" }
+    ],
+    "value": 500,
+    "type": "requests",
+    "unit": "rph",
+    "status": "active"
+  }
+}
+```
+
+---
+
+## Important Notes
+
+1. **Condition Matching**: All conditions must match (AND). Within a condition, multiple values use OR logic.
+
+2. **Model Format**: Models are specified as `@provider/model-name`. Use `@provider/*` for wildcard matching.
+
+3. **Metadata Keys**: Use `metadata.` prefix followed by your metadata key name (e.g., `metadata._user`, `metadata._team`).
+
+4. **Periodic Reset Options**: `"weekly"`, `"monthly"`, or `null` for no reset.
+
+5. **Rate Limit Units**: `"rpm"` (per minute), `"rph"` (per hour), `"rpd"` (per day).
+
+6. **Usage Limit Types**: `"cost"` (in dollars) or `"tokens"`.
+
+---
 
 ## API Reference
+
 For detailed API documentation, see the following endpoints:
+
 ### Usage Limits Policies
 <Card title="Create Usage Limits Policy" href="/api-reference/admin-api/control-plane/policies/usage-limits/create-usage-limits-policy"/>
 <Card title="List Usage Limits Policies" href="/api-reference/admin-api/control-plane/policies/usage-limits/list-usage-limits-policy"/>
