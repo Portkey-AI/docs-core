@@ -20,36 +20,32 @@ In a Hybrid deployment, only the **Data Plane** components are deployed in your 
 
 ### Architecture Diagram
 
-
-┌─────────────────────────────────────────────────────────────────┐
-│                     Your Azure Environment                       │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                    AKS Cluster                            │   │
-│  │                                                           │   │
-│  │   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │   │
-│  │   │ AI Gateway  │    │ Data Service│    │    Redis    │  │   │
-│  │   │  (2 pods)   │────│   (1 pod)   │────│  (optional) │  │   │
-│  │   └──────┬──────┘    └─────────────┘    └─────────────┘  │   │
-│  │          │                                                │   │
-│  └──────────┼────────────────────────────────────────────────┘   │
-│             │                                                     │
-│   ┌─────────▼─────────┐         ┌─────────────────────────────┐  │
-│   │   Load Balancer   │         │    Azure Blob Storage       │  │
-│   └─────────┬─────────┘         │    (Log Store)              │  │
-│             │                    └─────────────────────────────┘  │
-│             │                    ┌─────────────────────────────┐  │
-│             │                    │   Azure Managed Redis       │  │
-│             │                    │   (Cache - recommended)     │  │
-└─────────────┼────────────────────└─────────────────────────────┘  │
-              │                                                      │
-              │ HTTPS (Config Sync & Metrics)                       │
-              ▼                                                      │
-┌─────────────────────────────────────────────────────────────────┐
-│                    Portkey Control Plane                         │
-│            (Dashboard, Config Management, Analytics)             │
-└─────────────────────────────────────────────────────────────────┘
-
+```mermaid
+flowchart TB
+    subgraph Azure["Your Azure Environment"]
+        subgraph AKS["AKS Cluster"]
+            Gateway["AI Gateway<br/>(2 pods)"]
+            DataSvc["Data Service<br/>(1 pod)"]
+            RedisInt["Redis<br/>(optional)"]
+            Gateway <--> DataSvc
+            DataSvc <--> RedisInt
+        end
+        
+        LB["Azure Load Balancer"]
+        Blob["Azure Blob Storage<br/>(Log Store)"]
+        RedisExt["Azure Managed Redis<br/>(Cache - recommended)"]
+        
+        Gateway --> LB
+        DataSvc --> Blob
+        DataSvc --> RedisExt
+    end
+    
+    subgraph Portkey["Portkey Control Plane"]
+        CP["Dashboard, Config Management, Analytics"]
+    end
+    
+    LB <-->|"HTTPS<br/>(Config Sync & Metrics)"| CP
+```
 
 ### Required Azure Services
 
@@ -88,43 +84,37 @@ In a Full Private deployment, **all components** run within your Azure environme
 
 ### Architecture Diagram
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          Your Azure Environment                               │
-│                                                                               │
-│  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │                           AKS Cluster                                   │  │
-│  │                                                                         │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │  │
-│  │  │  Frontend   │  │   Backend   │  │ AI Gateway  │  │ Data Service│   │  │
-│  │  │   (Web UI)  │  │   (API)     │  │  (2 pods)   │  │   (1 pod)   │   │  │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘   │  │
-│  │         │                │                │                │          │  │
-│  │         └────────────────┴────────────────┴────────────────┘          │  │
-│  │                                    │                                   │  │
-│  │  ┌─────────────┐  ┌─────────────┐  │  ┌─────────────┐                 │  │
-│  │  │    Redis    │  │    MySQL    │  │  │ ClickHouse  │                 │  │
-│  │  │  (in-cluster│  │ (in-cluster │  │  │ (in-cluster │                 │  │
-│  │  │  or managed)│  │  or managed)│  │  │  or managed)│                 │  │
-│  │  └─────────────┘  └─────────────┘  │  └─────────────┘                 │  │
-│  │                                    │                                   │  │
-│  └────────────────────────────────────┼───────────────────────────────────┘  │
-│                                       │                                       │
-│  ┌────────────────────────────────────▼───────────────────────────────────┐  │
-│  │                           Load Balancer                                 │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
-│                                                                               │
-│  ┌─────────────────────────────────┐  ┌─────────────────────────────────┐   │
-│  │     Azure Blob Storage          │  │     Azure Managed Redis         │   │
-│  │     (Log Store)                 │  │     (Recommended)               │   │
-│  └─────────────────────────────────┘  └─────────────────────────────────┘   │
-│                                                                               │
-│  ┌─────────────────────────────────┐                                         │
-│  │     Azure Database for MySQL    │                                         │
-│  │     (Recommended)               │                                         │
-│  └─────────────────────────────────┘                                         │
-│                                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Azure["Your Azure Environment (Fully Airgapped)"]
+        subgraph AKS["AKS Cluster"]
+            Frontend["Frontend<br/>(Web UI)"]
+            Backend["Backend<br/>(API)"]
+            Gateway["AI Gateway<br/>(2 pods)"]
+            DataSvc["Data Service<br/>(1 pod)"]
+            
+            RedisInt["Redis<br/>(in-cluster or managed)"]
+            MySQLInt["MySQL<br/>(in-cluster or managed)"]
+            ClickHouse["ClickHouse<br/>(in-cluster or managed)"]
+            
+            Frontend <--> Backend
+            Backend <--> Gateway
+            Gateway <--> DataSvc
+            Backend <--> MySQLInt
+            Backend <--> ClickHouse
+            Gateway <--> RedisInt
+        end
+        
+        LB["Azure Load Balancer"]
+        Blob["Azure Blob Storage<br/>(Log Store)"]
+        RedisExt["Azure Managed Redis<br/>(Recommended)"]
+        MySQLExt["Azure Database for MySQL<br/>(Recommended)"]
+        
+        Frontend --> LB
+        DataSvc --> Blob
+        Gateway --> RedisExt
+        Backend --> MySQLExt
+    end
 ```
 
 ### Required Azure Services
