@@ -1,0 +1,272 @@
+---
+title: 'Claude Code with Anthropic'
+description: 'Route Claude Code through Anthropic Direct API via Portkey for observability, governance, and reliability'
+---
+
+Route [Claude Code](https://code.claude.com/docs/en/overview) through Anthropic's Direct API via Portkey. Get full observability, cost tracking, and budget controls. Also supports Max plan and Anthropic OAuth.
+
+See [Claude Code overview](/virtual_key_old/integrations/libraries/claude-code) for why platform teams use Portkey.
+
+<Note>
+**Important:** Always use the latest version of Claude Code. Older versions may not work with Portkey's gateway.
+</Note>
+
+## Quick Start
+
+<Steps>
+<Step title="Create Virtual Key">
+
+Go to [Virtual Keys](https://app.portkey.ai/virtual-keys) → **Add Virtual Key** → Select **Anthropic**.
+
+Enter your Anthropic API key and save.
+
+<Frame>
+<img src="/images/integrations/openai/virtual-key-2.png" width="500"/>
+</Frame>
+</Step>
+
+<Step title="Get Your Portkey API Key">
+
+Go to [API Keys](https://app.portkey.ai/api-keys) → Generate a new key.
+
+</Step>
+
+<Step title="Configure Claude Code">
+
+Edit `~/.claude/settings.json` (user-level) or `.claude/settings.json` (project-level):
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai/v1",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: anthropic\nx-portkey-virtual-key: YOUR_VIRTUAL_KEY",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-20250514",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-20250514",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-20250514"
+  },
+  "model": "claude-sonnet-4-20250514"
+}
+```
+
+Replace:
+- `YOUR_PORTKEY_API_KEY` with your Portkey API key
+- `YOUR_VIRTUAL_KEY` with your virtual key ID
+</Step>
+</Steps>
+
+That's it! All Claude Code requests now route through Anthropic via Portkey. Monitor usage in the [Portkey Dashboard](https://app.portkey.ai/logs).
+
+## Max Plan / Anthropic OAuth (Enterprise)
+
+For Max plan or Anthropic OAuth users:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai/v1",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY"
+  }
+}
+```
+
+<Info>
+**Cost tracking:** With Max plan, costs show as $0 in Portkey since Anthropic bills directly. Portkey still tracks request counts, latency, tokens, and traces.
+</Info>
+
+## Forward Headers (Required for Some Features)
+
+Some Claude Code features require the `anthropic-beta` header. Configure this in a [Portkey Config](/virtual_key_old/product/ai-gateway/configs):
+
+<Steps>
+<Step title="Create a Config">
+
+Go to [Configs](https://app.portkey.ai/configs) → **Create Config**:
+
+```json
+{
+  "virtual_key": "YOUR_VIRTUAL_KEY",
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+Save and copy the Config ID.
+</Step>
+
+<Step title="Update Claude Code Settings">
+
+Add the config to your settings:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai/v1",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-config: YOUR_CONFIG_ID"
+  }
+}
+```
+</Step>
+</Steps>
+
+## Trace Requests
+
+Add trace IDs to group and debug requests in the Portkey Dashboard:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai/v1",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: anthropic\nx-portkey-virtual-key: YOUR_VIRTUAL_KEY\nx-portkey-trace-id: claude-code-session-123"
+  }
+}
+```
+
+Use trace IDs to:
+- Group all requests from a coding session
+- Debug issues by filtering logs
+- Track usage per project or task
+
+## Advanced Configuration
+
+### Fallbacks
+
+Route to backup providers when Anthropic fails. Create a config with fallback targets:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "virtual_key": "anthropic-virtual-key" },
+    { "virtual_key": "bedrock-virtual-key" },
+    { "virtual_key": "vertex-virtual-key" }
+  ],
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+### Load Balancing
+
+Distribute requests across multiple API keys or providers:
+
+```json
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "virtual_key": "anthropic-key-1", "weight": 0.5 },
+    { "virtual_key": "anthropic-key-2", "weight": 0.5 }
+  ],
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+### Caching
+
+Reduce costs and latency for repeated queries:
+
+```json
+{
+  "virtual_key": "YOUR_VIRTUAL_KEY",
+  "cache": { "mode": "simple" },
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+### Retries
+
+Automatically retry failed requests:
+
+```json
+{
+  "virtual_key": "YOUR_VIRTUAL_KEY",
+  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] },
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+## Budget Limits
+
+Set spending controls at the virtual key level:
+
+1. Go to [Virtual Keys](https://app.portkey.ai/virtual-keys) → Select your Anthropic virtual key
+2. Click **Edit**
+3. Configure:
+   - **Cost limit**: Maximum spend (e.g., $500/month)
+   - **Token limit**: Maximum tokens (e.g., 10M tokens/week)
+   - **Rate limit**: Requests per minute/hour
+
+Budget limits prevent runaway costs from agentic coding sessions.
+
+## Troubleshooting
+
+### Lightning Symbol (⚡) in Logs
+
+**Cause:** Requests are going through as passthrough, meaning Portkey isn't handling them properly.
+
+**Fix:** 
+1. Ensure `x-portkey-provider` and `x-portkey-virtual-key` are set in headers
+2. Verify your Portkey API key is correct
+
+### Claude Code Version Issues
+
+**Cause:** Older versions of Claude Code may not be compatible.
+
+**Fix:** Update to the latest version:
+```bash
+claude update
+```
+
+Or reinstall:
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+## Complete Example
+
+Full configuration with all features enabled:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.portkey.ai/v1",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-config: YOUR_CONFIG_ID\nx-portkey-trace-id: my-project",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-20250514",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-20250514",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-20250514"
+  },
+  "model": "claude-sonnet-4-20250514"
+}
+```
+
+With Portkey Config:
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "virtual_key": "anthropic-virtual-key" },
+    { "virtual_key": "bedrock-virtual-key" }
+  ],
+  "cache": { "mode": "simple" },
+  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] },
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Portkey Configs" icon="gear" href="/virtual_key_old/product/ai-gateway/configs">
+    Learn about fallbacks, load balancing, and routing strategies
+  </Card>
+  <Card title="Budget & Limits" icon="dollar-sign" href="/virtual_key_old/product/ai-gateway/virtual-keys/budget-limits">
+    Set up spending controls for your team
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/virtual_key_old/product/observability">
+    Deep dive into logs, traces, and analytics
+  </Card>
+  <Card title="Virtual Keys" icon="key" href="/virtual_key_old/product/ai-gateway/virtual-keys">
+    Manage provider credentials securely
+  </Card>
+</CardGroup>
