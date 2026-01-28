@@ -122,8 +122,9 @@ Bun's style: They often omit "you" entirely, making statements more direct.
 - Works great for showing the same example in multiple languages
 
 **Example:**
-```mdx
+
 <CodeGroup>
+
 ```python Python
 from portkey_ai import Portkey
 
@@ -138,7 +139,6 @@ const portkey = new Portkey({
 })
 ```
 </CodeGroup>
-```
 
 **Reference:** [Mintlify CodeGroup Documentation](https://www.mintlify.com/docs/components/code-groups)
 
