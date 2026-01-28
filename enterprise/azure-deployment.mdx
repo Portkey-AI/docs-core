@@ -24,27 +24,28 @@ In a Hybrid deployment, only the **Data Plane** components are deployed in your 
 flowchart TB
     subgraph Azure["Your Azure Environment"]
         subgraph AKS["AKS Cluster"]
-            Gateway["AI Gateway<br/>(2 pods)"]
             DataSvc["Data Service<br/>(1 pod)"]
-            RedisInt["Redis<br/>(optional)"]
-            Gateway <--> DataSvc
-            DataSvc <--> RedisInt
+            Gateway["AI Gateway<br/>(2 pods)"]
+            DataSvc <--> Gateway
         end
         
         LB["Azure Load Balancer"]
+        NAT["NAT Gateway"]
+        RedisExt["Azure Managed Redis<br/>(Cache)"]
         Blob["Azure Blob Storage<br/>(Log Store)"]
-        RedisExt["Azure Managed Redis<br/>(Cache - recommended)"]
         
         Gateway --> LB
-        DataSvc --> Blob
-        DataSvc --> RedisExt
+        Gateway --> RedisExt
+        Gateway --> Blob
+        AKS --> NAT
     end
     
     subgraph Portkey["Portkey Control Plane"]
         CP["Dashboard, Config Management, Analytics"]
     end
     
-    LB <-->|"HTTPS<br/>(Config Sync & Metrics)"| CP
+    NAT -->|"Outbound HTTPS<br/>(Config Sync & Metrics Dump)"| CP
+    CP -->|"Inbound HTTPS<br/>(Playground Calls & Logs Fetch)"| LB
 ```
 
 ### Required Azure Services
@@ -57,18 +58,10 @@ flowchart TB
 | **Load Balancer** | Azure Load Balancer | Standard tier (created via AKS Load Balancer Controller) |
 | **Authentication** | Entra ID or Managed Identity | Access to Blob Storage |
 
-### Deployed Containers
-
-| Container | Description | Default Replicas |
-|:----------|:------------|:----------------|
-| `AI Gateway` | Routes LLM requests, applies guardrails, caching, and metering | 2 |
-| `Data Service` | Handles log storage and retrieval | 1 |
-| `Redis` (optional) | In-cluster cache if not using Azure Managed Redis | 1 |
-
 ### Network Requirements
 
 <Note>
-**Portkey Control Plane IP**: `44.221.117.129` — whitelist this for inbound access if storing logs locally.
+**Portkey Control Plane IP**: `44.221.117.129` — whitelist this for inbound accessing the playground and fetching individual logs.
 </Note>
 
 | Direction | Requirement |
@@ -93,26 +86,24 @@ flowchart TB
             Gateway["AI Gateway<br/>(2 pods)"]
             DataSvc["Data Service<br/>(1 pod)"]
             
-            RedisInt["Redis<br/>(in-cluster or managed)"]
-            MySQLInt["MySQL<br/>(in-cluster or managed)"]
             ClickHouse["ClickHouse<br/>(in-cluster or managed)"]
             
             Frontend <--> Backend
             Backend <--> Gateway
             Gateway <--> DataSvc
-            Backend <--> MySQLInt
             Backend <--> ClickHouse
-            Gateway <--> RedisInt
         end
         
         LB["Azure Load Balancer"]
         Blob["Azure Blob Storage<br/>(Log Store)"]
-        RedisExt["Azure Managed Redis<br/>(Recommended)"]
-        MySQLExt["Azure Database for MySQL<br/>(Recommended)"]
+        RedisExt["Azure Managed Redis"]
+        MySQLExt["Azure Database for MySQL"]
         
         Frontend --> LB
-        DataSvc --> Blob
+        Gateway --> Blob
+        Backend --> RedisExt
         Gateway --> RedisExt
+        DataSvc --> RedisExt
         Backend --> MySQLExt
     end
 ```
@@ -122,23 +113,12 @@ flowchart TB
 | Component | Azure Service | Sizing Recommendation |
 |:----------|:-------------|:---------------------|
 | **Kubernetes Cluster** | Azure Kubernetes Service (AKS) | 16 vCPU, 32 GB RAM (minimum) |
-| **Transactional Database** | Azure Database for MySQL | Flexible Server: 4 vCPU, 16 GB RAM |
+| **Transactional Database** | Azure Database for MySQL | 4 vCPU, 16 GB RAM |
 | **Cache Store** | Azure Managed Redis | 6 GB (Standard tier recommended) |
 | **Log Store** | Azure Blob Storage | Serverless (no provisioned storage required) |
 | **Load Balancer** | Azure Load Balancer | Standard tier (created via AKS Load Balancer Controller) |
 | **Authentication** | Entra ID or Managed Identity | Access to Blob Storage |
 
-### Deployed Containers
-
-| Container | Description | Default Replicas |
-|:----------|:------------|:----------------|
-| `Frontend` | Web UI dashboard (React + Nginx) | 1 |
-| `Backend` | REST API server for business logic | 1 |
-| `AI Gateway` | Routes LLM requests, applies guardrails, caching, and metering | 2 |
-| `Data Service` | Handles log storage, exports, and retrieval | 1 |
-| `ClickHouse` | Analytics and metrics database (can be external) | 1 |
-| `MySQL` (optional) | Transactional database if not using Azure MySQL | 1 |
-| `Redis` (optional) | In-cluster cache if not using Azure Managed Redis | 1 |
 
 ### Network Requirements
 
@@ -148,81 +128,9 @@ flowchart TB
 
 Internal load balancer recommended for private network access.
 
----
-
-## Comparison Summary
-
-| Aspect | Hybrid | Full Private (Airgapped) |
-|:-------|:-------|:-------------------------|
-| **AKS Sizing** | 4 vCPU, 8 GB RAM | 16 vCPU, 32 GB RAM |
-| **Azure MySQL** | Not required | 4 vCPU, 16 GB RAM |
-| **Azure Managed Redis** | 6 GB | 6 GB |
-| **Azure Blob Storage** | Serverless | Serverless |
-| **Load Balancer** | Required | Required |
-| **ClickHouse** | Not required (analytics in Portkey Cloud) | Required (in-cluster or managed) |
-| **Internet Access** | Required (outbound to Portkey) | Not required |
-| **Dashboard** | Hosted by Portkey | Self-hosted |
 
 ---
 
-## Authentication Options for Azure Blob Storage
-
-Both deployment models require access to Azure Blob Storage for log storage. Choose one of the following authentication methods:
-
-<AccordionGroup>
-  <Accordion title="Option 1: Managed Identity (Recommended)" icon="shield-check">
-    ```yaml values.yaml
-    environment:
-      data:
-        LOG_STORE: azure
-        AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>
-        AZURE_STORAGE_CONTAINER: <CONTAINER_NAME>
-        AZURE_AUTH_MODE: managed
-    ```
-
-    **Setup**: Grant the AKS kubelet identity `Storage Blob Data Contributor` role on the blob container.
-  </Accordion>
-
-  <Accordion title="Option 2: Entra ID (Service Principal)" icon="key">
-    ```yaml values.yaml
-    environment:
-      data:
-        LOG_STORE: azure
-        AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>
-        AZURE_STORAGE_CONTAINER: <CONTAINER_NAME>
-        AZURE_AUTH_MODE: entra
-        AZURE_ENTRA_CLIENT_ID: <CLIENT_ID>
-        AZURE_ENTRA_CLIENT_SECRET: <CLIENT_SECRET>
-        AZURE_ENTRA_TENANT_ID: <TENANT_ID>
-    ```
-  </Accordion>
-</AccordionGroup>
-
----
-
-## Quick Reference: Service Sizing
-
-<Tabs>
-  <Tab title="Hybrid Deployment">
-    | Service | SKU/Size | Notes |
-    |:--------|:---------|:------|
-    | AKS Node Pool | Standard_D2s_v3 or equivalent | 2 vCPU, 8 GB per node; 2 nodes recommended for HA |
-    | Azure Managed Redis | Basic C1 or Standard C1 | 6 GB cache |
-    | Azure Blob Storage | General Purpose v2 | Hot tier, LRS redundancy |
-    | Load Balancer | Standard | Auto-provisioned by AKS |
-  </Tab>
-  <Tab title="Full Private Deployment">
-    | Service | SKU/Size | Notes |
-    |:--------|:---------|:------|
-    | AKS Node Pool | Standard_D4s_v3 or equivalent | 4 vCPU, 16 GB per node; 4 nodes recommended |
-    | Azure Database for MySQL | Flexible Server GP_Standard_D4ds_v4 | 4 vCPU, 16 GB RAM |
-    | Azure Managed Redis | Standard C1 | 6 GB cache |
-    | Azure Blob Storage | General Purpose v2 | Hot tier, LRS redundancy |
-    | Load Balancer | Standard | Auto-provisioned by AKS |
-  </Tab>
-</Tabs>
-
----
 
 ## Next Steps
 
