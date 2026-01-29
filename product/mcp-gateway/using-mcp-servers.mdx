@@ -1,0 +1,212 @@
+---
+title: Using MCP Servers
+description: Connect to MCP servers from AI agents and applications.
+---
+
+After an admin provisions MCP servers to your workspace, connect from any MCP client—Claude Desktop, Cursor, VS Code, or custom applications.
+
+## Find your connection URL
+
+Go to **MCP** in your workspace sidebar. Click on a server to see its connection details.
+
+Each server has a URL:
+
+```
+https://mcp.portkey.ai/{server-slug}/mcp
+```
+
+Copy this URL to use in your agent configuration.
+
+<Note>
+For self-hosted deployments, replace `mcp.portkey.ai` with your gateway URL.
+</Note>
+
+---
+
+## MCP Clients
+
+### Claude Desktop
+
+Add to your Claude Desktop config file.
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "url": "https://mcp.portkey.ai/linear/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_PORTKEY_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop after saving. The tools appear in your conversation.
+
+For OAuth-enabled servers, Claude prompts for authentication on first tool use.
+
+### Cursor
+
+Open **Cmd/Ctrl + Shift + P** > **Cursor Settings: Open MCP Settings**.
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "url": "https://mcp.portkey.ai/linear/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_PORTKEY_API_KEY"
+      }
+    }
+  }
+}
+```
+
+The tools are available in Cursor's agent mode.
+
+### VS Code
+
+With GitHub Copilot and the MCP extension:
+
+```json
+{
+  "mcp.servers": {
+    "linear": {
+      "url": "https://mcp.portkey.ai/linear/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_PORTKEY_API_KEY"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Transport
+
+MCP Gateway uses **HTTP Streamable** transport for all connections. This is the standard MCP transport that supports bidirectional communication over HTTP.
+
+<Info>
+Sessions are ephemeral—each request is independent. There's no session persistence between requests, which simplifies scaling and removes the need for sticky sessions.
+</Info>
+
+---
+
+## SDKs
+
+### Python
+
+```bash
+pip install mcp
+```
+
+```python
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+url = "https://mcp.portkey.ai/linear/mcp"
+headers = {"Authorization": "Bearer YOUR_PORTKEY_API_KEY"}
+
+async with streamablehttp_client(url, headers=headers) as (read, write, _):
+    async with ClientSession(read, write) as session:
+        await session.initialize()
+        
+        # List tools
+        tools = await session.list_tools()
+        for tool in tools.tools:
+            print(f"{tool.name}: {tool.description}")
+        
+        # Call a tool
+        result = await session.call_tool(
+            "create_issue",
+            {"title": "Bug report", "priority": "high"}
+        )
+        print(result)
+```
+
+### TypeScript
+
+```bash
+npm install @modelcontextprotocol/sdk
+```
+
+```typescript
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const transport = new StreamableHTTPClientTransport(
+  new URL("https://mcp.portkey.ai/linear/mcp"),
+  {
+    requestInit: {
+      headers: { "Authorization": "Bearer YOUR_PORTKEY_API_KEY" }
+    }
+  }
+);
+
+const client = new Client({ name: "my-agent", version: "1.0.0" });
+await client.connect(transport);
+
+const tools = await client.listTools();
+console.log(tools);
+
+const result = await client.callTool({
+  name: "search_issues",
+  arguments: { query: "bug" }
+});
+console.log(result);
+```
+
+---
+
+## API Keys
+
+Create API keys in **Settings > API Keys**. Keys are scoped to workspaces, so the key determines which MCP servers your agent can access.
+The key must have **`mcp invoke`** permissions.
+
+---
+
+## Handling OAuth
+
+MCP servers with OAuth require users to complete consent before using tools.
+
+The first time a user calls a tool, Portkey returns an error with an authorization URL. Redirect the user to complete OAuth. After consent, retry the request.
+
+```python
+try:
+    result = await session.call_tool("get_repos", {})
+except Exception as e:
+    if "authorization_url" in str(e):
+        # Redirect user to authorize
+        print(f"Please authorize: {authorization_url}")
+```
+
+After authorization, Portkey stores the user's tokens and handles refresh automatically.
+
+---
+
+## AI Gateway Integration
+
+For Portkey AI Gateway users, MCP integrates automatically:
+
+- Unified dashboard for LLM and MCP activity
+- Traces span model calls and tool use
+- Single API key for both services
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/product/mcp-gateway/authentication">
+    Authentication options for MCP Gateway.
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/mcp-gateway/observability">
+    Monitor MCP traffic and debug issues.
+  </Card>
+</CardGroup>
