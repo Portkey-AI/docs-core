@@ -1,0 +1,263 @@
+---
+title: 'OpenClaw'
+description: 'Route OpenClaw through Portkey for observability, governance, cost tracking, and reliability'
+---
+
+[OpenClaw](https://openclaw.ai) is a powerful AI coding agent. Platform teams use Portkey to roll out OpenClaw across their organization—with full visibility into usage, costs, and the ability to set budget controls.
+
+## Why Use Portkey with OpenClaw
+
+<CardGroup cols={2}>
+  <Card title="Cost Visibility" icon="chart-line">
+    Track spending per team, project, or agent. Set hard budget limits to prevent runaway costs from long agent sessions.
+  </Card>
+  <Card title="Observability" icon="eye">
+    Full request/response logs with token usage, latency metrics, and trace IDs for debugging.
+  </Card>
+  <Card title="Reliability" icon="shield-check">
+    Automatic fallbacks, load balancing, retries, and caching. Never lose a coding session to provider outages.
+  </Card>
+  <Card title="Governance" icon="building">
+    No raw API keys to developers. Centralized access control and audit logs.
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+<Steps>
+  <Step title="Set up Portkey">
+    1. Create a [Portkey account](https://app.portkey.ai)
+    2. Add your provider (Anthropic, OpenAI, etc.) in [AI Providers](https://app.portkey.ai/integrations)
+    3. Create a provider slug (e.g., `anthropic-prod`)
+    4. Generate a [Portkey API key](https://app.portkey.ai/api-keys)
+  </Step>
+  <Step title="Configure OpenClaw">
+    Add Portkey as a custom provider in your OpenClaw config. Portkey provides a unified OpenAI-compatible API, so use `api: "openai-completions"` for all providers (including Anthropic):
+
+    ```json5
+    {
+      agents: {
+        defaults: {
+          model: { primary: "portkey/@anthropic/claude-sonnet-4-5" }
+        }
+      },
+      models: {
+        mode: "merge",
+        providers: {
+          portkey: {
+            baseUrl: "https://api.portkey.ai/v1",
+            apiKey: "${PORTKEY_API_KEY}",
+            api: "openai-completions",
+            models: [
+              { id: "@anthropic/claude-opus-4-5", name: "Claude Opus 4.5" },
+              { id: "@anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+              { id: "@openai/gpt-5.2", name: "GPT-5.2" }
+            ]
+          }
+        }
+      }
+    }
+    ```
+
+    <Note>
+    Model IDs use Portkey's `@provider/model` format (e.g., `@anthropic/claude-sonnet-4-5`, `@openai/gpt-5.2`).
+    </Note>
+  </Step>
+  <Step title="Set the API key">
+    ```bash
+    openclaw config set env.PORTKEY_API_KEY "YOUR_PORTKEY_API_KEY"
+    ```
+  </Step>
+</Steps>
+
+## Using Portkey Configs
+
+Portkey Configs let you define routing strategies, fallbacks, caching, and more. Create a config in the [Portkey dashboard](https://app.portkey.ai/configs), and attach it to your generated Portkey API key.
+
+### Fallbacks
+
+Create this config in Portkey to automatically failover between providers:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@anthropic-prod" },
+    { "provider": "@openai-prod" },
+    { "provider": "@bedrock-prod" }
+  ]
+}
+```
+
+### Load Balancing
+
+Distribute requests across multiple providers or regions:
+
+```json
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "provider": "@anthropic-us", "weight": 0.5 },
+    { "provider": "@anthropic-eu", "weight": 0.5 }
+  ]
+}
+```
+
+### Caching + Retries
+
+Reduce costs and improve reliability:
+
+```json
+{
+  "provider": "@anthropic-prod",
+  "cache": { "mode": "simple" },
+  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] }
+}
+```
+
+## Tracing Requests
+
+Add trace IDs to group requests in the Portkey dashboard:
+
+```json5
+{
+  models: {
+    mode: "merge",
+    providers: {
+      portkey: {
+        baseUrl: "https://api.portkey.ai/v1",
+        apiKey: "${PORTKEY_API_KEY}",
+        api: "openai-completions",
+        headers: {
+          "x-portkey-trace-id": "openclaw-main-agent"
+        },
+        models: [
+          { id: "@anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" }
+        ]
+      }
+    }
+  }
+}
+```
+
+Use trace IDs to:
+- Group all requests from an agent session
+- Debug issues by filtering logs
+- Track usage per project or task
+
+## Budget Controls
+
+Set spending controls at the provider level in Portkey:
+
+1. Go to [Models](https://app.portkey.ai/model-catalog) → Select your provider
+2. Click **Budget & Limits**
+3. Configure:
+   - **Cost limit**: Maximum spend (e.g., $500/month)
+   - **Token limit**: Maximum tokens (e.g., 10M tokens/week)
+   - **Rate limit**: Requests per minute/hour
+
+Budget limits prevent runaway costs from long agent sessions.
+
+## Multiple Providers via Single Config
+
+Since Portkey provides a unified API, you can access multiple providers (OpenAI, Anthropic, etc.) through a single OpenClaw provider config:
+
+```json5
+{
+  agents: {
+    defaults: {
+      model: { primary: "portkey/@openai/gpt-5.2" }
+    }
+  },
+  models: {
+    mode: "merge",
+    providers: {
+      portkey: {
+        baseUrl: "https://api.portkey.ai/v1",
+        apiKey: "${PORTKEY_API_KEY}",
+        api: "openai-completions",
+        models: [
+          { id: "@openai/gpt-5.2", name: "GPT-5.2" },
+          { id: "@openai/gpt-5", name: "GPT-5" },
+          { id: "@anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+          { id: "@anthropic/claude-opus-4-5", name: "Claude Opus 4.5" }
+        ]
+      }
+    }
+  }
+}
+```
+
+Switch models by changing the `primary` model ref (e.g., `portkey/@anthropic/claude-sonnet-4-5`).
+
+## Per-Agent Metadata
+
+Track usage by agent with custom metadata headers:
+
+```json5
+{
+  agents: {
+    main: {
+      model: { primary: "portkey/@anthropic/claude-opus-4-5" }
+    }
+  },
+  models: {
+    mode: "merge",
+    providers: {
+      portkey: {
+        baseUrl: "https://api.portkey.ai/v1",
+        apiKey: "${PORTKEY_API_KEY}",
+        api: "openai-completions",
+        headers: {
+          "x-portkey-metadata": "{\"agent\":\"main\",\"environment\":\"production\"}"
+        },
+        models: [
+          { id: "@anthropic/claude-opus-4-5", name: "Claude Opus 4.5" }
+        ]
+      }
+    }
+  }
+}
+```
+
+Filter logs and analytics by these metadata fields in the Portkey dashboard.
+
+## Portkey Features Summary
+
+| Feature | Description |
+|---------|-------------|
+| **Observability** | 40+ metrics: cost, tokens, latency, performance |
+| **Logs** | Full request/response tracking with metadata filters |
+| **Fallbacks** | Automatic failover between providers |
+| **Load Balancing** | Distribute requests across providers/regions |
+| **Caching** | Simple and semantic caching to reduce costs |
+| **Retries** | Automatic retry with exponential backoff |
+| **Budget Limits** | Cost, token, and rate limits per provider |
+| **Guardrails** | PII detection, content filtering, custom rules |
+| **1600+ LLMs** | Unified access to providers via single endpoint |
+
+## Troubleshooting
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| Requests not appearing in dashboard | Wrong API key or base URL | Verify `PORTKEY_API_KEY` and use `https://api.portkey.ai/v1` |
+| 401 errors | Invalid credentials | Regenerate Portkey API key; check provider credentials |
+| Provider errors | Missing provider config | Verify provider is configured in Portkey with correct slug |
+| Rate limit errors (HTTP 429) | Virtual key limits exceeded | Adjust rate limits in Portkey dashboard |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Portkey Configs" icon="gear" href="/product/ai-gateway/configs">
+    Learn about fallbacks, load balancing, and routing strategies
+  </Card>
+  <Card title="Budget & Limits" icon="dollar-sign" href="/product/ai-gateway/virtual-keys/budget-limits">
+    Set up spending controls for your team
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Deep dive into logs, traces, and analytics
+  </Card>
+  <Card title="Guardrails" icon="shield" href="/product/guardrails">
+    PII detection and content filtering
+  </Card>
+</CardGroup>
