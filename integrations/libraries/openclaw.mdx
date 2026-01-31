@@ -1,0 +1,317 @@
+---
+title: 'OpenClaw'
+description: 'Add observability, governance, and reliability to your OpenClaw AI assistant deployment'
+---
+
+[OpenClaw](https://github.com/openclaw/openclaw) is a personal AI assistant that runs on your own devices and connects to messaging platforms you already use (WhatsApp, Telegram, Slack, Discord, and more). Add Portkey to get:
+
+- **1600+ LLMs** through one interface - switch between providers instantly
+- **Observability** - track costs, tokens, and latency for every conversation
+- **Reliability** - automatic fallbacks, retries, and caching
+- **Governance** - budget limits, usage tracking, and access controls
+
+This guide shows how to configure OpenClaw with Portkey to enhance your AI assistant with enterprise-grade capabilities.
+
+<Note>
+  For team deployments with shared access controls, see [Enterprise Governance](#3-enterprise-governance).
+</Note>
+
+# 1. Setup
+
+<Steps>
+<Step title="Add Provider">
+Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **Add Provider**.
+
+<Frame>
+<img src="/Screenshot2025-07-21at5.29.57PM.png" width="500"/>
+</Frame>
+</Step>
+
+<Step title="Configure Credentials">
+Select your provider (Anthropic, OpenAI, etc.), enter your API key, and create a slug like `anthropic-prod` or `openai-prod`.
+
+<Frame>
+<img src="/images/product/model-catalog/create-provider-page.png" width="500"/>
+</Frame>
+</Step>
+
+<Step title="Get Portkey API Key">
+Go to [API Keys](https://app.portkey.ai/api-keys) and generate your Portkey API key.
+</Step>
+</Steps>
+
+# 2. Configure OpenClaw
+
+OpenClaw supports both Anthropic Claude and OpenAI models. Choose your preferred provider configuration below.
+
+## Anthropic Claude (Recommended)
+
+OpenClaw recommends using Anthropic Claude models (Pro/Max with Opus 4.5) for optimal performance.
+
+Create or edit your OpenClaw configuration file:
+
+```json
+{
+  "anthropic": {
+    "baseURL": "https://api.portkey.ai/v1",
+    "apiKey": "YOUR_PORTKEY_API_KEY",
+    "headers": {
+      "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+      "x-portkey-provider": "@anthropic-prod"
+    },
+    "defaultModel": "claude-opus-4-20250514"
+  }
+}
+```
+
+## OpenAI (Including Codex)
+
+For OpenAI or Codex models:
+
+```json
+{
+  "openai": {
+    "baseURL": "https://api.portkey.ai/v1",
+    "apiKey": "YOUR_PORTKEY_API_KEY",
+    "headers": {
+      "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+      "x-portkey-provider": "@openai-prod"
+    },
+    "defaultModel": "gpt-4o"
+  }
+}
+```
+
+## Environment Variables
+
+Alternatively, you can set environment variables:
+
+```bash
+export ANTHROPIC_BASE_URL="https://api.portkey.ai/v1"
+export ANTHROPIC_API_KEY="YOUR_PORTKEY_API_KEY"
+export PORTKEY_API_KEY="YOUR_PORTKEY_API_KEY"
+export PORTKEY_PROVIDER="@anthropic-prod"
+```
+
+<Note>
+Add these to your `~/.zshrc` or `~/.bashrc` for persistence.
+</Note>
+
+## Test Your Integration
+
+Start your OpenClaw assistant and send a test message through any connected channel:
+
+```
+Hello, are you there?
+```
+
+Monitor all conversations in real-time on the [Portkey Dashboard](https://app.portkey.ai/dashboard).
+
+# 3. Switch Providers
+
+Change models by updating the provider slug and model in your configuration:
+
+**Anthropic Models:**
+```
+@anthropic-prod/claude-opus-4-20250514
+@anthropic-prod/claude-sonnet-4-20250514
+@anthropic-prod/claude-haiku-4-20250514
+```
+
+**OpenAI Models:**
+```
+@openai-prod/gpt-4o
+@openai-prod/gpt-4-turbo
+@openai-prod/o1
+```
+
+**Other Providers:**
+```
+@gemini-prod/gemini-2.0-flash-exp
+@bedrock-prod/us.anthropic.claude-opus-4-20250514-v1:0
+@vertex-prod/claude-sonnet-4-20250514
+```
+
+<Note>
+**Want fallbacks, load balancing, or caching?** Create a [Portkey Config](/product/ai-gateway/configs) and attach it to your API key. See [Enterprise Governance](#enterprise-governance) below.
+</Note>
+
+# Enterprise Governance
+
+## Multi-Provider Fallbacks
+
+Never lose an AI conversation due to provider outages. Create a Portkey Config with automatic failover:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@anthropic-prod" },
+    { "provider": "@openai-prod" },
+    { "provider": "@bedrock-prod" }
+  ]
+}
+```
+
+Attach this config to your Portkey API key or pass it via header:
+
+```json
+{
+  "anthropic": {
+    "baseURL": "https://api.portkey.ai/v1",
+    "apiKey": "YOUR_PORTKEY_API_KEY",
+    "headers": {
+      "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+      "x-portkey-config": "pc-openclaw-xxxxx"
+    }
+  }
+}
+```
+
+## Budget Controls
+
+OpenClaw can process many messages across multiple channels. Set spending limits:
+
+- **Cost limits**: Maximum spend per day/week/month
+- **Token limits**: Maximum tokens consumed
+- **Rate limits**: Requests per minute/hour
+
+Configure in [Model Catalog](https://app.portkey.ai/model-catalog) → Select your provider → **Budget & Rate Limits**.
+
+## Full Conversation Observability
+
+Track every message across all channels:
+
+- Request/response logs with full context
+- Token usage and cost breakdowns per conversation
+- Latency metrics
+- Trace IDs for grouping related messages
+
+## Caching
+
+Reduce costs and latency for repeated queries:
+
+```json
+{
+  "cache": { "mode": "simple" },
+  "targets": [
+    { "provider": "@anthropic-prod" }
+  ]
+}
+```
+
+## Load Balancing
+
+Distribute requests across multiple API keys:
+
+```json
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "provider": "@anthropic-prod", "weight": 0.7 },
+    { "provider": "@anthropic-prod-2", "weight": 0.3 }
+  ]
+}
+```
+
+## Trace IDs
+
+Group messages by channel, user, or conversation:
+
+```json
+{
+  "anthropic": {
+    "baseURL": "https://api.portkey.ai/v1",
+    "apiKey": "YOUR_PORTKEY_API_KEY",
+    "headers": {
+      "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+      "x-portkey-provider": "@anthropic-prod",
+      "x-portkey-trace-id": "whatsapp-user-123"
+    }
+  }
+}
+```
+
+## Metadata
+
+Add custom metadata to track conversations by channel, user, or context:
+
+```json
+{
+  "anthropic": {
+    "baseURL": "https://api.portkey.ai/v1",
+    "apiKey": "YOUR_PORTKEY_API_KEY",
+    "headers": {
+      "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+      "x-portkey-provider": "@anthropic-prod",
+      "x-portkey-metadata": "{\"channel\":\"telegram\",\"user\":\"john_doe\"}"
+    }
+  }
+}
+```
+
+# OpenClaw Features with Portkey
+
+## Multi-Channel Support
+
+OpenClaw connects to multiple messaging platforms. With Portkey, you can:
+
+- Track usage per channel (WhatsApp, Telegram, Slack, etc.)
+- Set different budget limits for different channels
+- Monitor conversation quality across platforms
+- Analyze which channels use the most tokens
+
+## Voice Capabilities
+
+OpenClaw supports Voice Wake and Talk Mode. Portkey helps you:
+
+- Track costs for voice-enabled conversations
+- Monitor latency for real-time voice interactions
+- Set up fallbacks if voice transcription fails
+- Cache common voice queries
+
+## Tool Usage
+
+OpenClaw includes browser control, cron jobs, and webhooks. Portkey provides:
+
+- Detailed logs of tool invocations
+- Cost tracking for tool-augmented conversations
+- Rate limiting to prevent excessive tool usage
+- Analytics on which tools are used most
+
+# Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `API Error: 401 Unauthorized` | Wrong Portkey API key | Check your Portkey API key in settings |
+| `API Error: 500 fetch failed` | Wrong base URL | Use `https://api.portkey.ai/v1` |
+| Requests not appearing in dashboard | Wrong provider slug | Verify provider slug matches your Model Catalog |
+| High latency | No caching configured | Enable simple or semantic caching |
+| Provider rate limits | Single provider | Set up fallbacks to multiple providers |
+
+## Getting Help
+
+- Check [Common Errors](/support/common-errors)
+- Visit [Portkey Support](/support)
+- OpenClaw documentation: [github.com/openclaw/openclaw](https://github.com/openclaw/openclaw)
+
+# Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Portkey Configs" icon="gear" href="/product/ai-gateway/configs">
+    Learn about fallbacks, load balancing, and routing strategies
+  </Card>
+  <Card title="Budget & Limits" icon="dollar-sign" href="/product/model-catalog/integrations#3-budget-%26-rate-limits">
+    Set up spending controls for your assistant
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Deep dive into logs, traces, and analytics
+  </Card>
+  <Card title="Model Catalog" icon="sparkles" href="/product/model-catalog">
+    Manage providers and models across your organization
+  </Card>
+</CardGroup>
+
+import AdvancedFeatures from '/snippets/portkey-advanced-features.mdx';
+
+<AdvancedFeatures />
