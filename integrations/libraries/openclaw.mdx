@@ -1,126 +1,45 @@
 ---
 title: 'OpenClaw'
-description: 'Route OpenClaw through Portkey for observability, governance, cost tracking, and reliability'
+description: 'Route OpenClaw through Portkey for observability, cost tracking, and reliability'
 ---
 
-[OpenClaw](https://openclaw.ai) is a powerful AI coding agent. Platform teams use Portkey to roll out OpenClaw across their organization—with full visibility into usage, costs, and the ability to set budget controls.
+[OpenClaw](https://openclaw.ai) is an open-source AI assistant with persistent memory and multi-platform access. Routing it through Portkey gives you request logs, cost tracking, automatic failovers, and team controls.
 
-## Why Use Portkey with OpenClaw
-
-<CardGroup cols={2}>
-  <Card title="Cost Visibility" icon="chart-line">
-    Track spending per team, project, or agent. Set hard budget limits to prevent runaway costs from long agent sessions.
-  </Card>
-  <Card title="Observability" icon="eye">
-    Full request/response logs with token usage, latency metrics, and trace IDs for debugging.
-  </Card>
-  <Card title="Reliability" icon="shield-check">
-    Automatic fallbacks, load balancing, retries, and caching. Never lose a coding session to provider outages.
-  </Card>
-  <Card title="Governance" icon="building">
-    No raw API keys to developers. Centralized access control and audit logs.
-  </Card>
-</CardGroup>
-
-## Quick Start
-
-<Steps>
-  <Step title="Set up Portkey">
-    1. Create a [Portkey account](https://app.portkey.ai)
-    2. Add your provider (Anthropic, OpenAI, etc.) in [AI Providers](https://app.portkey.ai/integrations)
-    3. Create a provider slug (e.g., `anthropic-prod`)
-    4. Generate a [Portkey API key](https://app.portkey.ai/api-keys)
-  </Step>
-  <Step title="Configure OpenClaw">
-    Add Portkey as a custom provider in your OpenClaw config. Portkey provides a unified OpenAI-compatible API, so use `api: "openai-completions"` for all providers (including Anthropic):
-
-    ```json5
-    {
-      agents: {
-        defaults: {
-          model: { primary: "portkey/@anthropic/claude-sonnet-4-5" }
-        }
-      },
-      models: {
-        mode: "merge",
-        providers: {
-          portkey: {
-            baseUrl: "https://api.portkey.ai/v1",
-            apiKey: "${PORTKEY_API_KEY}",
-            api: "openai-completions",
-            models: [
-              { id: "@anthropic/claude-opus-4-5", name: "Claude Opus 4.5" },
-              { id: "@anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
-              { id: "@openai/gpt-5.2", name: "GPT-5.2" }
-            ]
-          }
-        }
-      }
-    }
-    ```
-
-    <Note>
-    Model IDs use Portkey's `@provider/model` format (e.g., `@anthropic/claude-sonnet-4-5`, `@openai/gpt-5.2`).
-    </Note>
-  </Step>
-  <Step title="Set the API key">
-    ```bash
-    openclaw config set env.PORTKEY_API_KEY "YOUR_PORTKEY_API_KEY"
-    ```
-  </Step>
-</Steps>
-
-## Using Portkey Configs
-
-Portkey Configs let you define routing strategies, fallbacks, caching, and more. Create a config in the [Portkey dashboard](https://app.portkey.ai/configs), and attach it to your generated Portkey API key.
-
-### Fallbacks
-
-Create this config in Portkey to automatically failover between providers:
-
-```json
-{
-  "strategy": { "mode": "fallback" },
-  "targets": [
-    { "provider": "@anthropic-prod" },
-    { "provider": "@openai-prod" },
-    { "provider": "@bedrock-prod" }
-  ]
-}
+```mermaid
+flowchart LR
+    A[You] --> B[OpenClaw]
+    B <--> C[Portkey]
+    C <--> D[LLM Providers]
+    C --> E[Dashboard]
 ```
 
-### Load Balancing
+## Get Connected
 
-Distribute requests across multiple providers or regions:
+<Info>
+**Already have Portkey configured?** Skip to step 3 — use your existing provider slug and API key.
+</Info>
 
-```json
-{
-  "strategy": { "mode": "loadbalance" },
-  "targets": [
-    { "provider": "@anthropic-us", "weight": 0.5 },
-    { "provider": "@anthropic-eu", "weight": 0.5 }
-  ]
-}
+**1. Add your provider to Portkey**
+
+Open [Model Catalog](https://app.portkey.ai/model-catalog), click **Add Provider**, enter your API key, and create a slug (e.g., `anthropic-prod`).
+
+**2. Create a Portkey API key**
+
+Go to [API Keys](https://app.portkey.ai/api-keys), click **Create**, and copy the key.
+
+**3. Configure OpenClaw**
+
+```bash
+openclaw config edit
 ```
 
-### Caching + Retries
-
-Reduce costs and improve reliability:
-
-```json
-{
-  "provider": "@anthropic-prod",
-  "cache": { "mode": "simple" },
-  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] }
-}
-```
-
-## Tracing Requests
-
-Add trace IDs to group requests in the Portkey dashboard:
+Add the portkey provider:
 
 ```json5
 {
+  agents: {
+    defaults: { model: { primary: "portkey/@anthropic/claude-sonnet-4-5" } }
+  },
   models: {
     mode: "merge",
     providers: {
@@ -128,9 +47,6 @@ Add trace IDs to group requests in the Portkey dashboard:
         baseUrl: "https://api.portkey.ai/v1",
         apiKey: "${PORTKEY_API_KEY}",
         api: "openai-completions",
-        headers: {
-          "x-portkey-trace-id": "openclaw-main-agent"
-        },
         models: [
           { id: "@anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" }
         ]
@@ -140,124 +56,212 @@ Add trace IDs to group requests in the Portkey dashboard:
 }
 ```
 
-Use trace IDs to:
-- Group all requests from an agent session
-- Debug issues by filtering logs
-- Track usage per project or task
+**4. Set your API key**
 
-## Budget Controls
+```bash
+openclaw config set env.PORTKEY_API_KEY "pk-xxx"
+```
 
-Set spending controls at the provider level in Portkey:
+---
 
-1. Go to [Models](https://app.portkey.ai/model-catalog) → Select your provider
-2. Click **Budget & Limits**
-3. Configure:
-   - **Cost limit**: Maximum spend (e.g., $500/month)
-   - **Token limit**: Maximum tokens (e.g., 10M tokens/week)
-   - **Rate limit**: Requests per minute/hour
+## See Your Requests
 
-Budget limits prevent runaway costs from long agent sessions.
+Run `openclaw` and make a request. Open the [Portkey dashboard](https://app.portkey.ai) — you should see your request logged with cost, latency, and the full payload.
 
-## Multiple Providers via Single Config
+<Frame>
+<img src="/images/openclaw-1.png" />
+</Frame>
 
-Since Portkey provides a unified API, you can access multiple providers (OpenAI, Anthropic, etc.) through a single OpenClaw provider config:
+You can also verify your setup by listing available models:
+
+```bash
+curl -s https://api.portkey.ai/v1/models \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" | jq '.data[].id'
+```
+
+---
+
+## Add More Models
+
+### Configure Models
+
+Add models from any provider you've configured in Portkey:
 
 ```json5
-{
-  agents: {
-    defaults: {
-      model: { primary: "portkey/@openai/gpt-5.2" }
-    }
-  },
-  models: {
-    mode: "merge",
-    providers: {
-      portkey: {
-        baseUrl: "https://api.portkey.ai/v1",
-        apiKey: "${PORTKEY_API_KEY}",
-        api: "openai-completions",
-        models: [
-          { id: "@openai/gpt-5.2", name: "GPT-5.2" },
-          { id: "@openai/gpt-5", name: "GPT-5" },
-          { id: "@anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
-          { id: "@anthropic/claude-opus-4-5", name: "Claude Opus 4.5" }
-        ]
-      }
-    }
-  }
+models: [
+  { id: "@anthropic/claude-opus-4-5", name: "Claude Opus 4.5" },
+  { id: "@anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+  { id: "@openai/gpt-5.2", name: "GPT-5.2" }
+]
+```
+
+Switch your default model by updating:
+
+```json5
+agents: {
+  defaults: { model: { primary: "portkey/@openai/gpt-5.2" } }
 }
 ```
 
-Switch models by changing the `primary` model ref (e.g., `portkey/@anthropic/claude-sonnet-4-5`).
+### Track with Metadata
 
-## Per-Agent Metadata
-
-Track usage by agent with custom metadata headers:
+Add headers to group requests by session or tag by team/project:
 
 ```json5
-{
-  agents: {
-    main: {
-      model: { primary: "portkey/@anthropic/claude-opus-4-5" }
-    }
-  },
-  models: {
-    mode: "merge",
-    providers: {
-      portkey: {
-        baseUrl: "https://api.portkey.ai/v1",
-        apiKey: "${PORTKEY_API_KEY}",
-        api: "openai-completions",
-        headers: {
-          "x-portkey-metadata": "{\"agent\":\"main\",\"environment\":\"production\"}"
-        },
-        models: [
-          { id: "@anthropic/claude-opus-4-5", name: "Claude Opus 4.5" }
-        ]
-      }
-    }
-  }
+// Add to your portkey provider config
+headers: {
+  "x-portkey-trace-id": "session-auth-refactor",
+  "x-portkey-metadata": "{\"team\":\"backend\",\"project\":\"api-v2\"}"
 }
 ```
 
-Filter logs and analytics by these metadata fields in the Portkey dashboard.
+These appear in the dashboard for filtering and analytics.
 
-## Portkey Features Summary
+<Frame>
+<img src="/images/openclaw-2.png" />
+</Frame>
 
-| Feature | Description |
-|---------|-------------|
-| **Observability** | 40+ metrics: cost, tokens, latency, performance |
-| **Logs** | Full request/response tracking with metadata filters |
-| **Fallbacks** | Automatic failover between providers |
-| **Load Balancing** | Distribute requests across providers/regions |
-| **Caching** | Simple and semantic caching to reduce costs |
-| **Retries** | Automatic retry with exponential backoff |
-| **Budget Limits** | Cost, token, and rate limits per provider |
-| **Guardrails** | PII detection, content filtering, custom rules |
-| **1600+ LLMs** | Unified access to providers via single endpoint |
+---
+
+## Make It Reliable
+
+Create configs in [Portkey Configs](https://app.portkey.ai/configs) and attach them to your API key. When the config is attached, these features apply automatically to all requests.
+
+<Tabs>
+  <Tab title="Failovers">
+    Automatically switch providers when one is down:
+    ```json
+    {
+      "strategy": { "mode": "fallback" },
+      "targets": [
+        { "provider": "@anthropic-prod" },
+        { "provider": "@openai-backup" }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="Retries">
+    Handle rate limits and transient errors:
+    ```json
+    {
+      "retry": {
+        "attempts": 3,
+        "on_status_codes": [429, 500, 502, 503]
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Load balancing">
+    Distribute requests across regions:
+    ```json
+    {
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        { "provider": "@anthropic-us", "weight": 0.5 },
+        { "provider": "@anthropic-eu", "weight": 0.5 }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="Caching">
+    Cache repeated queries to reduce costs:
+    ```json
+    {
+      "cache": { "mode": "simple", "max_age": 60 }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Control Costs
+
+### Budget Limits
+
+Set spending limits in [Model Catalog](https://app.portkey.ai/model-catalog) → select your provider → **Budget & Limits**:
+
+- **Cost limit**: Maximum spend per period (e.g., $500/month)
+- **Token limit**: Maximum tokens (e.g., 10M/week)
+- **Rate limit**: Maximum requests (e.g., 100/minute)
+
+Requests that exceed limits return an error rather than proceeding.
+
+### Guardrails
+
+Add input/output checks to filter requests:
+
+```json
+{
+  "input_guardrails": ["pii-check"],
+  "output_guardrails": ["content-moderation"]
+}
+```
+
+See [Guardrails](/product/guardrails) for available checks.
+
+---
+
+## Roll Out to Teams
+
+### Attach Configs to Keys
+
+When deploying to a team, attach configs to API keys so developers get reliability and cost controls automatically.
+
+1. Create a config with fallbacks, caching, retries, and guardrails
+2. Create an API key and attach the config
+3. Distribute the key to developers
+
+Developers use a simple config — all routing and reliability logic is handled by the attached config. When you update the config, changes apply immediately.
+
+### Enterprise Options
+
+<AccordionGroup>
+  <Accordion title="Self-hosting">
+    - **SaaS**: Everything on Portkey cloud
+    - **Hybrid**: Gateway on your infra, control plane on Portkey
+    - **Air-gapped**: Everything on your infra
+
+    In hybrid mode, the gateway has no runtime dependency on the control plane — routing continues even if the connection drops.
+  </Accordion>
+
+  <Accordion title="Authentication">
+    - **JWT**: Bring your own JWKS URL for validation
+    - **Service keys**: For production applications
+    - **User keys**: For individual developers with personal budget limits
+
+    Create keys via UI, [API](/api-reference), or [Terraform](https://registry.terraform.io/providers/portkey-ai/portkey).
+  </Accordion>
+
+  <Accordion title="Custom pricing">
+    Override default pricing for negotiated rates or custom models in Model Catalog → Edit model.
+  </Accordion>
+</AccordionGroup>
+
+---
 
 ## Troubleshooting
 
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| Requests not appearing in dashboard | Wrong API key or base URL | Verify `PORTKEY_API_KEY` and use `https://api.portkey.ai/v1` |
-| 401 errors | Invalid credentials | Regenerate Portkey API key; check provider credentials |
-| Provider errors | Missing provider config | Verify provider is configured in Portkey with correct slug |
-| Rate limit errors (HTTP 429) | Virtual key limits exceeded | Adjust rate limits in Portkey dashboard |
-
-## Next Steps
+| Problem | Solution |
+|---------|----------|
+| Requests not in dashboard | Verify base URL is `https://api.portkey.ai/v1` and API key is correct |
+| 401 errors | Regenerate Portkey key; check provider credentials in Model Catalog |
+| Model not found | Use `@provider/model` format (e.g., `@anthropic/claude-sonnet-4-5`) |
+| Rate limited | Adjust limits in Model Catalog → Budget & Limits |
 
 <CardGroup cols={2}>
-  <Card title="Portkey Configs" icon="gear" href="/product/ai-gateway/configs">
-    Learn about fallbacks, load balancing, and routing strategies
-  </Card>
-  <Card title="Budget & Limits" icon="dollar-sign" href="/product/ai-gateway/virtual-keys/budget-limits">
-    Set up spending controls for your team
+  <Card title="Configs" icon="gear" href="/product/ai-gateway/configs">
+    Routing strategies
   </Card>
   <Card title="Observability" icon="chart-line" href="/product/observability">
-    Deep dive into logs, traces, and analytics
+    Logs and analytics
   </Card>
   <Card title="Guardrails" icon="shield" href="/product/guardrails">
-    PII detection and content filtering
+    Content filtering
+  </Card>
+  <Card title="Budgets" icon="dollar-sign" href="/product/ai-gateway/virtual-keys/budget-limits">
+    Spending controls
   </Card>
 </CardGroup>
+
+[Status](https://status.portkey.ai) · [Discord](https://portkey.ai/community) · [Docs](/docs)
