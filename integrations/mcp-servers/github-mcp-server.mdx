@@ -71,6 +71,169 @@ _Remote server is in Public Preview; access can be gated by OAuth/PAT policies a
 - [Cursor](https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-cursor.md) - Installation guide for Cursor IDE
 - [Windsurf](https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-windsurf.md) - Installation guide for Windsurf IDE
 
+---
+
+## Connect via Portkey MCP Gateway
+
+Portkey MCP Gateway provides centralized access control, observability, and credential management for GitHub's MCP server. Connect once, and all agents get managed GitHub access.
+
+| Method | Use Case | Setup Complexity |
+|--------|----------|------------------|
+| **OAuth (GitHub OAuth App)** | Per-user authentication, user-specific repos/issues | Higher (requires GitHub OAuth App) |
+| **PAT (Personal Access Token)** | Shared access, team repositories | Lower (header-based) |
+
+<Note>
+Unlike MCP servers that support Dynamic Client Registration (DCR), GitHub requires creating an OAuth App and providing credentials to Portkey manually.
+</Note>
+
+### Method 1: OAuth with GitHub OAuth App
+
+For per-user authentication where each user authorizes their own GitHub access and actions are attributed to individual users.
+
+#### Step 1: Create a GitHub OAuth Application
+
+1. Go to **GitHub** → **Settings** → **Developer settings** → **OAuth Apps**
+2. Click **New OAuth App**
+3. Configure the application:
+
+| Field | Value |
+|-------|-------|
+| **Application name** | Your app name (e.g., "Portkey MCP Gateway") |
+| **Homepage URL** | Your organization's URL |
+| **Authorization callback URL** | `https://mcp.portkey.ai/oauth/upstream-callback` |
+
+4. Click **Register application**
+5. Copy the **Client ID**
+6. Click **Generate a new client secret** and copy the **Client Secret**
+
+<Warning>
+Store the Client Secret securely—GitHub only shows it once.
+</Warning>
+
+#### Step 2: Add GitHub to Portkey MCP Registry
+
+1. Go to **MCP Registry** → **Add MCP Integration**
+2. Fill in the basic details:
+
+| Field | Value |
+|-------|-------|
+| **Name** | GitHub |
+| **Slug** | `github` |
+| **Server URL** | `https://api.githubcopilot.com/mcp/` |
+| **Auth Type** | OAuth 2.1 |
+
+3. Expand **Advanced Configuration** and add:
+
+```json
+{
+  "oauth_client_metadata": {
+    "client_id": "your_github_oauth_client_id",
+    "client_secret": "your_github_oauth_client_secret",
+    "redirect_uri": "https://mcp.portkey.ai/oauth/upstream-callback",
+    "scope": "repo read:org"
+  }
+}
+```
+
+<Tip>
+Add additional scopes like `workflow` and `read:packages` if your agents need to manage GitHub Actions or packages.
+</Tip>
+
+4. Configure access control to specify which workspaces can use this server
+5. Save the integration
+
+#### Step 3: Connect from Agent
+
+With Portkey OAuth 2.1, agents connect without credentials in headers:
+
+<CodeGroup>
+```json Claude Desktop / Cursor
+{
+  "mcpServers": {
+    "github": {
+      "url": "https://mcp.portkey.ai/github/mcp"
+    }
+  }
+}
+```
+</CodeGroup>
+
+On first use, users are redirected to GitHub to authorize access. Portkey stores tokens securely and handles refresh automatically.
+
+---
+
+### Method 2: Personal Access Token (PAT)
+
+For shared access with simpler setup. All actions appear under a single GitHub account.
+
+#### Step 1: Create a GitHub PAT
+
+1. Go to **GitHub** → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**
+2. Click **Generate new token (classic)**
+3. Give the token a descriptive name
+4. Select scopes:
+   - `repo` — Full control of private repositories
+   - `read:org` — Read org membership
+   - (Optional) `workflow` — Update GitHub Action workflows
+   - (Optional) `read:packages` — Read packages
+5. Click **Generate token** and copy it
+
+<Warning>
+Store the PAT securely—GitHub only shows it once. Consider using fine-grained tokens for more restrictive access.
+</Warning>
+
+#### Step 2: Add GitHub to Portkey MCP Registry
+
+1. Go to **MCP Registry** → **Add MCP Integration**
+2. Fill in the basic details:
+
+| Field | Value |
+|-------|-------|
+| **Name** | GitHub |
+| **Slug** | `github` |
+| **Server URL** | `https://api.githubcopilot.com/mcp/` |
+| **Auth Type** | Custom |
+
+3. In **Custom Headers**, add a key-value pair:
+
+| Key | Value |
+|-----|-------|
+| `Authorization` | `Bearer ghp_your_personal_access_token` |
+
+4. Configure access control and save the integration
+
+#### Step 3: Connect from Agent
+
+<CodeGroup>
+```json Claude Desktop / Cursor
+{
+  "mcpServers": {
+    "github": {
+      "url": "https://mcp.portkey.ai/github/mcp",
+      "headers": {
+        "Authorization": "Bearer <PORTKEY_API_KEY>"
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+---
+
+### Choosing Between OAuth and PAT
+
+| Consideration | OAuth | PAT |
+|--------------|-------|-----|
+| **User attribution** | ✅ Actions tied to individual GitHub users | ❌ All actions under PAT owner's account |
+| **Repository access** | Repos the user has authorized | Repos accessible to PAT owner |
+| **Token management** | Portkey handles storage and refresh | Manual rotation required |
+| **Agent configuration** | No credentials in agent config | Requires Portkey API key header |
+| **Setup complexity** | Higher (OAuth App creation) | Lower (just generate PAT) |
+| **Best for** | User-specific workflows, personal repos, audit trails | Team repos, CI/CD automation, shared resources |
+
+---
+
 ## Tools provided
 
     ### **cancel\_workflow\_run**
