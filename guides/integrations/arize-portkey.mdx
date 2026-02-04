@@ -21,13 +21,13 @@ This guide demonstrates how to:
 Before starting, you'll need:
 - [Portkey API key](https://app.portkey.ai/signup)
 - [Arize API key and Space ID](https://app.arize.com/)
-- Virtual keys for OpenAI, Anthropic, and Google Gemini set up in Portkey
+- Providers for OpenAI, Anthropic, and Google Gemini added in [Model Catalog](https://app.portkey.ai/model-catalog)
 
 ## Installation
 
 Install the required packages:
 
-```bash
+```bash icon="square-terminal"
 pip install portkey-ai openinference-instrumentation-portkey arize-otel arize-phoenix "arize[Tracing]>=7.1.0"
 ```
 
@@ -35,15 +35,15 @@ pip install portkey-ai openinference-instrumentation-portkey arize-otel arize-ph
 
 First, configure Arize tracing with Portkey's instrumentor to capture all LLM calls:
 
-```python
+```python Python icon="python"
 from arize.otel import register
 from openinference.instrumentation.portkey import PortkeyInstrumentor
 
 # Setup OpenTelemetry with Arize
 tracer_provider = register(
-    space_id = os.getenv("ARIZE_SPACE_ID"),
-    api_key = os.getenv("ARIZE_API_KEY"),
-    project_name = "portkey-debate",
+    space_id=os.getenv("ARIZE_SPACE_ID"),
+    api_key=os.getenv("ARIZE_API_KEY"),
+    project_name="portkey-debate",
 )
 
 # Enable Portkey instrumentation
@@ -54,37 +54,25 @@ PortkeyInstrumentor().instrument(tracer_provider=tracer_provider)
 
 Here's how to set up different LLMs for different roles using Portkey's Universal API:
 
-```python
+```python Python icon="python"
 from portkey_ai import Portkey
 import os
 
-# Initialize each LLM client with Portkey
+# Initialize Portkey client
 PORTKEY_API_KEY = os.getenv("PORTKEY_API_KEY")
+portkey = Portkey(api_key=PORTKEY_API_KEY)
 
-# GPT-4 for "against" arguments
-openai = Portkey(
-    api_key = PORTKEY_API_KEY,
-    virtual_key = os.getenv("OPENAI_VIRTUAL_KEY")
-)
-
-# Claude for "pro" arguments
-claude = Portkey(
-    api_key = PORTKEY_API_KEY,
-    virtual_key = os.getenv("CLAUDE_VIRTUAL_KEY")
-)
-
-# Gemini for moderation & prompt refinement
-gemini = Portkey(
-    api_key = PORTKEY_API_KEY,
-    virtual_key = os.getenv("GEMINI_VIRTUAL_KEY")
-)
+# Use different providers by specifying model with @provider-slug/model format
+# GPT-4 for "against" arguments: @openai-prod/gpt-4
+# Claude for "pro" arguments: @anthropic-prod/claude-3-opus-20240229
+# Gemini for moderation: @google-prod/gemini-1.5-pro
 ```
 
 ### Debate Round Function
 
 Create a function that orchestrates a single debate round:
 
-```python
+```python Python icon="python"
 def debate_round(topic: str, debate_prompt: str) -> dict:
     """
     Runs one debate round:
@@ -94,29 +82,29 @@ def debate_round(topic: str, debate_prompt: str) -> dict:
     """
 
     # PRO side (Claude)
-    pro_resp = claude.chat.completions.create(
-        messages = [{
+    pro_resp = portkey.chat.completions.create(
+        model="@anthropic-prod/claude-3-opus-20240229",
+        messages=[{
             "role": "user",
             "content": f"Argue in favor of: {topic}\n\nContext: {debate_prompt}"
         }],
-        model = "claude-3-opus-20240229",
-        max_tokens = 250
+        max_tokens=250
     )
-    pro_text = pro_resp["choices"][0]["message"]["content"]
+    pro_text = pro_resp.choices[0].message.content
 
     # CON side (GPT-4)
-    con_resp = openai.chat.completions.create(
-        model = "gpt-4",
-        messages = [{
+    con_resp = portkey.chat.completions.create(
+        model="@openai-prod/gpt-4",
+        messages=[{
             "role": "user",
             "content": f"Argue against: {topic}\n\nContext: {debate_prompt}"
         }]
     )
-    con_text = con_resp["choices"][0]["message"]["content"]
+    con_text = con_resp.choices[0].message.content
 
     # Moderator (Gemini)
-    mod_resp = gemini.chat.completions.create(
-        model = "gemini-1.5-pro",
+    mod_resp = portkey.chat.completions.create(
+        model="@google-prod/gemini-1.5-pro",
         messages = [{
             "role": "user",
             "content": f"""You are a debate moderator. Evaluate these arguments on "{topic}":
@@ -127,7 +115,7 @@ def debate_round(topic: str, debate_prompt: str) -> dict:
             Suggest an improved debate prompt for more balanced arguments."""
         }]
     )
-    new_prompt = mod_resp["choices"][0]["message"]["content"].strip()
+    new_prompt = mod_resp.choices[0].message.content.strip()
 
     return {"pro": pro_text, "con": con_text, "new_prompt": new_prompt}
 ```
@@ -136,7 +124,7 @@ def debate_round(topic: str, debate_prompt: str) -> dict:
 
 Execute the debate across multiple rounds with progressively refined prompts:
 
-```python
+```python Python icon="python"
 topic = "Implementing a nationwide four-day workweek"
 initial_prompt = "Debate the pros and cons of a four-day workweek."
 rounds = 3
@@ -157,7 +145,7 @@ After running the debate, evaluate outputs for toxicity using Arize evals:
 
 ### Export Traces to Dataset
 
-```python
+```python Python icon="python"
 from arize.exporter import ArizeExportClient
 from arize.utils.types import Environments
 from datetime import datetime
@@ -179,7 +167,7 @@ primary_df["output"] = primary_df["attributes.output.value"]
 
 ### Run Toxicity Evaluation
 
-```python
+```python Python icon="python"
 from phoenix.evals import (
     TOXICITY_PROMPT_RAILS_MAP,
     TOXICITY_PROMPT_TEMPLATE,
@@ -188,10 +176,7 @@ from phoenix.evals import (
 )
 
 # Configure evaluation model
-model = OpenAIModel(
-    model_name="gpt-4",
-    temperature=0.0,
-)
+model = OpenAIModel(model_name="@openai-prod/gpt-4", temperature=0.0)
 
 # Run toxicity classification
 rails = list(TOXICITY_PROMPT_RAILS_MAP.values())
@@ -206,7 +191,7 @@ toxic_classifications = llm_classify(
 
 ### Send Results Back to Arize
 
-```python
+```python Python icon="python"
 from arize.pandas.logger import Client
 
 arize_client = Client(

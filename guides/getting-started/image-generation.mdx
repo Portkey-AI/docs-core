@@ -14,41 +14,39 @@ title: "Image Generation"
 
 This notebook uses the OpenAI SDK to showcase the functionality. We're using the hosted AI gateway on portkey.ai, but you could swap it for an internally hosted gateway as well.
 
-```json
+```python
 # Constants for use later - Please enter your own
-PORTKEY_API_KEY="" # Get this from your Portkey Account
-OPENAI_API_KEY = "" # Your OpenAI key here
-STABILITY_API_KEY = "" # Add your stability ai API key
+PORTKEY_API_KEY = ""  # Get this from your Portkey Account
+OPENAI_API_KEY = ""   # Your OpenAI key here
+STABILITY_API_KEY = ""  # Add your stability ai API key
 ```
 
 #### 1\. Generate an image using OpenAI
 
 Let's try to make an image generation request to OpenAI through Portkey.
 
-```json
+```python
 from openai import OpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 from IPython.display import display, Image
+
 client = OpenAI(
     api_key=OPENAI_API_KEY,
     base_url=PORTKEY_GATEWAY_URL,
     default_headers=createHeaders(
         provider="openai",
         api_key=PORTKEY_API_KEY
-
     )
-
 )
 
 image = client.images.generate(
-  model="dall-e-3",
-  prompt="Lucy in the sky with diamonds",
-  n=1,
-  size="1024x1024"
+    model="dall-e-3",
+    prompt="Lucy in the sky with diamonds",
+    n=1,
+    size="1024x1024"
 )
 
 # Display the image
-
 display(Image(url=image.data[0].url))
 ```
 
@@ -58,45 +56,29 @@ This request went through Portkey's fast AI gateway which also then captures the
 
 Let's try to make an image generation request to Stability through Portkey. Notice that we're going to use the OpenAI SDK itself to make calls to Stability AI as well
 
-```json
+```python
 from IPython.display import display, Image
-
 import base64
 
 client = OpenAI(
-
     api_key=STABILITY_API_KEY,
-
     base_url=PORTKEY_GATEWAY_URL,
-
     default_headers=createHeaders(
-
         provider="stability-ai",
-
         api_key=PORTKEY_API_KEY
-
     )
-
 )
 
 # Portkey will automatically convert this request to the format Stability expects
-
 image = client.images.generate(
-
-  model="stable-diffusion-v1-6",
-
-  prompt="Lucy in the sky with diamonds",
-
-  n=1,
-
-  size="256x256"
-
+    model="stable-diffusion-v1-6",
+    prompt="Lucy in the sky with diamonds",
+    n=1,
+    size="256x256"
 )
 
 # Since stability returns a base64 image string, we can display it like this
-
 image_bytes = base64.b64decode(image.data[0].b64_json)
-
 display(Image(data=image_bytes))
 ```
 
@@ -106,103 +88,57 @@ The AI gateway allows us to create routing configurations for better reliability
 
 This requires us to create a config with a structure like this
 
-```json
+```
 fallback
-
     target1:
-
         loadbalance
-
             target1: dall-e-3
-
             target2: stable-diffusion-v1-6
-
-    target2:dall-e-2
+    target2: dall-e-2
 ```
 
 Let's define this using Portkey's configuration to achieve the same result. You can find more about configs [here](https://portkey.ai/docs/api-reference/config-object).
 
 
 
-```json
+```python
 # It is recommended to create this in the Portkey Config creator, but we're writing the config here to show the process
-
 config = {
-
-    "strategy": {
-
-        "mode": "fallback"
-
-    },
-
+    "strategy": {"mode": "fallback"},
     "targets": [{
-
-        "strategy": {
-
-            "mode": "loadbalance"
-
-        },
-
+        "strategy": {"mode": "loadbalance"},
         "targets": [{
-
             "provider": "openai",
-
-            "api_key": OPENAI_API_KEY,
-
-        },{
-
+            "api_key": OPENAI_API_KEY
+        }, {
             "provider": "stability-ai",
-
             "api_key": STABILITY_API_KEY,
-
             "override_params": {"model": "stable-diffusion-v1-6"}
-
         }]
-
-    },{
-
+    }, {
         "provider": "openai",
-
         "api_key": "OPENAI_API_KEY",
-
         "override_params": {"model": "dall-e-2"}
-
     }]
-
 }
 
 client = OpenAI(
-
-    api_key="X", # Not necessary since we''ll pick it up from the config
-
+    api_key=PORTKEY_API_KEY,
     base_url=PORTKEY_GATEWAY_URL,
-
     default_headers=createHeaders(
-
-        config=config,
-
-        api_key=PORTKEY_API_KEY
-
+        config=config
     )
-
 )
 
 image = client.images.generate(
-
-  model="dall-e-3",
-
-  prompt="Lucy in the sky with diamonds",
-
-  response_format='b64_json',
-
-  size="1024x1024"
-
+    model="dall-e-3",
+    prompt="Lucy in the sky with diamonds",
+    response_format='b64_json',
+    size="1024x1024"
 )
 
 # Display the image
-
 image_bytes = base64.b64decode(image.data[0].b64_json)
-
 display(Image(data=image_bytes))
 ```
 
@@ -214,42 +150,26 @@ The AI gateway also supports caching requests making them extremely fast. We cou
 
 
 
-```json
+```python
 # Add simple caching to the config defined above
-
 config["cache"] = {"mode": "simple"}
 
 client = OpenAI(
-
-    api_key="X", # Not necessary since we''ll pick it up from the config
-
+    api_key=PORTKEY_API_KEY,
     base_url=PORTKEY_GATEWAY_URL,
-
     default_headers=createHeaders(
-
-        config=config,
-
-        api_key=PORTKEY_API_KEY
-
+        config=config
     )
-
 )
 
 image = client.images.generate(
-
-  model="dall-e-3",
-
-  prompt="Lucy in the sky with diamonds",
-
-  response_format='b64_json',
-
-  size="1024x1024"
-
+    model="dall-e-3",
+    prompt="Lucy in the sky with diamonds",
+    response_format='b64_json',
+    size="1024x1024"
 )
 
 # Display the image
-
 image_bytes = base64.b64decode(image.data[0].b64_json)
-
 display(Image(data=image_bytes))
 ```
