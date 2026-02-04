@@ -1,178 +1,470 @@
 ---
 title: "Ollama"
-description: "Integrate Ollama-hosted models with Portkey for local LLM deployment with full observability."
 ---
 
-Portkey provides a robust gateway to facilitate the integration of your **locally hosted models through Ollama**.
+Portkey provides a robust and secure gateway to facilitate the integration of various Large Language Models (LLMs) into your applications, including your **locally hosted models through Ollama**.
+<Note>
+Provider Slug. `ollama`
+</Note>
+## Portkey SDK Integration with Ollama Models
 
-<AccordionGroup>
-<Accordion title="Local Setup (npm or Docker)">
+Portkey provides a consistent API to interact with models from various providers.
 
-First, install the Gateway locally:
+<Note>
+If you are running the open source Portkey Gateway, refer to this guide on how to connect Portkey with Ollama.
+</Note>
 
-<CodeGroup>
-```bash npx
-npx @portkey-ai/gateway
-```
+### 1\. Expose your Ollama API
 
-```bash Docker
-docker run -d -p 8787:8787 portkeyai/gateway:latest
-```
-</CodeGroup>
+Expose your Ollama API by using a tunneling service like [ngrok](https://ngrok.com/) or any other way you prefer.
 
-Then, connect to your local Ollama instance:
+You can skip this step if you're self-hosting the Gateway.
 
-```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    base_url="http://localhost:8787",  # Your local Gateway
-    provider="ollama",
-    custom_host="http://localhost:11434"  # Your Ollama instance
-)
-
-response = portkey.chat.completions.create(
-    model="llama3",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-```
-
-</Accordion>
-</AccordionGroup>
-
-## Integration Steps
-
-<Steps>
-<Step title="Expose your Ollama API">
-Expose your Ollama API using a tunneling service like [ngrok](https://ngrok.com/) or make it publicly accessible. Skip this if you're self-hosting the Gateway.
-
-For using Ollama with ngrok, here's a [useful guide](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-can-i-use-ollama-with-ngrok):
-
+For using Ollama with ngrok, here's a [useful guide](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-can-i-use-ollama-with-ngrok)
 ```sh
 ngrok http 11434 --host-header="localhost:11434"
 ```
-</Step>
 
-<Step title="Add to Model Catalog">
+### 2\. Install the Portkey SDK
 
-1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
-2. Enable **"Local/Privately hosted provider"** toggle
-3. Select **Ollama** as the provider type
-4. Enter your Ollama URL in **Custom Host**: `https://your-ollama.ngrok-free.app`
-5. Name your provider (e.g., `my-ollama`)
+Install the Portkey SDK in your application to interact with your Ollama API through Portkey.
+<Tabs>
+    <Tab title="NodeJS">
 
-<Card title="Complete Setup Guide" icon="book" href="/product/model-catalog">
-  See all setup options
-</Card>
-</Step>
-
-<Step title="Use in Your Application">
-
-<CodeGroup>
-
-```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@my-ollama"
-)
-
-response = portkey.chat.completions.create(
-    model="llama3",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-
-print(response.choices[0].message.content)
+```sh
+npm install --save portkey-ai
 ```
+    </Tab>
+    <Tab title="Python">
+        ```sh
+        pip install portkey-ai
+        ```
+    </Tab>
 
-```javascript Node.js
-import Portkey from 'portkey-ai';
+  </Tabs>
 
-const portkey = new Portkey({
-    apiKey: 'PORTKEY_API_KEY',
-    provider: '@my-ollama'
-});
 
-const response = await portkey.chat.completions.create({
-    model: 'llama3',
-    messages: [{ role: 'user', content: 'Hello!' }]
-});
 
-console.log(response.choices[0].message.content);
-```
+### 3\. Initialize Portkey with Ollama URL
 
-</CodeGroup>
+Instantiate the Portkey client by adding your Ollama publicly-exposed URL to the `customHost` property.
+<Tabs>
+    <Tab title="NodeJS SDK">
+        ```js
+        import Portkey from 'portkey-ai'
 
-**Or use custom host directly:**
+        const portkey = new Portkey({
+            apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+            provider: "ollama",
+            customHost: "https://7cc4-3-235-157-146.ngrok-free.app" // Your Ollama ngrok URL
+        })
+        ```
+    </Tab>
+    <Tab title="Python SDK">
+        ```python
+        from portkey_ai import Portkey
 
-<CodeGroup>
+        portkey = Portkey(
+            api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+            provider="ollama",
+            custom_host="https://7cc4-3-235-157-146.ngrok-free.app" # Your Ollama ngrok URL
+        )
+        ```
+    </Tab>
 
-```python Python
-from portkey_ai import Portkey
+  </Tabs>
 
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="ollama",
-    custom_host="https://your-ollama.ngrok-free.app"
-)
-```
-
-```javascript Node.js
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({
-    apiKey: 'PORTKEY_API_KEY',
-    provider: 'ollama',
-    customHost: 'https://your-ollama.ngrok-free.app'
-});
-```
-
-</CodeGroup>
-
-</Step>
-</Steps>
 
 <Note>
-**Important:** For Ollama integration, you only need to pass the base URL to `customHost` **without** the version identifier (such as `/v1`) - Portkey handles the rest!
+For the Ollama integration, you only need to pass the base URL to `customHost` without the version identifier (such as `/v1`) - Portkey takes care of the rest!
+</Note>
+### **4\. Invoke Chat Completions with** Ollama
+
+Use the Portkey SDK to invoke chat completions from your Ollama model, just as you would with any other provider.
+<Tabs>
+    <Tab title="NodeJS SDK">
+        ```js
+        const chatCompletion = await portkey.chat.completions.create({
+            messages: [{ role: 'user', content: 'Say this is a test' }],
+            model: 'llama3',
+        });
+
+        console.log(chatCompletion.choices);
+        ```
+
+    </Tab>
+    <Tab title="Python SDK">
+        ```python
+        completion = portkey.chat.completions.create(
+            messages= [{ "role": 'user', "content": 'Say this is a test' }],
+            model= 'llama3'
+        )
+
+        print(completion)
+        ```
+    </Tab>
+    <Tab title="cURL">
+        ```sh
+        curl --location 'https://api.portkey.ai/v1/chat/completions' \
+            --header 'Content-Type: application/json' \
+            --header 'x-portkey-custom-host: https://1eb6-103-180-45-236.ngrok-free.app' \
+            --header 'x-portkey-provider: ollama' \
+            --header 'x-portkey-api-key: PORTKEY_API_KEY' \
+            --data '{
+                "model": "tinyllama",
+                "max_tokens": 200,
+                "stream": false,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "You are Batman"
+                            }
+                        ]
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Who is the greatest detective"
+                            }
+                        ]
+                    },
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "is it me?"
+                            }
+                        ]
+                    }
+                ]
+            }'
+        ```
+    </Tab>
+  </Tabs>
+
+
+
+## [Using Virtual Keys](https://app.portkey.ai/virtual-keys)
+
+Virtual Keys serve as Portkey's unified authentication system for all LLM interactions, simplifying the use of multiple providers and Portkey features within your application. For self-hosted LLMs, you can configure custom authentication requirements including authorization keys, bearer tokens, or any other headers needed to access your model:
+
+<Frame>
+  <img src="/images/private-llm.png"/>
+</Frame>
+
+1. Navigate to [Virtual Keys](https://app.portkey.ai/virtual-keys) in your Portkey dashboard
+2. Click **"Add Key"** and enable the **"Local/Privately hosted provider"** toggle
+3. Configure your deployment:
+   - Select the matching provider API specification (typically `OpenAI`)
+   - Enter your model's base URL in the `Custom Host` field
+   - Add required authentication headers and their values
+4. Click **"Create"** to generate your virtual key
+
+You can now use this virtual key in your requests:
+
+<Tabs>
+  <Tab title="NodeJS">
+  ```js
+  const portkey = new Portkey({
+      apiKey: "PORTKEY_API_KEY",
+      provider:"@YOUR_SELF_HOSTED_LLM_PROVIDER"
+
+  async function main() {
+    const response = await client.chat.completions.create({
+      messages: [{ role: "user", content: "Bob the builder.." }],
+      model: "your-self-hosted-model-name",
+    });
+
+  console.log(response.choices[0].message.content);
+  })
+  ```
+  </Tab>
+  <Tab title="Python">
+  ```python
+  portkey = Portkey(
+      api_key="PORTKEY_API_KEY",
+      provider="@YOUR_SELF_HOSTED_LLM_PROVIDER"
+  )
+
+  response = portkey.chat.completions.create(
+    model="your-self-hosted-model-name",
+    messages=[
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Hello!"}
+    ]
+
+  print(response)
+  )
+  ```
+  </Tab>
+</Tabs>
+
+For more information about managing self-hosted LLMs with Portkey, see [Bring Your Own LLM](/integrations/llms/byollm).
+
+
+## Local Setup (npm or docker)
+
+First, install the Gateway locally:
+
+<Tabs>
+    <Tab title="Install the Gateway">
+```sh
+npx @portkey-ai/gateway
+```
+| Your Gateway is running on http://localhost:8080/v1 🚀 | |
+| - | - |
+    </Tab>
+    <Tab title="Docker Image">
+```sh
+docker pull portkeyai/gateway
+```
+| Your Gateway is running on http://host.docker.internal:8080/v1 🚀 | |
+| - | - |
+    </Tab>
+</Tabs>
+
+
+Then, just change the `baseURL` to the Gateway URL, `customHost` to the Ollam URL, and make requests.
+
+<Note>
+If you are running Portkey inside a `Docker container`, but Ollama is running natively on your machine (i.e. not in Docker), you will have to refer to Ollama using `http://host.docker.internal:11434` for the Gateway to be able to call it.
 </Note>
 
----
+<CodeGroup>
+```ts NodeJS
+import Portkey from 'portkey-ai';
 
-## Supported Models
+const client = new Portkey({
+  baseUrl: 'http://localhost:8080/v1',
+  apiKey: 'PORTKEY_API_KEY',
+  provider:'@PROVIDER',
+  customHost: "http://host.docker.internal:11434" // Your Ollama Docker URL
+});
 
-Ollama supports a wide range of models including:
+async function main() {
+  const response = await client.chat.completions.create({
+    messages: [{ role: "user", content: "Bob the builder.." }],
+    model: "gpt-4o",
+  });
 
-- Llama 3, Llama 3.1, Llama 3.2
-- Mistral, Mixtral
-- Gemma, Gemma 2
-- Phi-3
-- Qwen 2
-- And many more!
+  console.log(response.choices[0].message.content);
+}
 
-Check [Ollama's model library](https://ollama.com/library) for the complete list.
+main();
+```
+```py Python
+from portkey_ai import Portkey
 
----
+client = Portkey(
+  base_url = 'http://localhost:8080/v1',
+  api_key = "PORTKEY_API_KEY",
+  virtual_key = "PROVIDER",
+  custom_host="http://localhost:11434" # Your Ollama URL
+)
+
+response = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+
+print(response.choices[0].message)
+```
+```sh cURL
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-custom-host: http://localhost:11434" \
+  -H "x-portkey-provider: $PORTKEY_PROVIDER" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "user", "content": "Hello!" }
+    ]
+  }'
+```
+```py OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="xx",
+    base_url="https://localhost:8080/v1",
+    default_headers=createHeaders(
+        api_key="PORTKEY_API_KEY",
+        provider="@OPENAI_PROVIDER",
+        custom_host="http://localhost:11434"
+    )
+)
+
+completion = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ]
+)
+
+print(completion.choices[0].message)
+```
+```ts OpenAI NodeJS SDK
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'xx',
+  baseURL: 'https://localhost:8080/v1',
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    provider:"@OPENAI_PROVIDER",
+    customHost: "http://localhost:11434"
+  })
+});
+
+async function main() {
+  const completion = await openai.chat.completions.create({
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: 'gpt-4o',
+  });
+
+  console.log(chatCompletion.choices);
+}
+
+main();
+```
+</CodeGroup>
+
+
+
+### Ollama Tool Calling
+Tool calling feature lets models trigger external tools based on conversation context. You define available functions, the model chooses when to use them, and your application executes them and returns results.
+
+Portkey supports Ollama Tool Calling and makes it interoperable across multiple providers. With Portkey Prompts, you can templatize various your prompts & tool schemas as well.
+
+<Card title="Supported Ollama Models with Tool Calling" href="https://ollama.com/search?c=tools">
+
+</Card>
+
+<Tabs>
+<Tab title="Node.js">
+```javascript Get Weather Tool
+let tools = [{
+    type: "function",
+    function: {
+        name: "getWeather",
+        description: "Get the current weather",
+        parameters: {
+            type: "object",
+            properties: {
+                location: { type: "string", description: "City and state" },
+                unit: { type: "string", enum: ["celsius", "fahrenheit"] }
+            },
+            required: ["location"]
+        }
+    }
+}];
+
+let response = await portkey.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "What's the weather like in Delhi - respond in JSON" }
+    ],
+    tools,
+    tool_choice: "auto",
+});
+
+console.log(response.choices[0].finish_reason);
+```
+</Tab>
+<Tab title="Python">
+```python Get Weather Tool
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "getWeather",
+        "description": "Get the current weather",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City and state"},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+            },
+            "required": ["location"]
+        }
+    }
+}]
+
+response = portkey.chat.completions.create(
+    model="llama-3.3-70b-versatile",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What's the weather like in Delhi - respond in JSON"}
+    ],
+    tools=tools,
+    tool_choice="auto"
+)
+
+print(response.choices[0].finish_reason)
+```
+</Tab>
+<Tab title="cURL">
+```sh Get Weather Tool
+curl -X POST "https://api.portkey.ai/v1/chat/completions" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_PORTKEY_API_KEY" \
+     -d '{
+       "model": "llama-3.3-70b-versatile",
+       "messages": [
+         {"role": "system", "content": "You are a helpful assistant."},
+         {"role": "user", "content": "What'\''s the weather like in Delhi - respond in JSON"}
+       ],
+       "tools": [{
+         "type": "function",
+         "function": {
+           "name": "getWeather",
+           "description": "Get the current weather",
+           "parameters": {
+             "type": "object",
+             "properties": {
+               "location": {"type": "string", "description": "City and state"},
+               "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+             },
+             "required": ["location"]
+           }
+         }
+       }],
+       "tool_choice": "auto"
+     }'
+```
+</Tab>
+<Tab title="Portkey Prompts">
+    Checkout [Prompt Engineering Studio](/product/prompt-engineering-studio/prompt-playground)
+</Tab>
+</Tabs>
+
+
+
 
 ## Next Steps
 
-<CardGroup cols={2}>
-  <Card title="Gateway Configs" icon="sliders" href="/product/ai-gateway">
-    Add retries, timeouts, and fallbacks
-  </Card>
-  <Card title="Observability" icon="chart-line" href="/product/observability">
-    Monitor your Ollama requests
-  </Card>
-  <Card title="Custom Host Guide" icon="server" href="/product/ai-gateway/universal-api#integrating-local-or-private-models">
-    Learn more about custom host setup
-  </Card>
-  <Card title="BYOLLM Guide" icon="book" href="/integrations/llms/byollm">
-    Complete guide for private LLMs
-  </Card>
-</CardGroup>
-
-For complete SDK documentation:
-
-<Card title="SDK Reference" icon="code" href="/api-reference/sdk/list">
-  Complete Portkey SDK documentation
+Explore the complete list of features supported in the SDK:
+<Card title="SDK" href="/api-reference/sdk">
 </Card>
+
+---
+
+You'll find more information in the relevant sections:
+
+1. [Add metadata to your requests](/product/observability/metadata)
+2. [Add gateway configs to your Ollama requests](/product/ai-gateway/universal-api#ollama-in-configs)
+3. [Tracing Ollama requests](/product/observability/traces)
+4. [Setup a fallback from OpenAI to Ollama APIs](/product/ai-gateway/fallbacks)
