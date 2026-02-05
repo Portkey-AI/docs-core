@@ -132,6 +132,90 @@ Internal load balancer recommended for private network access.
 ---
 
 
+## Connecting to Azure Foundry
+
+Portkey's AI Gateway connects directly to your Azure Foundry service to route LLM requests.
+
+### Core Architecture
+
+The AI Gateway component acts as an intelligent proxy that routes your LLM requests to Azure Foundry.
+
+```mermaid
+flowchart TB
+    subgraph Azure["Your Azure VNet & Region"]
+        subgraph AKS["AKS Cluster"]
+            Gateway["AI Gateway<br/>(AKS Pods)"]
+        end
+        Foundry["Azure Foundry Service<br/>(Endpoint)"]
+    end
+    
+    Gateway -->|"HTTPS:443<br/>(Outbound)"| Foundry
+```
+
+### Network Connectivity Requirements
+
+**1. Outbound HTTPS Access Required**
+The AI Gateway pods need to make HTTPS calls to your Azure Foundry endpoints (e.g., `https://your-resource.swedencentral.services.ai.azure.com/models`).
+
+**2. No Special Ports**
+All communication happens over standard HTTPS (443). No custom ports are needed.
+
+**3. Checklist: What to Open**
+
+From **AI Gateway pods** (Outbound):
+- ✅ HTTPS (443) to your Azure Foundry endpoint
+- ✅ HTTPS (443) to Azure Blob Storage (if storing logs)
+- ✅ HTTPS (443) to Azure Redis
+- ✅ HTTPS (443) to `login.microsoftonline.com` (Only if using Entra ID)
+
+**Firewall Rules:**
+If you have NSG/Firewall between subnets, allow the Gateway subnet to access the Azure Foundry subnet on port 443.
+
+### Authentication Methods
+
+The Gateway authenticates to Azure Foundry using one of these methods:
+
+| Method | Configuration |
+| :--- | :--- |
+| **API Key** | Gateway sends `api-key` header. Store key in Portkey Vault. Simplest setup. |
+| **Managed Identity** (Recommended) | Assign `Cognitive Services User` role to the Gateway's AKS Managed Identity. No API keys needed in config. |
+| **Entra ID** | Gateway exchanges client credentials for tokens. Requires outbound access to `login.microsoftonline.com`. |
+
+### Regional & VNet Constraints
+
+<Tip>
+  **No Portkey Constraints**: The Portkey Gateway is stateless and can connect to Azure Foundry in any region or VNet, provided there is network reachability.
+</Tip>
+
+**Best Practices:**
+1.  **Same Region**: Deploy Gateway and Azure Foundry in the same region for lowest latency.
+2.  **Same VNet**: Use the same VNet (or peered VNets) to keep traffic private.
+3.  **Azure Foundry Requirements**: Be aware that Azure Foundry's private endpoint deployments may require dependent components to be in the same resource group or VNet.
+
+### Step-by-Step Connection Setup
+
+<Steps>
+  <Step title="Deploy Portkey Components">
+    Deploy the AKS Cluster with AI Gateway pods, Managed Redis, and Blob Storage in your Azure environment.
+  </Step>
+  <Step title="Configure Network">
+    Ensure the Gateway subnet can reach the Azure Foundry subnet. If using private endpoints, configure private DNS zones. Open outbound port 443 from the Gateway.
+  </Step>
+  <Step title="Set Up Authentication">
+    Choose your method:
+    - **Managed Identity**: Grant "Cognitive Services User" role to your AKS Managed Identity.
+    - **API Key**: Get key from Azure Foundry console.
+  </Step>
+  <Step title="Configure Provider">
+    In Portkey, configure the Azure Foundry provider with your Target URI (`https://your-resource.services.ai.azure.com/models`) and chosen authentication details.
+  </Step>
+  <Step title="Test Connection">
+    Make a test request using the Portkey SDK to verify the flow.
+  </Step>
+</Steps>
+
+---
+
 ## Next Steps
 
 <Steps>
