@@ -195,7 +195,122 @@ This route only works with Claude models. For other models, use the standard Ope
 Portkey supports the [Google Vertex AI CountTokens API](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/count-tokens) to estimate token usage before sending requests. Check out the count-tokens guide for more details.
 </Card>
 
+## Explicit context caching
 
+Vertex AI supports [context caching](https://cloud.google.com/vertex-ai/generative-ai/docs/context-cache/context-cache-create) to reduce costs and latency for repeated prompts with large amounts of context. You can explicitly create a cache and then reference it in subsequent inference requests.
+
+### Step 1: Create a context cache
+
+Use the Vertex AI `cachedContents` endpoint through Portkey to create a cache:
+
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/projects/{{YOUR_PROJECT_ID}}/locations/{{LOCATION}}/cachedContents' \
+--header 'x-portkey-provider: {{@my-vertex-ai-provider}}' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: {{your_api_key}}' \
+--header 'x-portkey-custom-host: https://aiplatform.googleapis.com/v1' \
+--data '{
+  "model": "projects/{{YOUR_PROJECT_ID}}/locations/{{LOCATION}}/publishers/google/models/{{MODEL_ID}}",
+  "displayName": "{{my-cache-display-name}}",
+  "contents": [{
+    "role": "user",
+      "parts": [{
+        "text": "This is sample text to demonstrate explicit caching. (you need a minimum of 1024 tokens)"
+      }]
+  },
+  {
+    "role": "model",
+      "parts": [{
+        "text": "thankyou I am your helpful assistant"
+      }]
+  }]
+}'
+```
+
+**Request variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `YOUR_PROJECT_ID` | Your Google Cloud project ID. |
+| `LOCATION` | The region where your model is deployed (e.g., `us-central1`). |
+| `MODEL_ID` | The model identifier (e.g., `gemini-1.5-pro-001`). |
+| `my-cache-display-name` | A unique name to identify your cache. |
+| `your_api_key` | Your Portkey API key. |
+| `@my-vertex-ai-provider` | Your Vertex AI provider slug from Portkey's Model Catalog. |
+
+<Note>
+Context caching requires a minimum of 1024 tokens in the cached content. The cache has a default TTL (time-to-live) which you can configure using the `ttl` parameter.
+</Note>
+
+### Step 2: Use the cache in inference requests
+
+Once the cache is created, reference it in your chat completion requests using the `cached_content` parameter:
+
+<Tabs>
+  <Tab title="cURL">
+```sh
+curl 'https://api.portkey.ai/v1/chat/completions' \
+-H 'Content-Type: application/json' \
+-H 'x-portkey-api-key: {{your_api_key}}' \
+--data '{
+    "model": "@my-vertex-ai-provider/gemini-1.5-pro-001",
+    "cached_content": "{{my-cache-display-name}}",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Based on the context I provided earlier, answer my question."
+      }
+    ]
+}'
+```
+  </Tab>
+  <Tab title="Python SDK">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+)
+
+completion = portkey.chat.completions.create(
+    model="@my-vertex-ai-provider/gemini-1.5-pro-001",
+    cached_content="my-cache-display-name",
+    messages=[
+        {"role": "user", "content": "Based on the context I provided earlier, answer my question."}
+    ]
+)
+
+print(completion)
+```
+  </Tab>
+  <Tab title="NodeJS SDK">
+```javascript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+});
+
+const completion = await portkey.chat.completions.create({
+    model: "@my-vertex-ai-provider/gemini-1.5-pro-001",
+    cached_content: "my-cache-display-name",
+    messages: [
+        { role: "user", content: "Based on the context I provided earlier, answer my question." }
+    ]
+});
+
+console.log(completion);
+```
+  </Tab>
+</Tabs>
+
+<Warning>
+The model and region used in the inference request must match the model and region used when creating the cache.
+</Warning>
+
+For more details on context caching options like TTL configuration and cache management, refer to the [Vertex AI context caching documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/context-cache/context-cache-create).
+
+---
 
 ## Using Self-Deployed Models on Vertex AI (Hugging Face, Custom Models)
 
@@ -490,6 +605,153 @@ curl --location 'https://api.portkey.ai/v1/chat/completions' \
 
 ---
 
+## Media Resolution
+
+The `media_resolution` parameter allows you to control token allocation for media inputs (images, videos, PDFs) when using Gemini models on Vertex AI. This helps balance between processing detail and cost/speed.
+
+### Supported values
+
+| Value | Description |
+|-------|-------------|
+| `MEDIA_RESOLUTION_LOW` | Reduced tokens for faster, cheaper processing |
+| `MEDIA_RESOLUTION_MEDIUM` | Balanced approach between detail and cost |
+| `MEDIA_RESOLUTION_HIGH` | Maximum tokens for detailed analysis |
+| `MEDIA_RESOLUTION_ULTRA_HIGH` | Highest resolution (per-part only, for specialized tasks) |
+
+### Top-level configuration
+
+Apply media resolution globally to all media in the request:
+
+<CodeGroup>
+```javascript NodeJS
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-1.5-pro',
+    media_resolution: 'MEDIA_RESOLUTION_HIGH',
+    messages: [{
+        role: 'user',
+        content: [
+            {
+                type: 'image_url',
+                image_url: {
+                    url: 'gs://cloud-samples-data/generative-ai/image/scones.jpg'
+                }
+            },
+            { type: 'text', text: 'Analyze this image in detail.' }
+        ]
+    }]
+}, {Authorization: "Bearer $YOUR_VERTEX_ACCESS_TOKEN"});
+```
+```python Python
+completion = portkey.with_options(Authorization="Bearer $YOUR_VERTEX_ACCESS_TOKEN").chat.completions.create(
+    model='gemini-1.5-pro',
+    media_resolution='MEDIA_RESOLUTION_HIGH',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"
+                }
+            },
+            { "type": "text", "text": "Analyze this image in detail." }
+        ]
+    }]
+)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: vertex-ai' \
+--header 'x-portkey-vertex-region: us-central1' \
+--header 'x-portkey-api-key: PORTKEY_API_KEY' \
+--header 'Authorization: VERTEX_AI_ACCESS_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-1.5-pro",
+    "media_resolution": "MEDIA_RESOLUTION_HIGH",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"}},
+            {"type": "text", "text": "Analyze this image in detail."}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+### Per-part configuration (Gemini 3 only)
+
+For Gemini 3 models, you can specify media resolution on individual media parts. Per-part settings take precedence over global settings when both are specified.
+
+<CodeGroup>
+```javascript NodeJS
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-3.0-pro',
+    messages: [{
+        role: 'user',
+        content: [
+            {
+                type: 'image_url',
+                image_url: {
+                    url: 'gs://cloud-samples-data/generative-ai/image/scones.jpg',
+                    media_resolution: 'MEDIA_RESOLUTION_HIGH'
+                }
+            },
+            { type: 'text', text: 'Analyze this image in detail.' }
+        ]
+    }]
+}, {Authorization: "Bearer $YOUR_VERTEX_ACCESS_TOKEN"});
+```
+```python Python
+completion = portkey.with_options(Authorization="Bearer $YOUR_VERTEX_ACCESS_TOKEN").chat.completions.create(
+    model='gemini-3.0-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg",
+                    "media_resolution": "MEDIA_RESOLUTION_HIGH"
+                }
+            },
+            { "type": "text", "text": "Analyze this image in detail." }
+        ]
+    }]
+)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: vertex-ai' \
+--header 'x-portkey-vertex-region: us-central1' \
+--header 'x-portkey-api-key: PORTKEY_API_KEY' \
+--header 'Authorization: VERTEX_AI_ACCESS_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-3.0-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg",
+                    "media_resolution": "MEDIA_RESOLUTION_HIGH"
+                }
+            },
+            {"type": "text", "text": "Analyze this image in detail."}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Card href="https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/media-resolution" title="Google Vertex AI Media Resolution Documentation">
+</Card>
+
+---
+
 
 
 
@@ -723,16 +985,31 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
 
 ### Using reasoning_effort Parameter
 
-You can also control thinking using the OpenAI-compatible `reasoning_effort` parameter instead of `thinking.budget_tokens`. The value is passed directly to Gemini as the `thinkingLevel`:
+You can also control thinking using the OpenAI-compatible `reasoning_effort` parameter instead of `thinking.budget_tokens`:
 
 ```python
 response = portkey.chat.completions.create(
     model="@VERTEX_PROVIDER/google.gemini-2.5-flash-preview-04-17",
     max_tokens=3000,
-    reasoning_effort="medium",  # Options: "none", "minimal", "low", "medium", "high"
+    reasoning_effort="medium",  # Options: "none", "low", "medium", "high"
     messages=[{"role": "user", "content": "Explain quantum computing"}]
 )
 ```
+
+#### Gemini 2.5 Models
+
+For Gemini 2.5 models, `reasoning_effort` maps to `thinking_budget` with specific token allocations:
+
+| reasoning_effort | thinking_budget (tokens) |
+|------------------|--------------------------|
+| `none` | Disabled |
+| `low` | 1,024 |
+| `medium` | 8,192 |
+| `high` | 24,576 |
+
+#### Gemini 3.0+ Models
+
+For Gemini 3.0 and later models, `reasoning_effort` maps directly to `thinkingLevel`:
 
 | reasoning_effort | Vertex thinkingLevel |
 |------------------|---------------------|
@@ -1189,8 +1466,139 @@ Grounding is invoked by passing the `google_search` tool (for newer models like 
     }]
 ```
 
+## Grounding with Google Maps
+
+Vertex AI supports grounding with Google Maps for location-based queries—places, directions, ratings, and geographic information.
+
+Pass the `google_maps` (or `googleMaps`) tool in the `tools` array:
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    "messages": [{"role": "user", "content": "What are the best Italian restaurants near Times Square?"}],
+    "tools": [{"type": "function", "function": {"name": "google_maps"}}]
+}'
+```
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    messages=[{"role": "user", "content": "What are the best Italian restaurants near Times Square?"}],
+    tools=[{"type": "function", "function": {"name": "google_maps"}}]
+)
+
+print(response)
+```
+```typescript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "YOUR_PORTKEY_API_KEY" });
+
+const response = await portkey.chat.completions.create({
+    model: "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    messages: [{ role: "user", content: "What are the best Italian restaurants near Times Square?" }],
+    tools: [{ type: "function", function: { name: "google_maps" } }]
+});
+
+console.log(response);
+```
+</CodeGroup>
+
+### With Retrieval Configuration
+
+Optionally configure location coordinates, language, and widget options by passing them inside the function `parameters`:
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    "messages": [{"role": "user", "content": "What are the best coffee shops nearby?"}],
+    "tools": [{
+        "type": "function",
+        "function": {
+            "name": "google_maps",
+            "parameters": {
+                "enableWidget": true,
+                "retrievalConfig": {
+                    "latLng": {"latitude": 37.7749, "longitude": -122.4194},
+                    "languageCode": "en_US"
+                }
+            }
+        }
+    }]
+}'
+```
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    messages=[{"role": "user", "content": "What are the best coffee shops nearby?"}],
+    tools=[{
+        "type": "function",
+        "function": {
+            "name": "google_maps",
+            "parameters": {
+                "enableWidget": True,
+                "retrievalConfig": {
+                    "latLng": {"latitude": 37.7749, "longitude": -122.4194},
+                    "languageCode": "en_US"
+                }
+            }
+        }
+    }]
+)
+
+print(response)
+```
+```typescript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "YOUR_PORTKEY_API_KEY" });
+
+const response = await portkey.chat.completions.create({
+    model: "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    messages: [{ role: "user", content: "What are the best coffee shops nearby?" }],
+    tools: [{
+        type: "function",
+        function: {
+            name: "google_maps",
+            parameters: {
+                enableWidget: true,
+                retrievalConfig: {
+                    latLng: { latitude: 37.7749, longitude: -122.4194 },
+                    languageCode: "en_US"
+                }
+            }
+        }
+    }]
+});
+
+console.log(response);
+```
+</CodeGroup>
+
+| Parameter | Description |
+|-----------|-------------|
+| `enableWidget` | Return a token to enable the Google Maps widget (default: `false`) |
+| `retrievalConfig.latLng.latitude` | Latitude (e.g., `37.7749` for San Francisco) |
+| `retrievalConfig.latLng.longitude` | Longitude (e.g., `-122.4194` for San Francisco) |
+| `retrievalConfig.languageCode` | Language code for results (e.g., `en_US`) |
+
 <Warning>
-If you mix regular tools with grounding tools, vertex might throw an error saying only one tool can be used at a time.
+Mixing regular tools with grounding tools may cause errors—use only one tool type per request.
 </Warning>
 
 ## gemini-2.0-flash-thinking-exp and other thinking/reasoning models

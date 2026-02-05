@@ -78,6 +78,24 @@ environment:
 
 ## Configure Components 
 Based on the choice of components and their configuration update the `values.yaml`.
+
+### MCP Gateway (Optional)
+By default, only the AI Gateway is enabled in the deployment. To enable the MCP Gateway, add the following configuration to `values.yaml`:
+```yaml
+environment:
+  data:
+    SERVER_MODE: "mcp/all"
+    MCP_PORT: "8788"
+    MCP_GATEWAY_BASE_URL: "<This must be set to MCP LoadBalancer URL or Hostname pointing to MCP Service>"
+```
+**Note:** `MCP_GATEWAY_BASE_URL` does not need to be provided during the initial deployment. Once the MCP Load Balancer is created after first deployment and hostname mapping is configured, you can set this value and redeploy. 
+
+**Server Modes**
+1. `""` (empty or not provided): Deploys only the AI Gateway. This is the default configuration.
+2. `"mcp"`: Deploys only the MCP Gateway.
+3. `"all"`: Deploys both the AI Gateway and MCP Gateway.
+
+
 ### Cache Store
 The Portkey Gateway deployment includes a Redis instance pre-installed by default. You can either use this built-in Redis or connect to an external cache like `Amazon ElastiCache for Redis OSS` or `Valkey`.
 
@@ -154,7 +172,8 @@ For more information on ElastiCache endpoints, refer to the [AWS resources](http
         ```
       </Tab>
     </Tabs>
- 
+
+3. (Optional) Configure log path format using `LOG_STORE_FILE_PATH_FORMAT`. See [Log Object Path Format](/product/enterprise-offering/components#log-object-path-format) for details.
 
 ### Data Service (Optional)
 The Data Service is a component of the Portkey deployment responsible for batch processing, fine-tuning, and log exports. 
@@ -191,9 +210,15 @@ To make the Gateway service accessible externally, you can set up either of the 
 #### AWS Application Load Balancer
 To create Application Load Balancer Ingress update the `values.yaml` file with following configuration: 
 ```yaml
+service:
+  type: ClusterIP
+  port: 8787
+
 ingress:
   enabled: true
-  # hostname: "gateway.example.com"
+  # hostname: "<AI Gateway Hostname>"
+  # hostBased: false
+  # mcpHostname: "<MCP Gateway Hostname>"
   ingressClassName: "alb"
   annotations: 
     alb.ingress.kubernetes.io/load-balancer-name : portkey-gateway
@@ -203,11 +228,8 @@ ingress:
     alb.ingress.kubernetes.io/healthcheck-path: /v1/health
     alb.ingress.kubernetes.io/inbound-cidrs: 0.0.0.0/0                                                # Allowed inbound CIDR ranges
     alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
-
-service:
-  type: ClusterIP
-  port: 8787
 ```
+**Note:** If `SERVER_MODE` is set to `all` (i.e., both AI Gateway and MCP Gateway are enabled), you must enable host-based routing by setting `hostBased` to `true` and provide the hostname on which the AI Gateway and MCP Gateway will be accessible.
 
 Load Balancer Controller provides additional annotations (like TLS, custom health checks etc ) for managing ALB. For a comprehensive list of available annotations, refer to the [AWS Load Balancer Controller documentation](https://kubernetes-sigs.github.io/aws-load-balancer-controller/latest/guide/ingress/annotations/).
 
@@ -296,7 +318,7 @@ To confirm that the deployment was successful, follow these steps:
 
 ## Integrating Gateway with Control Plane
 
-**Outbund Connectivity (Data Plane to Control Plane)**
+**Outbound Connectivity (Data Plane to Control Plane)**
 
 Portkey supports the following methods for integrating the Data Plane with the Control Plane for outbound connectivity:
 - AWS PrivateLink
@@ -410,7 +432,7 @@ Reach out to portkey team and share the following details -
 
 #### IP Whitelisting
 Allows control plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Control Plane. This method requires the Data Plane to have a publicly accessible endpoint.
-To whitelist, add an inbound rule to the Load Balancer's security group allowing connections from the Portkey Control Plane's IP (`44.221.117.129`) on NLB listner port.
+To whitelist, add an inbound rule to the Load Balancer's security group allowing connections from the Portkey Control Plane's IP (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on NLB listener port.
 
 To integrate the Control Plane with the Data Plane, contact the Portkey team and provide the **Public Endpoint** of the Data Plane.
 
@@ -678,7 +700,7 @@ serviceAccount:
 # Enabling Load Balancer to provide access outside of cluster
 service:
   type: LoadBalancer
-  port: 8787                                                 # Customize this paramter if you require a Load Balancer listener for a custom port.
+  port: 8787                                                 # Customize this parameter if you require a Load Balancer listener for a custom port.
   annotations: 
     service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
     service.beta.kubernetes.io/aws-load-balancer-internal: "true"

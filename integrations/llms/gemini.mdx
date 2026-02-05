@@ -764,6 +764,151 @@ curl --location 'https://api.portkey.ai/v1/chat/completions' \
 
 ---
 
+## Media Resolution
+
+The `media_resolution` parameter allows you to control token allocation for media inputs (images, videos, PDFs) when using Gemini models. This helps balance between processing detail and cost/speed.
+
+### Supported values
+
+| Value | Description |
+|-------|-------------|
+| `MEDIA_RESOLUTION_LOW` | Reduced tokens for faster, cheaper processing |
+| `MEDIA_RESOLUTION_MEDIUM` | Balanced approach between detail and cost |
+| `MEDIA_RESOLUTION_HIGH` | Maximum tokens for detailed analysis |
+| `MEDIA_RESOLUTION_ULTRA_HIGH` | Highest resolution (per-part only, for specialized tasks) |
+
+### Top-level configuration
+
+Apply media resolution globally to all media in the request:
+
+<CodeGroup>
+```javascript NodeJS
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-1.5-pro',
+    media_resolution: 'MEDIA_RESOLUTION_HIGH',
+    messages: [{
+        role: 'user',
+        content: [
+            {
+                type: 'image_url',
+                image_url: {
+                    url: 'https://generativelanguage.googleapis.com/v1beta/files/your-file-id'
+                }
+            },
+            { type: 'text', text: 'Analyze this image in detail.' }
+        ]
+    }]
+});
+```
+```python Python
+completion = portkey.chat.completions.create(
+    model='gemini-1.5-pro',
+    media_resolution='MEDIA_RESOLUTION_HIGH',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://generativelanguage.googleapis.com/v1beta/files/your-file-id"
+                }
+            },
+            { "type": "text", "text": "Analyze this image in detail." }
+        ]
+    }]
+)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-1.5-pro",
+    "media_resolution": "MEDIA_RESOLUTION_HIGH",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": "https://generativelanguage.googleapis.com/v1beta/files/your-file-id"}},
+            {"type": "text", "text": "Analyze this image in detail."}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+### Per-part configuration (Gemini 3 only)
+
+For Gemini 3 models, you can specify media resolution on individual media parts. Per-part settings take precedence over global settings when both are specified.
+
+<CodeGroup>
+```javascript NodeJS
+const chatCompletion = await portkey.chat.completions.create({
+    model: 'gemini-3.0-pro',
+    messages: [{
+        role: 'user',
+        content: [
+            {
+                type: 'image_url',
+                image_url: {
+                    url: 'https://generativelanguage.googleapis.com/v1beta/files/your-file-id',
+                    media_resolution: 'MEDIA_RESOLUTION_HIGH'
+                }
+            },
+            { type: 'text', text: 'Analyze this image in detail.' }
+        ]
+    }]
+});
+```
+```python Python
+completion = portkey.chat.completions.create(
+    model='gemini-3.0-pro',
+    messages=[{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://generativelanguage.googleapis.com/v1beta/files/your-file-id",
+                    "media_resolution": "MEDIA_RESOLUTION_HIGH"
+                }
+            },
+            { "type": "text", "text": "Analyze this image in detail." }
+        ]
+    }]
+)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-provider: google' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "gemini-3.0-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://generativelanguage.googleapis.com/v1beta/files/your-file-id",
+                    "media_resolution": "MEDIA_RESOLUTION_HIGH"
+                }
+            },
+            {"type": "text", "text": "Analyze this image in detail."}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Card href="https://ai.google.dev/gemini-api/docs/media-resolution" title="Google Gemini Media Resolution Documentation">
+</Card>
+
+---
+
 ## Code Execution Tool
 
 Gemini can use a built-in code interpreter tool to solve complex computational problems, perform calculations, and generate code. To enable this, simply include the `code_execution` tool in your request. The model will automatically decide when to invoke it.
@@ -2135,16 +2280,31 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-g
 
 ### Using reasoning_effort Parameter
 
-You can also control thinking using the OpenAI-compatible `reasoning_effort` parameter instead of `thinking.budget_tokens`. The value is passed directly to Gemini as the `thinkingLevel`:
+You can also control thinking using the OpenAI-compatible `reasoning_effort` parameter instead of `thinking.budget_tokens`:
 
 ```python
 response = portkey.chat.completions.create(
     model="gemini-2.5-flash-preview-04-17",
     max_tokens=3000,
-    reasoning_effort="medium",  # Options: "none", "minimal", "low", "medium", "high"
+    reasoning_effort="medium",  # Options: "none", "low", "medium", "high"
     messages=[{"role": "user", "content": "Explain quantum computing"}]
 )
 ```
+
+#### Gemini 2.5 Models
+
+For Gemini 2.5 models, `reasoning_effort` maps to `thinking_budget` with specific token allocations:
+
+| reasoning_effort | thinking_budget (tokens) |
+|------------------|--------------------------|
+| `none` | Disabled |
+| `low` | 1,024 |
+| `medium` | 8,192 |
+| `high` | 24,576 |
+
+#### Gemini 3.0+ Models
+
+For Gemini 3.0 and later models, `reasoning_effort` maps directly to `thinkingLevel`:
 
 | reasoning_effort | Gemini thinkingLevel |
 |------------------|---------------------|
