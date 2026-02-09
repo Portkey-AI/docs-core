@@ -1,171 +1,133 @@
 ---
 title: "vLLM"
-description: "Integrate vLLM-hosted custom models with Portkey and take them to production"
+description: "Integrate vLLM-hosted custom models with Portkey for production observability and reliability."
 ---
 
-Portkey provides a robust and secure platform to observe, govern, and manage your **locally** or **privately** hosted custom models using vLLM.
+Portkey provides a robust platform to observe, govern, and manage your **locally** or **privately** hosted custom models using vLLM.
 
 <Info>
 Here's a [list](https://docs.vllm.ai/en/latest/models/supported_models.html) of all model architectures supported on vLLM.
 </Info>
 
-## Integrating Custom Models with Portkey SDK
+## Integration Steps
+
 <Steps>
 <Step title="Expose your vLLM Server">
-Expose your vLLM server by using a tunneling service like [ngrok](https://ngrok.com/) or any other way you prefer. You can skip this step if you’re self-hosting the Gateway.
+Expose your vLLM server using a tunneling service like [ngrok](https://ngrok.com/) or make it publicly accessible. Skip this if you're self-hosting the Gateway.
 
 ```sh
-ngrok http 11434 --host-header="localhost:8080"
+ngrok http 8000 --host-header="localhost:8080"
 ```
 </Step>
 
-<Step title="Install the Portkey SDK">
+<Step title="Add to Model Catalog">
 
-<Tabs>
-    <Tab title="NodeJS">
-        ```sh
-        npm install --save portkey-ai
-        ```
-    </Tab>
-    <Tab title="Python">
-        ```sh
-        pip install portkey-ai
-        ```
-    </Tab>
-</Tabs>
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Enable **"Local/Privately hosted provider"** toggle
+3. Select **OpenAI** as the provider type (vLLM follows OpenAI API schema)
+4. Enter your vLLM server URL in **Custom Host**: `https://your-vllm-server.ngrok-free.app`
+5. Add authentication headers if needed
+6. Name your provider (e.g., `my-vllm`)
 
+<Card title="Complete Setup Guide" icon="book" href="/product/model-catalog">
+  See all setup options
+</Card>
 </Step>
-<Step title="Initialize Portkey with vLLM custom URL">
 
-1. Pass your publicly-exposed vLLM server URL to Portkey with `customHost` (by default, vLLM is on `http://localhost:8000/v1`)
-2. Set target `provider` as `openai` since the server follows OpenAI API schema.
+<Step title="Use in Your Application">
 
-<Tabs>
-    <Tab title="NodeJS SDK">
-        ```js
-        import Portkey from 'portkey-ai'
+<CodeGroup>
 
-        const portkey = new Portkey({
-            apiKey: "PORTKEY_API_KEY",
-            provider: "openai",
-            customHost: "https://7cc4-3-235-157-146.ngrok-free.app" // Your vLLM ngrok URL
-            Authorization: "AUTH_KEY", // If you need to pass auth
-        })
-        ```
-    </Tab>
-    <Tab title="Python SDK">
-        ```python
-        from portkey_ai import Portkey
+```python Python
+from portkey_ai import Portkey
 
-        portkey = Portkey(
-            api_key="PORTKEY_API_KEY",
-            provider="openai",
-            custom_host="https://7cc4-3-235-157-146.ngrok-free.app" # Your vLLM ngrok URL
-            Authorization="AUTH_KEY", # If you need to pass auth
-        )
-        ```
-    </Tab>
-
-  </Tabs>
-
-More on `custom_host` [here](/product/ai-gateway/universal-api#integrating-local-or-private-models).
-</Step>
-<Step title="Invoke Chat Completions">
-
-Use the Portkey SDK to invoke chat completions from your model, just as you would with any other provider:
-
-<Tabs>
-    <Tab title="NodeJS SDK">
-        ```js
-        const chatCompletion = await portkey.chat.completions.create({
-            messages: [{ role: 'user', content: 'Say this is a test' }]
-        });
-
-        console.log(chatCompletion.choices);
-        ```
-    </Tab>
-    <Tab title="Python SDK">
-```python
-completion = portkey.chat.completions.create(
-    messages= [{ "role": 'user', "content": 'Say this is a test' }]
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@my-vllm"
 )
 
-print(completion)
+response = portkey.chat.completions.create(
+    model="your-model-name",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+print(response.choices[0].message.content)
 ```
-    </Tab>
-  </Tabs>
+
+```javascript Node.js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: 'PORTKEY_API_KEY',
+    provider: '@my-vllm'
+});
+
+const response = await portkey.chat.completions.create({
+    model: 'your-model-name',
+    messages: [{ role: 'user', content: 'Hello!' }]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+**Or use custom host directly:**
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="openai",
+    custom_host="https://your-vllm-server.ngrok-free.app",
+    Authorization="AUTH_KEY"  # If needed
+)
+```
+
+```javascript Node.js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: 'PORTKEY_API_KEY',
+    provider: 'openai',
+    customHost: 'https://your-vllm-server.ngrok-free.app',
+    Authorization: 'AUTH_KEY'  // If needed
+});
+```
+
+</CodeGroup>
+
 </Step>
 </Steps>
 
-## [Using Virtual Keys](https://app.portkey.ai/virtual-keys)
+<Note>
+**Important:** vLLM follows the OpenAI API specification, so set the provider as `openai` when using custom host directly. By default, vLLM runs on `http://localhost:8000/v1`.
+</Note>
 
-Virtual Keys serve as Portkey's unified authentication system for all LLM interactions, simplifying the use of multiple providers and Portkey features within your application. For self-hosted LLMs, you can configure custom authentication requirements including authorization keys, bearer tokens, or any other headers needed to access your model:
-
-<Frame>
-  <img src="/images/private-llm.png"/>
-</Frame>
-
-1. Navigate to [Virtual Keys](https://app.portkey.ai/virtual-keys) in your Portkey dashboard
-2. Click **"Add Key"** and enable the **"Local/Privately hosted provider"** toggle
-3. Configure your deployment:
-   - Select the matching provider API specification (typically `OpenAI`)
-   - Enter your model's base URL in the `Custom Host` field
-   - Add required authentication headers and their values
-4. Click **"Create"** to generate your virtual key
-
-You can now use this virtual key in your requests:
-
-<Tabs>
-  <Tab title="NodeJS">
-  ```js
-  const portkey = new Portkey({
-      apiKey: "PORTKEY_API_KEY",
-      provider:"@YOUR_SELF_HOSTED_LLM_PROVIDER"
-
-  async function main() {
-    const response = await client.chat.completions.create({
-      messages: [{ role: "user", content: "Bob the builder.." }],
-      model: "your-self-hosted-model-name",
-    });
-
-  console.log(response.choices[0].message.content);
-  })
-  ```
-  </Tab>
-  <Tab title="Python">
-  ```python
-  portkey = Portkey(
-      api_key="PORTKEY_API_KEY",
-      provider="@YOUR_SELF_HOSTED_LLM_PROVIDER"
-  )
-
-  response = portkey.chat.completions.create(
-    model="your-self-hosted-model-name",
-    messages=[
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "Hello!"}
-    ]
-
-  print(response)
-  )
-  ```
-  </Tab>
-</Tabs>
-
-For more information about managing self-hosted LLMs with Portkey, see [Bring Your Own LLM](/integrations/llms/byollm).
-
-
+---
 
 ## Next Steps
 
-Explore the complete list of features supported in the SDK:
+<CardGroup cols={2}>
+  <Card title="Gateway Configs" icon="sliders" href="/product/ai-gateway">
+    Add retries, timeouts, and fallbacks
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Monitor your vLLM deployments
+  </Card>
+  <Card title="Custom Host Guide" icon="server" href="/product/ai-gateway/universal-api#integrating-local-or-private-models">
+    Learn more about custom host setup
+  </Card>
+  <Card title="BYOLLM Guide" icon="book" href="/integrations/llms/byollm">
+    Complete guide for private LLMs
+  </Card>
+</CardGroup>
 
-<Card title="SDK" href="/api-reference/sdk"></Card>
----
+For complete SDK documentation:
 
-You'll find more information in the relevant sections:
-
-1. [Add metadata to your requests](/product/observability/metadata)
-2. [Add gateway configs to your requests](/product/ai-gateway/universal-api#ollama-in-configs)
-3. [Tracing requests](/product/observability/traces)
-4. [Setup a fallback from OpenAI to your local LLM](/product/ai-gateway/fallbacks)
+<Card title="SDK Reference" icon="code" href="/api-reference/sdk/list">
+  Complete Portkey SDK documentation
+</Card>

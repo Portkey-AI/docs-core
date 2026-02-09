@@ -1,172 +1,139 @@
 ---
 title: "LocalAI"
+description: "Integrate LocalAI-hosted models with Portkey for local LLM deployment with observability."
 ---
 
-Portkey provides a robust and secure gateway to facilitate the integration of various Large Language Models (LLMs) into your applications, including your **locally hosted models through** [**LocalAI**](https://localai.io/).
+Portkey provides a robust gateway to facilitate the integration of your **locally hosted models through** [**LocalAI**](https://localai.io/).
 
-## Portkey SDK Integration with LocalAI
+## Integration Steps
 
-### 1\. Install the Portkey SDK
-<Tabs>
-    <Tab title="NodeJS">
-        ```sh
-        npm install --save portkey-ai
-        ```
-    </Tab>
-    <Tab title="Python">
+<Steps>
+<Step title="Expose your LocalAI Server">
+Ensure your LocalAI API is externally accessible. If running on `http://localhost`, use a tool like `ngrok` to create a public URL.
 
 ```sh
-pip install portkey-ai
+ngrok http 8080
 ```
-    </Tab>
+</Step>
 
-  </Tabs>
+<Step title="Add to Model Catalog">
 
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Enable **"Local/Privately hosted provider"** toggle
+3. Select **OpenAI** as the provider type (LocalAI follows OpenAI API schema)
+4. Enter your LocalAI URL with `/v1` in **Custom Host**: `https://your-localai.ngrok-free.app/v1`
+5. Name your provider (e.g., `my-localai`)
 
+<Card title="Complete Setup Guide" icon="book" href="/product/model-catalog">
+  See all setup options
+</Card>
+</Step>
 
-### 2\. Initialize Portkey with LocalAI URL
+<Step title="Use in Your Application">
 
-First, ensure that your API is externally accessible. If you're running the API on `http://localhost`, consider using a tool like `ngrok` to create a public URL. Then, instantiate the Portkey client by adding your LocalAI URL (along with the version identifier) to the `customHost` property, and add the provider name as `openai`.
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@my-localai"
+)
+
+response = portkey.chat.completions.create(
+    model="ggml-koala-7b-model-q4_0-r2.bin",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript Node.js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: 'PORTKEY_API_KEY',
+    provider: '@my-localai'
+});
+
+const response = await portkey.chat.completions.create({
+    model: 'ggml-koala-7b-model-q4_0-r2.bin',
+    messages: [{ role: 'user', content: 'Hello!' }]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+**Or use custom host directly:**
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="openai",
+    custom_host="https://your-localai.ngrok-free.app/v1"
+)
+```
+
+```javascript Node.js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: 'PORTKEY_API_KEY',
+    provider: 'openai',
+    customHost: 'https://your-localai.ngrok-free.app/v1'
+});
+```
+
+</CodeGroup>
+
+</Step>
+</Steps>
+
 <Note>
-**Note:** Don't forget to include the version identifier (e.g., `/v1`) in the `customHost` URL
+**Important:** 
+- Don't forget to include the version identifier (`/v1`) in the Custom Host URL
+- Portkey supports all endpoints that adhere to the OpenAI specification
 </Note>
-<Tabs>
-    <Tab title="NodeJS SDK">
-        ```js
-        import Portkey from 'portkey-ai'
 
-        const portkey = new Portkey({
-            apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
-            provider: "openai",
-            customHost: "https://7cc4-3-235-157-146.ngrok-free.app/v1" // Your LocalAI ngrok URL
-        })
-        ```
-    </Tab>
-    <Tab title="Python SDK">
-        ```python
-        from portkey_ai import Portkey
-
-        portkey = Portkey(
-            api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-            provider="openai",
-            custom_host="https://7cc4-3-235-157-146.ngrok-free.app/v1" # Your LocalAI ngrok URL
-        )
-        ```
-    </Tab>
-
-  </Tabs>
-
-
-<Note>
-Portkey currently supports all endpoints that adhere to the OpenAI specification. This means, you can access and observe any of your LocalAI models that are exposed through OpenAI-compliant routes.
-</Note>
-[List of supported endpoints here](/integrations/llms/local-ai#localai-endpoints-supported).
-
-### 3\. Invoke Chat Completions
-
-Use the Portkey SDK to invoke chat completions from your LocalAI model, just as you would with any other provider.
-<Tabs>
-    <Tab title="NodeJS SDK">
-        ```js
-        const chatCompletion = await portkey.chat.completions.create({
-            messages: [{ role: 'user', content: 'Say this is a test' }],
-            model: 'ggml-koala-7b-model-q4_0-r2.bin',
-        });
-
-        console.log(chatCompletion.choices);
-        ```
-    </Tab>
-    <Tab title="Python SDK">
-        ```python
-        completion = portkey.chat.completions.create(
-            messages= [{ "role": 'user', "content": 'Say this is a test' }],
-            model= 'ggml-koala-7b-model-q4_0-r2.bin'
-        )
-
-        print(completion)
-        ```
-    </Tab>
-
-  </Tabs>
-
-
-## [Using Virtual Keys](https://app.portkey.ai/virtual-keys)
-
-Virtual Keys serve as Portkey's unified authentication system for all LLM interactions, simplifying the use of multiple providers and Portkey features within your application. For self-hosted LLMs, you can configure custom authentication requirements including authorization keys, bearer tokens, or any other headers needed to access your model:
-
-<Frame>
-  <img src="/images/private-llm.png"/>
-</Frame>
-
-1. Navigate to [Virtual Keys](https://app.portkey.ai/virtual-keys) in your Portkey dashboard
-2. Click **"Add Key"** and enable the **"Local/Privately hosted provider"** toggle
-3. Configure your deployment:
-   - Select the matching provider API specification (typically `OpenAI`)
-   - Enter your model's base URL in the `Custom Host` field
-   - Add required authentication headers and their values
-4. Click **"Create"** to generate your virtual key
-
-You can now use this virtual key in your requests:
-
-<Tabs>
-  <Tab title="NodeJS">
-  ```js
-  const portkey = new Portkey({
-      apiKey: "PORTKEY_API_KEY",
-      provider:"@YOUR_SELF_HOSTED_LLM_PROVIDER"
-
-  async function main() {
-    const response = await client.chat.completions.create({
-      messages: [{ role: "user", content: "Bob the builder.." }],
-      model: "your-self-hosted-model-name",
-    });
-
-  console.log(response.choices[0].message.content);
-  })
-  ```
-  </Tab>
-  <Tab title="Python">
-  ```python
-  portkey = Portkey(
-      api_key="PORTKEY_API_KEY",
-      provider="@YOUR_SELF_HOSTED_LLM_PROVIDER"
-  )
-
-  response = portkey.chat.completions.create(
-    model="your-self-hosted-model-name",
-    messages=[
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "Hello!"}
-    ]
-
-  print(response)
-  )
-  ```
-  </Tab>
-</Tabs>
-
-For more information about managing self-hosted LLMs with Portkey, see [Bring Your Own LLM](/integrations/llms/byollm).
-
+---
 
 ## LocalAI Endpoints Supported
+
 | Endpoint | Resource |
 | :----------------------------------------------- | :---------------------------------------------------------------- |
-| /chat/completions (Chat, Vision, Tools support) | [Doc](/provider-endpoints/chat)                             |
-| /images/generations                             | [Doc](/provider-endpoints/images/create-image)              |
-| /embeddings                                     | [Doc](/provider-endpoints/embeddings)                       |
-| /audio/transcriptions                           | [Doc](/product/ai-gateway/multimodal-capabilities/speech-to-text) |
+| /chat/completions (Chat, Vision, Tools support) | [Doc](/api-reference/inference-api/chat-completion)              |
+| /images/generations                              | [Doc](/api-reference/inference-api/images/create-image)          |
+| /embeddings                                      | [Doc](/api-reference/inference-api/embeddings)                   |
+| /audio/transcriptions                            | [Doc](/product/ai-gateway/multimodal-capabilities/speech-to-text) |
+
+---
 
 ## Next Steps
 
-Explore the complete list of features supported in the SDK:
-<Card title="SDK" href="/api-reference/sdk">
+<CardGroup cols={2}>
+  <Card title="Gateway Configs" icon="sliders" href="/product/ai-gateway">
+    Add retries, timeouts, and fallbacks
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Monitor your LocalAI requests
+  </Card>
+  <Card title="Custom Host Guide" icon="server" href="/product/ai-gateway/universal-api#integrating-local-or-private-models">
+    Learn more about custom host setup
+  </Card>
+  <Card title="BYOLLM Guide" icon="book" href="/integrations/llms/byollm">
+    Complete guide for private LLMs
+  </Card>
+</CardGroup>
+
+For complete SDK documentation:
+
+<Card title="SDK Reference" icon="code" href="/api-reference/sdk/list">
+  Complete Portkey SDK documentation
 </Card>
-
----
-
-You'll find more information in the relevant sections:
-
-1. [Add metadata to your requests](/product/observability/metadata)
-2. [Add gateway configs to your Ollama requests](/product/ai-gateway/universal-api#ollama-in-configs)
-3. [Tracing Ollama requests](/product/observability/traces)
-4. [Setup a fallback from OpenAI to Ollama APIs](/product/ai-gateway/fallbacks)
