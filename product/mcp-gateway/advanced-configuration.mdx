@@ -1,0 +1,176 @@
+---
+title: Advanced Configuration
+description: Control how the gateway authenticates, forwards context, and connects to upstream MCP servers.
+---
+
+When you add an MCP server to the registry, the UI handles the basics — server name, URL, auth type, static headers. That's enough for most setups.
+
+Advanced Configuration is the JSON field at the bottom of the integration form.
+
+It unlocks everything the UI fields don't cover:
+
+- **Forward runtime headers** like trace IDs or tenant context to the upstream server
+- **Tell the MCP server who's calling** by forwarding authenticated user identity
+- **Validate tokens at the edge** before requests ever reach the upstream server
+- **Customize OAuth behavior** when the upstream server's defaults don't work
+- **Bring your own identity provider** for enterprise SSO
+
+<Frame>
+  <img src="/images/mcp-gateway/advanced-config.png" alt="Advanced Configuration field in the MCP integration form" />
+</Frame>
+
+
+---
+
+## What You Can Configure
+
+| Key | What it does | When you need it |
+|---|---|---|
+| [`forward_headers`](#forward-headers) | Pass client request headers to the upstream server | Distributed tracing, tenant context, custom metadata |
+| [`oauth_metadata`](#oauth-metadata) | Override OAuth discovery defaults | Upstream server needs non-standard OAuth config |
+| [`user_identity_forwarding`](#user-identity-forwarding) | Tell the upstream server *who* is making the request | Per-user authorization, audit logging, personalization |
+| [`jwt_validation`](#jwt-validation) | Validate client JWTs at the gateway edge | Bring-your-own IdP, enforce auth before proxying |
+| [`external_auth_config`](#external-auth-config) | Use an external OAuth provider instead of Portkey's | Enterprise SSO with your own IdP |
+
+---
+
+## Forward Headers
+
+Forward specific headers from the incoming client request to the upstream MCP server. Unlike Custom Headers (static values set in the UI), these are dynamic — they capture whatever the client sends at runtime.
+
+Two modes: **allowlist** (only forward listed headers) and **all-except** (forward everything except listed headers).
+
+```json
+{
+  "forward_headers": ["X-Request-Id", "X-Trace-Id", "X-Tenant-Id"]
+}
+```
+
+Forwarded headers have the **lowest priority** — they never override auth headers or static values you've configured.
+
+<Card title="Forwarding Headers" icon="arrow-right" href="/product/mcp-gateway/authentication/forwarding-headers">
+  Allowlist vs all-except modes, priority rules, and full configuration options.
+</Card>
+
+---
+
+## OAuth Metadata
+
+Override the OAuth endpoints and parameters that Portkey discovers from the upstream server's `/.well-known/oauth-authorization-server`. Only relevant when Auth Type is **OAuth 2.1**.
+
+```json
+{
+  "oauth_metadata": {
+    "authorization_endpoint": "https://auth.example.com/authorize",
+    "token_endpoint": "https://auth.example.com/token",
+    "scopes_supported": ["read", "write", "admin"]
+  }
+}
+```
+
+All fields are optional. Provided values override auto-discovered defaults.
+
+<Card title="OAuth Client Metadata" icon="key" href="/product/mcp-gateway/authentication/oauth-client-metadata">
+  Full list of overridable OAuth fields and registration customization.
+</Card>
+
+---
+
+## User Identity Forwarding
+
+After authenticating a user, Portkey can forward their identity to the upstream MCP server. The server gets to know *who* is making the request — without implementing its own auth.
+
+Three methods:
+
+| Method | What the upstream server receives |
+|---|---|
+| `claims_header` | JSON object with user claims in `X-User-Claims` header |
+| `bearer` | Original OAuth access token in `Authorization` header |
+| `jwt_header` | Portkey-signed JWT with claims in `X-User-JWT` header |
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["sub", "email", "workspace_id"]
+  }
+}
+```
+
+<Card title="Identity Forwarding" icon="id-card" href="/product/mcp-gateway/authentication/identity-forwarding">
+  Method comparison, claim selection, custom headers, and JWT verification.
+</Card>
+
+---
+
+## JWT Validation
+
+Validate incoming client JWTs **before** proxying to the upstream server. The gateway rejects invalid tokens at the edge — the upstream server never sees them.
+
+Supports three validation methods: **JWKS URI**, **inline JWKS keys**, and **token introspection** (RFC 7662). You can also enforce required claims and match claim values.
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+    "algorithms": ["RS256"],
+    "requiredClaims": ["sub", "email"]
+  }
+}
+```
+
+<Card title="JWT Validation" icon="shield-check" href="/product/mcp-gateway/authentication/jwt">
+  JWKS, introspection, claim matching (exact, contains, regex), and full options reference.
+</Card>
+
+---
+
+## External Auth Config
+
+<Note>Enterprise only — available for self-hosted deployments.</Note>
+
+Use an external identity provider (Okta, Auth0, Azure AD, Cognito) instead of Portkey's built-in OAuth. Users authenticate with corporate credentials.
+
+```json
+{
+  "external_auth_config": {
+    "authorization_endpoint": "https://idp.example.com/authorize",
+    "token_endpoint": "https://idp.example.com/token",
+    "scope": "openid profile mcp"
+  }
+}
+```
+
+Supports both dynamic client registration and pre-registered client credentials.
+
+<Card title="Bring Your Own Auth" icon="building" href="/product/mcp-gateway/authentication/external-oauth">
+  Full setup for external OAuth providers, dynamic registration, and pre-registered credentials.
+</Card>
+
+---
+
+## Combining Options
+
+You can combine multiple keys in a single configuration:
+
+```json
+{
+  "forward_headers": ["X-Request-Id", "X-Trace-Id"],
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["sub", "email", "workspace_id"]
+  },
+  "jwt_validation": {
+    "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+    "requiredClaims": ["sub"],
+    "claimValues": {
+      "iss": {
+        "values": "https://auth.example.com",
+        "matchType": "exact"
+      }
+    }
+  }
+}
+```
+
+This validates the client JWT, forwards trace headers, and sends user identity to the upstream — all in one integration.
