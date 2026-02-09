@@ -96,3 +96,66 @@ The `@provider-slug/model-name` format automatically routes to the correct provi
 - Ensure LLMs in your list are compatible with your use case
 - Monitor usage per LLM—weight distribution affects spend
 - Each LLM has different latency and pricing
+
+
+
+## Sticky Load Balancing
+
+Sticky load balancing ensures that requests with the same identifier are consistently routed to the same target. This is useful for:
+
+- Maintaining conversation context across multiple requests
+- Ensuring consistent model behavior for A/B testing
+- Session-based routing for user-specific experiences
+
+### Configuration
+
+Add `sticky_session` to your load balancing strategy:
+
+```json
+{
+  "strategy": {
+    "mode": "loadbalance",
+    "sticky_session": {
+      "hash_fields": ["metadata.user_id"],
+      "ttl": 3600
+    }
+  },
+  "targets": [
+    {
+      "provider": "@openai-virtual-key",
+      "weight": 0.5
+    },
+    {
+      "provider": "@anthropic-virtual-key", 
+      "weight": 0.5
+    }
+  ]
+}
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `hash_fields` | array | Fields to use for generating the sticky session identifier. Supports dot notation for nested fields (e.g., `metadata.user_id`, `metadata.session_id`) |
+| `ttl` | number | Time-to-live in seconds for the sticky session. After this period, a new target may be selected. Default: 3600 (1 hour) |
+
+### How It Works
+
+1. **Identifier Generation**: When a request arrives, Portkey generates a hash from the specified `hash_fields` values
+2. **Target Lookup**: The hash is used to look up the previously assigned target from cache
+3. **Consistent Routing**: If a cached assignment exists and hasn't expired, the request goes to the same target
+4. **New Assignment**: If no cached assignment exists, a new target is selected based on weights and cached for future requests
+
+<Note>
+Sticky sessions use a two-tier cache system (in-memory + Redis) for fast lookups and persistence across gateway instances in distributed deployments.
+</Note>
+
+## Caveats and Considerations
+
+While the Load Balancing feature offers numerous benefits, there are a few things to consider:
+
+1. Ensure the LLMs in your list are compatible with your use case. Not all LLMs offer the same capabilities or respond in the same format.
+2. Be aware of your usage with each LLM. Depending on your weight distribution, your usage with each LLM could vary significantly.
+3. Keep in mind that each LLM has its own latency and pricing. Diversifying your traffic could have implications on the cost and response time.
+4. **Sticky sessions** require Redis for persistence across gateway instances. Without Redis, sticky sessions will only work within a single gateway instance's memory.
