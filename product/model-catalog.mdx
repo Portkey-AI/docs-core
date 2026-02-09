@@ -25,49 +25,65 @@ The Model Catalog is a centralized hub for viewing and managing all AI providers
 
 <CardGroup cols={2}>
   <Card title="AI Providers" icon="sparkles" color="#444">
-    AI Providers represent connections to AI services. Each AI Provider has:
+    AI Providers are what you use in your code. Each provider has:
 
     - ✅ A unique slug (e.g., `@openai-prod`)
     - ✅ Securely stored credentials
     - ✅ Budget and rate limits
     - ✅ Access to specific models
+
+    **To use:** Add a provider, then use `@provider-slug/model-name` in your code.
   </Card>
   <Card title="Models" icon="microchip-ai" iconType="regular" color="#444">
-    The Models section is a gallery of all AI models available. Each Model entry includes:
+    The Models section is a gallery of all AI models available in your workspace. Each Model entry includes:
 
     - ✅ Model slug (`@openai-prod/gpt-4o`)
     - ✅ Ready-to-use code snippets
     - ✅ Input/output token limits
     - ✅ Pricing information (where available)
+    
+    [View all available models →](https://app.portkey.ai/model-catalog/models)
   </Card>
 </CardGroup>
 
 ## Adding an AI Provider
 
-You can add providers via **UI** (follow the steps below) or [**API**](/api-reference/admin-api/introduction).
+Add providers via **UI** (follow the steps below) or [**API**](/api-reference/admin-api/introduction).
 
 <Steps>
   <Step title="Go to AI Providers → Add Provider">
+    Navigate to the [Model Catalog](https://app.portkey.ai/model-catalog) in your Portkey dashboard.
+    
     <Frame>
       <img src="/Screenshot2025-07-21at5.29.57PM.png" alt="Portkey Model Catalog - Add Provider" />
     </Frame>
   </Step>
-  <Step title="Select the AI Service to integrate">
+  <Step title="Select the AI Service">
     Choose from list (OpenAI, Anthropic, etc.) or _Self-hosted / Custom_.
 
     <Frame>
       <img src="/Screenshot2025-07-21at5.31.49PM.png" alt="Portkey Model Catalog - Add Provider - Choose Service" />
     </Frame>
   </Step>
-  <Step title="Enter Credentials">
-    Choose existing credentials or create new ones.
+  <Step title="Choose or Create Credentials">
+    **If credentials already exist:**
+    - Select from the dropdown (if your org admin set them up)
+    - Skip to step 4 - no API keys needed!
+
+    **If creating new credentials:**
+    - Choose "Create new credentials"
+    - Enter your API keys here
+
+    <Note>
+    Creating new credentials here automatically creates a workspace-linked integration. To share credentials across multiple workspaces, create them in the [Integrations](/product/model-catalog/integrations) page (org admin only).
+    </Note>
 
     <Frame>
       <img src="/Screenshot2025-07-21at5.34.13PM.png" alt="Model Catalog - Add credentials" />
     </Frame>
   </Step>
-  <Step title="Enter provider details & save">
-    Choose the name and slug for this provider. The slug cannot be changed later and will be used to reference the AI models.
+  <Step title="Name your provider & save">
+    Choose a name and slug for this provider. The slug (e.g., `openai-prod`) will be used in your code like `@openai-prod/gpt-4o`.
 
     <Frame>
       <img src="/Screenshot2025-07-21at5.36.14PM.png" alt="Model Catalog - Add Provider Details" />
@@ -77,9 +93,7 @@ You can add providers via **UI** (follow the steps below) or [**API**](/api-refe
 
 ## Using Provider Models
 
-Once you have AI Providers set up, you can use their models in your applications through various methods.
-
-### 1. Model String Composition (Recommended)
+Once you have AI Providers set up, use their models in your applications. There are three methods - we recommend the model prefix format for clarity.
 
 In Portkey, model strings follow this format:
 
@@ -153,7 +167,7 @@ curl https://api.portkey.ai/v1/chat/completions \
 
 ### 2. Using the `provider` header
 
-You can also specify the provider in the header instead of the model string. Remember to add the `@` before your provider slug.
+Specify the provider separately using the `provider` parameter. Remember to add the `@` before your provider slug.
 
 <CodeGroup>
 
@@ -235,29 +249,14 @@ curl https://api.portkey.ai/v1/chat/completions \
 
 ### 3. Specify `provider` in the config
 
-Portkey's configs are simple JSON structures that help you define routing logic for LLM requests. You can learn more about them [here](/product/ai-gateway/configs).
+Portkey's configs are simple JSON structures that help you define routing logic for LLM requests. Learn more [here](/product/ai-gateway/configs).
 
-Portkey's config allows you to declare either the `provider` OR `provider+model` configuration in your routing config. Here's how:
+There are three ways to specify providers in configs:
 
-**1. Defining the Provider**
-```json
-// Specify provider in the config
-{
-	"provider": "@openai-prod"
-}
-```
+**Method 1: Model in override_params (Recommended)**
 
-**2. Defining the Provider + Model**
-```json
-// Specify the model string in "override_params"
-{
-  "override_params": {
-    "model": "@openai-prod/gpt-4o"
-  }
-}
-```
+Specify provider and model together in `override_params`. Works great with multi-provider strategies:
 
-Using `overide_params` in  strategy
 ```json
 {
 	"strategy": { "mode": "fallback" },
@@ -265,6 +264,35 @@ Using `overide_params` in  strategy
 		"override_params": { "model": "@openai-prod/gpt-4o" }
 	}, {
 		"override_params": { "model": "@anthropic/claude-3-sonnet" }
+	}]
+}
+```
+
+**Method 2: Provider in target**
+
+Specify provider directly in the target (remember the `@` symbol):
+
+```json
+{
+	"strategy": { "mode": "single" },
+	"targets": [{
+		"provider": "@openai-prod",
+		"override_params": {
+			"model": "gpt-4o"
+		}
+	}]
+}
+```
+
+**Method 3: Legacy virtual_key (Backwards Compatible)**
+
+The `virtual_key` field still works:
+
+```json
+{
+	"strategy": { "mode": "single" },
+	"targets": [{
+		"virtual_key": "openai-prod"
 	}]
 }
 ```
