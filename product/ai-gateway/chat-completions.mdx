@@ -1,0 +1,539 @@
+---
+title: "Chat Completions"
+description: "Use OpenAI-compatible Chat Completions with any LLM provider through Portkey's AI Gateway."
+---
+
+<Info>
+Available on all Portkey [plans](https://portkey.ai/pricing).
+</Info>
+
+The [Chat Completions](https://platform.openai.com/docs/api-reference/chat) API is the most widely adopted format for LLM interaction. Portkey makes it work with **every provider** — send the same `POST /v1/chat/completions` request to OpenAI, Anthropic, Gemini, Bedrock, or any of the 3000+ supported models.
+
+## Quick Start
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[{"role": "user", "content": "Explain quantum computing in simple terms"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript JavaScript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+const response = await portkey.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [{ role: "user", content: "Explain quantum computing in simple terms" }]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-provider/gpt-4o",
+    "messages": [{"role": "user", "content": "Explain quantum computing in simple terms"}]
+  }'
+```
+</CodeGroup>
+
+<Info>
+Switch `model` to use any provider — `@anthropic-provider/claude-sonnet-4-5-20250514`, `@google-provider/gemini-2.0-flash`, or any of the 3000+ supported models.
+</Info>
+
+### Using the OpenAI SDK
+
+The Portkey SDK is a superset of the OpenAI SDK, so all Chat Completions methods work identically. The OpenAI SDK also works directly with Portkey's base URL:
+
+<CodeGroup>
+```python OpenAI Python SDK
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai/v1"
+)
+
+response = client.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[{"role": "user", "content": "Explain quantum computing in simple terms"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript OpenAI Node SDK
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai/v1"
+});
+
+const response = await client.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [{ role: "user", content: "Explain quantum computing in simple terms" }]
+});
+
+console.log(response.choices[0].message.content);
+```
+</CodeGroup>
+
+## System Messages
+
+Set a system prompt using the `system` role in the messages array:
+
+<CodeGroup>
+```python Python
+response = portkey.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[
+        {"role": "system", "content": "You are a pirate. Always respond in pirate speak."},
+        {"role": "user", "content": "Say hello."}
+    ]
+)
+```
+
+```javascript JavaScript
+const response = await portkey.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [
+        { role: "system", content: "You are a pirate. Always respond in pirate speak." },
+        { role: "user", content: "Say hello." }
+    ]
+});
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-provider/gpt-4o",
+    "messages": [
+      {"role": "system", "content": "You are a pirate. Always respond in pirate speak."},
+      {"role": "user", "content": "Say hello."}
+    ]
+  }'
+```
+</CodeGroup>
+
+## Streaming
+
+Stream responses token-by-token with `stream: true`.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+stream = portkey.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[{"role": "user", "content": "Write a haiku about AI"}],
+    stream=True
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)
+```
+
+```javascript JavaScript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+const stream = await portkey.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [{ role: "user", content: "Write a haiku about AI" }],
+    stream: true
+});
+
+for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content;
+    if (content) process.stdout.write(content);
+}
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-provider/gpt-4o",
+    "messages": [{"role": "user", "content": "Write a haiku about AI"}],
+    "stream": true
+  }'
+```
+</CodeGroup>
+
+## Function Calling
+
+Define tools with the `tools` parameter. Works across all providers that support function calling.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[{"role": "user", "content": "What's the weather in San Francisco?"}],
+    tools=[{
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get current weather for a location",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string", "description": "City name"}
+                },
+                "required": ["location"]
+            }
+        }
+    }]
+)
+
+tool_call = response.choices[0].message.tool_calls[0]
+print(f"Function: {tool_call.function.name}")
+print(f"Arguments: {tool_call.function.arguments}")
+```
+
+```javascript JavaScript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+const response = await portkey.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [{ role: "user", content: "What's the weather in San Francisco?" }],
+    tools: [{
+        type: "function",
+        function: {
+            name: "get_weather",
+            description: "Get current weather for a location",
+            parameters: {
+                type: "object",
+                properties: {
+                    location: { type: "string", description: "City name" }
+                },
+                required: ["location"]
+            }
+        }
+    }]
+});
+
+const toolCall = response.choices[0].message.tool_calls[0];
+console.log(`Function: ${toolCall.function.name}`);
+console.log(`Arguments: ${toolCall.function.arguments}`);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-provider/gpt-4o",
+    "messages": [{"role": "user", "content": "What'\''s the weather in San Francisco?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string", "description": "City name"}
+          },
+          "required": ["location"]
+        }
+      }
+    }]
+  }'
+```
+</CodeGroup>
+
+### Function Call Results
+
+Pass tool results back to continue the conversation:
+
+<CodeGroup>
+```python Python
+response = portkey.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[
+        {"role": "user", "content": "What's the weather in Paris?"},
+        {"role": "assistant", "tool_calls": [{"id": "call_123", "type": "function", "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'}}]},
+        {"role": "tool", "tool_call_id": "call_123", "content": '{"temp": "22°C", "condition": "sunny"}'}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript JavaScript
+const response = await portkey.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [
+        { role: "user", content: "What's the weather in Paris?" },
+        { role: "assistant", tool_calls: [{ id: "call_123", type: "function", function: { name: "get_weather", arguments: '{"location": "Paris"}' } }] },
+        { role: "tool", tool_call_id: "call_123", content: '{"temp": "22°C", "condition": "sunny"}' }
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+</CodeGroup>
+
+## Vision
+
+Send images in the `content` array using the `image_url` type. Works with all vision-capable models.
+
+<CodeGroup>
+```python Python
+response = portkey.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this image"},
+            {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+        ]
+    }]
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript JavaScript
+const response = await portkey.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [{
+        role: "user",
+        content: [
+            { type: "text", text: "Describe this image" },
+            { type: "image_url", image_url: { url: "https://example.com/image.jpg" } }
+        ]
+    }]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-provider/gpt-4o",
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "Describe this image"},
+        {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+      ]
+    }]
+  }'
+```
+</CodeGroup>
+
+Base64-encoded images are also supported — pass a data URL as the `url` value:
+
+```python Python
+{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQ..."}}
+```
+
+## Structured Output
+
+### JSON Schema
+
+Force the model to return structured JSON matching a specific schema:
+
+<CodeGroup>
+```python Python
+response = portkey.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[{"role": "user", "content": "Extract: John is 30 years old"}],
+    response_format={
+        "type": "json_schema",
+        "json_schema": {
+            "name": "person",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"}
+                },
+                "required": ["name", "age"],
+                "additionalProperties": False
+            }
+        }
+    }
+)
+
+print(response.choices[0].message.content)  # {"name": "John", "age": 30}
+```
+
+```javascript JavaScript
+const response = await portkey.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [{ role: "user", content: "Extract: John is 30 years old" }],
+    response_format: {
+        type: "json_schema",
+        json_schema: {
+            name: "person",
+            schema: {
+                type: "object",
+                properties: {
+                    name: { type: "string" },
+                    age: { type: "integer" }
+                },
+                required: ["name", "age"],
+                additionalProperties: false
+            }
+        }
+    }
+});
+
+console.log(response.choices[0].message.content);
+```
+</CodeGroup>
+
+### JSON Mode
+
+For free-form JSON output without a strict schema:
+
+<CodeGroup>
+```python Python
+response = portkey.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[{"role": "user", "content": "List 3 programming languages and their main use cases as JSON"}],
+    response_format={"type": "json_object"}
+)
+```
+
+```javascript JavaScript
+const response = await portkey.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [{ role: "user", content: "List 3 programming languages and their main use cases as JSON" }],
+    response_format: { type: "json_object" }
+});
+```
+</CodeGroup>
+
+## Multi-turn Conversations
+
+Pass the full conversation history in the `messages` array:
+
+<CodeGroup>
+```python Python
+response = portkey.chat.completions.create(
+    model="@openai-provider/gpt-4o",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "My name is Alice."},
+        {"role": "assistant", "content": "Hello Alice! How can I help you?"},
+        {"role": "user", "content": "What is my name?"}
+    ]
+)
+
+print(response.choices[0].message.content)  # "Your name is Alice."
+```
+
+```javascript JavaScript
+const response = await portkey.chat.completions.create({
+    model: "@openai-provider/gpt-4o",
+    messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "My name is Alice." },
+        { role: "assistant", content: "Hello Alice! How can I help you?" },
+        { role: "user", content: "What is my name?" }
+    ]
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-provider/gpt-4o",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "My name is Alice."},
+      {"role": "assistant", "content": "Hello Alice! How can I help you?"},
+      {"role": "user", "content": "What is my name?"}
+    ]
+  }'
+```
+</CodeGroup>
+
+## Using with Portkey Features
+
+Chat Completions works with all Portkey gateway features:
+
+- **[Configs](/product/ai-gateway/configs)** -- Route, load balance, and set fallbacks
+- **[Caching](/product/ai-gateway/cache-simple-and-semantic)** -- Cache responses for faster, cheaper calls
+- **[Guardrails](/product/guardrails)** -- Add input/output guardrails
+- **[Observability](/product/observability)** -- Full logging and tracing
+
+<CodeGroup>
+```python Python
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pp-config-xxx"  # Config with fallbacks, load balancing, etc.
+)
+
+response = portkey.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: pp-config-xxx" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+</CodeGroup>
+
+## API Reference
+
+- [Chat Completions](/api-reference/inference-api/chat) -- `POST /v1/chat/completions`
+
+<CardGroup cols={2}>
+  <Card title="OpenAI Chat API Docs" icon="book" href="https://platform.openai.com/docs/api-reference/chat">
+    OpenAI specification
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/inference-api/chat">
+    Portkey Chat Completions reference
+  </Card>
+  <Card title="Universal API" icon="arrows-rotate" href="/product/ai-gateway/universal-api">
+    All three API formats
+  </Card>
+  <Card title="Function Calling Guide" icon="wrench" href="/product/ai-gateway/multimodal-capabilities/function-calling">
+    Detailed function calling guide
+  </Card>
+</CardGroup>
