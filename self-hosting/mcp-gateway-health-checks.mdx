@@ -1,0 +1,257 @@
+---
+title: "MCP Gateway health checks"
+description: Configure health check endpoints for self-hosted MCP Gateway deployments to ensure reliable operation with load balancers and orchestration platforms.
+---
+
+<Note>
+This guide applies to **enterprise self-hosted deployments** of the MCP Gateway. The managed Portkey service handles health checks automatically.
+</Note>
+
+## Quick start
+
+The MCP Gateway exposes a health check endpoint that returns the service status:
+
+```bash
+curl http://localhost:8788/v1/health
+```
+
+A healthy response returns HTTP 200 with service status information.
+
+## Configuration
+
+### Required environment variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `SERVER_MODE` | Set to `mcp` or `all` to enable MCP Gateway | `all` |
+| `MCP_PORT` | Port for MCP Gateway (default: 8788) | `8788` |
+| `MCP_GATEWAY_BASE_URL` | Public URL where MCP Gateway is accessible | `https://mcp.example.com` |
+
+```yaml
+environment:
+  data:
+    SERVER_MODE: "all"
+    MCP_PORT: "8788"
+    MCP_GATEWAY_BASE_URL: "https://mcp.example.com"
+```
+
+<Warning>
+`MCP_GATEWAY_BASE_URL` must be set to the externally accessible URL of your MCP Gateway. This is a common source of timeout errors when misconfigured.
+</Warning>
+
+### Health endpoint details
+
+| Property | Value |
+|----------|-------|
+| Endpoint | `/v1/health` |
+| Port | 8788 (configurable via `MCP_PORT`) |
+| Method | GET |
+| Success response | HTTP 200 |
+
+## Docker Compose
+
+```yaml
+services:
+  portkey-gateway:
+    image: portkeyai/gateway_enterprise:latest
+    ports:
+      - "8787:8787"  # AI Gateway
+      - "8788:8788"  # MCP Gateway
+    environment:
+      SERVER_MODE: "all"
+      MCP_PORT: "8788"
+      MCP_GATEWAY_BASE_URL: "http://localhost:8788"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8788/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+```
+
+## Kubernetes
+
+### Readiness and liveness probes
+
+Add probes to your deployment manifest:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portkey-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway
+          ports:
+            - containerPort: 8787
+              name: ai-gateway
+            - containerPort: 8788
+              name: mcp-gateway
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8788
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8788
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+```
+
+### Load balancer health checks
+
+#### AWS Application Load Balancer
+
+```yaml
+ingress:
+  enabled: true
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /v1/health
+    alb.ingress.kubernetes.io/healthcheck-port: "8788"
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+```
+
+#### AWS Network Load Balancer
+
+```yaml
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/v1/health"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "http"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "8788"
+```
+
+#### GCP Load Balancer
+
+```yaml
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: gce
+    ingress.gcp.kubernetes.io/healthcheck-path: /v1/health
+```
+
+#### Azure Load Balancer
+
+```yaml
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-protocol: "http"
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/v1/health"
+```
+
+## Troubleshooting
+
+### Timeout errors
+
+Timeout errors are typically caused by one of these issues:
+
+<AccordionGroup>
+  <Accordion title="MCP_GATEWAY_BASE_URL misconfiguration">
+    **Symptoms:** Clients can connect but requests timeout or fail intermittently.
+
+    **Solution:** Ensure `MCP_GATEWAY_BASE_URL` is set to the externally accessible URL:
+    
+    ```yaml
+    # Incorrect - internal service name
+    MCP_GATEWAY_BASE_URL: "http://portkey-gateway:8788"
+    
+    # Correct - external URL
+    MCP_GATEWAY_BASE_URL: "https://mcp.yourdomain.com"
+    ```
+    
+    After the load balancer is created and DNS is configured, update this value and redeploy.
+  </Accordion>
+
+  <Accordion title="DNS resolution failures">
+    **Symptoms:** Health checks fail with connection refused or DNS errors.
+
+    **Checklist:**
+    - Verify DNS records point to the correct load balancer IP
+    - Check that pods can resolve the `MCP_GATEWAY_BASE_URL` hostname
+    - Test from within the cluster: `kubectl exec -it <pod> -- nslookup mcp.yourdomain.com`
+  </Accordion>
+
+  <Accordion title="Network routing issues">
+    **Symptoms:** Health checks pass locally but fail from load balancer.
+
+    **Checklist:**
+    - Verify security groups allow traffic on port 8788
+    - Check that the load balancer target group includes the correct pods
+    - Ensure network policies allow ingress on port 8788
+    - Test connectivity: `kubectl port-forward <pod> 8788:8788` then `curl localhost:8788/v1/health`
+  </Accordion>
+
+  <Accordion title="Firewall and security group rules">
+    **Symptoms:** External health checks fail, internal checks pass.
+
+    **Required rules:**
+    - Allow inbound TCP on port 8788 from load balancer health check IPs
+    - Allow inbound TCP on port 8788 from client CIDR ranges
+    - For AWS: Ensure security group allows traffic from the load balancer's security group
+  </Accordion>
+</AccordionGroup>
+
+### Diagnostic commands
+
+```bash
+# Check pod health directly
+kubectl exec -it <pod-name> -- curl -v http://localhost:8788/v1/health
+
+# Check service endpoint
+kubectl get endpoints portkey-gateway -o yaml
+
+# View pod logs for health check failures
+kubectl logs <pod-name> | grep -i health
+
+# Test DNS resolution from pod
+kubectl exec -it <pod-name> -- nslookup mcp.yourdomain.com
+
+# Check if port is listening
+kubectl exec -it <pod-name> -- netstat -tlnp | grep 8788
+```
+
+### Common misconfigurations
+
+| Issue | Symptom | Fix |
+|-------|---------|-----|
+| Wrong port in health check | Load balancer marks targets unhealthy | Use port 8788, not 8787 |
+| Missing `SERVER_MODE` | MCP Gateway not running | Set `SERVER_MODE: "mcp"` or `"all"` |
+| `MCP_GATEWAY_BASE_URL` not set | OAuth flows fail, timeouts | Set to external URL after LB creation |
+| Health check path typo | 404 responses | Use exactly `/v1/health` |
+
+## Verification
+
+After configuration, verify health checks are working:
+
+1. **Direct pod check:**
+   ```bash
+   kubectl port-forward <pod> 8788:8788
+   curl http://localhost:8788/v1/health
+   ```
+
+2. **Load balancer check:**
+   ```bash
+   curl http://<load-balancer-url>:8788/v1/health
+   ```
+
+3. **Monitor health check status:**
+   - AWS: Check target group health in EC2 console
+   - GCP: Check backend service health in Cloud Console
+   - Azure: Check load balancer health probes in Azure Portal
+
+<Card title="Cloud deployment guides" icon="cloud" href="/self-hosting/hybrid-deployments/architecture">
+  See platform-specific deployment guides for AWS EKS, GCP GKE, and Azure AKS.
+</Card>
