@@ -54,6 +54,7 @@ model = "@openai-prod/gpt-4o"
 name = "Portkey"
 base_url = "https://api.portkey.ai/v1"
 env_key = "PORTKEY_API_KEY"
+# wire_api = "chat"   # optional: "chat" (default) or "responses"
 ```
 
 Set the API key in your environment:
@@ -78,20 +79,65 @@ Monitor usage in the [Portkey Dashboard](https://app.portkey.ai/dashboard).
 
 Codex uses the `model` value in `config.toml` to decide which model to call. With Portkey, the model is a **virtual key** in the form `@<provider-slug>/<model-id>`. Change providers or models by updating `model` in your config.
 
-**Examples:**
+Example:
 
 ```toml
-# OpenAI
 model = "@openai-prod/gpt-4o"
-
-# Anthropic
-model = "@anthropic-prod/claude-3-5-sonnet-20241022"
-
-# Google
-model = "@google-prod/gemini-2.0-flash-exp"
 ```
 
-Use the provider slugs you created in the [Model Catalog](https://app.portkey.ai/model-catalog). After editing `~/.codex/config.toml` (or `.codex/config.toml` in the project), the next Codex run uses the new model.
+In the [Model Catalog](https://app.portkey.ai/model-catalog), use the copy button next to a provider or virtual model to copy its virtual key to the clipboard, then paste it into `model`. After editing `~/.codex/config.toml` (or `.codex/config.toml` in the project), the next Codex run uses the new model.
+
+### Provider and model options
+
+Tune the Portkey provider and the active model with these options in `config.toml`. All keys follow the [Codex config reference](https://developers.openai.com/codex/config-reference).
+
+**Provider protocol (`wire_api`)**  
+Under `[model_providers.portkey]`, set `wire_api` to choose which API protocol Codex uses when talking to the provider:
+
+| Value       | Description |
+| ----------- | ----------- |
+| `"chat"`    | Chat Completions API (default if omitted). Use for standard chat/completion models. |
+| `"responses"` | [Responses API](https://developers.openai.com/docs/guides/responses). Use for models that support structured reasoning and tool use via the Responses API. |
+
+Example with protocol and optional retry/timeout tuning:
+
+```toml
+[model_providers.portkey]
+name = "Portkey"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+wire_api = "responses"
+# request_max_retries = 4
+# stream_idle_timeout_ms = 300000
+```
+
+**Reasoning and behavior (top-level)**  
+These apply to the current session model; they are especially relevant when using reasoning-capable models or the Responses API:
+
+| Key | Values | Description |
+| --- | ------ | ----------- |
+| `model_reasoning_effort` | `minimal`, `low`, `medium`, `high`, `xhigh` | How much reasoning effort the model uses (Responses API). Higher values can improve quality and latency. `xhigh` is model-dependent. |
+| `model_reasoning_summary` | `auto`, `concise`, `detailed`, `none` | How much reasoning summary to include or to disable summaries. |
+| `personality` | `none`, `friendly`, `pragmatic` | Default communication style for models that support it. Overridable per thread or via `/personality` in-session. |
+
+Example:
+
+```toml
+model_provider = "portkey"
+model = "@openai-prod/gpt-4o"
+
+model_reasoning_effort = "high"
+model_reasoning_summary = "concise"
+personality = "pragmatic"
+
+[model_providers.portkey]
+name = "Portkey"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+wire_api = "chat"
+```
+
+Use `wire_api = "responses"` when your Portkey virtual model is backed by a Responses API–capable model; pair it with `model_reasoning_effort` and `model_reasoning_summary` as needed.
 
 <Note>
 **Fallbacks, load balancing, or caching?** Create a [Portkey Config](/product/ai-gateway/configs), attach it to your API key, and set `model` to the config’s virtual model. See [Enterprise Governance](#3-enterprise-governance) for examples.
