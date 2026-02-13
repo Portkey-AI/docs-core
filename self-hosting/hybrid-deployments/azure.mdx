@@ -158,14 +158,105 @@ environment:
 
 ## Network Configuration
 
-**Set up external access to the Gateway**
+### Set Up External Access
 
-To ensure the Gateway service is accessible externally, create either an internal or internet-facing Load Balancer.
+To make the Gateway service accessible externally, you can set up either of the following:
 
+* **Azure Load Balancer** with NGINX `Ingress` controller
+* **Azure Load Balancer** with Kubernetes `Service`
+
+#### Azure Load Balancer with NGINX Ingress Controller
+Recommended if `SERVER_MODE` is set to `all`
+
+1.  Enable application routing add-on.
+  ```sh
+    RESOURCE_GROUP=<RESOURCE_GROUP_NAME>             # Provide name of resource group in which AKS cluster exists 
+    CLUSTER_NAME=<CLUSTER_NAME>                      # Provide name of AKS cluster
+    az aks approuting enable
+      --resource-group ${RESOURCE_GROUP}
+      --name ${CLUSTER_NAME}
+      --nginx None
+  ```
+2. Create NGINX Ingress Controller
+
+  **External LB with Static IP**
+  ```sh
+  STATIC_IP_NAME=portkey-lb-static-ip
+  # Create Static Public IP to associate with LB
+  az network public-ip create \
+    --resource-group ${RESOURCE_GROUP} \
+    --name ${STATIC_IP_NAME} \
+    --sku Standard \
+    --allocation-method static
+
+  # Delegate AKS cluster permission to created Public IP
+  CLIENT_ID=$(az aks show --name ${CLUSTER_NAME} --resource-group ${RESOURCE_GROUP} --query identity.principalId -o tsv)
+  RG_SCOPE=$(az group show --name ${RESOURCE_GROUP} --query id -o tsv)
+  az role assignment create \
+    --assignee ${CLIENT_ID} \
+    --role "Network Contributor" \
+    --scope ${RG_SCOPE}
+
+  # Create External NGINX Ingress Controller
+  kubectl apply -f - <<EOF
+  apiVersion: approuting.kubernetes.azure.com/v1alpha1
+  kind: NginxIngressController
+  metadata:
+    name: nginx-static
+  spec:
+    ingressClassName: nginx-static
+    controllerNamePrefix: nginx-static
+    loadBalancerAnnotations: 
+      service.beta.kubernetes.io/azure-pip-name: "${STATIC_IP_NAME}"
+      service.beta.kubernetes.io/azure-load-balancer-resource-group: "${RESOURCE_GROUP}"
+  EOF
+  ```
+  **Internal LB with Private IPv4 IP**
+  ```sh
+  kubectl apply -f - <<EOF
+  apiVersion: approuting.kubernetes.azure.com/v1alpha1
+  kind: NginxIngressController
+  metadata:
+    name: nginx-internal
+  spec:
+    ingressClassName: nginx-internal
+    controllerNamePrefix: nginx-internal
+    loadBalancerAnnotations: 
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+  EOF
+  ```
+  
+3. Update `values.yaml` with following configuration
+```yaml
+ingress:
+  enabled: true
+  ingressClassName: "<NginxIngressControllerName>"          # Set 'nginx-static' for External LB and 'nginx-internal' for Internal LB      
+  # hostname: "<AI Gateway Hostname>"                       
+  # hostBased: true
+  # mcpHostname: "<MCP Gateway Hostname>"
+  annotations: 
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/v1/health"
+```
+4. Retrieve IP address of Azure Load Balancer.
+```sh
+IP=$(kubectl get ingress portkey-ai-gateway -n portkeyai -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo ${IP}
+```
+**Notes:** 
+
+- If `SERVER_MODE` is set to `all` (i.e., both AI Gateway and MCP Gateway are enabled), you must enable host-based routing by setting `hostBased: true` and specify the hostname through which the AI Gateway and MCP Gateway will be accessed.
+
+- After the Load Balancer is provisioned, create a DNS record in your public or private hosted zone that points to the Load Balancer’s static public or private IPv4 address. If `SERVER_MODE` is set to `all`, you must create two separate DNS records—one for the AI Gateway hostname and one for the MCP Gateway hostname—each pointing to the Load Balancer IP.
+
+- The Azure Load Balancer NGINX Controller supports additional annotations—such as TLS configuration, custom health checks, and more—for managing the Ingress load balancer. For a complete list of supported annotations, refer to the [Azure NGINX Load Balancer ingress](https://learn.microsoft.com/en-us/azure/aks/app-routing).
+
+
+#### Azure Load Balancer with Kubernetes Service
 ```yaml   
 service:
   type: LoadBalancer
-  port: 8787
+  port: 80                                                                                          # LB listener port                                                 
+  containerPort: 8787  
   annotations: 
     # Specify the type of Load Balancer to create - internal or internet-facing 
     service.beta.kubernetes.io/azure-load-balancer-internal: "false"                      
@@ -175,37 +266,9 @@ service:
     # Replace the cidr ranges to make it more restrictive
     service.beta.kubernetes.io/azure-allowed-ip-ranges: 0.0.0.0/0                                                       
 ```
+Azure Load Balancer supports various annotations to fine-tune its configuration. For a complete list of supported annotations, see the Azure Load Balancer [annotations](https://cloud-provider-azure.sigs.k8s.io/topics/loadbalancer/#loadbalancer-annotations).
 
-**Note:** If you choose an internal load balancer, it must be exposed via a public-facing service (e.g., Application Gateway, Azure Front Door) to allow the Control Plane to communicate with the Data Plane.
-
-**Note:** If `SERVER_MODE` is set to `all` (i.e., both AI Gateway and MCP Gateway are enabled), you must configure host-based routing or use separate load balancers for each gateway. For host-based routing, use an Application Gateway or Azure Front Door with appropriate hostname configurations.
-
-Additionally, Azure Load Balancer supports various annotations to fine-tune its configuration. For a complete list of supported annotations, see the Azure Load Balancer [annotations](https://cloud-provider-azure.sigs.k8s.io/topics/loadbalancer/#loadbalancer-annotations).
-
-### Ensure Outbound Network Access
-
-By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
-
-Example NetworkPolicy for Outbound Access:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-all-egress
-  namespace: portkeyai
-spec:
-  podSelector: {}
-  policyTypes:
-  - Egress
-  egress:
-  - to:
-    - ipBlock:
-        cidr: 0.0.0.0/0
-```
-
-This allows the Gateway to access LLMs hosted within your VNet and outside as well. This also enables connection for the sync service to the Portkey Control Plane.
-
+**Note:**`service.containerPort` must be same as `environment.data.PORT`.
 
 ## Deploying Portkey Gateway
 ```sh
@@ -256,8 +319,9 @@ To confirm that the deployment was successful, follow these steps:
       ```
     3. Test gateway service integration with Load Balancer.
       ```sh
-      # Replace <LOAD_BALANCER_IP> and <LB_LISTENER_PORT_NUMBER> with the DNS name and listener port of the created load balancer, respectively.
-      curl 'http://<LOAD_BALANCER_IP>:<LB_LISTENER_PORT_NUMBER>/v1/chat/completions' \
+      # Replace <LOAD_BALANCER_IP> and <LISTENER_PORT> with the Load Balancer's IP/DNS and listener port respectively.
+
+      curl 'http://<LB_IP>:<LISTENER_PORT>/v1/chat/completions' \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $OPENAI_API_KEY"  \
       -H "x-portkey-provider: openai" \
@@ -267,14 +331,151 @@ To confirm that the deployment was successful, follow these steps:
           "messages": [{"role": "user","content": "What is a fractal?"}]
       }'
       ```
+      
 
 
 ## Integrating Gateway with Control Plane
-Portkey supports the following methods for integrating the Control Plane with the Data Plane/Gateway:
+
+**Outbound Connectivity (Data Plane to Control Plane)**
+
+Portkey supports the following methods for integrating the Data Plane with the Control Plane for outbound connectivity:
+
+- Azure Private Link
+- Over the Internet
+
+**Ensure Outbound Network Access**
+
+By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
+
+Example NetworkPolicy for Outbound Access:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+  namespace: portkeyai
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+```
+
+This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Portkey Control Plane.
+
+#### Azure Private Link
+Establishes a secure, private connection between the Control Plane and Data Plane within the Azure network.
+
+**Steps to establish Azure Private Link connectivity:** 
+1. Contact Portkey and provide your Azure Subscription Id so it can be whitelisted in Portkey's Control Plane.
+2. Once you get confirmation from Portkey that your Azure account is whitelisted, create Azure Private Endpoint connection to Portkey Control Plane.
+  ```sh
+  # Replace <SUBNET_ID> with Subnet ID (not Subnet Name) in which Portkey gateway is deployed.
+
+  az network private-endpoint create \
+    --name portkey-cp-pvt-endpoint \
+    --resource-group ${RESOURCE_GROUP} \
+    --subnet <SUBNET_ID> \
+    --private-connection-resource-id "/subscriptions/4bec865f-23ea-4d04-be20-3e883cbb3eb1/resourceGroups/privatelink/providers/Microsoft.Network/privateLinkServices/privatelink-proxy-pls" \
+    --connection-name portkey-cp-pvt-connection
+  ```
+3. Retrieve Private IP of created endpoint.
+  ```sh
+  PE_IP=$(az network nic show --ids $(az network private-endpoint show --name portkey-cp-pvt-endpoint --resource-group ${RESOURCE_GROUP} --query "networkInterfaces[0].id" -o tsv) --query "ipConfigurations[0].privateIPAddress" -o tsv)
+  ```
+4. Contact the Portkey team and share the endpoint name with them.
+5. Once the connection request is approved, create Private Hosted Zone and link it to Gateway VNet.
+  ```sh
+  # Create PHZ
+  az network private-dns zone create \
+    --resource-group ${RESOURCE_GROUP} \
+    --name privatelink-az.portkey.ai
+
+  # Create VNet Link
+  # Replace <VNET_ID> with the VNet ID (not VNet name) of AKS Node Group.
+  # IMPORTANT!! <VNET_ID> must be full Resource ID of AKS's node group's VNet.
+  # You can find it by navigating to AKS Cluster > Settings > Networking > VNet integration > Click on VNet.
+  # On Vnet console, click on JSON View and copy Resource ID
+
+  # e.g,  
+  az network private-dns link vnet create \
+    --resource-group ${RESOURCE_GROUP} \
+    --zone-name privatelink-az.portkey.ai \
+    --name portkey-gateway-vnet-link \
+    --virtual-network "<VNET_ID>" \
+    --registration-enabled false
+  ```
+6. Create a record in the PHZ pointing to Portkey's Private Endpoint IP.
+  ```sh
+  az network private-dns record-set a add-record \
+    --resource-group ${RESOURCE_GROUP} \
+    --zone-name privatelink-az.portkey.ai \
+    --record-set-name  azure-cp \
+    --ipv4-address ${PE_IP}
+  ```
+7. Update the `values.yaml` file with the following environment variables.
+  ```yaml
+  environment:
+    create: true
+    secret: true
+    data:
+        ALBUS_BASEPATH: "https://azure-cp.privatelink-az.portkey.ai/albus"
+        CONTROL_PLANE_BASEPATH: "https://azure-cp.privatelink-az.portkey.ai/api/v1"
+        SOURCE_SYNC_API_BASEPATH: "https://azure-cp.privatelink-az.portkey.ai/api/v1/sync"
+        CONFIG_READER_PATH: "https://azure-cp.privatelink-az.portkey.ai/api/model-configs" 
+  ```
+8. Re-deploy the gateway.
+    ```sh
+    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n portkeyai  --create-namespace
+    ```
+#### Over the Internet
+
+Ensure Gateway has access to the following endpoints over the internet. 
+  - `https://api.portkey.ai`
+  - `https://albus.portkey.ai`
+
+### Inbound Connectivity (Control Plane to Data Plane)
+- Azure Private Link
+- IP Whitelisting 
+
+#### Azure Private Link
+Establishes a secure, private connection between the Control Plane and Data Plane within the Azure network.
+
+**Steps to establish Azure Private Link connectivity:** 
+1. Create a dedicated subnet for Azure Private Link Service.
+    ```sh
+    # Replace <SUBNET_CIDR> with CIDR you want to allocate to this subnet. CIDR must be at least /27, must fall within the AKS VNet CIDR range, and must not overlap with existing subnet CIDRs.
+    # IMPORTANT!! <VNET_RESOURCE_GROUP> must be the Resource Group in which AKS Node Group exists. It starts with MC_*.
+    az network vnet subnet create \
+      --resource-group ${VNET_RESOURCE_GROUP} \
+      --vnet-name <VNET_ID> \
+      --name private-endpoints-subnet \
+      --address-prefixes <SUBNET_CIDR>
+      --private-link-service-network-policies Disabled
+    ```
+2. On the Azure Portal, navigate to `Private Link services` and click **+ Create** to create a new Private Link Service (PLS).
+
+3. Select the **Subscription** and **Resource Group**, provide a name for the PLS, and click **Next**.
+
+4. Under **Outbound settings**, select the Load Balancer created for the gateway. Then choose the appropriate **frontend IP configuration** of that Load Balancer.
+
+5. In the `Source NAT subnet` field, select the dedicated PLS subnet created earlier, and click **Next**.
+
+6. Under **Access security**, select **Restricted by subscription** and whitelist the Portkey Control Plane subscription ID (`4bec865f-23ea-4d04-be20-3e883cbb3eb1`).
+
+7. Leave all other settings as default and click **Create** to provision the Private Link Service.
+
+8. Contact the Portkey team and share the **alias** of the created Private Link Service, along with the **Gateway URL**.
+
+9. Once the Portkey team has raised the connection request from their end, approve it by navigating to the PLS in the Azure Portal, then go to **Private Endpoint connections** and click **Approve**.
 
 #### IP Whitelisting
 Allows control plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Control Plane. This method requires the Data Plane to have a publicly accessible endpoint.
-To whitelist, add an inbound rule to the Azure NSG/Firewall allowing connections from the Portkey Control Plane's IP (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on required port.
+To whitelist, add an inbound rule to the Azure NSG or Firewall allowing connections from the Portkey Control Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on required port.
 
 To integrate the Control Plane with the Data Plane, contact the Portkey team and provide the **Public Endpoint** of the Data Plane.
 
@@ -423,7 +624,7 @@ environment:
     ANALYTICS_STORE: control_plane
     SERVICE_NAME: gateway                                                  
     PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>                      # REPLACE <CLIENT_AUTH> with client auth shared by Portkey team.
-    ORGANISATIONS_TO_SYNC: <ORGANIZATION_ID>                # REPLACE <ORGANIZATION_ID> with organisation_id of your account.
+    ORGANISATIONS_TO_SYNC: <ORGASIZATION_ID>                # REPLACE <ORGANISATION_ID> with organisation_id of your account.
     PORT: "8787"
 
     # Configuration for using built-in redis
