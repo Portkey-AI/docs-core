@@ -220,9 +220,11 @@ Cache reads are ~12x cheaper than cache writes, making this cost-effective for s
 
 ### Step 1: Create a context cache
 
-Use the Vertex AI `cachedContents` endpoint through Portkey to create a cache:
+Use Portkey's proxy capability with the `x-portkey-custom-host` header to call Vertex AI's native caching endpoints. This routes your request through Portkey while targeting Vertex AI's `cachedContents` API directly.
 
-```sh cURL
+<Tabs>
+  <Tab title="cURL">
+```sh
 curl --location 'https://api.portkey.ai/v1/projects/{{YOUR_PROJECT_ID}}/locations/{{LOCATION}}/cachedContents' \
 --header 'x-portkey-provider: {{@my-vertex-ai-provider}}' \
 --header 'Content-Type: application/json' \
@@ -242,24 +244,109 @@ curl --location 'https://api.portkey.ai/v1/projects/{{YOUR_PROJECT_ID}}/location
       "parts": [{
         "text": "thankyou I am your helpful assistant"
       }]
-  }]
+  }],
+  "ttl": "3600s"
 }'
 ```
+  </Tab>
+  <Tab title="Python">
+```python
+import requests
+
+YOUR_PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+MODEL_ID = "gemini-1.5-pro-001"
+
+url = f"https://api.portkey.ai/v1/projects/{YOUR_PROJECT_ID}/locations/{LOCATION}/cachedContents"
+
+headers = {
+    "x-portkey-provider": "@my-vertex-ai-provider",
+    "Content-Type": "application/json",
+    "x-portkey-api-key": "your_portkey_api_key",
+    "x-portkey-custom-host": "https://aiplatform.googleapis.com/v1"
+}
+
+payload = {
+    "model": f"projects/{YOUR_PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}",
+    "displayName": "my-cache-display-name",
+    "contents": [
+        {
+            "role": "user",
+            "parts": [{"text": "This is sample text to demonstrate explicit caching. (minimum 1024 tokens required)"}]
+        },
+        {
+            "role": "model",
+            "parts": [{"text": "Thank you, I am your helpful assistant"}]
+        }
+    ],
+    "ttl": "3600s"
+}
+
+response = requests.post(url, headers=headers, json=payload)
+cache_name = response.json().get("name")  # Save this for inference requests
+print(f"Cache created: {cache_name}")
+```
+  </Tab>
+  <Tab title="NodeJS">
+```javascript
+const YOUR_PROJECT_ID = "your-project-id";
+const LOCATION = "us-central1";
+const MODEL_ID = "gemini-1.5-pro-001";
+
+const response = await fetch(
+  `https://api.portkey.ai/v1/projects/${YOUR_PROJECT_ID}/locations/${LOCATION}/cachedContents`,
+  {
+    method: 'POST',
+    headers: {
+      'x-portkey-provider': '@my-vertex-ai-provider',
+      'Content-Type': 'application/json',
+      'x-portkey-api-key': 'your_portkey_api_key',
+      'x-portkey-custom-host': 'https://aiplatform.googleapis.com/v1'
+    },
+    body: JSON.stringify({
+      model: `projects/${YOUR_PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL_ID}`,
+      displayName: 'my-cache-display-name',
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: 'This is sample text to demonstrate explicit caching. (minimum 1024 tokens required)' }]
+        },
+        {
+          role: 'model',
+          parts: [{ text: 'Thank you, I am your helpful assistant' }]
+        }
+      ],
+      ttl: '3600s'
+    })
+  }
+);
+
+const data = await response.json();
+const cacheName = data.name; // Save this for inference requests
+console.log(`Cache created: ${cacheName}`);
+```
+  </Tab>
+</Tabs>
 
 **Request variables:**
 
 | Variable | Description |
 |----------|-------------|
-| `YOUR_PROJECT_ID` | Your Google Cloud project ID. |
-| `LOCATION` | The region where your model is deployed (e.g., `us-central1`). |
-| `MODEL_ID` | The model identifier (e.g., `gemini-1.5-pro-001`). |
-| `my-cache-display-name` | A unique name to identify your cache. |
-| `your_api_key` | Your Portkey API key. |
-| `@my-vertex-ai-provider` | Your Vertex AI provider slug from Portkey's Model Catalog. |
+| `YOUR_PROJECT_ID` | Your Google Cloud project ID |
+| `LOCATION` | The region where your model is deployed (e.g., `us-central1`) |
+| `MODEL_ID` | The Gemini model identifier (e.g., `gemini-1.5-pro-001`) |
+| `my-cache-display-name` | A unique name to identify your cache |
+| `your_api_key` | Your Portkey API key |
+| `@my-vertex-ai-provider` | Your Vertex AI provider slug from Portkey's Model Catalog |
+| `ttl` | Cache time-to-live (e.g., `3600s` for 1 hour, `86400s` for 1 day) |
 
 <Note>
-Context caching requires a minimum of 1024 tokens in the cached content. The cache has a default TTL (time-to-live) which you can configure using the `ttl` parameter.
+Context caching requires a minimum of **1024 tokens** in the cached content. The cache has a default TTL (time-to-live) which you can configure using the `ttl` parameter.
 </Note>
+
+<Warning>
+**Proxy pattern limitation:** Creating caches uses Portkey's proxy capability to forward requests to Vertex AI's native endpoints. Native endpoint support within Portkey's standard API is not planned since context caching is Gemini-specific.
+</Warning>
 
 ### Step 2: Use the cache in inference requests
 
