@@ -23,7 +23,7 @@ Ensure that following tools and resources are installed and available:
 
 
 ## Create a Portkey Account
-- Go to the [Portkey](https://portkey.ai) website.  
+- Go to the [Portkey](https://app.portkey.ai) website.  
 - Sign up for a Portkey account.  
 - Once logged in, locate and save your `Organisation ID` for future reference. You can find it in the browser URL:
   `https://app.portkey.ai/organisation/<organisation_id>/`
@@ -34,9 +34,9 @@ Ensure that following tools and resources are installed and available:
 
 ## Setup Project Environment
 ```sh
-CLUSTER_NAME=<GKE_CLUSTER_NAME>               # Specify the name of the GKE cluster where the gateway will be deployed.
-NAMESPACE=<NAMESPACE>                         # Specify the namespace where the gateway should be deployed (for example, portkeyai).
-KSA=<KSA>                                     # Provide a name for the Service Account to be associated with Gateway Pod (for example, gateway-sa)
+CLUSTER_NAME=<GKE_CLUSTER_NAME>       # Specify the name of the GKE cluster where the gateway will be deployed.
+NAMESPACE=<NAMESPACE>                 # Specify the namespace where the gateway should be deployed (for example, portkeyai).
+KSA=<KSA>                             # Provide a name for the Service Account to be associated with Gateway Pod (for example, gateway-sa)
 
 mkdir portkey-gateway
 cd portkey-gateway
@@ -288,29 +288,8 @@ service:
 
 GCP Load Balancer Controller provides additional annotations (like TLS, custom health checks etc ) for managing Service Load Balancer. For a comprehensive list of available annotations, refer to the [GCP Service Load Balancer](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/service-load-balancer-parameters).
 
-### Ensure Outbound Network Access
 
-By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
 
-Example NetworkPolicy for Outbound Access:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-all-egress
-  namespace: portkeyai
-spec:
-  podSelector: {}
-  policyTypes:
-  - Egress
-  egress:
-  - to:
-    - ipBlock:
-        cidr: 0.0.0.0/0
-```
-
-This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Portkey Control Plane.
 
 
 ## Deploying Portkey Gateway
@@ -363,7 +342,7 @@ To confirm that the deployment was successful, follow these steps:
     3. Test gateway service integration with Load Balancer.
       ```sh
       # Replace <LOAD_BALANCER_IP> and <LB_LISTENER_PORT_NUMBER> with the DNS name and listener port of the created load balancer, respectively.
-      curl 'http://<LOAD_BALANCER_IP>:8787/v1/chat/completions' \
+      curl 'http://<LOAD_BALANCER_IP>:<LB_LISTENER_PORT_NUMBER>/v1/chat/completions' \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $OPENAI_API_KEY"  \
       -H "x-portkey-provider: openai" \
@@ -376,10 +355,92 @@ To confirm that the deployment was successful, follow these steps:
 
 
 ## Integrating Gateway with Control Plane
-Portkey supports the following methods for integrating the Control Plane with the Data Plane/Gateway:
+
+**Outbound Connectivity (Data Plane to Control Plane)**
+
+Portkey supports the following methods for integrating the Data Plane with the Control Plane for outbound connectivity:
+- GCP Private Service Connect
+- Over the Internet
+
+**Ensure Outbound Network Access**
+
+By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
+
+Example NetworkPolicy for Outbound Access:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+  namespace: portkeyai
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+```
+
+This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Portkey Control Plane.
+
+#### GCP Private Service Connect
+
+Establishes a secure, private connection between the Control Plane and Data Plane within the GCP network.
+
+**Steps to establish GCP Private Service Connect connectivity:** 
+
+1. (Optional) Create a subnet in region `us-east4`. Skip if you already have a subnet in `us-east4`.
+  ```sh
+  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/28 etc
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  gcloud compute networks subnets create psc-endpoint-subnet \
+    --network=<VPC_NAME> \
+    --range=<SUBNET_CIDR> \
+    --region=us-east4
+  ```
+2. Create an IP for endpoint to be created.
+  ```sh
+  # If you already had a subnet in us-east4 and you skipped last step,
+  # Replace psc-endpoint-subnet that name if subnet you had.
+  gcloud compute addresses create psc-endpoint-ip \
+    --region=us-east4 \
+    --subnet=psc-endpoint-subnet 
+3. Contact Portkey teamm share your gcp PROJECT id and request for private connectivity. 
+4. Once your project have been whitelisted and Portkey have shared you SERVICE_ATTACHMENT_URI for PSC connection, create the forwarding rule for Control Plane's private endpoint.
+  ```sh
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created. 
+  # Replace <SERVICE_ATTACHMENT_URI> with URI you received from Portkey.
+  gcloud compute forwarding-rules create portkey-cp-pvt-endpoint-rule \
+    --region=us-east4 \
+    --network=<VPC_NAME> \
+    --address=psc-endpoint-ip \
+    --target-service-attachment=<SERVICE_ATTACHMENT_URI> 
+  ```
+
+#### Over the Internet
+
+Ensure Gateway has access to following endpoints over the internet. 
+- `https://api.portkey.ai`
+- `https://albus.portkey.ai`
+
+### Inbound Connectivity (Control Plane to Data Plane)
+
+- GCP Private Service Connect
 - IP Whitelisting 
 
+#### GCP Private Service Connect
+
+Establishes a secure, private connection between the Control Plane and Data Plane within the GCP network.
+
+**Steps to establish GCP Private Service Connect connectivity:** 
+
+[Coming soon]
+
 #### IP Whitelisting
+
 Allows control plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Control Plane. This method requires the Data Plane to have a publicly accessible endpoint.
 To whitelist, add an inbound rule to the VPC Firewall allowing connections from the Portkey Control Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on Load Balancer listner port.
 
