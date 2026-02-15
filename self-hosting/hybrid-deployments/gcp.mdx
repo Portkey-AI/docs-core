@@ -17,6 +17,7 @@ description: This enterprise-focused document provides comprehensive instruction
 Ensure that following tools and resources are installed and available:
 
 * A running [GKE cluster](https://docs.cloud.google.com/kubernetes-engine/docs/deploy-app-cluster) with at least 2 worker nodes. ( **Best Practice:** Use 2 nodes, with 1 node in each Availability Zone, to ensure high availability.)
+* VPC which host GKE cluster must have `ACTIVE` subnet with purpose `REGIONAL_MANAGED_PROXY`.
 * [gcloud CLI](https://docs.cloud.google.com/sdk/docs/install-sdk)
 * [Kubectl](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl)  
 * [Helm (v3 or above)](https://helm.sh/docs/intro/install/)  
@@ -250,21 +251,31 @@ To make the Gateway service accessible externally, you can set up either of the 
 
 **Prerequisites**
 - GKE cluster must have [HTTP Load Balancing add-on](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/container-native-load-balancing) enabled. 
+- Load Balancers require an active subnet with purpose `REGIONAL_MANAGED_PROXY`. If you don't have one, create it:
+```sh
+  # Replace <GKE_CLUSTER_REGION> with the region in which GKE cluster is created.
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/23 etc
 
+  gcloud compute networks subnets create lb-subnet \
+    --purpose=REGIONAL_MANAGED_PROXY \
+    --role=ACTIVE \
+    --region=<GKE_CLUSTER_REGION> \
+    --network=<VPC_NAME> \
+    --range=<SUBNET_CIDR>
+  ```
 #### GCP Load Balancer Ingress
+
 To create Application Load Balancer Ingress update the `values.yaml` file with following configuration: 
 ```yaml
-service:
-  type: ClusterIP
-  port: 8787
-
 ingress:
   enabled: true
+  ingressClassName: gce                                           # 'gce-internal' for creating internal ALB
   # hostname: "<AI Gateway Hostname>"
   # hostBased: true
   # mcpHostname: "<MCP Gateway Hostname>"
   annotations: 
-    kubernetes.io/ingress.class : gce
+    kubernetes.io/ingress.class : gce                             # 'gce-internal' for creating internal ALB
     ingress.gcp.kubernetes.io/healthcheck-path: /v1/health
 ```
 **Note:** If `SERVER_MODE` is set to `all` (i.e., both AI Gateway and MCP Gateway are enabled), you must enable host-based routing by setting `hostBased` to `true` and provide the hostname on which the AI Gateway and MCP Gateway will be accessible. 
@@ -392,7 +403,7 @@ Establishes a secure, private connection between the Control Plane and Data Plan
 
 **Steps to establish GCP Private Service Connect connectivity:** 
 
-1. (Optional) Create a subnet in region `us-east4`. Skip if you already have a subnet in `us-east4`.
+1. **(Optional)** Create a subnet in region `us-east4` if you don't already have one.
   ```sh
   # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/28 etc
   # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
@@ -401,15 +412,16 @@ Establishes a secure, private connection between the Control Plane and Data Plan
     --range=<SUBNET_CIDR> \
     --region=us-east4
   ```
-2. Create an IP for endpoint to be created.
+2. Create an IP address for the PSC endpoint.
   ```sh
-  # If you already had a subnet in us-east4 and you skipped last step,
-  # Replace psc-endpoint-subnet that name if subnet you had.
+  # If you already had a subnet in us-east4 and you skipped step 1,
+  # replace psc-endpoint-subnet with the name of your existing subnet.
   gcloud compute addresses create psc-endpoint-ip \
     --region=us-east4 \
     --subnet=psc-endpoint-subnet 
-3. Contact Portkey teamm share your gcp PROJECT id and request for private connectivity. 
-4. Once your project have been whitelisted and Portkey have shared you SERVICE_ATTACHMENT_URI for PSC connection, create the forwarding rule for Control Plane's private endpoint.
+  ```
+3. Contact the Portkey team, share your GCP Project ID, and request private connectivity.
+4. Once your project has been whitelisted and Portkey has shared the `SERVICE_ATTACHMENT_URI`, create the forwarding rule for the Control Plane's private endpoint.
   ```sh
   # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created. 
   # Replace <SERVICE_ATTACHMENT_URI> with URI you received from Portkey.
@@ -419,6 +431,66 @@ Establishes a secure, private connection between the Control Plane and Data Plan
     --address=psc-endpoint-ip \
     --target-service-attachment=<SERVICE_ATTACHMENT_URI> 
   ```
+5. **(Optional)** If your GKE cluster is in a different region from `us-east4`, enable global access on the PSC endpoint.
+  ```sh
+  gcloud compute forwarding-rules update portkey-cp-pvt-endpoint-rule \
+    --region=us-east4 \
+    --allow-psc-global-access
+  ```
+6. Fetch Connection ID of PSC endpoint and share it with the Portkey for connection approval.
+  ```sh
+  gcloud compute forwarding-rules describe portkey-cp-pvt-endpoint-rule \
+      --region=us-east4 \
+      --format="value(pscConnectionId)"
+  ```
+7. Once Portkey confirms approval, verify the connection status:
+  ```sh
+  gcloud compute forwarding-rules describe portkey-cp-pvt-endpoint-rule \
+    --region=us-east4 \
+    --format="get(pscConnectionStatus)"
+
+  # Should return "ACCEPTED"
+  ```
+8. Fetch Private IP of PSC endpoint.
+  ```sh
+  PSC_IP=$(gcloud compute addresses describe psc-endpoint-ip \
+    --region=us-east4 \
+    --format="value(address)")
+  echo ${PSC_IP}
+  ```
+9. Create a Private DNS Zone for DNS resolution of Control Plane PSC endpoint.
+  ```sh
+  # Replace <VPC_NAME> with VPC name of GKE cluster.
+  gcloud dns managed-zones create portkey-control-plane-pdz \
+    --dns-name="privatelink-gcp.portkey.ai." \
+    --description="Hosted Zone for DNS resolution of Portkey control plane endpoint" \
+    --visibility="private" \
+    --networks="<VPC_NAME>"
+  ```
+10. Create a DNS record to point to Portkey PSC endpoint IP.
+  ```sh
+  gcloud dns record-sets create "us-east4-gcp-cp.privatelink-gcp.portkey.ai." \                                                         130 ↵
+    --rrdatas="${PSC_IP}" \
+    --type="A" \
+    --ttl=300 \
+    --zone="portkey-control-plane-pdz"
+  ```
+11. If connection status changes to `ACCEPTED`, update the `values.yaml` file with the following environment variables.
+  ```yaml
+  environment:
+    create: true
+    secret: true
+    data:
+        ALBUS_BASEPATH: "https://us-east4.p.gcp-cp.privatelink-gcp.portkey.ai/albus"
+        CONTROL_PLANE_BASEPATH: "https://us-east4.p.gcp-cp.privatelink-gcp.portkey.ai/api/v1"
+        SOURCE_SYNC_API_BASEPATH: "us-east4.p.gcp-cp.privatelink-gcp.portkey.ai/api/v1/sync"
+        CONFIG_READER_PATH: "https://us-east4.p.gcp-cp.privatelink-gcp.portkey.ai/api/model-configs" 
+  ```
+12. Re-deploy the gateway.
+    ```sh
+    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n ${NAMESPACE}  --create-namespace
+    ```
+13. Check the Gateway pod logs to verify that no errors related to connection timeout or DNS resolution appear.
 
 #### Over the Internet
 
@@ -435,9 +507,52 @@ Ensure Gateway has access to following endpoints over the internet.
 
 Establishes a secure, private connection between the Control Plane and Data Plane within the GCP network.
 
-**Steps to establish GCP Private Service Connect connectivity:** 
+**Prerequisites:**
 
-[Coming soon]
+- Portkey Gateway must be exposed via either:
+  - Regional internal Application Load Balancer, or
+  - Regional internal proxy Network Load Balancer
+
+- A Private DNS Zone assocated to GKE VPC network and `A` record pointing to internal Load Balancer's Private IP.
+  ```
+  domain                Type    IP
+  gateway.example.com     A   x.x.x.x
+  mcp.example.com         A   x.x.x.x
+  ```
+- PSC requires an active subnet with purpose `PRIVATE_SERVICE_CONNECT`. If you don't have one, create it:
+```sh
+  # Replace <GKE_CLUSTER_REGION> with the region in which GKE cluster is created.
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/28 etc
+
+  gcloud compute networks subnets create psc-nat-subnet \
+    --purpose=PRIVATE_SERVICE_CONNECT \
+    --role=ACTIVE \
+    --region=<GKE_CLUSTER_REGION> \
+    --network=<VPC_NAME> \
+    --range=<SUBNET_CIDR>
+  ```
+
+**Steps to establish GCP Private Service Connect connectivity:** 
+1. Go to **Private Service Connect** > **Published services** and click **Publish service**.
+
+2. Under **Target details**, select the **Load Balancer** option:
+    - If you exposed the Gateway using Ingress in `values.yaml`, select **Regional internal Application Load Balancer**.
+    - Otherwise, select **Regional internal proxy Network Load Balancer**.
+
+3. Select the Portkey Gateway's Load Balancer and the forwarding rule associated with it.
+
+4. Under **Service details**:
+   - Provide a name for the service (e.g., `<org_name>-gateway-psc`).
+   - Select the subnet that was created for PSC.
+
+5. Under **Connections preference**, select **Accept connections for selected projects** and add project `pk-production-project` to the accepted projects list.
+
+6. Once the PSC service is created, copy the **Service attachment** and share it with the Portkey team so they can initiate a connection request. In addition to that also share AI Gateway URL (e.g., https://gateway.example.com).
+
+7. Once the connection is initiated from the Control Plane, go to your PSC Published Service and approve the connection request.
+
+8. To verify connectivity from the Control Plane to the Data Plane, send a test request to the Gateway and check if you can view the full log details on the Portkey app after clicking a log entry.
 
 #### IP Whitelisting
 
