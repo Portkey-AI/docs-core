@@ -1,22 +1,22 @@
 ---
-title: 'OpenAI Codex CLI'
-description: 'Add usage tracking, cost controls, and security guardrails to your Codex CLI deployment'
+title: 'OpenAI Codex'
+description: 'Add usage tracking, cost controls, and security guardrails to Codex with Portkey'
 ---
 
-OpenAI Codex CLI is a lightweight coding agent that runs in your terminal. Add Portkey to get:
+**Codex** is OpenAI’s coding agent for terminal, IDE extension, and CLI. It uses a shared config (user-level `~/.codex/config.toml` and optional project-level `.codex/config.toml`) for default model, approval policies, sandbox settings, and provider details. Add Portkey to get:
 
-- **1600+ LLMs** through one interface - switch providers instantly
-- **Observability** - track costs, tokens, and latency for every request
-- **Reliability** - automatic fallbacks, retries, and caching
-- **Governance** - budget limits, usage tracking, and team access controls
+- **1600+ LLMs** through one interface — switch providers by updating `model` in config
+- **Observability** — track costs, tokens, and latency for every request
+- **Reliability** — automatic fallbacks, retries, and caching
+- **Governance** — budget limits, usage tracking, and team access controls
 
-This guide shows how to configure Codex CLI with Portkey in under 5 minutes.
+Configure Codex with Portkey in a few minutes.
 
 <Note>
   For enterprise deployments across teams, see [Enterprise Governance](#3-enterprise-governance).
 </Note>
 
-# 1. Setup
+## 1. Setup
 
 <Steps>
 <Step title="Add Provider">
@@ -28,7 +28,7 @@ Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **Add Provider**
 </Step>
 
 <Step title="Configure Credentials">
-Select your provider (OpenAI, Anthropic, etc.), enter your API key, and create a slug like `openai-prod`.
+Select provider (OpenAI, Anthropic, etc.), enter API key, and create a slug like `openai-prod`.
 
 <Frame>
 <img src="/images/product/model-catalog/create-provider-page.png" width="500"/>
@@ -40,54 +40,138 @@ Go to [API Keys](https://app.portkey.ai/api-keys) and generate your Portkey API 
 </Step>
 </Steps>
 
-# 2. Configure Codex CLI
+## 2. Configure Portkey in Codex
 
-Create or edit `~/.codex/config.json`:
+Codex loads config from `~/.codex/config.toml` (overridable with `.codex/config.toml` in a repo; see [Config basics](https://developers.openai.com/codex/config-basic) for precedence).
 
-```json
-{
-  "provider": "portkey",
-  "model": "@openai-prod/gpt-4o",
-  "providers": {
-    "portkey": {
-      "name": "Portkey",
-      "baseURL": "https://api.portkey.ai/v1",
-      "envKey": "PORTKEY_API_KEY"
-    }
-  }
-}
+Add Portkey as the provider by setting `model_provider` and defining `[model_providers.portkey]` with `base_url` and `env_key` (see [Config reference](https://developers.openai.com/codex/config-reference)):
+
+```toml
+model_provider = "portkey"
+model = "@openai-prod/gpt-4o"
+
+[model_providers.portkey]
+name = "Portkey"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+# wire_api = "chat"   # optional: "chat" (default) or "responses"
 ```
 
-Set your environment variable:
+### Multiple model providers
+
+Define multiple entries under `model_providers` to switch between environments or backends by changing `model_provider`:
+
+```toml
+model_provider = "portkey-prod"
+model = "@openai-prod/gpt-4o"
+
+[model_providers.portkey-prod]
+name = "Portkey (prod)"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+
+[model_providers.portkey-dev]
+name = "Portkey (dev)"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY_DEV"
+```
+
+Use `.codex/config.toml` in a repository to override `model_provider` and `model` for that project while keeping the shared `~/.codex/config.toml` as the default.
+
+Set `PORTKEY_API_KEY` in the environment:
 
 ```shell
-export PORTKEY_API_KEY="your-portkey-api-key"
+export PORTKEY_API_KEY="<portkey-api-key>"
 ```
 
 <Note>
 Add to `~/.zshrc` or `~/.bashrc` for persistence.
 </Note>
 
-Test your integration:
+Test the integration:
 
 ```shell
 codex "explain this repository to me"
 ```
 
-Done! Monitor usage in the [Portkey Dashboard](https://app.portkey.ai/dashboard).
+Monitor usage in the [Portkey Dashboard](https://app.portkey.ai/dashboard).
 
-## Switch Providers
+## 3. Using Codex with 1600+ Models
 
-Change models by updating the `model` field in your config:
+Codex uses the `model` value in `config.toml` to decide which model to call. With Portkey, set `model` to a [Model Catalog](/product/model-catalog) slug in the form `@<provider-slug>/<model-name>`. Change providers or models by updating `model` in the config.
 
+Example:
+
+```toml
+model = "@openai-prod/gpt-4o"
 ```
-@anthropic-prod/claude-3-5-sonnet-20241022
-@openai-prod/gpt-4o
-@google-prod/gemini-2.0-flash-exp
+
+### Using Responses API
+
+Codex supports OpenAI's Responses API natively. Configure `config.toml` with keys from the [Codex config reference](https://developers.openai.com/codex/config-reference).
+
+**Provider protocol (`wire_api`)**  
+Under `[model_providers.portkey]`, set `wire_api` to choose which API protocol Codex uses when talking to the provider:
+
+| Value       | Description |
+| ----------- | ----------- |
+| `"chat"`    | Chat Completions API (default if omitted). Use for standard chat/completion models. |
+| `"responses"` | [Responses API](https://developers.openai.com/docs/guides/responses). Use for models that support structured reasoning and tool use via the Responses API. |
+
+Example with protocol and optional retry/timeout tuning:
+
+```toml
+[model_providers.portkey]
+name = "Portkey"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+wire_api = "responses"
+# request_max_retries = 4
+# stream_idle_timeout_ms = 300000
 ```
+
+
+
+
+### Adding Model Capabilities
+
+**Reasoning, output, and tools (top-level)**  
+These top-level keys apply to the current session model and control reasoning, output, and tool behavior:
+
+| Key | Values | Description |
+| --- | ------ | ----------- |
+| `model_reasoning_effort` | `minimal`, `low`, `medium`, `high`, `xhigh` | How much reasoning effort the model uses (Responses API). Higher values can improve quality; `xhigh` is model-dependent. |
+| `model_reasoning_summary` | `auto`, `concise`, `detailed`, `none` | How much reasoning summary to include or whether to disable summaries. |
+| `personality` | `none`, `friendly`, `pragmatic` | Default communication style for models that support it. Overridable per thread or via `/personality` in-session. |
+| `temperature` | `0`–`2` (for example `0.1`) | Sampling temperature. Lower values make outputs more deterministic; `0.1` is a good default for coding and tooling. |
+| `max_output_tokens` | Integer (for example `8192`) | Maximum number of tokens in the response. Prevents run-away output; upper bound is model-dependent. |
+| `parallel_tool_calls` | `true` / `false` | Allow the model to call multiple tools in parallel when tools are configured. |
+| `tool_choice` | `"auto"`, `"required"`, `"none"` | Control whether the model decides when to call tools (`"auto"`), must call tools, or never uses tools. |
+
+Example:
+
+```toml
+model_provider = "portkey"
+model = "@openai-prod/gpt-4o"
+
+model_reasoning_effort = "high"
+model_reasoning_summary = "concise"
+personality = "pragmatic"
+temperature = 0.1
+max_output_tokens = 8192
+parallel_tool_calls = true
+tool_choice = "auto"
+
+[model_providers.portkey]
+name = "Portkey"
+base_url = "https://api.portkey.ai/v1"
+env_key = "PORTKEY_API_KEY"
+wire_api = "chat"
+```
+
 
 <Note>
-**Want fallbacks, load balancing, or caching?** Create a [Portkey Config](/product/ai-gateway/configs) and attach it to your API key. See [Enterprise Governance](#3-enterprise-governance) for examples.
+**Fallbacks, load balancing, or caching?** Create a [Portkey Config](/product/ai-gateway/configs), attach it to your API key, and set `model` to the config’s virtual model. See [Enterprise Governance](#3-enterprise-governance) for examples.
 </Note>
 
 import AdvancedFeatures from '/snippets/portkey-advanced-features.mdx';
