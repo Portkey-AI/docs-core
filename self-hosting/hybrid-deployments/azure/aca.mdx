@@ -1,0 +1,818 @@
+---
+title: "ACA"
+description: This enterprise-focused document provides comprehensive instructions for deploying the Portkey software on Azure Container Apps (ACA), tailored to meet the needs of large-scale, mission-critical applications. It includes specific recommendations for component sizing, high availability, and integration with monitoring systems.
+---
+
+## Components and Sizing Recommendations
+
+| Component                               | Options                                         | Sizing Recommendations                                                                                                                                |
+| --------------------------------------- | ------------------------------------------------| ------------------------------------------------------------------------------------------------------------------------------------------------------|
+| AI Gateway                              | Deploy in your ACA environment using Terraform  | Use Container Apps with at least 1 vCPU and 2 GiB of memory per replica. For high availability, deploy with auto-scaling across multiple Availability Zones.|
+| Logs Store (optional)                   | Azure Blob Storage or S3-compatible storage     | Each log document is \~10kb in size (uncompressed)                                                                                                    |
+| Cache (Prompts, Configs & Providers)    | Built-in Redis or Azure Managed Redis           |                                                                                                                                                       |
+
+## Prerequisites
+
+Ensure the following tools and resources are installed and available:
+
+* [Azure Subscription](https://azure.microsoft.com/en-us/pricing/purchase-options/azure-account) with permissions to create Container Apps, Key Vault, Storage, VNet, Application Gateway, etc.
+* [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) configured with credentials
+* [Terraform](https://developer.hashicorp.com/terraform/install) v1.5 or later
+
+## Create a Portkey Account
+- Go to the [Portkey](https://app.portkey.ai) website.  
+- Sign up for a Portkey account.  
+- Once logged in, locate and save your `Organisation ID` for future reference. It can be found in the browser URL:
+  `https://app.portkey.ai/organisation/<organisation_id>/`
+- Contact the Portkey AI team and provide your Organisation ID and the email address used during signup.
+- The Portkey team will share the following information with you:
+    - Docker credentials for the Gateway images (username and password).
+    - License: Client Auth Key.
+
+## Setup Project Environment
+
+### 1. Prepare Azure Resources
+
+```sh
+# Login to Azure
+az login
+sub_id=<your-subscription-id>                    # Provide your azure subscription id
+az account set --subscription ${sub_id}
+
+rg=portkey-rg                                    # Provide name of resource group.
+kv=portkey-kv                                    # Provide Key Vault name
+
+
+
+# Change location as per requirement
+# If Resource Group is not created yet create it with:
+# az group create --name ${rg} --location eastus 
+
+# Create a Key Vault and store your secrets
+
+az keyvault create --name ${kv} --resource-group ${rg} --location eastus --enable-rbac-authorization true
+
+user_id=$(az ad signed-in-user show --query id -o tsv)
+
+az role assignment create \
+  --role "Key Vault Administrator" \
+  --assignee ${user_id} \
+  --scope "/subscriptions/${sub_id}/resourceGroups/${rg}/providers/Microsoft.KeyVault/vaults/${kv}"
+
+# Store Docker credentials and Portkey secrets
+az keyvault secret set --vault-name ${kv} --name docker-username --value "<docker-username>"         # Docker username shared by Portkey    
+az keyvault secret set --vault-name ${kv} --name docker-password --value "<docker-password>"         # Docker password shared by Portkey    
+az keyvault secret set --vault-name ${kv} --name portkey-client-auth --value "<portkey-client-auth>" # Shared by Portkey 
+az keyvault secret set --vault-name ${kv} --name organisations-to-sync --value "<organisation-id>"   # Provide your Portkey account organisation id
+```
+
+### 2. Create Terraform Configuration Files
+
+Create a new directory for your deployment:
+
+```sh
+mkdir portkey-gateway
+cd portkey-gateway
+```
+
+### 3. Create Module Configuration
+
+Create a `main.tf` file:
+
+```hcl
+terraform {
+  required_version = ">= 1.5"
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+  }
+}
+
+provider "azurerm" {
+  features {}
+}
+
+module "portkey_gateway" {
+  source = "github.com/Portkey-AI/portkey-gateway-infrastructure//terraform/aca?ref=v1.1.1"                 # Change module version as per requirement
+
+  # Project Configuration
+  project_name        = "portkey-gateway"
+  environment         = "dev"
+  resource_group_name = "portkey-rg"
+
+  # Docker Registry Configuration
+  registry_type       = "dockerhub"
+  docker_credentials  = {
+    key_vault_name  = "portkey-kv"
+    key_vault_rg    = "portkey-rg"
+    username_secret = "docker-username"
+    password_secret = "docker-password"
+  }
+
+  # Network Configuration
+  network_mode   = "none"                                                   
+
+  # Ingress Configuration
+  ingress_type          = "aca"
+  public_ingress        = true
+
+  # Storage Configuration
+  # Can provide existing Azure blob storage for storing logs otherwise a storage account will be create.
+  # storage_config = {
+  #   resource_group = "<storage-rg>"
+  #   auth_mode = "managed"
+  #   account_name = "<blob-storage-account-name>"
+  #   container_name = "<blob-storage-container-name>"
+  # }
+
+  # Server Mode Configuration
+  server_mode    = "gateway"                                        # Set to "all" for both AI Gateway and MCP deployment
+
+
+  gateway_image = {
+    image = "portkeyai/gateway_enterprise"
+    tag   = "2.2.2"
+  }
+  gateway_config = {
+    cpu   = 1
+    memory = "2Gi"
+    min_replicas = 1
+    max_replicas = 2
+    port = 8787
+    cpu_scale_threshold = 70
+  }
+
+  redis_config = {
+    redis_type = "redis"
+    cpu        = 1
+    memory     = "2Gi"
+  }
+
+  environment_variables = {
+    gateway = {
+      LOG_LEVEL             = "info"
+      NODE_ENV              = "development"
+      ANALYTICS_STORE       = "control_plane"
+      AZURE_MANAGED_VERSION = "2019-08-01"
+    }
+  }
+
+  secrets = {
+    gateway = {
+      PORTKEY_CLIENT_AUTH    = "portkey-client-auth"                # Name of Key Vault secret storing the client auth value
+      ORGANISATIONS_TO_SYNC  = "organisations-to-sync"              # Name of Key Vault secret storing the organisation ID
+    }
+  }
+
+  # Secrets Configuration
+  secrets_key_vault = {
+    name           = "portkey-kv"                                   # Key Vault name where the secrets are stored
+    resource_group = "portkey-rg"                                          
+  }
+  
+  # NOTE: Values in the 'secrets' block should be the KEY VAULT SECRET NAMES, 
+  # not the actual secret values. The module will retrieve the actual values 
+  # from the specified Key Vault.
+}
+output "gateway_url" {
+    value = module.portkey_gateway.gateway_url
+}
+```
+
+
+## Advanced Configuration
+
+### MCP Gateway (Optional)
+
+By default, only the AI Gateway is enabled. To enable the MCP Gateway, update your `terraform.tfvars`:
+
+**MCP Only:**
+
+```hcl
+server_mode = "mcp"
+
+mcp_config = {
+  cpu          = 1
+  memory       = "2Gi"
+  min_replicas = 2
+  max_replicas = 10
+  port         = 8788
+}
+```
+
+**Gateway + MCP (separate apps):**
+
+```hcl
+server_mode = "all"
+
+# Gateway configuration
+gateway_config = {
+  cpu          = 1
+  memory       = "2Gi"
+  min_replicas = 2
+  max_replicas = 10
+  port         = 8787
+}
+
+# MCP configuration (independent scaling)
+mcp_config = {
+  cpu          = 0.5
+  memory       = "1Gi"
+  min_replicas = 1
+  max_replicas = 5
+  port         = 8788
+}
+```
+
+**Note**: When `server_mode = "all"` with Application Gateway, you must configure either host-based or path-based routing.
+
+### Auto-Scaling Configuration
+
+Control how replicas scale based on different metrics.
+
+**CPU-based scaling (default):**
+
+```hcl
+gateway_config = {
+  cpu                 = 1
+  memory              = "2Gi"
+  min_replicas        = 1
+  max_replicas        = 10
+  cpu_scale_threshold = 70  # Scale at 70% CPU
+}
+```
+
+**HTTP-based scaling:**
+
+```hcl
+gateway_config = {
+  cpu                            = 0.5
+  memory                         = "1Gi"
+  min_replicas                   = 1
+  max_replicas                   = 10
+  cpu_scale_threshold            = null  # Disable CPU scaling
+  http_scale_concurrent_requests = 100   # Scale at 100 concurrent requests per replica
+}
+```
+
+**Memory-based scaling:**
+
+```hcl
+gateway_config = {
+  cpu                    = 1
+  memory                 = "2Gi"
+  min_replicas           = 2
+  max_replicas           = 20
+  cpu_scale_threshold    = null  # Disable CPU scaling
+  memory_scale_threshold = 80    # Scale at 80% memory
+}
+```
+
+### Network Configuration with VNet
+
+Deploy Gateway within a VNet:
+
+**Create new VNet:**
+
+```hcl
+network_mode = "new"
+
+vnet_config = {
+  vnet_cidr                = "10.0.0.0/16"
+}
+```
+
+**Use existing VNet and subnets:**
+
+```hcl
+network_mode = "existing"
+
+vnet_config = {
+  vnet_id                   = "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<vnet-name>"
+  aca_subnet_id             = "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<vnet-name>/subnets/<aca-subnet-name>"
+  private_link_subnet_id    = "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<vnet-name>/subnets/<private-link-subnet-name>"
+  app_gateway_subnet_id     = "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<vnet-name>/subnets/<app-gateway-subnet-name>"
+}
+```
+
+### Application Gateway Ingress
+
+Deploy Azure Application Gateway with WAF, SSL termination, and zone redundancy:
+
+**Basic Configuration:**
+
+```hcl
+network_mode = "new"  # VNet is required
+ingress_type = "application_gateway"
+
+app_gateway_config = {
+  sku_name     = "Standard_v2"  # or "WAF_v2"
+  sku_tier     = "Standard_v2"  # or "WAF_v2"
+  capacity     = 2
+  enable_waf   = false
+  public       = true
+  routing_mode = "host"
+  gateway_host = "gateway.example.com"
+}
+```
+
+**Host-based Routing:**
+
+```hcl
+app_gateway_config = {
+  # ... other config ...
+  routing_mode = "host"
+  gateway_host = "gateway.example.com"
+  mcp_host     = "mcp.example.com"  # if server_mode = "all"
+}
+```
+
+Configure DNS:
+```
+gateway.example.com  A  <app-gateway-public-ip>
+mcp.example.com      A  <app-gateway-public-ip>
+```
+
+**Path-based Routing:**
+
+```hcl
+app_gateway_config = {
+  # ... other config ...
+  routing_mode = "path"
+  gateway_path = "/gateway/*"
+  mcp_path     = "/mcp/*"
+}
+```
+
+**SSL Certificate:**
+
+```sh
+# Import certificate to Key Vault
+az keyvault certificate import \
+  --vault-name my-ssl-kv \
+  --name my-ssl-cert \
+  --file certificate.pfx \
+  --password "<pfx-password>"
+```
+
+```hcl
+app_gateway_config = {
+  # ... other config ...
+  ssl_cert_key_vault_secret_id = "https://my-ssl-kv.vault.azure.net/secrets/my-ssl-cert"
+  ssl_cert_key_vault_rg        = "my-ssl-kv-rg"
+}
+```
+
+**Private Application Gateway:**
+
+```hcl
+app_gateway_config = {
+  # ... other config ...
+  public = false
+}
+```
+
+### Azure Managed Redis
+
+Use Azure Cache for Redis instead of the built-in container:
+
+```hcl
+redis_config = {
+  redis_type = "azure-managed-redis"
+  endpoint   = "rediss://<portkey-redis.redis.cache.windows.net>:6380"
+  tls        = true
+  mode       = "standalone"
+}
+```
+
+Update secrets in `main.tf`:
+
+```hcl
+secrets = {
+  gateway = {
+    PORTKEY_CLIENT_AUTH    = "portkey-client-auth"     # Key Vault secret name
+    ORGANISATIONS_TO_SYNC  = "organisations-to-sync"   # Key Vault secret name
+    REDIS_PASSWORD         = "redis-password"          # Key Vault secret name
+  }
+}
+```
+
+**Note:** The values above should be Key Vault secret names, not the actual secret values.
+
+### Storage Configuration
+
+**Using Auto-Created Storage (Default):**
+
+No configuration needed. Terraform automatically creates a Storage Account and container.
+
+**Optional: Customize container name:**
+
+```hcl
+storage_config = {
+  container_name = "my-custom-container-name"
+}
+```
+
+**Using Existing Storage Account:**
+
+```hcl
+storage_config = {
+  resource_group = "my-storage-account-rg"
+  auth_mode      = "managed"
+  account_name   = "my-storage-account-name"
+  container_name = "my-container-name"
+}
+```
+
+## Integrating Gateway with Control Plane
+
+**Outbound Connectivity (Data Plane to Control Plane)**
+
+Portkey supports the following methods for integrating the Data Plane with the Control Plane:
+
+- Azure Private Link
+- Over the Internet
+
+### Azure Private Link (Outbound)
+
+Connect your Gateway to the Portkey Control Plane privately over Azure Private Link.
+
+**Prerequisites:** VNET deployment (`network_mode = "new"` or `"existing"`).
+
+**Steps:**
+
+1. **Request whitelisting** — Share your Azure Subscription ID with the Portkey team. Wait for confirmation that your subscription is whitelisted.
+
+2. **Deploy Private Endpoint** — Enable outbound Private Link in your Terraform configuration:
+
+Add to your `terraform.tfvars`:
+
+```hcl
+control_plane_private_link = {
+  outbound = true
+}
+```
+
+Deploy:
+
+```sh
+terraform apply
+```
+
+This creates:
+- Private Endpoint in your VNET
+- Private DNS Zone (`privatelink-az.portkey.ai`)
+- DNS A record (`azure-cp`) pointing to the Private Endpoint IP
+- VNET link for DNS resolution
+
+3. **Request connection approval** — Get the Private Endpoint resource ID and share it with the Portkey team:
+
+```sh
+terraform output control_plane_private_endpoint_id
+```
+
+Share the output with Portkey. Wait for them to approve the connection.
+
+4. **Verify approval** (optional):
+
+```sh
+az network private-endpoint show \
+  --ids $(terraform output -raw control_plane_private_endpoint_id) \
+  --query 'privateLinkServiceConnections[0].privateLinkServiceConnectionState.status' -o tsv
+# Should return: "Approved"
+```
+
+5. **Configure Private Endpoint URLs** — Update your Gateway configuration to use the private Control Plane endpoint.
+
+Update in `main.tf`:
+
+```hcl
+environment_variables = {
+  gateway = {
+    ALBUS_BASEPATH            = "https://azure-cp.privatelink-az.portkey.ai/albus"
+    CONTROL_PLANE_BASEPATH    = "https://azure-cp.privatelink-az.portkey.ai/api/v1"
+    SOURCE_SYNC_API_BASEPATH  = "https://azure-cp.privatelink-az.portkey.ai/api/v1/sync"
+    CONFIG_READER_PATH        = "https://azure-cp.privatelink-az.portkey.ai/api/model-configs"
+  }
+}
+```
+
+6. **Redeploy** — Apply the configuration changes:
+
+```sh
+terraform apply
+```
+
+### Over the Internet
+
+Ensure Gateway has access to the following endpoints over the internet: 
+- `https://api.portkey.ai`
+- `https://albus.portkey.ai`
+
+No additional configuration needed if your network allows outbound internet access.
+
+### Inbound Connectivity (Control Plane to Data Plane)
+
+- Azure Private Link
+- IP Whitelisting 
+
+#### Azure Private Link (Inbound)
+
+Allow Portkey Control Plane to connect to your Gateway privately via Azure Private Endpoint.
+
+**Prerequisites:** Gateway deployed and running.
+
+**Steps:**
+
+1. **Share connection details** — Get your Gateway connection information and share with the Portkey team:
+
+```sh
+# Get ACA Environment Resource ID
+terraform output container_app_environment_id
+
+# Get Gateway FQDN
+terraform output inbound_gateway_fqdn
+```
+
+Share both outputs with Portkey:
+- ACA Environment Resource ID (e.g., `/subscriptions/xxx/resourceGroups/xxx/providers/Microsoft.App/managedEnvironments/xxx`)
+- Gateway FQDN (e.g., `gateway.<env-domain>.<region>.azurecontainerapps.io`)
+
+2. **Wait for connection request** — Portkey creates a Private Endpoint in their subscription targeting your ACA Environment. A connection request will appear in your Azure subscription.
+
+3. **Check for pending connections:**
+
+```sh
+az network private-endpoint-connection list \
+  --id $(terraform output -raw container_app_environment_id) \
+  --type Microsoft.App/managedEnvironments \
+  --query "[].{Name:name, Status:properties.privateLinkServiceConnectionState.status, Description:properties.privateLinkServiceConnectionState.description}"
+```
+
+4. **Approve the connection:**
+
+```sh
+az network private-endpoint-connection approve \
+  --id "<connection-id-from-step-3>" \
+  --description "Approved for Portkey Control Plane"
+```
+
+Or approve via Azure Portal: Container Apps Environment → **Networking** → **Private endpoint connections** → approve the pending request.
+
+#### IP Whitelisting
+
+Allows Control Plane to access the Data Plane over the internet by restricting inbound traffic to specific IP addresses. This method requires the Data Plane to have a publicly accessible endpoint.
+
+To whitelist, add an inbound rule to the Azure NSG or Firewall allowing connections from the Portkey Control Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on the required port.
+
+To integrate the Control Plane with the Data Plane, contact the Portkey team and provide the **Public Endpoint** of the Data Plane.
+
+## Verifying Gateway Integration with the Control Plane
+
+- Send a test request to Gateway using `curl`.
+- Go to [Portkey website](https://app.portkey.ai/) -> **Logs**.
+- Verify that the test request appears in the logs and that you can view its full details by selecting the log entry.
+
+## Uninstalling Portkey Gateway
+
+```sh
+terraform destroy
+```
+
+## Example Configurations
+
+### Simple Deployment (No VNet)
+
+This example shows a basic deployment with built-in Redis and auto-created storage:
+
+**terraform.tfvars:**
+
+```hcl
+project_name        = "portkey-gateway"
+environment         = "dev"
+subscription_id     = "<your-subscription-id>"
+resource_group_name = "portkey-rg"
+
+registry_type = "dockerhub"
+docker_credentials = {
+  key_vault_name  = "portkey-kv"
+  key_vault_rg    = "portkey-rg"
+  username_secret = "docker-username"
+  password_secret = "docker-password"
+}
+
+secrets_key_vault = {
+  name           = "portkey-kv"
+  resource_group = "portkey-rg"
+}
+
+network_mode   = "none"
+ingress_type   = "aca"
+public_ingress = true
+
+redis_config = {
+  redis_type = "redis"
+}
+
+storage_config = {
+  container_name = "portkey-log-store"
+}
+
+server_mode = "gateway"
+
+environment_variables = {
+  gateway = {
+    LOG_LEVEL          = "info"
+    NODE_ENV           = "development"
+    ANALYTICS_STORE    = "control_plane"
+  }
+}
+
+secrets = {
+  gateway = {
+    PORTKEY_CLIENT_AUTH    = "portkey-client-auth"         # Key Vault secret name
+    ORGANISATIONS_TO_SYNC  = "organisations-to-sync"       # Key Vault secret name
+  }
+}
+```
+
+### Deployment with VNet and Application Gateway
+
+This example shows a deployment with VNet, Application Gateway with WAF, and managed services:
+
+**terraform.tfvars:**
+
+```hcl
+project_name        = "portkey-gateway"
+environment         = "dev"
+subscription_id     = "<your-subscription-id>"
+resource_group_name = "portkey-rg"
+
+registry_type = "dockerhub"
+docker_credentials = {
+  key_vault_name  = "portkey-kv"
+  key_vault_rg    = "portkey-rg"
+  username_secret = "docker-username"
+  password_secret = "docker-password"
+}
+
+secrets_key_vault = {
+  name           = "portkey-kv"
+  resource_group = "portkey-rg"
+}
+
+# VNet Configuration
+network_mode = "new"
+vnet_config = {
+  vnet_cidr                = "10.0.0.0/16"
+  aca_subnet_cidr          = "10.0.1.0/24"
+  private_link_subnet_cidr = "10.0.2.0/24"
+  app_gateway_subnet_cidr  = "10.0.3.0/24"
+}
+
+# Application Gateway with WAF
+ingress_type = "application_gateway"
+app_gateway_config = {
+  sku_name                     = "WAF_v2"
+  sku_tier                     = "WAF_v2"
+  capacity                     = 2
+  enable_waf                   = true
+  public                       = true
+  routing_mode                 = "host"
+  gateway_host                 = "gateway.example.com"
+  ssl_cert_key_vault_secret_id = "<https://my-ssl-kv.vault.azure.net/secrets/my-ssl-cert>"
+}
+
+# Azure Managed Redis
+redis_config = {
+  redis_type = "azure-managed-redis"
+  endpoint   = "rediss://portkey-redis.redis.cache.windows.net:6380"
+  tls        = true
+  mode       = "standalone"
+}
+
+# Existing Storage Account
+storage_config = {
+  resource_group = "my-storage-rg"
+  auth_mode      = "managed"
+  account_name   = "portkeysa"
+  container_name = "portkey-log-store"
+}
+
+# Gateway Configuration
+server_mode = "gateway"
+gateway_config = {
+  cpu                 = 2
+  memory              = "4Gi"
+  min_replicas        = 3
+  max_replicas        = 30
+  cpu_scale_threshold = 70
+  port                = 8787
+}
+
+environment_variables = {
+  gateway = {
+    LOG_LEVEL          = "info"
+    NODE_ENV           = "development"
+    ANALYTICS_STORE    = "control_plane"
+  }
+}
+
+secrets = {
+  gateway = {
+    PORTKEY_CLIENT_AUTH    = "portkey-client-auth"         # Key Vault secret name
+    ORGANISATIONS_TO_SYNC  = "organisations-to-sync"       # Key Vault secret name
+    REDIS_PASSWORD         = "redis-password"              # Key Vault secret name
+  }
+}
+```
+
+### Gateway + MCP Deployment
+
+This example shows how to deploy both AI Gateway and MCP Gateway:
+
+**terraform.tfvars:**
+
+```hcl
+project_name        = "portkey-gateway"
+environment         = "dev"
+subscription_id     = "<your-subscription-id>"
+resource_group_name = "portkey-rg"
+
+registry_type = "dockerhub"
+docker_credentials = {
+  key_vault_name  = "portkey-kv"
+  key_vault_rg    = "portkey-rg"
+  username_secret = "docker-username"
+  password_secret = "docker-password"
+}
+
+secrets_key_vault = {
+  name           = "portkey-kv"
+  resource_group = "portkey-rg"
+}
+
+network_mode = "new"
+vnet_config = {
+  vnet_cidr                = "10.0.0.0/16"
+  aca_subnet_cidr          = "10.0.1.0/24"
+  private_link_subnet_cidr = "10.0.2.0/24"
+  app_gateway_subnet_cidr  = "10.0.3.0/24"
+}
+
+ingress_type = "application_gateway"
+app_gateway_config = {
+  sku_name     = "Standard_v2"
+  sku_tier     = "Standard_v2"
+  capacity     = 2
+  enable_waf   = false
+  public       = true
+  routing_mode = "host"
+  gateway_host = "gateway.example.com"
+  mcp_host     = "mcp.example.com"
+}
+
+redis_config = {
+  redis_type = "redis"
+}
+
+storage_config = {
+  container_name = "portkey-log-store"
+}
+
+# Deploy both Gateway and MCP
+server_mode = "all"
+
+gateway_config = {
+  cpu          = 1
+  memory       = "2Gi"
+  min_replicas = 2
+  max_replicas = 10
+  port         = 8787
+}
+
+mcp_config = {
+  cpu          = 0.5
+  memory       = "1Gi"
+  min_replicas = 1
+  max_replicas = 5
+  port         = 8788
+}
+
+environment_variables = {
+  gateway = {
+    LOG_LEVEL          = "info"
+    NODE_ENV           = "development"
+    ANALYTICS_STORE    = "control_plane"
+  }
+}
+
+secrets = {
+  gateway = {
+    PORTKEY_CLIENT_AUTH    = "portkey-client-auth"         # Key Vault secret name
+    ORGANISATIONS_TO_SYNC  = "organisations-to-sync"       # Key Vault secret name
+  }
+}
+```

@@ -1,5 +1,5 @@
 ---
-title: "Azure"
+title: "AKS"
 description: This enterprise-focused document provides comprehensive instructions for deploying the Portkey software on Azure Kubernetes Service (AKS), tailored to meet the needs of large-scale, mission-critical applications. It includes specific recommendations for component sizing, high availability, and integration with monitoring systems.
 ---
 
@@ -16,7 +16,7 @@ description: This enterprise-focused document provides comprehensive instruction
 | --------------------------------------- | ------------------------------------------------| ------------------------------------------------------------------------------------------------------------------------------------------------------|
 | AI Gateway                              | Deploy in your AKS cluster using Helm charts.   | Use AKS B2ms worker nodes, each providing at least 2 vCPUs and 4 GiB of memory. For high availability, deploy them across multiple Availability Zones.|
 | Logs Store (optional)                   | Azure Blob Storage or S3-compatible storage     | Each log document is \~10kb in size (uncompressed)                                                                                                    |
-| Cache (Prompts, Configs & Providers)    | Built-in Redis or Azure Cache for Redis         | Deployed within the same VNet as the Portkey Gateway.                                                                                                    |
+| Cache (Prompts, Configs & Providers)    | Built-in Redis or Azure Cache for Redis         | Deployed within the same VNet as the Portkey Gateway.                                                                                                 |
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ Ensure the following tools and resources are installed and available:
 * [Helm (v3 or above)](https://helm.sh/docs/intro/install/)  
 
 ## Create a Portkey Account
-- Go to the [Portkey](https://portkey.ai) website.  
+- Go to the [Portkey](https://app.portkey.ai) website.  
 - Sign up for a Portkey account.  
 - Once logged in, locate and save your `Organisation ID` for future reference. It can be found in the browser URL:
   `https://app.portkey.ai/organisation/<organisation_id>/`
@@ -78,7 +78,7 @@ environment:
     SERVICE_NAME: <SERVICE_NAME>                      # Specify a name for the service
     PORTKEY_CLIENT_AUTH: <PROVIDED BY PORTKEY>
     ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>           # This is obtained after signing up for a Portkey account.
-    
+
 ```
 
 ## Configure Components 
@@ -114,6 +114,20 @@ environment:
     CACHE_STORE: redis
     REDIS_URL: "redis://redis:6379"
     REDIS_TLS_ENABLED: "false"
+```
+#### Azure Managed Redis
+
+To enable the gateway to work with an Azure Managed cache, ensure connectivity from AKS cluster.
+
+```yaml
+## To use Azure Managed Redis, add the following configuration in the values.yaml file.
+environment:
+  data:
+    CACHE_STORE: azure-redis
+    REDIS_URL: "redis://<Azure_Redis_Endpoint>:<Port>" 
+    REDIS_TLS_ENABLED: "true"                             ## "true"/"false"
+    REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled on Amazon ElastiCache
+    # REDIS_PASSWORD: <Access Key>                        ## Provide Azure Managed Redis Access Key
 ```
 
 ### Log Store
@@ -227,7 +241,7 @@ Recommended if `SERVER_MODE` is set to `all`
       service.beta.kubernetes.io/azure-load-balancer-internal: "true"
   EOF
   ```
-  
+
 3. Update `values.yaml` with following configuration
 ```yaml
 ingress:
@@ -299,10 +313,10 @@ To confirm that the deployment was successful, follow these steps:
       ```sh
         kubectl port-forward  <POD_NAME> -n $namespace 9000:8787       # Replace <POD_NAME> with your Gateway pod's actual name.
       ```
-      
+
 
     2. Once port forwarding is active, open a new terminal window or tab and send a test request by running:
-      
+
       ```sh
       # Specify LLM provider and Portkey API keys
       OPENAI_API_KEY=<OPENAI_API_KEY>                           # Replace <OPENAI_API_KEY> with an actual API key
@@ -333,7 +347,7 @@ To confirm that the deployment was successful, follow these steps:
           "messages": [{"role": "user","content": "What is a fractal?"}]
       }'
       ```
-      
+
 
 
 ## Integrating Gateway with Control Plane
@@ -432,7 +446,7 @@ Establishes a secure, private connection between the Control Plane and Data Plan
   ```
 8. Re-deploy the gateway.
     ```sh
-    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n portkeyai  --create-namespace
+    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n ${namespace}  --create-namespace
     ```
 #### Over the Internet
 
@@ -508,7 +522,7 @@ Follow the steps below to set up these permissions according to your selected ac
       RESOURCE_GROUP=<RESOURCE_GROUP>                         # Specify the name of the resource group that contains the storage account.
       STORAGE_ACCOUNT_NAME=<STORAGE_ACCOUNT_NAME>             # Specify the name of the storage account which will be used for storing LLM logs.
       CONTAINER_NAME=<CONTAINER_NAME>                         # Specify the name of the blob store container which will be used for storing LLM logs.
-      
+
       ```
     2. Fetch Identity associated with the AKS cluster.
       ```sh
@@ -524,7 +538,7 @@ Follow the steps below to set up these permissions according to your selected ac
       STORAGE_ID=$(az storage account show \
        --name $STORAGE_ACCOUNT_NAME \
        --resource-group $RESOURCE_GROUP --query id -o tsv)
-      
+
       # Grant Storage Blob Data Contributor to kubelet identity
       az role assignment create \
        --assignee-object-id $KUBELET_OBJECT_ID \
@@ -541,7 +555,7 @@ Follow the steps below to set up these permissions according to your selected ac
        --display-name portkey-gateway-logstore-app \
        --sign-in-audience "AzureADMyOrg" \
        --query appId -o tsv)           
-      
+
       echo $AZURE_ENTRA_CLIENT_ID        
       ```  
       Make a note of the value of `AZURE_ENTRA_CLIENT_ID`, as it will be required in defining `values.yaml`. 
@@ -552,11 +566,11 @@ Follow the steps below to set up these permissions according to your selected ac
        --id $AZURE_ENTRA_CLIENT_ID \
        --display-name "entra-secret" \
        --query password -o tsv)
-      
+
       echo $AZURE_ENTRA_CLIENT_SECRET  
       ```
       Make a note of the value of `AZURE_ENTRA_CLIENT_SECRET`, as it will be required in defining `values.yaml`.
-    
+
     3. Retrieve your Tenant ID.
       ```sh
       AZURE_ENTRA_TENANT_ID=$(az account show \
@@ -571,7 +585,7 @@ Follow the steps below to set up these permissions according to your selected ac
       RESOURCE_GROUP=<RESOURCE_GROUP>                         # Specify the name of the resource group that contains the storage account.
       STORAGE_ACCOUNT_NAME=<STORAGE_ACCOUNT_NAME>             # Specify the name of the storage account which will be used for storing LLM logs.
       CONTAINER_NAME=<CONTAINER_NAME>                         # Specify the name of the blob store container which will be used for storing LLM logs.
-      
+
       # Create a Service Principal for the app.
       az ad sp create --id $AZURE_ENTRA_CLIENT_ID
 
@@ -580,7 +594,7 @@ Follow the steps below to set up these permissions according to your selected ac
        --name $STORAGE_ACCOUNT_NAME \
        --resource-group $RESOURCE_GROUP \
        --query id -o tsv)
-      
+
       # Assign the role to the app.
       az role assignment create \
        --assignee $AZURE_ENTRA_CLIENT_ID \
@@ -590,7 +604,7 @@ Follow the steps below to set up these permissions according to your selected ac
   </Tab>
 
 </Tabs>
-    
+
 
 
 ## Examples
@@ -633,7 +647,7 @@ environment:
     CACHE_STORE: redis
     REDIS_URL: "redis://redis:6379"
     REDIS_TLS_ENABLED: "false"
-   
+
     # Configuration for enabling Entra ID access to Azure Blob Storage.
     LOG_STORE: azure
     AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>       # Specify the name of the storage account which will be used for storing LLM logs.
@@ -654,9 +668,3 @@ service:
     service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/v1/health"
     service.beta.kubernetes.io/azure-allowed-ip-ranges: 0.0.0.0/0    
 ```
-
-
-
-
-
-
