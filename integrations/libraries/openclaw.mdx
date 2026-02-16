@@ -16,51 +16,143 @@ flowchart LR
 ## Get Connected
 
 <Info>
-**Already have Portkey configured?** Skip to step 3 — use your existing provider slug and API key.
+**Already have OpenClaw set up?** Start from step 3.  
+**Already have Portkey configured?** Re‑use your existing provider slug and API key.
 </Info>
 
-**1. Add your provider to Portkey**
+**1. Set up OpenClaw (if not already installed)**
 
-Open [Model Catalog](https://app.portkey.ai/model-catalog), click **Add Provider**, enter your API key, and create a slug (e.g., `anthropic-prod`).
+**1.1 Install OpenClaw**
 
-**2. Create a Portkey API key**
+Run one of the following:
+
+```bash
+# macOS or Linux
+npm install -g openclaw@latest
+
+# macOS or Linux (curl installer)
+curl -fsSL https://openclaw.ai/install.sh | bash
+
+# Windows (PowerShell)
+iwr -useb https://openclaw.ai/install.ps1 | iex
+```
+
+**1.2 Run the onboarding wizard**
+
+```bash
+openclaw onboard --install-daemon
+```
+
+Follow the onboarding wizard according to your needs.  
+If you’re unsure, you can refer this minimal QuickStart path:
+
+```text
+🦞 OpenClaw 2026.2.15 — onboarding (QuickStart)
+
+- Acknowledge the security notice:
+  - Choose: “Yes, I understand this is powerful and inherently risky.”
+
+- Onboarding mode:
+  - Choose: QuickStart
+
+- Model/auth provider:
+  - Choose: OpenAI
+  - Auth method: OpenAI API key
+  - Paste your OpenAI API key when prompted
+  - Keep default model: openai/gpt-5.1-codex (or similar default suggested)
+
+- Channels (QuickStart):
+  - Choose: Skip for now (you can add channels later via `openclaw channels add`)
+
+- Skills:
+  - Choose: No / Skip for now
+
+- Hooks:
+  - Select: Skip for now
+
+- Gateway service:
+  - Let it install the Gateway service (LaunchAgent on macOS)
+
+- Hatch your bot:
+  - Choose: Do this later
+
+- When you’re ready:
+  - Dashboard: run `openclaw dashboard --no-open`
+  - Control UI: follow the printed `http://127.0.0.1:18789/...` link
+```
+
+This completes the basic OpenClaw setup.
+
+**2. Make sure OpenClaw is running**
+
+Once onboarding is complete, ensure the Gateway service is up (or start it via your OS tools or `openclaw` commands). When OpenClaw is set up and running, continue with Portkey integration below.
+
+**3. Add your provider to Portkey**
+
+Open [Model Catalog](https://app.portkey.ai/model-catalog), click **Add Provider**, enter your provider API key, and create a slug (for example, `gemini`).
+
+**4. Create a Portkey API key**
 
 Go to [API Keys](https://app.portkey.ai/api-keys), click **Create**, and copy the key.
 
-**3. Configure OpenClaw**
+**5. Open your OpenClaw config**
+
+Edit the OpenClaw config file directly:
 
 ```bash
-openclaw config edit
+open ~/.openclaw/openclaw.json
 ```
 
-Add the portkey provider:
+**6. Add the Portkey provider and agent model**
+
+In `openclaw.json`, add or merge the following snippet:
 
 ```json5
 {
-  agents: {
-    defaults: { model: { primary: "portkey/@anthropic/claude-sonnet-4-5" } }
-  },
-  models: {
-    mode: "merge",
-    providers: {
-      portkey: {
-        baseUrl: "https://api.portkey.ai/v1",
-        apiKey: "${PORTKEY_API_KEY}",
-        api: "openai-completions",
-        models: [
-          { id: "@anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" }
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "portkey": {
+        "baseUrl": "https://api.portkey.ai/v1",
+        "apiKey": "YOUR_PORTKEY_API_KEY",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "@gemini/gemini-2.5-flash",
+            "name": "Gemini 2.5 Flash"
+          }
         ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "portkey/@gemini/gemini-2.5-flash"
       }
     }
   }
 }
 ```
 
-**4. Set your API key**
+Replace `YOUR_PORTKEY_API_KEY` with your actual Portkey API key.  
+Remember to keep `"api"` set to `"openai-completions"` or `"openai-responses"` — Portkey transforms requests based on the OpenAI API format, and other values from the OpenClaw docs will be incompatible here.
+
+**7. Test the integration**
+
+After saving the config, run:
 
 ```bash
-openclaw config set env.PORTKEY_API_KEY "pk-xxx"
+openclaw agent --agent main --message "hi"
 ```
+
+If everything is configured correctly, this message will be routed through Portkey to your configured `@gemini/gemini-2.5-flash` model.
+
+For more advanced configuration options, see the OpenClaw docs:
+
+- `https://docs.openclaw.ai/gateway/configuration`
+- `https://docs.openclaw.ai/gateway/configuration-examples`
+- `https://docs.openclaw.ai/gateway/configuration-reference`
 
 ---
 
@@ -85,23 +177,43 @@ curl -s https://api.portkey.ai/v1/models \
 
 ### Configure Models
 
-Add models from any provider you've configured in Portkey:
+Add multiple models from any provider you've configured in Portkey.  
+You can then refer to them from your agent config using `primary` and `fallbacks`.  
+If you only want to use a single model, set it in `primary` without having anything in `fallbacks`.
 
 ```json5
-models: [
-  { id: "@anthropic/claude-opus-4-5", name: "Claude Opus 4.5" },
-  { id: "@anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
-  { id: "@openai/gpt-5.2", name: "GPT-5.2" }
+"models": [
+  {
+    "id": "@gemini/gemini-2.5-flash",
+    "name": "Gemini 2.5 Flash"
+  },
+  {
+    "id": "@mistral/open-mixtral-8x7b",
+    "name": "Mixtral 8x7b"
+  }
 ]
 ```
 
-Switch your default model by updating:
+Use `primary` and `fallbacks` to control routing:
 
 ```json5
-agents: {
-  defaults: { model: { primary: "portkey/@openai/gpt-5.2" } }
+"agents": {
+  "defaults": {
+    "model": {
+      "fallbacks": [
+        "portkey/@gemini/gemini-2.5-flash"
+      ],
+      "primary": "portkey/@mistral/open-mixtral-8x7b"
+    }
+  }
 }
 ```
+
+In this example:
+
+- **Primary** traffic goes to `portkey/@mistral/open-mixtral-8x7b`.
+- **Fallback** traffic uses `portkey/@gemini/gemini-2.5-flash` when the primary fails.  
+If you want to use just one model at a time, set only the `primary` field.
 
 ### Track with Metadata
 
@@ -125,7 +237,54 @@ These appear in the dashboard for filtering and analytics.
 
 ## Make It Reliable
 
-Create configs in [Portkey Configs](https://app.portkey.ai/configs) and attach them to your API key. When the config is attached, these features apply automatically to all requests.
+Create configs in [Portkey Configs](https://app.portkey.ai/configs) and attach them to your API key.  
+From the Portkey dashboard, open **Configs**, create a config, and copy its **Config ID** from the config details page.
+
+You can then pass this Config ID from OpenClaw by adding a header in your `openclaw.json`:
+
+```json5
+"headers": {
+  "x-portkey-config": "pc-config-id"
+}
+```
+
+If your Portkey config is responsible for switching between providers or models based on conditions (e.g., latency, cost, availability), you can point OpenClaw at a *virtual* model and let Portkey handle the routing:
+
+```json5
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "portkey": {
+        "baseUrl": "https://api.portkey.ai/v1",
+        "apiKey": "YOUR_PORTKEY_API_KEY",
+        "headers": {
+          "x-portkey-config": "pc-config-id"
+        },
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "portkey-dynamic",
+            "name": "Portkey Router"
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "portkey/portkey-dynamic"
+      }
+    }
+  }
+}
+```
+
+Here, `portkey-dynamic` is a *non-existent* model in Portkey’s Model Catalog. Instead, your Portkey Config (referenced by `x-portkey-config`) decides which real provider/model to call.  
+Once you’ve wired in the Config ID header, you can iterate on different config JSONs in the Portkey UI (failovers, retries, routing rules, etc.) without changing your OpenClaw setup.
+
+Below are example config payloads you might use inside Portkey:
 
 <Tabs>
   <Tab title="Failovers">
