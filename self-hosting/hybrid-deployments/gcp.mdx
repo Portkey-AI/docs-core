@@ -17,13 +17,14 @@ description: This enterprise-focused document provides comprehensive instruction
 Ensure that following tools and resources are installed and available:
 
 * A running [GKE cluster](https://docs.cloud.google.com/kubernetes-engine/docs/deploy-app-cluster) with at least 2 worker nodes. ( **Best Practice:** Use 2 nodes, with 1 node in each Availability Zone, to ensure high availability.)
+* VPC which host GKE cluster must have `ACTIVE` subnet with purpose `REGIONAL_MANAGED_PROXY`.
 * [gcloud CLI](https://docs.cloud.google.com/sdk/docs/install-sdk)
 * [Kubectl](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl)  
 * [Helm (v3 or above)](https://helm.sh/docs/intro/install/)  
 
 
 ## Create a Portkey Account
-- Go to the [Portkey](https://portkey.ai) website.  
+- Go to the [Portkey](https://app.portkey.ai) website.  
 - Sign up for a Portkey account.  
 - Once logged in, locate and save your `Organisation ID` for future reference. You can find it in the browser URL:
   `https://app.portkey.ai/organisation/<organisation_id>/`
@@ -34,9 +35,9 @@ Ensure that following tools and resources are installed and available:
 
 ## Setup Project Environment
 ```sh
-CLUSTER_NAME=<GKE_CLUSTER_NAME>               # Specify the name of the GKE cluster where the gateway will be deployed.
-NAMESPACE=<NAMESPACE>                         # Specify the namespace where the gateway should be deployed (for example, portkeyai).
-KSA=<KSA>                                     # Provide a name for the Service Account to be associated with Gateway Pod (for example, gateway-sa)
+CLUSTER_NAME=<GKE_CLUSTER_NAME>       # Specify the name of the GKE cluster where the gateway will be deployed.
+NAMESPACE=<NAMESPACE>                 # Specify the namespace where the gateway should be deployed (for example, portkeyai).
+KSA=<KSA>                             # Provide a name for the Service Account to be associated with Gateway Pod (for example, gateway-sa)
 
 mkdir portkey-gateway
 cd portkey-gateway
@@ -250,21 +251,31 @@ To make the Gateway service accessible externally, you can set up either of the 
 
 **Prerequisites**
 - GKE cluster must have [HTTP Load Balancing add-on](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/container-native-load-balancing) enabled. 
+- Load Balancers require an active subnet with purpose `REGIONAL_MANAGED_PROXY`. If you don't have one, create it:
+```sh
+  # Replace <GKE_CLUSTER_REGION> with the region in which GKE cluster is created.
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/23 etc
 
+  gcloud compute networks subnets create lb-subnet \
+    --purpose=REGIONAL_MANAGED_PROXY \
+    --role=ACTIVE \
+    --region=<GKE_CLUSTER_REGION> \
+    --network=<VPC_NAME> \
+    --range=<SUBNET_CIDR>
+  ```
 #### GCP Load Balancer Ingress
+
 To create Application Load Balancer Ingress update the `values.yaml` file with following configuration: 
 ```yaml
-service:
-  type: ClusterIP
-  port: 8787
-
 ingress:
   enabled: true
+  ingressClassName: gce                                           # 'gce-internal' for creating internal ALB
   # hostname: "<AI Gateway Hostname>"
   # hostBased: true
   # mcpHostname: "<MCP Gateway Hostname>"
   annotations: 
-    kubernetes.io/ingress.class : gce
+    kubernetes.io/ingress.class : gce                             # 'gce-internal' for creating internal ALB
     ingress.gcp.kubernetes.io/healthcheck-path: /v1/health
 ```
 **Note:** If `SERVER_MODE` is set to `all` (i.e., both AI Gateway and MCP Gateway are enabled), you must enable host-based routing by setting `hostBased` to `true` and provide the hostname on which the AI Gateway and MCP Gateway will be accessible. 
@@ -288,29 +299,8 @@ service:
 
 GCP Load Balancer Controller provides additional annotations (like TLS, custom health checks etc ) for managing Service Load Balancer. For a comprehensive list of available annotations, refer to the [GCP Service Load Balancer](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/service-load-balancer-parameters).
 
-### Ensure Outbound Network Access
 
-By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
 
-Example NetworkPolicy for Outbound Access:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-all-egress
-  namespace: portkeyai
-spec:
-  podSelector: {}
-  policyTypes:
-  - Egress
-  egress:
-  - to:
-    - ipBlock:
-        cidr: 0.0.0.0/0
-```
-
-This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Portkey Control Plane.
 
 
 ## Deploying Portkey Gateway
@@ -340,10 +330,10 @@ To confirm that the deployment was successful, follow these steps:
       ```sh
         kubectl port-forward  <POD_NAME> -n ${NAMESPACE} 9000:8787       # Replace <POD_NAME> with your Gateway pod's actual name.
       ```
-      
+
 
     2. Once port forwarding is active, open a new terminal window or tab and send a test request by running:
-      
+
       ```sh
       # Specify LLM provider and Portkey API keys
       OPENAI_API_KEY=<OPENAI_API_KEY>                           # Replace <OPENAI_API_KEY> with an actual API key
@@ -363,7 +353,7 @@ To confirm that the deployment was successful, follow these steps:
     3. Test gateway service integration with Load Balancer.
       ```sh
       # Replace <LOAD_BALANCER_IP> and <LB_LISTENER_PORT_NUMBER> with the DNS name and listener port of the created load balancer, respectively.
-      curl 'http://<LOAD_BALANCER_IP>:8787/v1/chat/completions' \
+      curl 'http://<LOAD_BALANCER_IP>:<LB_LISTENER_PORT_NUMBER>/v1/chat/completions' \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $OPENAI_API_KEY"  \
       -H "x-portkey-provider: openai" \
@@ -376,10 +366,196 @@ To confirm that the deployment was successful, follow these steps:
 
 
 ## Integrating Gateway with Control Plane
-Portkey supports the following methods for integrating the Control Plane with the Data Plane/Gateway:
+
+**Outbound Connectivity (Data Plane to Control Plane)**
+
+Portkey supports the following methods for integrating the Data Plane with the Control Plane for outbound connectivity:
+- GCP Private Service Connect
+- Over the Internet
+
+**Ensure Outbound Network Access**
+
+By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
+
+Example NetworkPolicy for Outbound Access:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+  namespace: portkeyai
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+```
+
+This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Portkey Control Plane.
+
+#### GCP Private Service Connect
+
+Establishes a secure, private connection between the Control Plane and Data Plane within the GCP network.
+
+**Steps to establish GCP Private Service Connect connectivity:** 
+
+1. **(Optional)** Create a subnet in region `us-east4` if you don't already have one.
+  ```sh
+  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/28 etc
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  gcloud compute networks subnets create psc-endpoint-subnet \
+    --network=<VPC_NAME> \
+    --range=<SUBNET_CIDR> \
+    --region=us-east4
+  ```
+2. Create an IP address for the PSC endpoint.
+  ```sh
+  # If you already had a subnet in us-east4 and you skipped step 1,
+  # replace psc-endpoint-subnet with the name of your existing subnet.
+  gcloud compute addresses create psc-endpoint-ip \
+    --region=us-east4 \
+    --subnet=psc-endpoint-subnet 
+  ```
+3. Contact the Portkey team, share your GCP Project ID, and request private connectivity.
+4. Once your project has been whitelisted and Portkey has shared the `SERVICE_ATTACHMENT_URI`, create the forwarding rule for the Control Plane's private endpoint.
+  ```sh
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created. 
+  # Replace <SERVICE_ATTACHMENT_URI> with URI you received from Portkey.
+  gcloud compute forwarding-rules create portkey-cp-pvt-endpoint-rule \
+    --region=us-east4 \
+    --network=<VPC_NAME> \
+    --address=psc-endpoint-ip \
+    --target-service-attachment=<SERVICE_ATTACHMENT_URI> 
+  ```
+5. **(Optional)** If your GKE cluster is in a different region from `us-east4`, enable global access on the PSC endpoint.
+  ```sh
+  gcloud compute forwarding-rules update portkey-cp-pvt-endpoint-rule \
+    --region=us-east4 \
+    --allow-psc-global-access
+  ```
+6. Fetch Connection ID of PSC endpoint and share it with the Portkey for connection approval.
+  ```sh
+  gcloud compute forwarding-rules describe portkey-cp-pvt-endpoint-rule \
+      --region=us-east4 \
+      --format="value(pscConnectionId)"
+  ```
+7. Once Portkey confirms approval, verify the connection status:
+  ```sh
+  gcloud compute forwarding-rules describe portkey-cp-pvt-endpoint-rule \
+    --region=us-east4 \
+    --format="get(pscConnectionStatus)"
+
+  # Should return "ACCEPTED"
+  ```
+8. Fetch Private IP of PSC endpoint.
+  ```sh
+  PSC_IP=$(gcloud compute addresses describe psc-endpoint-ip \
+    --region=us-east4 \
+    --format="value(address)")
+  echo ${PSC_IP}
+  ```
+9. Create a Private DNS Zone for DNS resolution of Control Plane PSC endpoint.
+  ```sh
+  # Replace <VPC_NAME> with VPC name of GKE cluster.
+  gcloud dns managed-zones create portkey-control-plane-pdz \
+    --dns-name="privatelink-gcp.portkey.ai." \
+    --description="Hosted Zone for DNS resolution of Portkey control plane endpoint" \
+    --visibility="private" \
+    --networks="<VPC_NAME>"
+  ```
+10. Create a DNS record to point to Portkey PSC endpoint IP.
+  ```sh
+  gcloud dns record-sets create "us-east4-gcp-cp.privatelink-gcp.portkey.ai." \                                                         130 ↵
+    --rrdatas="${PSC_IP}" \
+    --type="A" \
+    --ttl=300 \
+    --zone="portkey-control-plane-pdz"
+  ```
+11. If connection status changes to `ACCEPTED`, update the `values.yaml` file with the following environment variables.
+  ```yaml
+  environment:
+    create: true
+    secret: true
+    data:
+        ALBUS_BASEPATH: "https://us-east4.p.gcp-cp.privatelink-gcp.portkey.ai/albus"
+        CONTROL_PLANE_BASEPATH: "https://us-east4.p.gcp-cp.privatelink-gcp.portkey.ai/api/v1"
+        SOURCE_SYNC_API_BASEPATH: "us-east4.p.gcp-cp.privatelink-gcp.portkey.ai/api/v1/sync"
+        CONFIG_READER_PATH: "https://us-east4.p.gcp-cp.privatelink-gcp.portkey.ai/api/model-configs" 
+  ```
+12. Re-deploy the gateway.
+    ```sh
+    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n ${NAMESPACE}  --create-namespace
+    ```
+13. Check the Gateway pod logs to verify that no errors related to connection timeout or DNS resolution appear.
+
+#### Over the Internet
+
+Ensure Gateway has access to following endpoints over the internet. 
+- `https://api.portkey.ai`
+- `https://albus.portkey.ai`
+
+### Inbound Connectivity (Control Plane to Data Plane)
+
+- GCP Private Service Connect
 - IP Whitelisting 
 
+#### GCP Private Service Connect
+
+Establishes a secure, private connection between the Control Plane and Data Plane within the GCP network.
+
+**Prerequisites:**
+
+- Portkey Gateway must be exposed via either:
+  - Regional internal Application Load Balancer, or
+  - Regional internal proxy Network Load Balancer
+
+- A Private DNS Zone assocated to GKE VPC network and `A` record pointing to internal Load Balancer's Private IP.
+  ```
+  domain                Type    IP
+  gateway.example.com     A   x.x.x.x
+  mcp.example.com         A   x.x.x.x
+  ```
+- PSC requires an active subnet with purpose `PRIVATE_SERVICE_CONNECT`. If you don't have one, create it:
+```sh
+  # Replace <GKE_CLUSTER_REGION> with the region in which GKE cluster is created.
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/28 etc
+
+  gcloud compute networks subnets create psc-nat-subnet \
+    --purpose=PRIVATE_SERVICE_CONNECT \
+    --role=ACTIVE \
+    --region=<GKE_CLUSTER_REGION> \
+    --network=<VPC_NAME> \
+    --range=<SUBNET_CIDR>
+  ```
+
+**Steps to establish GCP Private Service Connect connectivity:** 
+1. Go to **Private Service Connect** > **Published services** and click **Publish service**.
+
+2. Under **Target details**, select the **Load Balancer** option:
+    - If you exposed the Gateway using Ingress in `values.yaml`, select **Regional internal Application Load Balancer**.
+    - Otherwise, select **Regional internal proxy Network Load Balancer**.
+
+3. Select the Portkey Gateway's Load Balancer and the forwarding rule associated with it.
+
+4. Under **Service details**:
+   - Provide a name for the service (e.g., `<org_name>-gateway-psc`).
+   - Select the subnet that was created for PSC.
+
+5. Under **Connections preference**, select **Accept connections for selected projects** and add project `pk-production-project` to the accepted projects list.
+
+6. Once the PSC service is created, copy the **Service attachment** and share it with the Portkey team so they can initiate a connection request. In addition to that also share AI Gateway URL (e.g., https://gateway.example.com).
+
+7. Once the connection is initiated from the Control Plane, go to your PSC Published Service and approve the connection request.
+
+8. To verify connectivity from the Control Plane to the Data Plane, send a test request to the Gateway and check if you can view the full log details on the Portkey app after clicking a log entry.
+
 #### IP Whitelisting
+
 Allows control plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Control Plane. This method requires the Data Plane to have a publicly accessible endpoint.
 To whitelist, add an inbound rule to the VPC Firewall allowing connections from the Portkey Control Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on Load Balancer listner port.
 
@@ -403,7 +579,7 @@ To enable the Portkey Gateway to access GCS bucket for log storage and, optional
 
 Follow the steps below to configure permissions based on your chosen access method.
 
-    
+
 <Tabs>
   <Tab title="Workload Identity Federation">
   1. Create a Google Service Account.
