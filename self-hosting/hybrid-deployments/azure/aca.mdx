@@ -9,7 +9,7 @@ description: This enterprise-focused document provides comprehensive instruction
 | --------------------------------------- | ------------------------------------------------| ------------------------------------------------------------------------------------------------------------------------------------------------------|
 | AI Gateway                              | Deploy in your ACA environment using Terraform  | Use Container Apps with at least 1 vCPU and 2 GiB of memory per replica. For high availability, deploy with auto-scaling across multiple Availability Zones.|
 | Logs Store (optional)                   | Azure Blob Storage or S3-compatible storage     | Each log document is \~10kb in size (uncompressed)                                                                                                    |
-| Cache (Prompts, Configs & Providers)    | Built-in Redis or Azure Managed Redis           |                                                                                                    |
+| Cache (Prompts, Configs & Providers)    | Built-in Redis or Azure Managed Redis           |                                                                                                                                                       |
 
 ## Prerequisites
 
@@ -39,11 +39,17 @@ az login
 sub_id=<your-subscription-id>                    # Provide your azure subscription id
 az account set --subscription ${sub_id}
 
-rg=portkey-rg                                    # Provide name of resource group
+rg=portkey-rg                                    # Provide name of resource group.
 kv=portkey-kv                                    # Provide Key Vault name
 
-# Create a Key Vault and store your secrets
+
+
 # Change location as per requirement
+# If Resource Group is not created yet create it with:
+# az group create --name ${rg} --location eastus 
+
+# Create a Key Vault and store your secrets
+
 az keyvault create --name ${kv} --resource-group ${rg} --location eastus --enable-rbac-authorization true
 
 user_id=$(az ad signed-in-user show --query id -o tsv)
@@ -89,12 +95,12 @@ provider "azurerm" {
 }
 
 module "portkey_gateway" {
-  source = "github.com/Portkey-AI/portkey-gateway-infrastructure//terraform/aca?ref=v1.1.1"                 # Chnage module version as per requirement
+  source = "github.com/Portkey-AI/portkey-gateway-infrastructure//terraform/aca?ref=v1.1.1"                 # Change module version as per requirement
 
   # Project Configuration
   project_name        = "portkey-gateway"
-  environment         = dev
-  resource_group_name = portkey-rg
+  environment         = "dev"
+  resource_group_name = "portkey-rg"
 
   # Docker Registry Configuration
   registry_type       = "dockerhub"
@@ -110,10 +116,7 @@ module "portkey_gateway" {
 
   # Ingress Configuration
   ingress_type          = "aca"
-  public_ingress        = "true"
-
-  # Redis Configuration
-  redis_config = var.redis_config
+  public_ingress        = true
 
   # Storage Configuration
   # Can provide existing Azure blob storage for storing logs otherwise a storage account will be create.
@@ -172,10 +175,9 @@ module "portkey_gateway" {
   # NOTE: Values in the 'secrets' block should be the KEY VAULT SECRET NAMES, 
   # not the actual secret values. The module will retrieve the actual values 
   # from the specified Key Vault.
-
-  output "gateway_url" {
+}
+output "gateway_url" {
     value = module.portkey_gateway.gateway_url
-  }
 }
 ```
 
