@@ -1,0 +1,562 @@
+---
+title: "You do not have enough permissions"
+description: "Troubleshoot and resolve the AB03 permission error in Portkey — covers Playground, Completions API, Admin API, and all common scenarios."
+---
+
+## The error
+
+```json
+{
+  "success": false,
+  "data": {
+    "message": "You do not have enough permissions to execute this request",
+    "errorCode": "AB03"
+  }
+}
+```
+
+This means your API key is missing the required **permission scope**.
+
+## Find your scenario
+
+<CardGroup cols={2}>
+  <Card title="Playground or UI test fails" icon="flask" href="#playground-and-ui-test-requests">
+    Test requests in Playground, Prompt Studio, or Model Catalog
+  </Card>
+  <Card title="Completions API fails" icon="code" href="#completions-api-and-data-plane-operations">
+    Chat completions, embeddings, files, batches, or other inference calls
+  </Card>
+  <Card title="Admin API fails" icon="shield" href="#admin-api-operations">
+    Integrations, providers, users, workspaces, or API key management
+  </Card>
+  <Card title="Logs & analytics fail" icon="chart-line" href="#logs-feedback-analytics-and-audit-logs">
+    Viewing logs, feedback, audit logs, or analytics
+  </Card>
+  <Card title="MCP operations fail" icon="plug" href="#mcp-servers-and-integrations">
+    MCP servers or MCP integrations
+  </Card>
+  <Card title="Listing models fails" icon="list" href="#listing-available-models">
+    GET /v1/models endpoint
+  </Card>
+  <Card title="Something else" icon="question" href="#general-troubleshooting">
+    None of the above scenarios
+  </Card>
+  <Card title="Need scope reference?" icon="book" href="#complete-scope-reference">
+    Complete list of all permission scopes
+  </Card>
+</CardGroup>
+
+---
+
+## Understand API key types
+
+Before fixing the error, understand the two key types and how scopes work.
+
+### Workspace API keys vs Admin API keys
+
+<Tabs>
+  <Tab title="Workspace API keys">
+    **Scope:** Single workspace only
+
+    **Subtypes:**
+    - **User** — For UI/Playground operations
+    - **Service** — For backend automations
+
+    **Use for:**
+    - Completions and all data-plane operations
+    - Prompts, configs, providers within the workspace
+    - Cannot access other workspaces
+
+    **Created in:** Workspace Settings
+  </Tab>
+  <Tab title="Admin API keys">
+    **Scope:** Entire organization
+
+    **Subtypes:** Service only
+
+    **Use for:**
+    - Org management (users, workspaces)
+    - Audit logs
+    - Cross-workspace operations (with `workspace_id` parameter)
+
+    **Created in:** Admin Settings (Org-level)
+  </Tab>
+</Tabs>
+
+<Info>
+Admin API keys access workspace-level resources (providers, configs, prompts, integrations) by passing `workspace_id` as a query parameter (for `GET`/list requests) or in the request body (for `POST`/`PUT` requests). Use a workspace UUID or slug. Workspace API keys are locked to their own workspace and can't access other workspaces.
+
+<CodeGroup>
+```sh Listing configs (GET — query parameter)
+curl "https://api.portkey.ai/v1/configs?workspace_id=ws-abc123" \
+  -H "x-portkey-api-key: YOUR_ADMIN_KEY"
+```
+
+```sh Creating a provider (POST — request body)
+curl -X POST https://api.portkey.ai/v1/providers \
+  -H "x-portkey-api-key: YOUR_ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"workspace_id": "ws-abc123", "name": "My Provider"}'
+```
+</CodeGroup>
+</Info>
+
+<Warning>
+Data-plane APIs (`/v1/chat/completions`, `/v1/responses`, etc.) require **Workspace API keys**. Org-level operations (audit logs, user management) require **Admin API keys**.
+</Warning>
+
+### How permission scopes work
+
+Every API key has **permission scopes** that control which operations it can perform. Scopes are granular — `providers.list` does **not** grant `providers.read`. Each action requires its own scope.
+
+Enable the specific scopes needed when creating or editing an API key:
+
+<AccordionGroup>
+  <Accordion title="Workspace API key permissions">
+    <Frame caption="Workspace API key — permission scopes available when creating or editing a key">
+      ![Workspace API key permission scopes](/images/product/workspace-api-key-permissions.png)
+    </Frame>
+  </Accordion>
+  <Accordion title="Admin API key permissions">
+    <Frame caption="Admin API key — permission scopes available when creating or editing a key">
+      ![Admin API key permission scopes](/images/product/admin-api-key-permissions.png)
+    </Frame>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Playground and UI test requests
+
+<Note>
+**Most common cause of AB03.** Start here if Playground, Prompt Studio, or Model Catalog test requests fail.
+</Note>
+
+### Why it happens
+
+Playground, Prompt Studio, and Model Catalog test requests require a **Workspace User API key**. Service keys don't work — the UI needs to authenticate your individual session.
+
+### Common triggers
+
+- Only Service API keys exist (no User key)
+- User API key is missing the `completions.write` scope
+- Multiple User API keys exist, and not all have required scopes
+
+### Fix
+
+<Steps>
+  <Step title="Open workspace API keys">
+    Go to **Settings > API Keys** in your workspace.
+  </Step>
+  <Step title="Find or create a User API key">
+    Look for an API key with type **User**. If none exists, create one.
+  </Step>
+  <Step title="Enable completions.write">
+    Edit the User API key and enable:
+
+    - **Completions** > `write` (required for all inference calls)
+    - Any additional scopes needed (e.g., `prompts.read`, `configs.read`)
+  </Step>
+  <Step title="Refresh and retry">
+    Refresh the page and retry your test request.
+  </Step>
+</Steps>
+
+<Tip>
+**Multiple User keys?** Ensure **all** User API keys have `completions.write` enabled — Portkey may use any of them for UI operations.
+</Tip>
+
+---
+
+## Completions API and data-plane operations
+
+### What you need to know
+
+The `completions.write` scope gates **all** data-plane endpoints — not just chat completions.
+
+### Endpoints requiring `completions.write`
+
+| Endpoint | Description |
+|:---|:---|
+| `/v1/chat/completions` | Chat completions |
+| `/v1/completions` | Text completions |
+| `/v1/responses` | Responses API |
+| `/v1/messages` | Anthropic-style messages |
+| `/v1/embeddings` | Embeddings |
+| `/v1/images/generations` | Image generation |
+| `/v1/images/edits` | Image editing |
+| `/v1/audio/speech` | Text-to-speech |
+| `/v1/audio/transcriptions` | Audio transcription |
+| `/v1/audio/translations` | Audio translation |
+| `/v1/files` | File upload, list, get, delete |
+| `/v1/batches` | Batch create, list, get, cancel |
+| `/v1/fine-tuning/jobs` | Fine-tuning jobs |
+| `/v1/datasets` | Dataset operations |
+| `/v1/realtime` | Realtime WebSocket |
+| `/v1/models` | List models (also works with `virtual_keys.list`) |
+| `/v1/prompts/:id/completions` | Prompt completions |
+| `/v1/gateway/tokenize` | Tokenization |
+
+### Why it happens
+
+Your API key is missing the `completions.write` scope, or you're using an Admin API key (Admin keys can't call data-plane endpoints).
+
+### Fix
+
+<Steps>
+  <Step title="Use a Workspace API key">
+    Data-plane APIs require **Workspace API keys** (User or Service). Admin keys don't work.
+  </Step>
+  <Step title="Enable completions.write">
+    Create or edit a Workspace API key and enable **Completions > `write`**.
+  </Step>
+  <Step title="Update your code">
+    Replace the API key in your application:
+
+    <CodeGroup>
+    ```python Python
+    from portkey_ai import Portkey
+
+    portkey = Portkey(
+        api_key="YOUR_WORKSPACE_API_KEY",  # Must have completions.write scope
+    )
+
+    response = portkey.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello"}]
+    )
+    ```
+
+    ```js JavaScript
+    import Portkey from 'portkey-ai'
+
+    const portkey = new Portkey({
+        apiKey: "YOUR_WORKSPACE_API_KEY"  // Must have completions.write scope
+    })
+
+    const response = await portkey.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: "Hello" }]
+    })
+    ```
+
+    ```sh cURL
+    curl https://api.portkey.ai/v1/chat/completions \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: openai" \
+      -H "Content-Type: application/json" \
+      -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+---
+
+## Listing available models
+
+`GET /v1/models` requires **either** `completions.write` or `virtual_keys.list`.
+
+<Tip>
+Most inference keys already have `completions.write`, so listing models works automatically. Only add `virtual_keys.list` for keys that intentionally don't have `completions.write`.
+</Tip>
+
+---
+
+## Admin API operations
+
+The Admin API covers integrations, providers, users, workspaces, API key management, and other control-plane operations. Each operation requires specific scopes.
+
+<Warning>
+**Common gotcha:** Listing integrations and reading integration details require **different** scopes. `list` does not grant `read`.
+</Warning>
+
+### Integrations (providers and models)
+
+| Operation | Endpoint | Required scope |
+|:---|:---|:---|
+| List integrations | `GET /v1/integrations` | `organisation_integrations.list` or `workspace_integrations.list` |
+| Get integration details | `GET /v1/integrations/{slug}` | `organisation_integrations.read` or `workspace_integrations.read` |
+| List models for a provider | `GET /v1/integrations/{slug}/models` | `organisation_integrations.read` or `workspace_integrations.read` |
+| Create integration | `POST /v1/integrations` | `organisation_integrations.create` or `workspace_integrations.create` |
+| Update integration | `PUT /v1/integrations/{slug}` | `organisation_integrations.update` or `workspace_integrations.update` |
+| Delete integration | `DELETE /v1/integrations/{slug}` | `organisation_integrations.delete` or `workspace_integrations.delete` |
+
+### Users, workspaces, and API key management
+
+| Operation | Required key type | Required scopes |
+|:---|:---|:---|
+| Create/manage workspaces | Admin API key | `workspaces.create`, `workspaces.update`, etc. |
+| Invite/remove org users | Admin API key | `organisation_users.create`, `organisation_users.delete`, etc. |
+| Manage workspace members | Workspace API key | `workspace_users.create`, `workspace_users.update`, etc. |
+| Create/manage org API keys | Admin API key | `organisation_service_api_keys.*` |
+| Create/manage workspace API keys | Workspace API key | `workspace_service_api_keys.*`, `workspace_user_api_keys.*` |
+
+### Resource management (prompts, configs, guardrails, providers)
+
+| Resource | Scope pattern |
+|:---|:---|
+| Prompts | `prompts.create` / `read` / `update` / `delete` / `list` / `publish` / `render` |
+| Configs | `configs.create` / `read` / `update` / `delete` / `list` |
+| Guardrails | `guardrails.create` / `read` / `update` / `delete` / `list` |
+| Providers | `providers.create` / `read` / `update` / `delete` / `list` and `virtual_keys.create` / `read` / `update` / `delete` / `list` / `copy` / `duplicate` |
+| Policies | `policies.create` / `read` / `update` / `delete` / `list` |
+
+<Note>
+"Virtual Keys" are now called **Providers** in the UI. API scopes still use both `virtual_keys.*` and `providers.*` — both may be needed depending on the operation.
+</Note>
+
+### Fix
+
+Edit the API key and add the required scopes. When in doubt, use **Select All** to grant all permissions.
+
+<Info>
+**Plan restriction:** Some Admin API endpoints (like programmatic API key creation) require Enterprise plans. If scopes are correct but requests still fail, verify your plan includes Admin API access.
+</Info>
+
+---
+
+## Logs, feedback, analytics, and audit logs
+
+<Tabs>
+  <Tab title="Viewing & exporting">
+    | Operation | Required scope | Required key type |
+    |:---|:---|:---|
+    | View analytics | `analytics.view` | Workspace or Admin |
+    | View log details | `logs.view` | Workspace or Admin |
+    | List logs | `logs.list` | Workspace or Admin |
+    | Export logs | `logs.export` | Workspace or Admin |
+    | List audit logs | `audit_logs.list` | **Admin API key only** |
+
+    <Warning>
+    **Audit logs** require an **Admin API key**. Workspace keys can't access audit logs regardless of scopes. Ensure the Admin key has `audit_logs.list` enabled.
+    </Warning>
+  </Tab>
+
+  <Tab title="Ingesting & writing">
+    These endpoints ingest and read individual logs and feedback via the API — distinct from list/export operations.
+
+    | Operation | Endpoint | Required scopes |
+    |:---|:---|:---|
+    | Ingest logs | `POST /v1/logs` | `completions.write` **and** `logs.write` |
+    | Get a single log | `GET /v1/logs/:id` | `logs.read` or `completions.write` or `logs.write` |
+    | Submit feedback | `POST /v1/feedback` | `logs.write` |
+    | Update feedback | `PUT /v1/feedback/:id` | `logs.write` |
+
+    <Info>
+    Log ingestion (`POST /v1/logs`) requires **both** `completions.write` and `logs.write`. Having only one returns AB03. Reading a single log (`GET /v1/logs/:id`) accepts any one of three scopes.
+    </Info>
+  </Tab>
+</Tabs>
+
+---
+
+## MCP servers and integrations
+
+<Tabs>
+  <Tab title="MCP servers (workspace)">
+    | Operation | Required scope |
+    |:---|:---|
+    | Create | `mcp_servers.create` |
+    | Read | `mcp_servers.read` |
+    | Update | `mcp_servers.update` |
+    | Delete | `mcp_servers.delete` |
+    | List | `mcp_servers.list` |
+  </Tab>
+
+  <Tab title="MCP integrations">
+    | Operation | Org-level scope | Workspace-level scope |
+    |:---|:---|:---|
+    | List | `organisation_mcp_integrations.list` | `workspace_mcp_integrations.list` |
+    | Read | `organisation_mcp_integrations.read` | `workspace_mcp_integrations.read` |
+    | Create | `organisation_mcp_integrations.create` | `workspace_mcp_integrations.create` |
+    | Update | `organisation_mcp_integrations.update` | `workspace_mcp_integrations.update` |
+    | Delete | `organisation_mcp_integrations.delete` | `workspace_mcp_integrations.delete` |
+
+    <Note>
+    Org-level MCP integration management requires an **Admin API key** with Org Owner/Admin role.
+    </Note>
+  </Tab>
+</Tabs>
+
+---
+
+## General troubleshooting
+
+If none of the above scenarios match, work through these checks:
+
+<AccordionGroup>
+  <Accordion title="1. Verify API key type" icon="key">
+    | Task | Required key |
+    |:---|:---|
+    | Playground / UI test features | Workspace **User** API key |
+    | Completions from code/SDK | Workspace API key (User or Service) |
+    | Org settings, users, workspaces | **Admin** API key |
+    | Workspace resources (configs, prompts, etc.) | Workspace API key, or Admin API key with `workspace_id` |
+    | Audit logs | **Admin** API key |
+  </Accordion>
+
+  <Accordion title="2. Check permission scopes" icon="shield">
+    Each operation requires its own scope. Common mistakes:
+    - Having `list` but not `read` (or vice versa)
+    - Having `read` but not `write` or `create`
+    - Missing `completions.write` for inference calls
+  </Accordion>
+
+  <Accordion title="3. Verify user role" icon="user">
+    | Role | Access |
+    |:---|:---|
+    | **Org Owner** | Full access to org and all workspaces |
+    | **Org Admin** | Full access except billing |
+    | **Org Member** | Read-only on org resources |
+    | **Workspace Admin** | Full workspace operations |
+    | **Workspace Manager** | Full workspace operations (except admin-only settings) |
+    | **Workspace Member** | Read + create/update prompts, configs |
+  </Accordion>
+
+  <Accordion title="4. Common pitfalls" icon="triangle-exclamation">
+    - **Wrong key type** — Using Admin key for completions, or Service key for Playground
+    - **Plan restriction** — Some Admin API endpoints require Enterprise plans
+    - **Stale session** — Log out and back in, or clear browser cache
+    - **Multiple User API keys** — All User keys need the required scopes
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+**Wrong workspace can look like a permission error.** Many endpoints return AB03 when a resource (config, provider, prompt, API key) doesn't exist in the workspace. The fix isn't changing scopes — it's using the correct workspace. Verify the resource exists in the correct workspace, or use an Admin API key with the `workspace_id` parameter.
+</Warning>
+
+<Note>
+**Org security settings override scopes.** Organization admins can restrict members from viewing API keys, providers, or configs via **Admin Settings > Security**. When active, affected users get AB03 even with correct scopes and key type. Check with your org admin if everything looks correct but you still see the error.
+</Note>
+
+### 5. Still stuck?
+
+Contact **support@portkey.ai** with:
+- Workspace ID
+- Full error response (including `request_id`)
+- Endpoint called
+- API key type (Admin / Workspace User / Workspace Service)
+
+---
+
+## Complete scope reference
+
+<AccordionGroup>
+  <Accordion title="Admin API key — all scopes" icon="shield">
+
+  **Organization management**
+
+  | Scope | Description |
+  |:---|:---|
+  | `organisation_users.create` / `read` / `update` / `delete` / `list` | Manage org users |
+  | `organisation_service_api_keys.create` / `read` / `update` / `delete` / `list` | Manage org service API keys |
+  | `audit_logs.list` | View audit logs |
+
+  **Workspace management**
+
+  | Scope | Description |
+  |:---|:---|
+  | `workspaces.create` / `read` / `update` / `delete` / `list` | Manage workspaces |
+  | `workspace_service_api_keys.create` / `read` / `update` / `delete` / `list` | Manage workspace service API keys |
+  | `workspace_user_api_keys.create` / `read` / `update` / `delete` / `list` | Manage workspace user API keys |
+  | `workspace_users.create` / `read` / `update` / `delete` / `list` | Manage workspace users |
+
+  **Integrations**
+
+  | Scope | Description |
+  |:---|:---|
+  | `workspace_integrations.create` / `read` / `update` / `delete` / `list` | Manage workspace integrations |
+  | `organisation_integrations.create` / `read` / `update` / `delete` / `list` | Manage org integrations |
+  | `organisation_mcp_integrations.create` / `read` / `update` / `delete` / `list` | Manage org MCP integrations |
+  | `workspace_mcp_integrations.create` / `read` / `update` / `delete` / `list` | Manage workspace MCP integrations |
+  | `mcp_servers.create` / `read` / `update` / `delete` / `list` | Manage MCP servers |
+
+  **Resources**
+
+  | Scope | Description |
+  |:---|:---|
+  | `providers.create` / `read` / `update` / `delete` / `list` | Manage providers |
+  | `virtual_keys.create` / `read` / `copy` / `update` / `delete` / `list` / `duplicate` | Manage providers (legacy scope name) |
+  | `plugins.create` / `update` / `list` | Manage plugins |
+  | `policies.create` / `read` / `update` / `delete` / `list` | Manage policies |
+  | `prompts.create` / `read` / `update` / `delete` / `list` / `publish` | Manage prompts |
+  | `configs.create` / `read` / `update` / `delete` / `list` | Manage configs |
+  | `guardrails.create` / `read` / `update` / `delete` / `list` | Manage guardrails |
+
+  **Monitoring**
+
+  | Scope | Description |
+  |:---|:---|
+  | `analytics.view` | View analytics |
+  | `logs.view` / `list` / `write` / `export` | Manage logs |
+
+  </Accordion>
+
+  <Accordion title="Workspace API key — all scopes" icon="key">
+
+  **Inference (data plane)**
+
+  | Scope | Description |
+  |:---|:---|
+  | `mcp.invoke` | Invoke MCP tools |
+  | `completions.write` | All data-plane operations (chat completions, responses, files, batches, fine-tuning, realtime, etc.) |
+
+  **Workspace management**
+
+  | Scope | Description |
+  |:---|:---|
+  | `workspaces.read` / `update` / `list` | View/update workspace |
+  | `workspace_service_api_keys.create` / `read` / `update` / `delete` / `list` | Manage workspace service API keys |
+  | `workspace_user_api_keys.create` / `read` / `update` / `delete` / `list` | Manage workspace user API keys |
+  | `workspace_users.create` / `read` / `update` / `delete` / `list` | Manage workspace users |
+
+  **Integrations**
+
+  | Scope | Description |
+  |:---|:---|
+  | `organisation_integrations.list` | List org integrations |
+  | `organisation_mcp_integrations.list` | List org MCP integrations |
+  | `workspace_integrations.create` / `read` / `update` / `delete` / `list` | Manage workspace integrations |
+  | `workspace_mcp_integrations.create` / `read` / `update` / `delete` / `list` | Manage workspace MCP integrations |
+  | `mcp_servers.create` / `read` / `update` / `delete` / `list` | Manage MCP servers |
+
+  **Resources**
+
+  | Scope | Description |
+  |:---|:---|
+  | `providers.create` / `read` / `update` / `delete` / `list` | Manage providers |
+  | `virtual_keys.create` / `read` / `copy` / `update` / `delete` / `list` / `duplicate` | Manage providers (legacy scope name) |
+  | `policies.create` / `read` / `update` / `delete` / `list` | Manage policies |
+  | `prompts.create` / `read` / `update` / `delete` / `list` / `publish` / `render` | Manage prompts |
+  | `configs.create` / `read` / `update` / `delete` / `list` | Manage configs |
+  | `guardrails.create` / `read` / `update` / `delete` / `list` | Manage guardrails |
+
+  **Monitoring**
+
+  | Scope | Description |
+  |:---|:---|
+  | `analytics.view` | View analytics |
+  | `logs.view` / `list` / `write` / `export` | Manage logs |
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="API keys (AuthN and AuthZ)" icon="key" href="/product/enterprise-offering/org-management/api-keys-authn-and-authz">
+    Deep dive into Admin vs Workspace API keys and all permission scopes.
+  </Card>
+  <Card title="User roles and permissions" icon="users" href="/product/enterprise-offering/org-management/user-roles-and-permissions">
+    Organization and workspace role hierarchy.
+  </Card>
+  <Card title="Configure API key access" icon="shield-halved" href="/product/administration/configure-api-key-access-permissions">
+    Control who can view and manage API keys in workspaces.
+  </Card>
+  <Card title="Common errors" icon="circle-exclamation" href="/support/common-errors-and-resolutions">
+    Other Portkey error codes and resolutions.
+  </Card>
+</CardGroup>
