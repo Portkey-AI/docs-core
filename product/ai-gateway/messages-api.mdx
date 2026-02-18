@@ -1,0 +1,811 @@
+---
+title: "Messages"
+description: "Use Anthropic's Messages format with any provider — 3000+ models, one endpoint."
+---
+
+<Info>
+Available on all Portkey [plans](https://portkey.ai/pricing).
+</Info>
+
+Portkey's `/v1/messages` endpoint accepts the [Anthropic Messages API](https://docs.anthropic.com/en/api/messages) format and routes to any of [3000+ models](/product/model-catalog) across all major providers. Tools built natively on the Messages format — like [Claude Code](/integrations/libraries/claude-code) and the [Claude Agent SDK](/integrations/agents/claude-agent-sdk) — work with any backend model through Portkey without modification.
+
+## Why Messages API
+
+- **Write once, run anywhere** — Any SDK or tool built on the Anthropic Messages format works instantly. No rewrites.
+- **Switch providers with one string** — Change the `model` parameter to route to a different provider. Request format and response shape stay identical.
+- **Full gateway features** — Fallbacks, load balancing, caching, and observability work transparently across all providers.
+
+## Quick Start
+
+Use the Anthropic SDK with Portkey's base URL. The `@provider/model` format routes requests to the correct provider.
+
+<CodeGroup>
+```python Python
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key="PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai"
+)
+
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Explain quantum computing in simple terms"}]
+)
+
+print(message.content[0].text)
+```
+
+```typescript TypeScript
+import Anthropic from '@anthropic-ai/sdk';
+
+const client = new Anthropic({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai"
+});
+
+const message = await client.messages.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "Explain quantum computing in simple terms" }]
+});
+
+console.log(message.content[0].text);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Explain quantum computing in simple terms"}]
+  }'
+```
+</CodeGroup>
+
+<Info>
+`max_tokens` is required. See the [Model Catalog](/product/model-catalog) for all supported provider and model strings.
+</Info>
+
+## Switching Providers
+
+Change the `model` string to route to any provider. Everything else stays the same.
+
+<CodeGroup>
+```python Anthropic
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+```python OpenAI
+message = client.messages.create(
+    model="@openai-provider/gpt-4.1",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+```python Gemini
+message = client.messages.create(
+    model="@google-provider/gemini-2.5-flash",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+</CodeGroup>
+
+<Info>
+The SDK code, request format, and response shape are identical across all providers. Portkey translates the Messages format to each provider's native API. See [Provider Support](#provider-support) for how this works.
+</Info>
+
+## Migrate in 2 Lines
+
+Already using the Anthropic SDK? Point it at Portkey:
+
+```python Python
+client = anthropic.Anthropic(
+    api_key="PORTKEY_API_KEY",       # Replace your Anthropic key with your Portkey API key
+    base_url="https://api.portkey.ai"  # Point at Portkey
+)
+```
+
+All existing Messages API calls work as-is. Use the `@anthropic-provider/` prefix to keep routing to Anthropic, or switch the model string to any other provider.
+
+## Text Generation
+
+### System Prompt
+
+Set a system prompt with the top-level `system` parameter:
+
+<CodeGroup>
+```python Python
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    system="You are a pirate. Always respond in pirate speak.",
+    messages=[{"role": "user", "content": "Say hello."}]
+)
+```
+
+```typescript TypeScript
+const message = await client.messages.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens: 1024,
+    system: "You are a pirate. Always respond in pirate speak.",
+    messages: [{ role: "user", content: "Say hello." }]
+});
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "max_tokens": 1024,
+    "system": "You are a pirate. Always respond in pirate speak.",
+    "messages": [{"role": "user", "content": "Say hello."}]
+  }'
+```
+</CodeGroup>
+
+The `system` parameter also accepts an array of content blocks for prompt caching:
+
+```python Python
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    system=[
+        {"type": "text", "text": "You are an expert on this topic..."},
+        {"type": "text", "text": "Here is the reference material...", "cache_control": {"type": "ephemeral"}}
+    ],
+    messages=[{"role": "user", "content": "Summarize the key points"}]
+)
+```
+
+### Streaming
+
+Stream responses with `stream=True` in the SDK or `"stream": true` in cURL.
+
+<CodeGroup>
+```python Python
+with client.messages.stream(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Write a haiku about AI"}]
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="", flush=True)
+```
+
+```typescript TypeScript
+const stream = client.messages.stream({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "Write a haiku about AI" }]
+});
+
+for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        process.stdout.write(event.delta.text);
+    }
+}
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "max_tokens": 1024,
+    "stream": true,
+    "messages": [{"role": "user", "content": "Write a haiku about AI"}]
+  }'
+```
+</CodeGroup>
+
+Portkey normalizes all streaming responses to the Anthropic SSE event format, regardless of which provider handles the request.
+
+<Accordion title="SSE event reference">
+
+Events are emitted in this sequence for every streaming response:
+
+| Event | Description |
+|-------|-------------|
+| `message_start` | Opens the message with metadata (`id`, `model`, initial `usage`) |
+| `content_block_start` | Opens a content block — `type: "text"` for text, `type: "tool_use"` for tool calls |
+| `content_block_delta` | Incremental content — `text_delta` for text, `input_json_delta` for tool input |
+| `content_block_stop` | Closes a content block |
+| `message_delta` | Closes the message with `stop_reason` (`end_turn`, `max_tokens`, `tool_use`) and final `usage` |
+| `message_stop` | Final event signaling stream completion |
+
+Example `content_block_delta` event:
+
+```
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}
+```
+
+Example `message_delta` event:
+
+```
+event: message_delta
+data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 42}}
+```
+
+</Accordion>
+
+### Multi-turn Conversations
+
+Build conversations by passing the full message history. Messages must alternate between `user` and `assistant` roles.
+
+<CodeGroup>
+```python Python
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "My name is Alice."},
+        {"role": "assistant", "content": "Hello Alice! How can I help you?"},
+        {"role": "user", "content": "What is my name?"}
+    ]
+)
+
+print(message.content[0].text)  # "Your name is Alice."
+```
+
+```typescript TypeScript
+const message = await client.messages.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens: 1024,
+    messages: [
+        { role: "user", content: "My name is Alice." },
+        { role: "assistant", content: "Hello Alice! How can I help you?" },
+        { role: "user", content: "What is my name?" }
+    ]
+});
+
+console.log(message.content[0].text);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "My name is Alice."},
+      {"role": "assistant", "content": "Hello Alice! How can I help you?"},
+      {"role": "user", "content": "What is my name?"}
+    ]
+  }'
+```
+</CodeGroup>
+
+### Generation Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `max_tokens` | integer | Required. Maximum tokens in the response |
+| `temperature` | float | Sampling temperature (0–1). Higher = more creative |
+| `top_p` | float | Nucleus sampling threshold (0–1) |
+| `top_k` | integer | Top-K sampling. Anthropic native only — silently dropped on adapter providers |
+| `stop_sequences` | array | Stop strings. Translated to `stop` for adapter providers |
+| `stream` | boolean | Enable streaming responses |
+
+## Tool Use
+
+Define tools with `name`, `description`, and `input_schema`:
+
+<CodeGroup>
+```python Python
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "What's the weather in San Francisco?"}],
+    tools=[{
+        "name": "get_weather",
+        "description": "Get current weather for a location",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name"}
+            },
+            "required": ["location"]
+        }
+    }]
+)
+
+for block in message.content:
+    if block.type == "tool_use":
+        print(f"Tool: {block.name}, Input: {block.input}")
+```
+
+```typescript TypeScript
+const message = await client.messages.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "What's the weather in San Francisco?" }],
+    tools: [{
+        name: "get_weather",
+        description: "Get current weather for a location",
+        input_schema: {
+            type: "object",
+            properties: {
+                location: { type: "string", description: "City name" }
+            },
+            required: ["location"]
+        }
+    }]
+});
+
+for (const block of message.content) {
+    if (block.type === "tool_use") {
+        console.log(`Tool: ${block.name}, Input: ${JSON.stringify(block.input)}`);
+    }
+}
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "What'\''s the weather in San Francisco?"}],
+    "tools": [{
+      "name": "get_weather",
+      "description": "Get current weather for a location",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "location": {"type": "string", "description": "City name"}
+        },
+        "required": ["location"]
+      }
+    }]
+  }'
+```
+</CodeGroup>
+
+### Tool Results
+
+Pass tool results back in a `user` message with `tool_result` content blocks to continue the conversation:
+
+<CodeGroup>
+```python Python
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "What's the weather in Paris?"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "tool_123", "name": "get_weather", "input": {"location": "Paris"}}
+        ]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tool_123", "content": '{"temp": "22°C", "condition": "sunny"}'}
+        ]}
+    ],
+    tools=[{
+        "name": "get_weather",
+        "description": "Get weather for a location",
+        "input_schema": {"type": "object", "properties": {"location": {"type": "string"}}, "required": ["location"]}
+    }]
+)
+
+print(message.content[0].text)
+```
+
+```typescript TypeScript
+const message = await client.messages.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens: 1024,
+    messages: [
+        { role: "user", content: "What's the weather in Paris?" },
+        { role: "assistant", content: [
+            { type: "tool_use", id: "tool_123", name: "get_weather", input: { location: "Paris" } }
+        ]},
+        { role: "user", content: [
+            { type: "tool_result", tool_use_id: "tool_123", content: '{"temp": "22°C", "condition": "sunny"}' }
+        ]}
+    ],
+    tools: [{
+        name: "get_weather",
+        description: "Get weather for a location",
+        input_schema: { type: "object", properties: { location: { type: "string" } }, required: ["location"] }
+    }]
+});
+
+console.log(message.content[0].text);
+```
+</CodeGroup>
+
+For MCP-based tool use, see [Remote MCP](/product/ai-gateway/remote-mcp).
+
+## Vision
+
+Send images using content blocks. Supports both URLs and base64-encoded data.
+
+<CodeGroup>
+```python URL
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "image", "source": {"type": "url", "url": "https://example.com/image.jpg"}},
+            {"type": "text", "text": "Describe this image"}
+        ]
+    }]
+)
+
+print(message.content[0].text)
+```
+
+```python Base64
+import base64, httpx
+
+image_data = base64.standard_b64encode(httpx.get("https://example.com/image.jpg").content).decode("utf-8")
+
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data}},
+            {"type": "text", "text": "Describe this image"}
+        ]
+    }]
+)
+```
+
+```typescript TypeScript
+const message = await client.messages.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens: 1024,
+    messages: [{
+        role: "user",
+        content: [
+            { type: "image", source: { type: "url", url: "https://example.com/image.jpg" } },
+            { type: "text", text: "Describe this image" }
+        ]
+    }]
+});
+
+console.log(message.content[0].text);
+```
+</CodeGroup>
+
+## Structured Output
+
+Use `output_config` to constrain responses to a JSON schema. Portkey maps this to `response_format` for adapter providers.
+
+<CodeGroup>
+```python Python
+message = client.messages.create(
+    model="@openai-provider/gpt-4.1",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Extract name and age from: Alice is 30 years old."}],
+    extra_body={
+        "output_config": {
+            "format": {
+                "type": "json_schema",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer"}
+                    },
+                    "required": ["name", "age"]
+                }
+            }
+        }
+    }
+)
+```
+
+```typescript TypeScript
+const message = await (client.messages.create as any)({
+    model: "@openai-provider/gpt-4.1",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "Extract name and age from: Alice is 30 years old." }],
+    output_config: {
+        format: {
+            type: "json_schema",
+            schema: {
+                type: "object",
+                properties: {
+                    name: { type: "string" },
+                    age: { type: "integer" }
+                },
+                required: ["name", "age"]
+            }
+        }
+    }
+});
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-provider/gpt-4.1",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Extract name and age from: Alice is 30 years old."}],
+    "output_config": {
+      "format": {
+        "type": "json_schema",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"}
+          },
+          "required": ["name", "age"]
+        }
+      }
+    }
+  }'
+```
+</CodeGroup>
+
+<Note>
+`output_config` is a Portkey extension to the Messages API format. Only `json_schema` is supported — `json_object` is not available via the adapter.
+</Note>
+
+## Extended Thinking
+
+Two mechanisms for controlling model reasoning:
+
+**`thinking` — Anthropic native.** Pass directly to Anthropic Claude models. Silently dropped on adapter providers.
+
+**`output_config.effort` — Cross-provider.** Works across Anthropic, OpenAI o-series, and Gemini 2.5. Portkey maps it to each provider's native reasoning format.
+
+<CodeGroup>
+```python Anthropic native
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=16000,
+    thinking={"type": "enabled", "budget_tokens": 10000},
+    messages=[{"role": "user", "content": "Analyze the implications of quantum computing on cryptography"}]
+)
+
+for block in message.content:
+    if block.type == "thinking":
+        print(f"Thinking: {block.thinking[:200]}...")
+    elif block.type == "text":
+        print(f"Response: {block.text}")
+```
+
+```python Any provider (unified)
+# Works with Anthropic, OpenAI o-series, Gemini 2.5
+message = client.messages.create(
+    model="@openai-provider/o4-mini",
+    max_tokens=4096,
+    messages=[{"role": "user", "content": "Analyze the implications of quantum computing on cryptography"}],
+    extra_body={"output_config": {"effort": "high"}}
+)
+```
+
+```typescript Any provider (unified)
+const message = await (client.messages.create as any)({
+    model: "@openai-provider/o4-mini",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: "Analyze the implications of quantum computing on cryptography" }],
+    output_config: { effort: "high" }
+});
+```
+</CodeGroup>
+
+<Note>
+When using Anthropic's `thinking` parameter, `max_tokens` must exceed `budget_tokens`. See [Thinking Mode](/product/ai-gateway/multimodal-capabilities/thinking-mode) for provider-specific effort mappings.
+</Note>
+
+## Prompt Caching
+
+Use `cache_control` on system prompts, messages, and tool definitions to cache frequently-used content.
+
+<CodeGroup>
+```python System prompt caching
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    system=[{
+        "type": "text",
+        "text": "You are an expert analyst. Here is a very long reference document...",
+        "cache_control": {"type": "ephemeral"}
+    }],
+    messages=[{"role": "user", "content": "Summarize the key points"}]
+)
+```
+
+```python Message caching
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Here is a long document to analyze...", "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": "What are the key themes?"}
+        ]
+    }]
+)
+```
+
+```python Tool caching
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Search for AI news"}],
+    tools=[{
+        "name": "search",
+        "description": "Search the knowledge base",
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
+        "cache_control": {"type": "ephemeral"}
+    }]
+)
+```
+</CodeGroup>
+
+Cached content reduces latency and cost. Cache usage is reflected in the `usage` object of the response.
+
+<Note>
+`cache_control` is Anthropic-native and is stripped when routing to adapter providers. See [Anthropic prompt caching](/integrations/llms/anthropic/prompt-caching) for details.
+</Note>
+
+## Provider Support
+
+Portkey handles the Messages API in two ways depending on the provider:
+
+- **Native providers** — Requests pass through directly. All Anthropic-specific features work (`thinking`, `cache_control`, `top_k`, etc.).
+- **Adapter providers** — Portkey translates between Messages format and the provider's native Chat Completions format. See [Parameter Compatibility](#parameter-compatibility) for what is and isn't supported.
+
+The response always comes back in Anthropic Messages format, regardless of which provider handles the request.
+
+**Native providers:** Anthropic, AWS Bedrock (Claude models)
+
+**Adapter providers:** OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, AWS Bedrock (non-Claude), Mistral AI, Groq, Together AI, and [all other providers](/product/model-catalog/integrations)
+
+## Parameter Compatibility
+
+Portkey's Messages adapter translates requests to each provider's [Chat Completions](/product/ai-gateway/chat-completions) format for non-native providers.
+
+**Unsupported parameters are silently dropped — no error is returned.**
+
+Parameters translated for adapter providers:
+
+| Messages API param | Adapter equivalent | Notes |
+|---|---|---|
+| `max_tokens` | `max_completion_tokens` | |
+| `stop_sequences` | `stop` | |
+| `system` | First message with `role: "system"` | String or array both handled |
+| `tools[].input_schema` | `tools[].function.parameters` | Format converted |
+| `tool_choice: {type: "auto"}` | `"auto"` | |
+| `tool_choice: {type: "any"}` | `"required"` | |
+| `tool_choice: {type: "tool", name: X}` | `{type: "function", function: {name: X}}` | |
+| `metadata.user_id` | `user` | |
+| `temperature`, `top_p`, `stream` | Direct pass-through | |
+| `output_config.format` (`json_schema`) | `response_format` | Portkey extension; `json_object` not supported |
+| `output_config.effort` | `reasoning_effort` | Portkey extension for cross-provider reasoning |
+
+Parameters silently dropped on adapter providers:
+
+- `thinking` — Anthropic-native; use `output_config.effort` for cross-provider reasoning control
+- `top_k` — no Chat Completions equivalent
+- `cache_control` — stripped during message transformation
+- `container`, `mcp_servers`, `service_tier`, `anthropic_beta`
+
+<Warning>
+Provider-specific parameters (e.g. Gemini's `safety_settings`, Bedrock guardrail configs) cannot be passed through the Messages adapter. Use the provider's native integration or [Chat Completions](/product/ai-gateway/chat-completions) instead.
+</Warning>
+
+## Using with Portkey Features
+
+The Messages API works with all Portkey gateway features. Pass a config via header alongside any Anthropic SDK call:
+
+<CodeGroup>
+```python Python
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key="PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai",
+    default_headers={
+        "x-portkey-config": "pp-config-xxx"  # Config with fallbacks, load balancing, etc.
+    }
+)
+
+message = client.messages.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+```typescript TypeScript
+import Anthropic from '@anthropic-ai/sdk';
+
+const client = new Anthropic({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai",
+    defaultHeaders: {
+        "x-portkey-config": "pp-config-xxx"
+    }
+});
+
+const message = await client.messages.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "Hello!" }]
+});
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: pp-config-xxx" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+</CodeGroup>
+
+<CardGroup cols={2}>
+  <Card title="Configs" icon="sliders" href="/product/ai-gateway/configs">
+    Route, load balance, and set fallbacks
+  </Card>
+  <Card title="Caching" icon="bolt" href="/product/ai-gateway/cache-simple-and-semantic">
+    Cache responses for faster, cheaper calls
+  </Card>
+  <Card title="Fallbacks" icon="shield" href="/product/ai-gateway/fallbacks">
+    Automatic failover across providers
+  </Card>
+  <Card title="Load Balancing" icon="scale-balanced" href="/product/ai-gateway/load-balancing">
+    Distribute traffic across models
+  </Card>
+  <Card title="Guardrails" icon="shield-halved" href="/product/guardrails">
+    Input/output guardrails
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Full logging and tracing
+  </Card>
+</CardGroup>
+
+## API Reference
+
+- [Messages](/api-reference/inference-api/anthropic-transform) — `POST /v1/messages`
+
+<CardGroup cols={2}>
+  <Card title="Anthropic API Docs" icon="book" href="https://docs.anthropic.com/en/api/messages">
+    Anthropic specification
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/inference-api/anthropic-transform">
+    Portkey Messages API reference
+  </Card>
+  <Card title="Universal API" icon="arrows-rotate" href="/product/ai-gateway/universal-api">
+    All three API formats
+  </Card>
+  <Card title="Responses API" icon="bolt" href="/product/ai-gateway/responses-api">
+    OpenAI Responses format
+  </Card>
+  <Card title="Chat Completions" icon="message" href="/product/ai-gateway/chat-completions">
+    OpenAI Chat Completions format
+  </Card>
+</CardGroup>
