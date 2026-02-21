@@ -158,16 +158,6 @@ This route only works with Claude models. For other models, use the standard Ope
         }'
         ```
     </Tab>
-    <Tab title="Python SDK">
-        ```python
-            Coming Soon!
-        ```
-    </Tab>
-    <Tab title="NodeJS SDK">
-        ```javascript
-            Coming Soon!
-        ```
-    </Tab>
     <Tab title="Anthropic Python SDK">
       ```python Anthropic Python SDK
 import anthropic
@@ -211,7 +201,122 @@ import anthropic
 Portkey supports the [Google Vertex AI CountTokens API](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/count-tokens) to estimate token usage before sending requests. Check out the count-tokens guide for more details.
 </Card>
 
+## Explicit context caching
 
+Vertex AI supports [context caching](https://cloud.google.com/vertex-ai/generative-ai/docs/context-cache/context-cache-create) to reduce costs and latency for repeated prompts with large amounts of context. You can explicitly create a cache and then reference it in subsequent inference requests.
+
+### Step 1: Create a context cache
+
+Use the Vertex AI `cachedContents` endpoint through Portkey to create a cache:
+
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/projects/{{YOUR_PROJECT_ID}}/locations/{{LOCATION}}/cachedContents' \
+--header 'x-portkey-provider: {{@my-vertex-ai-provider}}' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: {{your_api_key}}' \
+--header 'x-portkey-custom-host: https://aiplatform.googleapis.com/v1' \
+--data '{
+  "model": "projects/{{YOUR_PROJECT_ID}}/locations/{{LOCATION}}/publishers/google/models/{{MODEL_ID}}",
+  "displayName": "{{my-cache-display-name}}",
+  "contents": [{
+    "role": "user",
+      "parts": [{
+        "text": "This is sample text to demonstrate explicit caching. (you need a minimum of 1024 tokens)"
+      }]
+  },
+  {
+    "role": "model",
+      "parts": [{
+        "text": "thankyou I am your helpful assistant"
+      }]
+  }]
+}'
+```
+
+**Request variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `YOUR_PROJECT_ID` | Your Google Cloud project ID. |
+| `LOCATION` | The region where your model is deployed (e.g., `us-central1`). |
+| `MODEL_ID` | The model identifier (e.g., `gemini-1.5-pro-001`). |
+| `my-cache-display-name` | A unique name to identify your cache. |
+| `your_api_key` | Your Portkey API key. |
+| `@my-vertex-ai-provider` | Your Vertex AI provider slug from Portkey's Model Catalog. |
+
+<Note>
+Context caching requires a minimum of 1024 tokens in the cached content. The cache has a default TTL (time-to-live) which you can configure using the `ttl` parameter.
+</Note>
+
+### Step 2: Use the cache in inference requests
+
+Once the cache is created, reference it in your chat completion requests using the `cached_content` parameter:
+
+<Tabs>
+  <Tab title="cURL">
+```sh
+curl 'https://api.portkey.ai/v1/chat/completions' \
+-H 'Content-Type: application/json' \
+-H 'x-portkey-api-key: {{your_api_key}}' \
+--data '{
+    "model": "@my-vertex-ai-provider/gemini-1.5-pro-001",
+    "cached_content": "{{my-cache-display-name}}",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Based on the context I provided earlier, answer my question."
+      }
+    ]
+}'
+```
+  </Tab>
+  <Tab title="Python SDK">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+)
+
+completion = portkey.chat.completions.create(
+    model="@my-vertex-ai-provider/gemini-1.5-pro-001",
+    cached_content="my-cache-display-name",
+    messages=[
+        {"role": "user", "content": "Based on the context I provided earlier, answer my question."}
+    ]
+)
+
+print(completion)
+```
+  </Tab>
+  <Tab title="NodeJS SDK">
+```javascript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+});
+
+const completion = await portkey.chat.completions.create({
+    model: "@my-vertex-ai-provider/gemini-1.5-pro-001",
+    cached_content: "my-cache-display-name",
+    messages: [
+        { role: "user", content: "Based on the context I provided earlier, answer my question." }
+    ]
+});
+
+console.log(completion);
+```
+  </Tab>
+</Tabs>
+
+<Warning>
+The model and region used in the inference request must match the model and region used when creating the cache.
+</Warning>
+
+For more details on context caching options like TTL configuration and cache management, refer to the [Vertex AI context caching documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/context-cache/context-cache-create).
+
+---
 
 ## Using Self-Deployed Models on Vertex AI (Hugging Face, Custom Models)
 
@@ -517,28 +622,10 @@ The `media_resolution` parameter allows you to control token allocation for medi
 Apply media resolution globally to all media in the request:
 
 <CodeGroup>
-```javascript NodeJS
-const chatCompletion = await portkey.chat.completions.create({
-    model: 'gemini-1.5-pro',
-    media_resolution: 'MEDIA_RESOLUTION_HIGH',
-    messages: [{
-        role: 'user',
-        content: [
-            {
-                type: 'image_url',
-                image_url: {
-                    url: 'gs://cloud-samples-data/generative-ai/image/scones.jpg'
-                }
-            },
-            { type: 'text', text: 'Analyze this image in detail.' }
-        ]
-    }]
-}, {Authorization: "Bearer $YOUR_VERTEX_ACCESS_TOKEN"});
-```
 ```python Python
-completion = portkey.with_options(Authorization="Bearer $YOUR_VERTEX_ACCESS_TOKEN").chat.completions.create(
-    model='gemini-1.5-pro',
-    media_resolution='MEDIA_RESOLUTION_HIGH',
+completion = portkey.chat.completions.create(
+    model="@vertex-ai/gemini-1.5-pro",
+    media_resolution="MEDIA_RESOLUTION_HIGH",
     messages=[{
         "role": "user",
         "content": [
@@ -548,29 +635,44 @@ completion = portkey.with_options(Authorization="Bearer $YOUR_VERTEX_ACCESS_TOKE
                     "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"
                 }
             },
-            { "type": "text", "text": "Analyze this image in detail." }
+            {"type": "text", "text": "Analyze this image in detail."}
         ]
     }]
 )
 ```
-```sh cURL
-curl --location 'https://api.portkey.ai/v1/chat/completions' \
---header 'x-portkey-provider: vertex-ai' \
---header 'x-portkey-vertex-region: us-central1' \
---header 'x-portkey-api-key: PORTKEY_API_KEY' \
---header 'Authorization: VERTEX_AI_ACCESS_TOKEN' \
---header 'Content-Type: application/json' \
---data '{
-    "model": "gemini-1.5-pro",
-    "media_resolution": "MEDIA_RESOLUTION_HIGH",
-    "messages": [{
-        "role": "user",
-        "content": [
-            {"type": "image_url", "image_url": {"url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"}},
-            {"type": "text", "text": "Analyze this image in detail."}
+```javascript NodeJS
+const chatCompletion = await portkey.chat.completions.create({
+    model: "@vertex-ai/gemini-1.5-pro",
+    media_resolution: "MEDIA_RESOLUTION_HIGH",
+    messages: [{
+        role: "user",
+        content: [
+            {
+                type: "image_url",
+                image_url: {
+                    url: "gs://cloud-samples-data/generative-ai/image/scones.jpg"
+                }
+            },
+            {type: "text", text: "Analyze this image in detail."}
         ]
     }]
-}'
+});
+```
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "@vertex-ai/gemini-1.5-pro",
+    "media_resolution": "MEDIA_RESOLUTION_HIGH",
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "image_url", "image_url": {"url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"}},
+        {"type": "text", "text": "Analyze this image in detail."}
+      ]
+    }]
+  }'
 ```
 </CodeGroup>
 
@@ -579,27 +681,9 @@ curl --location 'https://api.portkey.ai/v1/chat/completions' \
 For Gemini 3 models, you can specify media resolution on individual media parts. Per-part settings take precedence over global settings when both are specified.
 
 <CodeGroup>
-```javascript NodeJS
-const chatCompletion = await portkey.chat.completions.create({
-    model: 'gemini-3.0-pro',
-    messages: [{
-        role: 'user',
-        content: [
-            {
-                type: 'image_url',
-                image_url: {
-                    url: 'gs://cloud-samples-data/generative-ai/image/scones.jpg',
-                    media_resolution: 'MEDIA_RESOLUTION_HIGH'
-                }
-            },
-            { type: 'text', text: 'Analyze this image in detail.' }
-        ]
-    }]
-}, {Authorization: "Bearer $YOUR_VERTEX_ACCESS_TOKEN"});
-```
 ```python Python
-completion = portkey.with_options(Authorization="Bearer $YOUR_VERTEX_ACCESS_TOKEN").chat.completions.create(
-    model='gemini-3.0-pro',
+completion = portkey.chat.completions.create(
+    model="@vertex-ai/gemini-3.0-pro",
     messages=[{
         "role": "user",
         "content": [
@@ -610,34 +694,49 @@ completion = portkey.with_options(Authorization="Bearer $YOUR_VERTEX_ACCESS_TOKE
                     "media_resolution": "MEDIA_RESOLUTION_HIGH"
                 }
             },
-            { "type": "text", "text": "Analyze this image in detail." }
+            {"type": "text", "text": "Analyze this image in detail."}
         ]
     }]
 )
 ```
-```sh cURL
-curl --location 'https://api.portkey.ai/v1/chat/completions' \
---header 'x-portkey-provider: vertex-ai' \
---header 'x-portkey-vertex-region: us-central1' \
---header 'x-portkey-api-key: PORTKEY_API_KEY' \
---header 'Authorization: VERTEX_AI_ACCESS_TOKEN' \
---header 'Content-Type: application/json' \
---data '{
-    "model": "gemini-3.0-pro",
-    "messages": [{
-        "role": "user",
-        "content": [
+```javascript NodeJS
+const chatCompletion = await portkey.chat.completions.create({
+    model: "@vertex-ai/gemini-3.0-pro",
+    messages: [{
+        role: "user",
+        content: [
             {
-                "type": "image_url",
-                "image_url": {
-                    "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg",
-                    "media_resolution": "MEDIA_RESOLUTION_HIGH"
+                type: "image_url",
+                image_url: {
+                    url: "gs://cloud-samples-data/generative-ai/image/scones.jpg",
+                    media_resolution: "MEDIA_RESOLUTION_HIGH"
                 }
             },
-            {"type": "text", "text": "Analyze this image in detail."}
+            {type: "text", text: "Analyze this image in detail."}
         ]
     }]
-}'
+});
+```
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "@vertex-ai/gemini-3.0-pro",
+    "messages": [{
+      "role": "user",
+      "content": [
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg",
+            "media_resolution": "MEDIA_RESOLUTION_HIGH"
+          }
+        },
+        {"type": "text", "text": "Analyze this image in detail."}
+      ]
+    }]
+  }'
 ```
 </CodeGroup>
 
