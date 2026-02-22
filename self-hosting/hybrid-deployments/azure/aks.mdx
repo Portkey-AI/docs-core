@@ -16,13 +16,14 @@ description: This enterprise-focused document provides comprehensive instruction
 | --------------------------------------- | ------------------------------------------------| ------------------------------------------------------------------------------------------------------------------------------------------------------|
 | AI Gateway                              | Deploy in your AKS cluster using Helm charts.   | Use AKS B2ms worker nodes, each providing at least 2 vCPUs and 4 GiB of memory. For high availability, deploy them across multiple Availability Zones.|
 | Logs Store (optional)                   | Azure Blob Storage or S3-compatible storage     | Each log document is \~10kb in size (uncompressed)                                                                                                    |
-| Cache (Prompts, Configs & Providers)    | Built-in Redis or Azure Cache for Redis         | Deployed within the same VNet as the Portkey Gateway.                                                                                                 |
+| Cache (Prompts, Configs & Providers)    | Built-in Redis or Azure Managed Redis           | Deployed within the same VNet as the Portkey Gateway.                                                                                                 |
 
 ## Prerequisites
 
 Ensure the following tools and resources are installed and available:
 
 * A running [AKS cluster](https://learn.microsoft.com/en-us/azure/aks/tutorial-kubernetes-deploy-cluster?tabs=azure-cli#create-a-kubernetes-cluster) with at least 2 worker nodes. (**Best Practice:** Use 2 nodes, with one node in each Availability Zone, to ensure high availability.)
+* (Optional) If using Workload Identity for Blob Storage access, ensure [OIDC issuer](https://learn.microsoft.com/en-us/azure/aks/use-oidc-issuer) and [Workload Identity](https://learn.microsoft.com/en-us/azure/aks/workload-identity-deploy-cluster#update-an-existing-aks-cluster) are enabled on your AKS cluster.
 * [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/get-started-with-azure-cli?view=azure-cli-latest)
 * [Kubectl](https://learn.microsoft.com/en-us/azure/aks/tutorial-kubernetes-deploy-cluster?tabs=azure-cli#connect-to-cluster-using-kubectl)  
 * [Helm (v3 or above)](https://helm.sh/docs/intro/install/)  
@@ -102,7 +103,7 @@ environment:
 
 
 ### Cache Store
-The Portkey Gateway deployment includes a Redis instance pre-installed by default. You can either use this built-in Redis or connect to an external cache like `Azure Cache for Redis` or `Azure Managed Redis`.
+The Portkey Gateway deployment includes a Redis instance pre-installed by default. You can either use this built-in Redis or connect to an external cache like `Azure Managed Redis`.
 
 #### Built-in Redis
 No additional permissions or network configurations are required.
@@ -117,18 +118,68 @@ environment:
 ```
 #### Azure Managed Redis
 
-To enable the gateway to work with an Azure Managed cache, ensure connectivity from AKS cluster.
+To enable the gateway to work with an Azure Managed cache, ensure connectivity from AKS cluster. [Set up](#azure-managed-redis) access to the Redis instance based on your chosen authentication method and update `values.yaml` with the following configuration.
 
-```yaml
-## To use Azure Managed Redis, add the following configuration in the values.yaml file.
-environment:
-  data:
-    CACHE_STORE: azure-redis
-    REDIS_URL: "redis://<Azure_Redis_Endpoint>:<Port>" 
-    REDIS_TLS_ENABLED: "true"                             ## "true"/"false"
-    REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled on Amazon ElastiCache
-    # REDIS_PASSWORD: <Access Key>                        ## Provide Azure Managed Redis Access Key
-```
+<Tabs>
+  <Tab title="Access Key">
+    ```yaml
+    environment:
+      data:
+        CACHE_STORE: azure-redis
+        REDIS_URL: "rediss://<Azure_Redis_Endpoint>:<Port>" 
+        REDIS_TLS_ENABLED: "true"                                ## "true"/"false"
+        REDIS_MODE: cluster                                      ## Add this parameter only if cluster mode is enabled
+        REDIS_PASSWORD: <Access Key>                             ## Provide Azure Managed Redis Access Key
+    ```
+  </Tab>
+  <Tab title="Workload Identity">
+    ```yaml
+    serviceAccount:
+      create: true
+      automount: true
+      name: <SERVICE_ACCOUNT_NAME>
+      annotations:
+        azure.workload.identity/client-id: <MANAGED_IDENTITY_CLIENT_ID>
+
+    podLabels:
+      azure.workload.identity/use: "true"
+
+    environment:
+      data:
+        CACHE_STORE: azure-redis
+        REDIS_URL: "redis://<Azure_Redis_Endpoint>:<Port>" 
+        REDIS_TLS_ENABLED: "true"                                  ## "true"/"false"
+        REDIS_MODE: cluster                                        ## Add this parameter only if cluster mode is enabled
+        AZURE_REDIS_AUTH_MODE: workload
+    ```
+  </Tab>
+  <Tab title="Managed Identity">
+    ```yaml
+    environment:
+      data:
+        CACHE_STORE: azure-redis
+        REDIS_URL: "redis://<Azure_Redis_Endpoint>:<Port>" 
+        REDIS_TLS_ENABLED: "true"                                  ## "true"/"false"
+        REDIS_MODE: cluster                                        ## Add this parameter only if cluster mode is enabled
+        AZURE_REDIS_AUTH_MODE: managed
+        AZURE_REDIS_MANAGED_CLIENT_ID: <MANAGED_CLIENT_ID>         ## Defaults to AZURE_MANAGED_CLIENT_ID if not provided
+    ```
+  </Tab>
+  <Tab title="Entra ID">
+    ```yaml
+    environment:
+      data:
+        CACHE_STORE: azure-redis
+        REDIS_URL: "redis://<Azure_Redis_Endpoint>:<Port>" 
+        REDIS_TLS_ENABLED: "true"                                  ## "true"/"false"
+        REDIS_MODE: cluster                                        ## Add this parameter only if cluster mode is enabled
+        AZURE_REDIS_AUTH_MODE: entra
+        AZURE_REDIS_ENTRA_CLIENT_ID: <ENTRA_CLIENT_ID>             ## Defaults to AZURE_ENTRA_CLIENT_ID if not provided
+        AZURE_REDIS_ENTRA_CLIENT_SECRET: <ENTRA_CLIENT_SECRET>     ## Defaults to AZURE_ENTRA_CLIENT_SECRET if not provided
+        AZURE_REDIS_ENTRA_TENANT_ID: <ENTRA_TENANT_ID>             ## Defaults to AZURE_ENTRA_TENANT_ID if not provided
+    ```
+  </Tab>
+</Tabs>
 
 ### Log Store
 #### Azure Blob Storage
@@ -136,11 +187,34 @@ environment:
 1. (Optional) If not already done, create an Azure Storage Account and a Blob Container to store LLM logs.
 
 2. [Set up](#setting-up-permission) access to the log store. The Gateway supports the following methods for connecting to the Blob Storage:
+    - Workload Identity
     - Managed Identity
     - Entra ID
 
     Depending on the chosen Blob Storage access method, update `values.yaml` with the following configuration.
     <Tabs>
+      <Tab title="Workload Identity">
+        To set up Workload Identity authentication for the Portkey Gateway, follow the [steps](#setting-up-permission) and add the following configuration to `values.yaml`.
+        ```yaml
+        ## To enable Workload Identity update values.yaml with the following details:-
+        serviceAccount:
+          create: true
+          automount: true
+          name: <SERVICE_ACCOUNT_NAME>
+          annotations:
+            azure.workload.identity/client-id: <MANAGED_IDENTITY_CLIENT_ID>
+
+        podLabels:
+          azure.workload.identity/use: "true"
+
+        environment:
+          data:
+            LOG_STORE: azure
+            AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>       # Specify the name of the storage account which will be used for storing LLM logs.
+            AZURE_STORAGE_CONTAINER: <STORAGE_CONTAINER>        # Specify the name of the blob store container which will be used for storing LLM logs.
+            AZURE_AUTH_MODE: workload
+        ```
+      </Tab>
       <Tab title="Managed Identity">
         ```yaml
         ## To enable Managed Identity update values.yaml with following details:-
@@ -151,6 +225,7 @@ environment:
             AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>       # Specify the name of the storage account which will be used for storing LLM logs.
             AZURE_STORAGE_CONTAINER: <STORAGE_CONTAINER>        # Specify the name of the blob store container which will be used for storing LLM logs.
             AZURE_AUTH_MODE: managed
+            AZURE_MANAGED_CLIENT_ID: <MANAGED_IDENTITY_CLIENT_ID>
         ```
       </Tab>
       <Tab title="Entra ID">
@@ -515,37 +590,110 @@ To allow the Portkey Gateway to access Azure Blob Storage for log storage, permi
 
 Follow the steps below to set up these permissions according to your selected access method.
   <Tabs>
-    <Tab title="Managed Identity">
+    <Tab title="Workload Identity">
+    **Prerequisites:** Ensure [OIDC issuer](https://learn.microsoft.com/en-us/azure/aks/use-oidc-issuer) and [Workload Identity](https://learn.microsoft.com/en-us/azure/aks/workload-identity-deploy-cluster#update-an-existing-aks-cluster) are enabled on your AKS cluster.
+
     1. Specify the details:
       ```sh
       CLUSTER_NAME=<CLUSTER_NAME>                             # Specify name of AKS cluster
-      RESOURCE_GROUP=<RESOURCE_GROUP>                         # Specify the name of the resource group that contains the storage account.
+      RESOURCE_GROUP=<RESOURCE_GROUP>                         # Specify the name of the resource group
       STORAGE_ACCOUNT_NAME=<STORAGE_ACCOUNT_NAME>             # Specify the name of the storage account which will be used for storing LLM logs.
       CONTAINER_NAME=<CONTAINER_NAME>                         # Specify the name of the blob store container which will be used for storing LLM logs.
+      MANAGED_IDENTITY_NAME=<MANAGED_IDENTITY_NAME>           # Specify a name for the User-Assigned Managed Identity (e.g., portkey-gateway-identity)
+      SERVICE_ACCOUNT_NAME=<SERVICE_ACCOUNT_NAME>             # Must match the service account name used in values.yaml
+      NAMESPACE=<NAMESPACE>                                   # Namespace where the gateway is deployed
+      ```
 
-      ```
-    2. Fetch Identity associated with the AKS cluster.
+    2. Create a User-Assigned Managed Identity.
       ```sh
-      KUBELET_OBJECT_ID=$(az aks show \
-       --resource-group $RESOURCE_GROUP \
-       --name $CLUSTER_NAME \
-       --query "identityProfile.kubeletidentity.objectId" \
-       --output tsv)
+      az identity create \
+        --name ${MANAGED_IDENTITY_NAME} \
+        --resource-group ${RESOURCE_GROUP}
+
+      MANAGED_IDENTITY_CLIENT_ID=$(az identity show \
+        --name ${MANAGED_IDENTITY_NAME} \
+        --resource-group ${RESOURCE_GROUP} \
+        --query clientId -o tsv)
       ```
-    3. Grant identity a role that allows it to access Blob Storage.
+      Make a note of `MANAGED_IDENTITY_CLIENT_ID`, as it is required in `values.yaml`.
+
+    3. Create a federated identity credential to link the Kubernetes service account to the managed identity.
       ```sh
-      # Fetch storage id of storage account
+      OIDC_ISSUER=$(az aks show \
+        --name ${CLUSTER_NAME} \
+        --resource-group ${RESOURCE_GROUP} \
+        --query "oidcIssuerProfile.issuerUrl" -o tsv)
+
+      az identity federated-credential create \
+        --name portkey-gateway-federated-cred \
+        --identity-name ${MANAGED_IDENTITY_NAME} \
+        --resource-group ${RESOURCE_GROUP} \
+        --issuer ${OIDC_ISSUER} \
+        --subject system:serviceaccount:${NAMESPACE}:${SERVICE_ACCOUNT_NAME} \
+        --audiences api://AzureADTokenExchange
+      ```
+
+    4. Grant the managed identity a role that allows it to access Blob Storage.
+      ```sh
       STORAGE_ID=$(az storage account show \
-       --name $STORAGE_ACCOUNT_NAME \
-       --resource-group $RESOURCE_GROUP --query id -o tsv)
+        --name ${STORAGE_ACCOUNT_NAME} \
+        --resource-group ${RESOURCE_GROUP} --query id -o tsv)
 
-      # Grant Storage Blob Data Contributor to kubelet identity
       az role assignment create \
-       --assignee-object-id $KUBELET_OBJECT_ID \
-       --assignee-principal-type ServicePrincipal \
-       --role "Storage Blob Data Contributor" \
-       --scope "$STORAGE_ID/blobServices/default/containers/$CONTAINER_NAME"
+        --assignee ${MANAGED_IDENTITY_CLIENT_ID} \
+        --role "Storage Blob Data Contributor" \
+        --scope "${STORAGE_ID}/blobServices/default/containers/${CONTAINER_NAME}"
+      ```
+    </Tab>
+    <Tab title="Managed Identity">
+    1. Specify the details:
+      ```sh
+      RESOURCE_GROUP=<RESOURCE_GROUP>                         # Specify the name of the resource group
+      STORAGE_ACCOUNT_NAME=<STORAGE_ACCOUNT_NAME>             # Specify the name of the storage account which will be used for storing LLM logs.
+      CONTAINER_NAME=<CONTAINER_NAME>                         # Specify the name of the blob store container which will be used for storing LLM logs.
+      MANAGED_IDENTITY_NAME=<MANAGED_IDENTITY_NAME>           # Specify a name for the User-Assigned Managed Identity (e.g., portkey-gateway-identity)
+      ```
 
+    2. Create a User-Assigned Managed Identity.
+      ```sh
+      az identity create \
+        --name ${MANAGED_IDENTITY_NAME} \
+        --resource-group ${RESOURCE_GROUP}
+
+      MANAGED_IDENTITY_CLIENT_ID=$(az identity show \
+        --name ${MANAGED_IDENTITY_NAME} \
+        --resource-group ${RESOURCE_GROUP} \
+        --query clientId -o tsv)
+      ```
+      Make a note of `MANAGED_IDENTITY_CLIENT_ID`, as it is required in `values.yaml`.
+
+    3. [Assign the managed identity to the AKS cluster VMSS](https://learn.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/qs-configure-cli-windows-vmss#user-assigned-managed-identity) so pods can use it.
+      ```sh
+      VMSS_RESOURCE_GROUP=$(az aks show \
+        --resource-group ${RESOURCE_GROUP} \
+        --name ${CLUSTER_NAME} \
+        --query nodeResourceGroup -o tsv)
+
+      VMSS_NAME=$(az vmss list \
+        --resource-group ${VMSS_RESOURCE_GROUP} \
+        --query "[0].name" -o tsv)
+
+      az vmss identity assign \
+        --resource-group ${VMSS_RESOURCE_GROUP} \
+        --name ${VMSS_NAME} \
+        --identities $(az identity show --name ${MANAGED_IDENTITY_NAME} --resource-group ${RESOURCE_GROUP} --query id -o tsv)
+      ```
+
+    4. Grant the managed identity a role that allows it to access Blob Storage.
+      ```sh
+      STORAGE_ID=$(az storage account show \
+        --name ${STORAGE_ACCOUNT_NAME} \
+        --resource-group ${RESOURCE_GROUP} --query id -o tsv)
+
+      az role assignment create \
+        --assignee ${MANAGED_IDENTITY_CLIENT_ID} \
+        --role "Storage Blob Data Contributor" \
+        --scope "${STORAGE_ID}/blobServices/default/containers/${CONTAINER_NAME}"
       ```
     </Tab>
   <Tab title="Entra Identity">
@@ -605,6 +753,131 @@ Follow the steps below to set up these permissions according to your selected ac
 
 </Tabs>
 
+#### Azure Managed Redis
+To allow the Portkey Gateway to authenticate with Azure Managed Redis using Microsoft Entra ID, permissions must be granted.
+
+**Prerequisites:** [Microsoft Entra Authentication](https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-azure-active-directory-for-authentication) must be enabled on the Azure Managed Redis instance.
+
+Follow the steps below to set up these permissions according to your selected access method.
+  <Tabs>
+    <Tab title="Workload Identity">
+    Complete steps 1 to 3 from the [Azure Blob Storage > Workload Identity](#azure-blob-storage) section if not already done.
+
+    1. Assign a data access policy to the managed identity on the Redis instance.
+      ```sh
+      REDIS_NAME=<REDIS_NAME>                                   # Name of the Azure Managed Redis instance
+      RESOURCE_GROUP=<RESOURCE_GROUP>
+      MANAGED_IDENTITY_NAME=<MANAGED_IDENTITY_NAME>             # Same identity created in Blob Storage setup
+
+      MANAGED_IDENTITY_OBJECT_ID=$(az identity show \
+        --name ${MANAGED_IDENTITY_NAME} \
+        --resource-group ${RESOURCE_GROUP} \
+        --query principalId -o tsv)
+
+      az redisenterprise database access-policy-assignment create \
+        --access-policy-assignment-name portkeyGatewayRedisAccess \
+        --cluster-name ${REDIS_NAME} \
+        --database-name default \
+        --resource-group ${RESOURCE_GROUP} \
+        --access-policy-name default \
+        --object-id ${MANAGED_IDENTITY_OBJECT_ID}
+      ```
+    </Tab>
+    <Tab title="Managed Identity">
+    Complete steps 1 to 3 from the [Azure Blob Storage > Managed Identity](#azure-blob-storage) section if not already done.
+
+    1. Assign a data access policy to the managed identity on the Redis instance.
+      ```sh
+      REDIS_NAME=<REDIS_NAME>                                   # Name of the Azure Managed Redis instance
+      RESOURCE_GROUP=<RESOURCE_GROUP>
+      MANAGED_IDENTITY_NAME=<MANAGED_IDENTITY_NAME>             # Same identity created in Blob Storage setup
+
+      MANAGED_IDENTITY_OBJECT_ID=$(az identity show \
+        --name ${MANAGED_IDENTITY_NAME} \
+        --resource-group ${RESOURCE_GROUP} \
+        --query principalId -o tsv)
+
+      az redisenterprise database access-policy-assignment create \
+        --access-policy-assignment-name portkeyGatewayRedisAccess \
+        --cluster-name ${REDIS_NAME} \
+        --database-name default \
+        --resource-group ${RESOURCE_GROUP} \
+        --access-policy-name default \
+        --object-id ${MANAGED_IDENTITY_OBJECT_ID}
+      ```
+    </Tab>
+    <Tab title="Entra Identity">
+    Complete steps 1 to 3 from the [Azure Blob Storage > Entra Identity](#azure-blob-storage) section if not already done.
+
+    1. Assign a data access policy to the service principal on the Redis instance.
+      ```sh
+      REDIS_NAME=<REDIS_NAME>                                   # Name of the Azure Managed Redis instance
+      RESOURCE_GROUP=<RESOURCE_GROUP>
+
+      ENTRA_OBJECT_ID=$(az ad sp show \
+        --id ${AZURE_ENTRA_CLIENT_ID} \
+        --query id -o tsv)
+
+      az redisenterprise database access-policy-assignment create \
+        --access-policy-assignment-name portkeyGatewayRedisAccess \
+        --cluster-name ${REDIS_NAME} \
+        --database-name default \
+        --resource-group ${RESOURCE_GROUP} \
+        --access-policy-name default \
+        --object-id ${ENTRA_OBJECT_ID}
+      ```
+    </Tab>
+  </Tabs>
+
+#### Azure OpenAI and Azure AI Foundry (Optional)
+
+If the Portkey Gateway routes requests to Azure OpenAI or Azure AI Foundry models, the identity used by the gateway must be granted the `Cognitive Services OpenAI User` role on the respective resource.
+
+<Note>
+This is only required when using Managed Identity or Workload Identity to authenticate with Azure OpenAI or Azure AI Foundry. If you are using API keys, no additional role assignment is needed.
+</Note>
+
+<Tabs>
+  <Tab title="Workload Identity">
+  Complete steps 1 to 3 from the [Azure Blob Storage > Workload Identity](#azure-blob-storage) section if not already done.
+
+  ```sh
+  MANAGED_IDENTITY_CLIENT_ID=<MANAGED_IDENTITY_CLIENT_ID>
+  # Replace <RESOURCE_ID> with the full Resource ID of Azure OpenAI or Azure AI Foundry resource.
+  # e.g., /subscriptions/<SUB_ID>/resourceGroups/<RG>/providers/Microsoft.CognitiveServices/accounts/<RESOURCE_NAME>
+
+  az role assignment create \
+    --assignee ${MANAGED_IDENTITY_CLIENT_ID} \
+    --role "Cognitive Services OpenAI User" \
+    --scope <RESOURCE_ID>
+  ```
+  </Tab>
+  <Tab title="Managed Identity">
+  Create a User-Assigned Managed Identity if not already done, and [assign it to the AKS cluster or VMSS](https://learn.microsoft.com/en-us/azure/aks/use-managed-identity#bring-your-own-managed-identity).
+
+  ```sh
+  MANAGED_IDENTITY_CLIENT_ID=<MANAGED_IDENTITY_CLIENT_ID>
+  # Replace <RESOURCE_ID> with the full Resource ID of Azure OpenAI or Azure AI Foundry resource.
+
+  az role assignment create \
+    --assignee ${MANAGED_IDENTITY_CLIENT_ID} \
+    --role "Cognitive Services OpenAI User" \
+    --scope <RESOURCE_ID>
+  ```
+  </Tab>
+  <Tab title="Entra Identity">
+  Complete steps 1 to 3 from the [Azure Blob Storage > Entra Identity](#azure-blob-storage) section if not already done.
+
+  ```sh
+  # Replace <RESOURCE_ID> with the full Resource ID of Azure OpenAI or Azure AI Foundry resource.
+
+  az role assignment create \
+    --assignee ${AZURE_ENTRA_CLIENT_ID} \
+    --role "Cognitive Services OpenAI User" \
+    --scope <RESOURCE_ID>
+  ```
+  </Tab>
+</Tabs>
 
 
 ## Examples
@@ -661,10 +934,200 @@ environment:
 # Enabling Load Balancer to provide access outside of cluster
 service:
   type: LoadBalancer
-  port: 8787
+  port: 80                                                     # LB listener port
+  containerPort: 8787
   annotations: 
     service.beta.kubernetes.io/azure-load-balancer-internal: "false"                      
     service.beta.kubernetes.io/azure-load-balancer-health-probe-protocol: "http"
     service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/v1/health"
     service.beta.kubernetes.io/azure-allowed-ip-ranges: 0.0.0.0/0    
+```
+
+**Azure Managed Redis with Workload Identity**
+
+The following sample `values.yaml` shows how to configure Azure Managed Redis (Workload Identity) and Azure Blob Storage (Workload Identity) using a shared User-Assigned Managed Identity, with Private Link for outbound connectivity to the Control Plane.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+serviceAccount:
+  create: true
+  automount: true
+  name: <SERVICE_ACCOUNT_NAME>
+  annotations:
+    azure.workload.identity/client-id: <MANAGED_IDENTITY_CLIENT_ID>
+
+podLabels:
+  azure.workload.identity/use: "true"
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>
+    PORT: "8787"
+
+    # Azure Managed Redis with Workload Identity
+    CACHE_STORE: azure-redis
+    REDIS_URL: "redis://<Azure_Redis_Endpoint>:<Port>"
+    REDIS_TLS_ENABLED: "true"
+    AZURE_REDIS_AUTH_MODE: workload
+
+    # Azure Blob Storage with Workload Identity
+    LOG_STORE: azure
+    AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>
+    AZURE_STORAGE_CONTAINER: <STORAGE_CONTAINER>
+    AZURE_AUTH_MODE: workload
+
+    # Private Link outbound connectivity to Control Plane
+    ALBUS_BASEPATH: "https://azure-cp.privatelink-az.portkey.ai/albus"
+    CONTROL_PLANE_BASEPATH: "https://azure-cp.privatelink-az.portkey.ai/api/v1"
+    SOURCE_SYNC_API_BASEPATH: "https://azure-cp.privatelink-az.portkey.ai/api/v1/sync"
+    CONFIG_READER_PATH: "https://azure-cp.privatelink-az.portkey.ai/api/model-configs"
+
+service:
+  type: LoadBalancer
+  port: 80                                                     # LB listener port
+  containerPort: 8787
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-protocol: "http"
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/v1/health"
+    service.beta.kubernetes.io/azure-allowed-ip-ranges: 0.0.0.0/0
+```
+
+**Azure Managed Redis (Access Key) with Managed Identity for Blob Storage**
+
+The following sample `values.yaml` shows how to configure Azure Managed Redis with an access key and Azure Blob Storage using the AKS Managed Identity.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>
+    PORT: "8787"
+
+    # Azure Managed Redis with Access Key
+    CACHE_STORE: azure-redis
+    REDIS_URL: "redis://<Azure_Redis_Endpoint>:<Port>"
+    REDIS_TLS_ENABLED: "true"
+    REDIS_PASSWORD: <Access_Key>
+
+    # Azure Blob Storage with Managed Identity
+    LOG_STORE: azure
+    AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>
+    AZURE_STORAGE_CONTAINER: <STORAGE_CONTAINER>
+    AZURE_AUTH_MODE: managed
+
+service:
+  type: LoadBalancer
+  port: 80                                                     # LB listener port
+  containerPort: 8787
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-protocol: "http"
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/v1/health"
+```
+
+**AI Gateway + MCP Gateway with NGINX Ingress**
+
+The following sample `values.yaml` shows how to deploy both AI Gateway and MCP Gateway with host-based routing using the NGINX Ingress controller, built-in Redis, and Workload Identity for Blob Storage.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+serviceAccount:
+  create: true
+  automount: true
+  name: <SERVICE_ACCOUNT_NAME>
+  annotations:
+    azure.workload.identity/client-id: <MANAGED_IDENTITY_CLIENT_ID>
+
+podLabels:
+  azure.workload.identity/use: "true"
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>
+    PORT: "8787"
+    SERVER_MODE: "all"
+    MCP_PORT: "8788"
+    MCP_GATEWAY_BASE_URL: "https://mcp.example.com"
+
+    # Built-in Redis
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+
+    # Azure Blob Storage with Workload Identity
+    LOG_STORE: azure
+    AZURE_STORAGE_ACCOUNT: <STORAGE_ACCOUNT_NAME>
+    AZURE_STORAGE_CONTAINER: <STORAGE_CONTAINER>
+    AZURE_AUTH_MODE: workload
+
+ingress:
+  enabled: true
+  ingressClassName: "nginx-static"
+  hostname: "gateway.example.com"
+  hostBased: true
+  mcpHostname: "mcp.example.com"
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/v1/health"
 ```
