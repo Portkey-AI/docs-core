@@ -1411,6 +1411,302 @@ main();
 - `imagegeneration@005`
 - `imagegeneration@002`
 
+## Video Generation (Veo)
+
+Portkey supports [Veo on Vertex AI](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/veo-video-generation) for video generation from text or image prompts. Veo uses a **two-step long-running flow**: you first submit a generation request and receive an operation name, then poll until the operation completes and the video is ready.
+
+### How Veo Differs From Other Video APIs
+
+Unlike single-call video APIs (for example, [OpenAI’s Sora API](https://platform.openai.com/docs/guides/video-generation), where you create a job and then check status or download separately), Vertex AI’s Veo video API is explicitly built as a **long-running operation**:
+
+1. **Step 1 – Start generation:** Send a `predictLongRunning` request with your prompt (and optional image/video inputs). The API returns immediately with an **operation name** (no video yet).
+2. **Step 2 – Poll until done:** Call `fetchPredictOperation` with that operation name repeatedly (e.g., every 30–60 seconds) until `done` is `true`. The final response contains the generated video(s), either as URIs (if you set `storageUri`) or as base64-encoded bytes.
+
+For full request/response shapes, parameters, and polling behavior, see the [Veo on Vertex AI video generation API reference](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/veo-video-generation).
+
+### Implementation: Request Then Poll
+
+Use two scripts (or two phases in one app):
+
+1. **Request script** – Calls `predictLongRunning` with your prompt and parameters, then writes the returned operation name (and related data) to a file such as `veo_operation.json`.
+2. **Poll script** – Reads that file, calls `fetchPredictOperation` in a loop until the operation is done, then saves the first generated video (e.g., to `./videos/dialogue_example.mp4`).
+
+Run the **request script first**; after it finishes, run the **poll script** (possibly in another terminal). The poll script will wait between attempts (e.g., 50 seconds) until the job completes.
+
+<Tabs>
+  <Tab title="Node.js">
+**1. Request script** (`veo_request.js`) – The script sends your text prompt and options (duration, resolution, etc.) to Veo’s `predictLongRunning` endpoint. The API starts the job on Google’s side and returns right away with an operation ID. The script writes that ID plus project/location/model info to `veo_operation.json` so the poll script can use it.
+
+```js
+// veo_request.js
+import { Portkey } from 'portkey-ai';
+import fs from 'fs';
+
+const projectId = 'YOUR_GCP_PROJECT_ID';
+const location = 'us-central1';
+const modelId = 'veo-3.1-generate-preview';
+
+const client = new Portkey({
+  apiKey: process.env.PORTKEY_API_KEY,
+  baseURL: 'https://api.portkey.dev/v1',
+  customHost: 'https://us-central1-aiplatform.googleapis.com/v1',
+  provider: '@vertex-json',
+});
+
+async function main() {
+  const urlPath = `/projects/${projectId}/locations/${location}/publishers/google/models/${modelId}:predictLongRunning`;
+  const body = {
+    instances: [
+      {
+        prompt:
+          "A close up of two people staring at a cryptic drawing on a wall, torchlight flickering. ...",
+      },
+    ],
+    parameters: {
+      durationSeconds: 4,
+      generateAudio: false,
+      resolution: '720p',
+    },
+  };
+  const operation = await client.post(urlPath, body);
+
+  const opDict =
+    typeof operation?.toJSON === 'function' ? operation.toJSON() : operation;
+
+  const operationName = opDict.name || opDict.data?.name;
+  if (!operationName) {
+    throw new Error(`Could not find operation name in: ${JSON.stringify(opDict)}`);
+  }
+
+  const payload = {
+    project_id: projectId,
+    location,
+    model_id: modelId,
+    operation_name: operationName,
+    operation: opDict,
+  };
+
+  const outputPath = 'veo_operation.json';
+  fs.writeFileSync(outputPath, JSON.stringify(payload, null, 2), 'utf8');
+  console.log(`Saved operation info to ${outputPath}. Run the poll script next.`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+```
+
+**2. Poll script** (`veo_poll.js`) – This script reads `veo_operation.json`, then calls `fetchPredictOperation` in a loop with the saved operation name. Each call returns the current job status; when `done` is true, the response includes the generated video(s). The script then decodes the first video from base64 and writes it to `./videos/dialogue_example.mp4`.
+
+```js
+// veo_poll.js
+import { Portkey } from 'portkey-ai';
+import fs from 'fs';
+import path from 'path';
+
+const operationPath = 'veo_operation.json';
+if (!fs.existsSync(operationPath)) {
+  throw new Error(`${operationPath} not found. Run veo_request.js first to create it.`);
+}
+
+const opInfo = JSON.parse(fs.readFileSync(operationPath, 'utf8'));
+
+const projectId = opInfo.project_id;
+const location = opInfo.location;
+const modelId = opInfo.model_id;
+
+let operationName = opInfo.operation_name;
+if (!operationName) {
+  const raw = opInfo.operation || {};
+  operationName = raw.name || raw.data?.name;
+}
+if (!operationName) {
+  throw new Error(`Could not determine operation name from: ${JSON.stringify(opInfo)}`);
+}
+
+const client = new Portkey({
+  apiKey: process.env.PORTKEY_API_KEY,
+  baseURL: 'https://api.portkey.dev/v1',
+  customHost: 'https://us-central1-aiplatform.googleapis.com/v1',
+  provider: '@vertex-json',
+});
+
+async function main() {
+  const pollPath = `/projects/${projectId}/locations/${location}/publishers/google/models/${modelId}:fetchPredictOperation`;
+  const pollBody = { operationName };
+
+  let checkDict;
+  while (true) {
+    const checkOperation = await client.post(pollPath, pollBody);
+
+    checkDict =
+      typeof checkOperation?.toJSON === 'function'
+        ? checkOperation.toJSON()
+        : checkOperation;
+
+    const done = checkDict.done || checkDict.data?.done;
+    if (done) break;
+
+    console.log('Still running, sleeping 50s...');
+    await new Promise((r) => setTimeout(r, 50_000));
+  }
+
+  const body = checkDict.response || checkDict.data?.response || {};
+  const videos = body.videos || [];
+  if (!videos.length) {
+    throw new Error(`No videos found in response: ${JSON.stringify(body)}`);
+  }
+
+  const generatedVideo = videos[0].bytesBase64Encoded;
+  const videosDir = './videos/';
+  fs.mkdirSync(videosDir, { recursive: true });
+
+  const videoBuffer = Buffer.from(generatedVideo, 'base64');
+  const filePath = path.join(videosDir, 'dialogue_example.mp4');
+  fs.writeFileSync(filePath, videoBuffer);
+
+  console.log(`Video saved to: ${filePath}`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+```
+
+Run: `node veo_request.js`, then `node veo_poll.js`.
+  </Tab>
+  <Tab title="Python">
+**1. Request script** (`veo_request.py`) – The script sends your text prompt and options (duration, resolution, etc.) to Veo’s `predictLongRunning` endpoint. The API starts the job on Google’s side and returns immediately with an operation ID. The script writes that ID plus project/location/model info to `veo_operation.json` for the poll script to use.
+
+```python
+# veo_request.py
+from portkey_ai import Portkey
+import json
+import os
+
+project_id = os.environ.get("VERTEX_PROJECT_ID", "YOUR_GCP_PROJECT_ID")
+location = "us-central1"
+model_id = "veo-3.1-generate-preview"
+
+client = Portkey(
+    api_key=os.environ.get("PORTKEY_API_KEY"),
+    base_url="https://api.portkey.dev/v1",
+    custom_host="https://us-central1-aiplatform.googleapis.com/v1",
+    provider="@vertex-json",
+)
+
+body = {
+    "instances": [
+        {
+            "prompt": "A close up of two people staring at a cryptic drawing on a wall, torchlight flickering. ...",
+        }
+    ],
+    "parameters": {
+        "durationSeconds": 4,
+        "generateAudio": False,
+        "resolution": "720p",
+    },
+}
+
+url = f"projects/{project_id}/locations/{location}/publishers/google/models/{model_id}:predictLongRunning"
+operation = client.post(url, body)
+
+op_dict = operation.model_dump() if hasattr(operation, "model_dump") else operation
+operation_name = op_dict.get("name") or op_dict.get("data", {}).get("name")
+if not operation_name:
+    raise RuntimeError(f"Could not find operation name in: {op_dict}")
+
+payload = {
+    "project_id": project_id,
+    "location": location,
+    "model_id": model_id,
+    "operation_name": operation_name,
+    "operation": op_dict,
+}
+
+output_path = "veo_operation.json"
+with open(output_path, "w", encoding="utf-8") as f:
+    json.dump(payload, f, indent=2)
+
+print(f"Saved operation info to {output_path}. Run the poll script next.")
+```
+
+**2. Poll script** (`veo_poll.py`) – This script reads `veo_operation.json`, then calls `fetchPredictOperation` in a loop with the saved operation name. Each call returns the current job status; when `done` is true, the response includes the generated video(s). The script decodes the first video from base64 and writes it to `./videos/dialogue_example.mp4`.
+
+```python
+# veo_poll.py
+from portkey_ai import Portkey
+import base64
+import json
+import os
+import time
+
+operation_path = "veo_operation.json"
+if not os.path.exists(operation_path):
+    raise FileNotFoundError(
+        f"{operation_path} not found. Run veo_request.py first to create it."
+    )
+
+with open(operation_path, "r", encoding="utf-8") as f:
+    op_info = json.load(f)
+
+project_id = op_info["project_id"]
+location = op_info["location"]
+model_id = op_info["model_id"]
+
+operation_name = op_info.get("operation_name")
+if not operation_name:
+    raw = op_info.get("operation", {})
+    operation_name = raw.get("name") or raw.get("data", {}).get("name")
+
+if not operation_name:
+    raise RuntimeError(f"Could not determine operation name from: {op_info}")
+
+client = Portkey(
+    api_key=os.environ.get("PORTKEY_API_KEY"),
+    base_url="https://api.portkey.dev/v1",
+    custom_host="https://us-central1-aiplatform.googleapis.com/v1",
+    provider="@vertex-json",
+)
+
+poll_url = f"projects/{project_id}/locations/{location}/publishers/google/models/{model_id}:fetchPredictOperation"
+poll_body = {"operationName": operation_name}
+
+while True:
+    check_operation = client.post(poll_url, poll_body)
+    check_dict = check_operation.model_dump() if hasattr(check_operation, "model_dump") else check_operation
+    done = check_dict.get("done") or check_dict.get("data", {}).get("done")
+    if done:
+        break
+    print("Still running, sleeping 50s...")
+    time.sleep(50)
+
+body = check_dict.get("response") or check_dict.get("data", {}).get("response", {})
+videos = body.get("videos") or []
+if not videos:
+    raise RuntimeError(f"No videos found in response: {body}")
+
+generated_video = videos[0]["bytesBase64Encoded"]
+os.makedirs("./videos/", exist_ok=True)
+video_data = base64.b64decode(generated_video)
+file_path = os.path.join("./videos/", "dialogue_example.mp4")
+
+with open(file_path, "wb") as video_file:
+    video_file.write(video_data)
+
+print(f"Video saved to: {file_path}")
+```
+
+Run: `python veo_request.py`, then `python veo_poll.py`.
+  </Tab>
+</Tabs>
+
+<Note>
+Ensure `PORTKEY_API_KEY` is set (and, for Python, optionally `VERTEX_PROJECT_ID`). Configure Vertex AI and project access in the Portkey dashboard or via the client so the gateway can call the Vertex Veo API.
+</Note>
+
 ## Custom Metadata Labels
 <Warning>
 The recommended way to attribute costs and track usage is to use [metadata](/product/observability/metadata) which allows your workflows to be vendor agnostic
