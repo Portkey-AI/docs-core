@@ -970,75 +970,26 @@ Learn more about [Portkey Guardrails](/product/guardrails) to understand how to 
 </Info>
 </Accordion>
 
-<Accordion title="Conditional Routing with Load-Balanced Targets">
-
-Each target in a conditional routing config can itself be a load balancer or fallback — not just a single provider. This enables model-level routing and provider-level distribution in a single config.
-
-This example routes four model aliases to different strategies:
-
-- **`claude-sonnet`** → load balanced across Anthropic, Vertex AI, and AWS Bedrock (triples rate limits)
-- **`gpt-4o`** → single OpenAI target
-- **`gpt-4o-mini`** → load balanced across Azure OpenAI and two OpenAI accounts
-- **`gemini-2.5-pro`** → load balancer wrapped in a fallback (if all Gemini providers fail, routes to GPT-4.1)
-
-```json
-{
-  "strategy": {
-    "mode": "conditional",
-    "conditions": [
-      { "query": { "params.model": { "$eq": "claude-sonnet" } }, "then": "claude-sonnet-lb" },
-      { "query": { "params.model": { "$eq": "gpt-4o" } }, "then": "gpt-4o-target" },
-      { "query": { "params.model": { "$eq": "gpt-4o-mini" } }, "then": "gpt-4o-mini-lb" },
-      { "query": { "params.model": { "$eq": "gemini-2.5-pro" } }, "then": "gemini-lb-with-fallback" }
-    ],
-    "default": "gpt-4o-target"
-  },
-  "targets": [
-    {
-      "name": "claude-sonnet-lb",
-      "strategy": { "mode": "loadbalance" },
-      "targets": [
-        { "override_params": { "model": "@anthropic/claude-sonnet-4-5-20250514" }, "weight": 1 },
-        { "override_params": { "model": "@vertex/claude-sonnet-4-5@20250514" }, "weight": 1 },
-        { "override_params": { "model": "@bedrock/anthropic.claude-sonnet-4-5-20250514-v1:0" }, "weight": 1 }
-      ]
-    },
-    {
-      "name": "gpt-4o-target",
-      "override_params": { "model": "@openai/gpt-4o" }
-    },
-    {
-      "name": "gpt-4o-mini-lb",
-      "strategy": { "mode": "loadbalance" },
-      "targets": [
-        { "override_params": { "model": "@azure/gpt-4o-mini" }, "weight": 1 },
-        { "override_params": { "model": "@openai-1/gpt-4o-mini" }, "weight": 1 },
-        { "override_params": { "model": "@openai-2/gpt-4o-mini" }, "weight": 1 }
-      ]
-    },
-    {
-      "name": "gemini-lb-with-fallback",
-      "strategy": { "mode": "fallback" },
-      "targets": [
-        {
-          "strategy": { "mode": "loadbalance" },
-          "targets": [
-            { "override_params": { "model": "@vertex/gemini-2.5-pro" }, "weight": 1 },
-            { "override_params": { "model": "@google-1/gemini-2.5-pro" }, "weight": 1 },
-            { "override_params": { "model": "@google-2/gemini-2.5-pro" }, "weight": 1 }
-          ]
-        },
-        { "override_params": { "model": "@openai/gpt-4.1" } }
-      ]
-    }
-  ]
-}
-```
-
-The `@provider-slug/model-name` format references AI Providers set up in your [Model Catalog](/product/model-catalog). See the [full guide with code samples](/guides/use-cases/combining-routing-strategies).
-</Accordion>
-
 </AccordionGroup>
+
+## Combine with Other Strategies
+
+Conditional routing targets are fully composable — each target can itself be a load balancer, a fallback chain, or another conditional router. Any strategy can nest inside any other.
+
+<CardGroup cols={2}>
+  <Card title="Conditional → Load Balancer" icon="scale-balanced" href="/guides/use-cases/combining-routing-strategies#route-by-model-distribute-by-provider">
+    Route a model alias to a load balancer spanning Anthropic, Vertex AI, and Bedrock — triple the rate limits with no code changes.
+  </Card>
+  <Card title="Conditional → Fallback (per branch)" icon="shield" href="/guides/use-cases/combining-routing-strategies#per-branch-fallbacks-in-a-conditional-router">
+    Each conditional branch has its own independent fallback chain — an OpenAI outage only affects the GPT-4o branch, not Claude routing.
+  </Card>
+  <Card title="Fallback → Conditional Router" icon="code-branch" href="/guides/use-cases/combining-routing-strategies#fall-back-to-a-conditional-router">
+    When the primary fails, a conditional router picks the best backup based on request context — keeping EU users on EU infrastructure even during outages.
+  </Card>
+  <Card title="Load Balancer → Per-Leg Fallbacks" icon="layer-group" href="/guides/use-cases/combining-routing-strategies#per-leg-fallbacks-in-a-load-balancer">
+    Each load-balanced slot has its own failover. An OpenAI outage only affects that leg — Anthropic traffic continues uninterrupted.
+  </Card>
+</CardGroup>
 
 
 
