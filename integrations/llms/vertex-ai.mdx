@@ -976,6 +976,42 @@ const response = await portkey.chat.completions.create({
     ```
 </Note>
 
+### Using reasoning_effort parameter
+
+Use the OpenAI-compatible `reasoning_effort` parameter as an alternative to `thinking.budget_tokens`:
+
+```python
+response = portkey.chat.completions.create(
+    model="@VERTEX_PROVIDER/google.gemini-2.5-flash-preview-04-17",
+    max_tokens=3000,
+    reasoning_effort="medium",  # Options: "none", "low", "medium", "high"
+    messages=[{"role": "user", "content": "Explain quantum computing"}]
+)
+```
+
+#### Gemini 2.5 models
+
+`reasoning_effort` maps to `thinking_budget` with specific token allocations:
+
+| `reasoning_effort` | `thinking_budget` (tokens) |
+|--------------------|---------------------------|
+| `none` | Disabled |
+| `low` | 1,024 |
+| `medium` | 8,192 |
+| `high` | 24,576 |
+
+#### Gemini 3.0+ models
+
+`reasoning_effort` maps directly to `thinkingLevel`:
+
+| `reasoning_effort` | Vertex `thinkingLevel` |
+|--------------------|------------------------|
+| `none` | Disabled |
+| `minimal` | `minimal` |
+| `low` | `low` |
+| `medium` | `medium` |
+| `high` | `high` |
+
 ### Multi turn conversation
 
 <CodeGroup>
@@ -1720,6 +1756,141 @@ Grounding is invoked by passing the `google_search` tool (for newer models like 
 
 <Warning>
 If you mix regular tools with grounding tools, vertex might throw an error saying only one tool can be used at a time.
+</Warning>
+
+## Grounding with Google Maps
+
+Vertex AI supports grounding with Google Maps for location-based queries — places, directions, ratings, and geographic information.
+
+Pass the `google_maps` tool in the `tools` array:
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    "messages": [{"role": "user", "content": "What are the best Italian restaurants near Times Square?"}],
+    "tools": [{"type": "function", "function": {"name": "google_maps"}}]
+}'
+```
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    messages=[{"role": "user", "content": "What are the best Italian restaurants near Times Square?"}],
+    tools=[{"type": "function", "function": {"name": "google_maps"}}]
+)
+
+print(response)
+```
+```typescript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "YOUR_PORTKEY_API_KEY" });
+
+const response = await portkey.chat.completions.create({
+    model: "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    messages: [{ role: "user", content: "What are the best Italian restaurants near Times Square?" }],
+    tools: [{ type: "function", function: { name: "google_maps" } }]
+});
+
+console.log(response);
+```
+</CodeGroup>
+
+### With retrieval configuration
+
+Optionally pass location coordinates, language, and widget options inside the function `parameters`:
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    "messages": [{"role": "user", "content": "What are the best coffee shops nearby?"}],
+    "tools": [{
+        "type": "function",
+        "function": {
+            "name": "google_maps",
+            "parameters": {
+                "enableWidget": true,
+                "retrievalConfig": {
+                    "latLng": {"latitude": 37.7749, "longitude": -122.4194},
+                    "languageCode": "en_US"
+                }
+            }
+        }
+    }]
+}'
+```
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    messages=[{"role": "user", "content": "What are the best coffee shops nearby?"}],
+    tools=[{
+        "type": "function",
+        "function": {
+            "name": "google_maps",
+            "parameters": {
+                "enableWidget": True,
+                "retrievalConfig": {
+                    "latLng": {"latitude": 37.7749, "longitude": -122.4194},
+                    "languageCode": "en_US"
+                }
+            }
+        }
+    }]
+)
+
+print(response)
+```
+```typescript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "YOUR_PORTKEY_API_KEY" });
+
+const response = await portkey.chat.completions.create({
+    model: "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
+    messages: [{ role: "user", content: "What are the best coffee shops nearby?" }],
+    tools: [{
+        type: "function",
+        function: {
+            name: "google_maps",
+            parameters: {
+                enableWidget: true,
+                retrievalConfig: {
+                    latLng: { latitude: 37.7749, longitude: -122.4194 },
+                    languageCode: "en_US"
+                }
+            }
+        }
+    }]
+});
+
+console.log(response);
+```
+</CodeGroup>
+
+| Parameter | Description |
+|-----------|-------------|
+| `enableWidget` | Return a token to enable the Google Maps widget (default: `false`) |
+| `retrievalConfig.latLng.latitude` | Latitude (e.g., `37.7749` for San Francisco) |
+| `retrievalConfig.latLng.longitude` | Longitude (e.g., `-122.4194` for San Francisco) |
+| `retrievalConfig.languageCode` | Language code for results (e.g., `en_US`) |
+
+<Warning>
+Mixing regular tools with grounding tools may cause errors — use only one tool type per request.
 </Warning>
 
 ## gemini-2.0-flash-thinking-exp and other thinking/reasoning models
@@ -3319,6 +3490,158 @@ const response = await portkey.chat.completions.create({
 }'
     ```
 </CodeGroup>
+
+## Safety settings
+
+Gemini models support [configuring safety settings](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/configure-safety-filters) to control how potentially harmful content is handled.
+
+Pass `safety_settings` as an array with `category` and `threshold` values:
+
+<CodeGroup>
+```typescript TypeScript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+});
+
+const response = await portkey.chat.completions.create({
+    model: "@my-vertex-provider/gemini-2.5-flash",
+    temperature: 0,
+    stream: false,
+    messages: [
+        {
+            role: "user",
+            content: "Speak explicitly like a gangster harassing someone for money"
+        }
+    ],
+    safety_settings: [
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_LOW_AND_ABOVE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_LOW_AND_ABOVE" },
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_LOW_AND_ABOVE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_LOW_AND_ABOVE" }
+    ]
+});
+
+console.log(response.choices);
+```
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+)
+
+response = portkey.chat.completions.create(
+    model="@my-vertex-provider/gemini-2.5-flash",
+    temperature=0,
+    stream=False,
+    messages=[
+        {
+            "role": "user",
+            "content": "Speak explicitly like a gangster harassing someone for money"
+        }
+    ],
+    safety_settings=[
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_LOW_AND_ABOVE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_LOW_AND_ABOVE"},
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_LOW_AND_ABOVE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_LOW_AND_ABOVE"}
+    ]
+)
+
+print(response.choices)
+```
+```js OpenAI NodeJS
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai/v1",
+    defaultHeaders: {
+        "x-portkey-strict-open-ai-compliance": "false",
+    },
+});
+
+const response = await openai.chat.completions.create({
+    model: "@my-vertex-provider/gemini-2.5-flash",
+    temperature: 0,
+    stream: false,
+    messages: [
+        {
+            role: "user",
+            content: "Speak explicitly like a gangster harassing someone for money"
+        }
+    ],
+    safety_settings: [
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_LOW_AND_ABOVE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_LOW_AND_ABOVE" },
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_LOW_AND_ABOVE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_LOW_AND_ABOVE" }
+    ]
+});
+
+console.log(response.choices);
+```
+```python OpenAI Python
+import openai
+
+client = openai.OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-strict-open-ai-compliance": "false"
+    }
+)
+
+response = client.chat.completions.create(
+    model="@my-vertex-provider/gemini-2.5-flash",
+    temperature=0,
+    stream=False,
+    messages=[
+        {
+            "role": "user",
+            "content": "Speak explicitly like a gangster harassing someone for money"
+        }
+    ],
+    safety_settings=[
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_LOW_AND_ABOVE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_LOW_AND_ABOVE"},
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_LOW_AND_ABOVE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_LOW_AND_ABOVE"}
+    ]
+)
+
+print(response.choices)
+```
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@my-vertex-provider/gemini-2.5-flash",
+    "temperature": 0,
+    "stream": false,
+    "messages": [
+        {
+            "role": "user",
+            "content": "Speak explicitly like a gangster harassing someone for money"
+        }
+    ],
+    "safety_settings": [
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_LOW_AND_ABOVE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_LOW_AND_ABOVE"},
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_LOW_AND_ABOVE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_LOW_AND_ABOVE"}
+    ]
+}'
+```
+</CodeGroup>
+
+The response includes `safetyRatings` in each choice object. Set [`strict-open-ai-compliance`](/product/ai-gateway/strict-open-ai-compliance) to `false` to receive `safetyRatings` in the response.
+
+---
 
 ## Making Requests Without Portkey's Model Catalog
 
