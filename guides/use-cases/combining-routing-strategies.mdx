@@ -18,24 +18,28 @@ Each config target can itself contain a strategy. A conditional routing target c
 ```
 Conditional Router (by params.model)
 ├── "claude-sonnet"  → Load Balancer
-│     ├── Anthropic (direct)
-│     ├── Vertex AI (Claude on Vertex)
-│     └── AWS Bedrock (Claude on Bedrock)
+│     ├── @anthropic/claude-sonnet-4-5-20250514
+│     ├── @vertex/claude-sonnet-4-5@20250514
+│     └── @bedrock/anthropic.claude-sonnet-4-5-20250514-v1:0
 │
-├── "gpt-4o"         → OpenAI (direct)
+├── "gpt-4o"         → @openai/gpt-4o (direct)
 │
 ├── "gpt-4o-mini"    → Load Balancer
-│     ├── Azure OpenAI
-│     ├── OpenAI (key 1)
-│     └── OpenAI (key 2)
+│     ├── @azure/gpt-4o-mini
+│     ├── @openai-1/gpt-4o-mini
+│     └── @openai-2/gpt-4o-mini
 │
 └── "gemini-2.5-pro" → Fallback
       ├── Load Balancer (primary)
-      │     ├── Vertex AI (Gemini)
-      │     ├── Google AI Studio (key 1)
-      │     └── Google AI Studio (key 2)
-      └── OpenAI gpt-4.1 (if all Gemini endpoints fail)
+      │     ├── @vertex/gemini-2.5-pro
+      │     ├── @google-1/gemini-2.5-pro
+      │     └── @google-2/gemini-2.5-pro
+      └── @openai/gpt-4.1 (if all Gemini endpoints fail)
 ```
+
+<Info>
+The `@provider-slug/model-name` format references [AI Providers](/product/model-catalog) configured in your Model Catalog. Set up each provider there first, then use its slug here.
+</Info>
 
 ## The Complete Config
 
@@ -58,23 +62,22 @@ Save this in the [Portkey UI](https://app.portkey.ai/configs) and copy the resul
       "name": "claude-sonnet-lb",
       "strategy": { "mode": "loadbalance" },
       "targets": [
-        { "provider": "@anthropic-vk", "override_params": { "model": "claude-sonnet-4-5-20250514" }, "weight": 1 },
-        { "provider": "@vertex-vk",    "override_params": { "model": "claude-sonnet-4-5@20250514" }, "weight": 1 },
-        { "provider": "@bedrock-vk",   "override_params": { "model": "anthropic.claude-sonnet-4-5-20250514-v1:0" }, "weight": 1 }
+        { "override_params": { "model": "@anthropic/claude-sonnet-4-5-20250514" }, "weight": 1 },
+        { "override_params": { "model": "@vertex/claude-sonnet-4-5@20250514" }, "weight": 1 },
+        { "override_params": { "model": "@bedrock/anthropic.claude-sonnet-4-5-20250514-v1:0" }, "weight": 1 }
       ]
     },
     {
       "name": "gpt-4o-target",
-      "provider": "@openai-vk",
-      "override_params": { "model": "gpt-4o" }
+      "override_params": { "model": "@openai/gpt-4o" }
     },
     {
       "name": "gpt-4o-mini-lb",
       "strategy": { "mode": "loadbalance" },
       "targets": [
-        { "provider": "@azure-vk",    "override_params": { "model": "gpt-4o-mini" }, "weight": 1 },
-        { "provider": "@openai-vk-1", "override_params": { "model": "gpt-4o-mini" }, "weight": 1 },
-        { "provider": "@openai-vk-2", "override_params": { "model": "gpt-4o-mini" }, "weight": 1 }
+        { "override_params": { "model": "@azure/gpt-4o-mini" }, "weight": 1 },
+        { "override_params": { "model": "@openai-1/gpt-4o-mini" }, "weight": 1 },
+        { "override_params": { "model": "@openai-2/gpt-4o-mini" }, "weight": 1 }
       ]
     },
     {
@@ -84,12 +87,12 @@ Save this in the [Portkey UI](https://app.portkey.ai/configs) and copy the resul
         {
           "strategy": { "mode": "loadbalance" },
           "targets": [
-            { "provider": "@vertex-vk",   "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 },
-            { "provider": "@google-vk-1", "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 },
-            { "provider": "@google-vk-2", "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 }
+            { "override_params": { "model": "@vertex/gemini-2.5-pro" }, "weight": 1 },
+            { "override_params": { "model": "@google-1/gemini-2.5-pro" }, "weight": 1 },
+            { "override_params": { "model": "@google-2/gemini-2.5-pro" }, "weight": 1 }
           ]
         },
-        { "provider": "@openai-vk", "override_params": { "model": "gpt-4.1" } }
+        { "override_params": { "model": "@openai/gpt-4.1" } }
       ]
     }
   ]
@@ -102,11 +105,11 @@ Save this in the [Portkey UI](https://app.portkey.ai/configs) and copy the resul
 
 Each provider runs Claude Sonnet 4.5 with independent rate limit buckets. Equal weights (`1:1:1`) split traffic evenly — effectively tripling throughput compared to a single-provider setup.
 
-| Provider | Virtual Key slug | Model identifier |
-|----------|-----------------|------------------|
-| Anthropic (direct) | `@anthropic-vk` | `claude-sonnet-4-5-20250514` |
-| Google Vertex AI | `@vertex-vk` | `claude-sonnet-4-5@20250514` |
-| AWS Bedrock | `@bedrock-vk` | `anthropic.claude-sonnet-4-5-20250514-v1:0` |
+| AI Provider slug | Provider | Model identifier |
+|-----------------|----------|------------------|
+| `@anthropic` | Anthropic (direct) | `claude-sonnet-4-5-20250514` |
+| `@vertex` | Google Vertex AI | `claude-sonnet-4-5@20250514` |
+| `@bedrock` | AWS Bedrock | `anthropic.claude-sonnet-4-5-20250514-v1:0` |
 
 Each provider uses a slightly different model identifier format — `override_params.model` handles this per target.
 
@@ -115,9 +118,9 @@ Each provider uses a slightly different model identifier format — `override_pa
   "name": "claude-sonnet-lb",
   "strategy": { "mode": "loadbalance" },
   "targets": [
-    { "provider": "@anthropic-vk", "override_params": { "model": "claude-sonnet-4-5-20250514" }, "weight": 1 },
-    { "provider": "@vertex-vk",    "override_params": { "model": "claude-sonnet-4-5@20250514" }, "weight": 1 },
-    { "provider": "@bedrock-vk",   "override_params": { "model": "anthropic.claude-sonnet-4-5-20250514-v1:0" }, "weight": 1 }
+    { "override_params": { "model": "@anthropic/claude-sonnet-4-5-20250514" }, "weight": 1 },
+    { "override_params": { "model": "@vertex/claude-sonnet-4-5@20250514" }, "weight": 1 },
+    { "override_params": { "model": "@bedrock/anthropic.claude-sonnet-4-5-20250514-v1:0" }, "weight": 1 }
   ]
 }
 ```
@@ -129,8 +132,7 @@ No nested strategy. When `params.model` is `gpt-4o`, the request goes straight t
 ```json
 {
   "name": "gpt-4o-target",
-  "provider": "@openai-vk",
-  "override_params": { "model": "gpt-4o" }
+  "override_params": { "model": "@openai/gpt-4o" }
 }
 ```
 
@@ -147,9 +149,9 @@ High-volume workloads (classification, summarization, extraction) hit `gpt-4o-mi
   "name": "gpt-4o-mini-lb",
   "strategy": { "mode": "loadbalance" },
   "targets": [
-    { "provider": "@azure-vk",    "override_params": { "model": "gpt-4o-mini" }, "weight": 1 },
-    { "provider": "@openai-vk-1", "override_params": { "model": "gpt-4o-mini" }, "weight": 1 },
-    { "provider": "@openai-vk-2", "override_params": { "model": "gpt-4o-mini" }, "weight": 1 }
+    { "override_params": { "model": "@azure/gpt-4o-mini" }, "weight": 1 },
+    { "override_params": { "model": "@openai-1/gpt-4o-mini" }, "weight": 1 },
+    { "override_params": { "model": "@openai-2/gpt-4o-mini" }, "weight": 1 }
   ]
 }
 ```
@@ -171,12 +173,12 @@ When an individual Gemini target fails, the load balancer routes to one of the r
     {
       "strategy": { "mode": "loadbalance" },
       "targets": [
-        { "provider": "@vertex-vk",   "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 },
-        { "provider": "@google-vk-1", "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 },
-        { "provider": "@google-vk-2", "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 }
+        { "override_params": { "model": "@vertex/gemini-2.5-pro" }, "weight": 1 },
+        { "override_params": { "model": "@google-1/gemini-2.5-pro" }, "weight": 1 },
+        { "override_params": { "model": "@google-2/gemini-2.5-pro" }, "weight": 1 }
       ]
     },
-    { "provider": "@openai-vk", "override_params": { "model": "gpt-4.1" } }
+    { "override_params": { "model": "@openai/gpt-4.1" } }
   ]
 }
 ```
@@ -289,25 +291,23 @@ response = client.chat.completions.create(
 
 </CodeGroup>
 
-## Virtual Keys
+## Setting Up AI Providers
 
-Create [Virtual Keys](https://app.portkey.ai/virtual-keys) for each provider and replace the slugs in the config:
+Add each provider in the [Model Catalog](https://app.portkey.ai/model-catalog) and assign it a slug. The slug becomes the `@provider-slug` prefix in your config's model strings.
 
-| Slug | Provider | Notes |
-|------|----------|-------|
-| `@anthropic-vk` | Anthropic | Direct API |
-| `@vertex-vk` | Google Vertex AI | Requires GCP credentials |
-| `@bedrock-vk` | AWS Bedrock | Requires AWS credentials |
-| `@openai-vk` | OpenAI | Primary key |
-| `@openai-vk-1` | OpenAI | Second account |
-| `@openai-vk-2` | OpenAI | Third account |
-| `@azure-vk` | Azure OpenAI | Requires Azure deployment |
-| `@google-vk-1` | Google AI Studio | First key |
-| `@google-vk-2` | Google AI Studio | Second key |
+| Slug used in config | Provider | Notes |
+|---------------------|----------|-------|
+| `@anthropic` | Anthropic | Direct API |
+| `@vertex` | Google Vertex AI | Requires GCP credentials |
+| `@bedrock` | AWS Bedrock | Requires AWS credentials |
+| `@openai` | OpenAI | Primary account |
+| `@openai-1` | OpenAI | Second account (rate limit headroom) |
+| `@openai-2` | OpenAI | Third account (rate limit headroom) |
+| `@azure` | Azure OpenAI | Requires Azure deployment |
+| `@google-1` | Google AI Studio | First account |
+| `@google-2` | Google AI Studio | Second account (rate limit headroom) |
 
-<Info>
-The `@slug` format references Virtual Keys in your Portkey workspace. Provider credentials can also be inlined using the `virtual_key` field directly in each target.
-</Info>
+See [Model Catalog](/product/model-catalog) for the full setup guide.
 
 ## Observability
 
@@ -343,4 +343,5 @@ response = client.with_options(
 - [Load Balancing](/product/ai-gateway/load-balancing) — weights, sticky sessions, and multi-key distribution
 - [Fallbacks](/product/ai-gateway/fallbacks) — status code triggers and tracing fallback chains
 - [Gateway Configs](/product/ai-gateway/configs) — creating, saving, and referencing configs
+- [Model Catalog](/product/model-catalog) — setting up AI Providers and managing model access
 - [Resilient load balancers with fallbacks](/guides/use-cases/setting-up-resilient-load-balancers-with-failure-mitigating-fallbacks) — Node.js deep-dive
