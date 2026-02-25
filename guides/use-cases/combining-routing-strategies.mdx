@@ -1,0 +1,460 @@
+---
+title: "Combining Routing Strategies: Conditional, Load Balancing & Fallbacks"
+description: "Build a production-grade routing config that uses conditional routing to direct traffic by model, load balancing to spread that traffic across multiple providers, and fallbacks to ensure zero downtime—all in a single Gateway Config."
+---
+
+Real production AI applications rarely need just one routing strategy. You want to:
+
+- **Route by model** — send `claude-sonnet` requests to Anthropic's ecosystem and `gpt-4o` requests to OpenAI's ecosystem, all from a single API call
+- **Load balance within each model** — spread traffic across Anthropic, Vertex AI, and Bedrock to multiply your effective rate limits
+- **Fail gracefully** — if an entire provider cluster goes down, fall back to a reliable backup model automatically
+
+Portkey's [Gateway Configs](/product/ai-gateway/configs) let you nest these three strategies together. This guide walks through a complete, production-ready example.
+
+## How Nesting Works
+
+Portkey config targets can themselves be configs. That means a conditional routing target can point to a load balancer, and a load-balanced target can have a fallback wrapper around it:
+
+```
+Conditional Router (by params.model)
+├── "claude-sonnet"  → Load Balancer
+│     ├── Anthropic (direct)
+│     ├── Vertex AI (Claude on Vertex)
+│     └── AWS Bedrock (Claude on Bedrock)
+│
+├── "gpt-4o"         → OpenAI (direct)
+│
+├── "gpt-4o-mini"    → Load Balancer
+│     ├── Azure OpenAI
+│     ├── OpenAI (key 1)
+│     └── OpenAI (key 2)
+│
+└── "gemini-2.5-pro" → Fallback
+      ├── Load Balancer (primary)
+      │     ├── Vertex AI (Gemini)
+      │     ├── Google AI Studio (key 1)
+      │     └── Google AI Studio (key 2)
+      └── OpenAI gpt-4.1 (fallback if all Gemini fail)
+```
+
+## The Complete Config
+
+Below is the full Gateway Config. Save it in the [Portkey UI](https://app.portkey.ai/configs) and copy the resulting Config ID.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "params.model": { "$eq": "claude-sonnet" } },
+        "then": "claude-sonnet-lb"
+      },
+      {
+        "query": { "params.model": { "$eq": "gpt-4o" } },
+        "then": "gpt-4o-target"
+      },
+      {
+        "query": { "params.model": { "$eq": "gpt-4o-mini" } },
+        "then": "gpt-4o-mini-lb"
+      },
+      {
+        "query": { "params.model": { "$eq": "gemini-2.5-pro" } },
+        "then": "gemini-lb-with-fallback"
+      }
+    ],
+    "default": "gpt-4o-target"
+  },
+  "targets": [
+    {
+      "name": "claude-sonnet-lb",
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        {
+          "provider": "@anthropic-vk",
+          "override_params": { "model": "claude-sonnet-4-5-20250514" },
+          "weight": 1
+        },
+        {
+          "provider": "@vertex-vk",
+          "override_params": { "model": "claude-sonnet-4-5@20250514" },
+          "weight": 1
+        },
+        {
+          "provider": "@bedrock-vk",
+          "override_params": { "model": "anthropic.claude-sonnet-4-5-20250514-v1:0" },
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "name": "gpt-4o-target",
+      "provider": "@openai-vk",
+      "override_params": { "model": "gpt-4o" }
+    },
+    {
+      "name": "gpt-4o-mini-lb",
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        {
+          "provider": "@azure-vk",
+          "override_params": { "model": "gpt-4o-mini" },
+          "weight": 1
+        },
+        {
+          "provider": "@openai-vk-1",
+          "override_params": { "model": "gpt-4o-mini" },
+          "weight": 1
+        },
+        {
+          "provider": "@openai-vk-2",
+          "override_params": { "model": "gpt-4o-mini" },
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "name": "gemini-lb-with-fallback",
+      "strategy": { "mode": "fallback" },
+      "targets": [
+        {
+          "strategy": { "mode": "loadbalance" },
+          "targets": [
+            {
+              "provider": "@vertex-vk",
+              "override_params": { "model": "gemini-2.5-pro" },
+              "weight": 1
+            },
+            {
+              "provider": "@google-vk-1",
+              "override_params": { "model": "gemini-2.5-pro" },
+              "weight": 1
+            },
+            {
+              "provider": "@google-vk-2",
+              "override_params": { "model": "gemini-2.5-pro" },
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "provider": "@openai-vk",
+          "override_params": { "model": "gpt-4.1" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Breaking Down Each Target
+
+### Target 1: `claude-sonnet-lb` — Load Balanced Across Three Providers
+
+<Tabs>
+  <Tab title="Config">
+    ```json
+    {
+      "name": "claude-sonnet-lb",
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        {
+          "provider": "@anthropic-vk",
+          "override_params": { "model": "claude-sonnet-4-5-20250514" },
+          "weight": 1
+        },
+        {
+          "provider": "@vertex-vk",
+          "override_params": { "model": "claude-sonnet-4-5@20250514" },
+          "weight": 1
+        },
+        {
+          "provider": "@bedrock-vk",
+          "override_params": { "model": "anthropic.claude-sonnet-4-5-20250514-v1:0" },
+          "weight": 1
+        }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="Why this matters">
+    Each provider runs the same Claude Sonnet 4.5 model but has independent rate limits. With equal weights (`1:1:1`), traffic splits evenly — effectively **tripling your total throughput** compared to a single-provider setup.
+
+    | Provider | Virtual Key slug | Model identifier |
+    |----------|-----------------|------------------|
+    | Anthropic (direct) | `@anthropic-vk` | `claude-sonnet-4-5-20250514` |
+    | Google Vertex AI | `@vertex-vk` | `claude-sonnet-4-5@20250514` |
+    | AWS Bedrock | `@bedrock-vk` | `anthropic.claude-sonnet-4-5-20250514-v1:0` |
+
+    Note that each provider uses a slightly different model identifier format — the `override_params.model` field handles this automatically per target.
+  </Tab>
+</Tabs>
+
+### Target 2: `gpt-4o-target` — Direct Single Provider
+
+This is a straightforward target with no nested strategy. If `params.model` is `gpt-4o`, the request goes straight to OpenAI. Use this when you have plenty of headroom on a single provider and don't need distribution.
+
+```json
+{
+  "name": "gpt-4o-target",
+  "provider": "@openai-vk",
+  "override_params": { "model": "gpt-4o" }
+}
+```
+
+### Target 3: `gpt-4o-mini-lb` — Three Accounts for Maximum Rate Limits
+
+<Tabs>
+  <Tab title="Config">
+    ```json
+    {
+      "name": "gpt-4o-mini-lb",
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        {
+          "provider": "@azure-vk",
+          "override_params": { "model": "gpt-4o-mini" },
+          "weight": 1
+        },
+        {
+          "provider": "@openai-vk-1",
+          "override_params": { "model": "gpt-4o-mini" },
+          "weight": 1
+        },
+        {
+          "provider": "@openai-vk-2",
+          "override_params": { "model": "gpt-4o-mini" },
+          "weight": 1
+        }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="Why this matters">
+    High-volume, low-cost workloads (classification, summarization, structured extraction) hit rate limits quickly on `gpt-4o-mini`. Spreading across Azure OpenAI and two OpenAI accounts means:
+
+    - **3× the tokens-per-minute limit**
+    - **Independent rate limit buckets** — Azure and OpenAI quotas don't share a counter
+    - **No code changes required** — your application still sends `model: "gpt-4o-mini"`; Portkey rewrites the destination
+  </Tab>
+</Tabs>
+
+### Target 4: `gemini-lb-with-fallback` — Load Balancer Inside a Fallback
+
+<Tabs>
+  <Tab title="Config">
+    ```json
+    {
+      "name": "gemini-lb-with-fallback",
+      "strategy": { "mode": "fallback" },
+      "targets": [
+        {
+          "strategy": { "mode": "loadbalance" },
+          "targets": [
+            {
+              "provider": "@vertex-vk",
+              "override_params": { "model": "gemini-2.5-pro" },
+              "weight": 1
+            },
+            {
+              "provider": "@google-vk-1",
+              "override_params": { "model": "gemini-2.5-pro" },
+              "weight": 1
+            },
+            {
+              "provider": "@google-vk-2",
+              "override_params": { "model": "gemini-2.5-pro" },
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "provider": "@openai-vk",
+          "override_params": { "model": "gpt-4.1" }
+        }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="Why this matters">
+    The outer `fallback` strategy has two entries:
+
+    1. **Primary**: an anonymous load balancer across three Gemini 2.5 Pro endpoints
+    2. **Fallback**: GPT-4.1 from OpenAI
+
+    If any individual Gemini target fails, the load balancer simply routes to one of the other two. Only when **all three Gemini endpoints return errors** does the outer fallback kick in and route to GPT-4.1. This gives you maximum availability without over-triggering cross-model fallbacks.
+  </Tab>
+</Tabs>
+
+<Info>
+The inner load balancer in Target 4 has no `name` field — anonymous nested targets are valid. Only top-level targets referenced by the conditional router need a `name`.
+</Info>
+
+## Using the Config
+
+Once saved, use the Config ID from [app.portkey.ai/configs](https://app.portkey.ai/configs) in any of your requests:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    from portkey_ai import Portkey
+
+    client = Portkey(
+        api_key="PORTKEY_API_KEY",
+        config="pc-multi-routing-xxxxx"  # your Config ID
+    )
+
+    # Routes to claude-sonnet-lb (load balanced across Anthropic, Vertex, Bedrock)
+    response = client.chat.completions.create(
+        model="claude-sonnet",
+        messages=[{"role": "user", "content": "Explain transformer architecture"}]
+    )
+
+    # Routes to gpt-4o-target (direct OpenAI)
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Write a unit test for this function"}]
+    )
+
+    # Routes to gpt-4o-mini-lb (Azure + 2× OpenAI)
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Classify this support ticket"}]
+    )
+
+    # Routes to gemini-lb-with-fallback (3× Gemini, fallback to gpt-4.1)
+    response = client.chat.completions.create(
+        model="gemini-2.5-pro",
+        messages=[{"role": "user", "content": "Analyze this 100k-token document"}]
+    )
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ```javascript
+    import Portkey from "portkey-ai";
+
+    const client = new Portkey({
+      apiKey: "PORTKEY_API_KEY",
+      config: "pc-multi-routing-xxxxx"  // your Config ID
+    });
+
+    // Routes to claude-sonnet-lb
+    const claudeResponse = await client.chat.completions.create({
+      model: "claude-sonnet",
+      messages: [{ role: "user", content: "Explain transformer architecture" }]
+    });
+
+    // Routes to gpt-4o-mini-lb (Azure + 2× OpenAI)
+    const miniResponse = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "Classify this support ticket" }]
+    });
+
+    // Routes to gemini-lb-with-fallback
+    const geminiResponse = await client.chat.completions.create({
+      model: "gemini-2.5-pro",
+      messages: [{ role: "user", content: "Analyze this 100k-token document" }]
+    });
+    ```
+  </Tab>
+  <Tab title="REST">
+    ```bash
+    # Routes to claude-sonnet-lb
+    curl https://api.portkey.ai/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-config: pc-multi-routing-xxxxx" \
+      -d '{
+        "model": "claude-sonnet",
+        "messages": [{"role": "user", "content": "Explain transformer architecture"}]
+      }'
+
+    # Routes to gemini-lb-with-fallback
+    curl https://api.portkey.ai/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-config: pc-multi-routing-xxxxx" \
+      -d '{
+        "model": "gemini-2.5-pro",
+        "messages": [{"role": "user", "content": "Analyze this 100k-token document"}]
+      }'
+    ```
+  </Tab>
+  <Tab title="OpenAI SDK">
+    ```python
+    from openai import OpenAI
+    from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
+
+    client = OpenAI(
+        api_key="PORTKEY_API_KEY",
+        base_url=PORTKEY_GATEWAY_URL,
+        default_headers=createHeaders(
+            api_key="PORTKEY_API_KEY",
+            config="pc-multi-routing-xxxxx"
+        )
+    )
+
+    # The model value you pass here matches the conditional routing condition
+    response = client.chat.completions.create(
+        model="claude-sonnet",
+        messages=[{"role": "user", "content": "Explain transformer architecture"}]
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Setting Up Virtual Keys
+
+Before saving the config, create [Virtual Keys](https://app.portkey.ai/virtual-keys) for each provider and replace the slugs in the config:
+
+| Slug in config | Provider | Notes |
+|----------------|----------|-------|
+| `@anthropic-vk` | Anthropic | Direct API access |
+| `@vertex-vk` | Google Vertex AI | Requires GCP credentials |
+| `@bedrock-vk` | AWS Bedrock | Requires AWS credentials |
+| `@openai-vk` | OpenAI | Primary key |
+| `@openai-vk-1` | OpenAI | Second account (for rate limit headroom) |
+| `@openai-vk-2` | OpenAI | Third account (for rate limit headroom) |
+| `@azure-vk` | Azure OpenAI | Requires Azure deployment |
+| `@google-vk-1` | Google AI Studio | First key |
+| `@google-vk-2` | Google AI Studio | Second key (for rate limit headroom) |
+
+<Info>
+The `@slug` format is shorthand for Virtual Keys configured in your Portkey workspace. You can also inline provider credentials using the `virtual_key` field directly in each target.
+</Info>
+
+## Observability
+
+Every request through this config is logged with its full routing path. In [Portkey Logs](https://app.portkey.ai/logs):
+
+- Filter by **Config ID** to see all requests using this routing config
+- Filter by **Trace ID** to see every attempt for a single end-user request, including which load-balanced target was selected or which fallback was triggered
+- The **model** field in each log entry reflects the actual provider model used (not your alias), so you can see exactly which endpoint served the request
+
+For programmatic tracing, pass a `trace_id` with your request:
+
+```python
+response = client.with_options(
+    trace_id="user-req-20250514-abc123"
+).chat.completions.create(
+    model="gemini-2.5-pro",
+    messages=[{"role": "user", "content": "Summarize this document"}]
+)
+```
+
+## When to Use Each Pattern
+
+| Pattern | Best for |
+|---------|----------|
+| **Conditional → single target** | Distinct models with different provider configurations, no scaling concerns |
+| **Conditional → load balancer** | High-volume models where a single provider's rate limits are a bottleneck |
+| **Conditional → fallback(load balancer)** | Critical models where you need both throughput and zero-downtime guarantees |
+| **Load balancer → fallback** (inverse nesting) | When you want to distribute across primary providers but have a cross-provider safety net |
+
+## Related
+
+- [Conditional Routing](/product/ai-gateway/conditional-routing) — full reference for conditions, operators, and metadata-based routing
+- [Load Balancing](/product/ai-gateway/load-balancing) — weights, sticky sessions, and multi-key distribution
+- [Fallbacks](/product/ai-gateway/fallbacks) — status code triggers, tracing fallback chains
+- [Gateway Configs](/product/ai-gateway/configs) — creating, saving, and referencing configs
+- [Setting up resilient load balancers with failure-mitigating fallbacks](/guides/use-cases/setting-up-resilient-load-balancers-with-failure-mitigating-fallbacks) — Node.js deep-dive into load balance + fallback

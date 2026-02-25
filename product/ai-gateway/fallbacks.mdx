@@ -93,6 +93,43 @@ Portkey logs all requests in a fallback chain. To trace:
   <img src="/images/product/ai-gateway/ai-13.avif"/>
 </Frame>
 
+## Fallback Wrapping a Load Balancer
+
+A fallback target can itself be a load balancer. This is useful when you want to distribute traffic across multiple providers for throughput, but still have a cross-provider safety net if the entire primary cluster becomes unavailable.
+
+**Example: Gemini 2.5 Pro load balanced across three endpoints, with GPT-4.1 as the fallback**
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    {
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        { "provider": "@vertex-vk",   "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 },
+        { "provider": "@google-vk-1", "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 },
+        { "provider": "@google-vk-2", "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 }
+      ]
+    },
+    {
+      "provider": "@openai-vk",
+      "override_params": { "model": "gpt-4.1" }
+    }
+  ]
+}
+```
+
+The fallback has two entries:
+
+1. **Primary**: an anonymous load balancer across three Gemini 2.5 Pro endpoints (Vertex AI, Google AI Studio key 1, Google AI Studio key 2). If an individual Gemini target fails, the load balancer routes to one of the remaining two — **no fallback is triggered yet**.
+2. **Fallback**: GPT-4.1 from OpenAI. This only activates when **all three** Gemini endpoints fail on the same request.
+
+This pattern avoids over-triggering cross-model fallbacks while still providing a hard safety net for complete provider outages.
+
+<Info>
+You can also use this pattern as a named target inside a [conditional routing](/product/ai-gateway/conditional-routing) config — see the [multi-strategy routing guide](/guides/use-cases/combining-routing-strategies) for a complete four-model example.
+</Info>
+
 ## Considerations
 
 - Ensure fallback LLMs are compatible with your use case

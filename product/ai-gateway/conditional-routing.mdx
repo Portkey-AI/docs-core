@@ -970,6 +970,75 @@ Learn more about [Portkey Guardrails](/product/guardrails) to understand how to 
 </Info>
 </Accordion>
 
+<Accordion title="Conditional Routing with Load-Balanced Targets">
+
+Each target in a conditional routing config can itself be a load balancer or fallback — not just a single provider. This lets you combine model-level routing with provider-level distribution in a single config.
+
+The example below routes four model aliases to different strategies:
+
+- **`claude-sonnet`** → load balanced across Anthropic, Vertex AI, and AWS Bedrock (triples rate limits)
+- **`gpt-4o`** → single OpenAI target
+- **`gpt-4o-mini`** → load balanced across Azure OpenAI and two OpenAI accounts
+- **`gemini-2.5-pro`** → load balancer wrapped in a fallback (if all Gemini providers fail, routes to GPT-4.1)
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      { "query": { "params.model": { "$eq": "claude-sonnet" } }, "then": "claude-sonnet-lb" },
+      { "query": { "params.model": { "$eq": "gpt-4o" } }, "then": "gpt-4o-target" },
+      { "query": { "params.model": { "$eq": "gpt-4o-mini" } }, "then": "gpt-4o-mini-lb" },
+      { "query": { "params.model": { "$eq": "gemini-2.5-pro" } }, "then": "gemini-lb-with-fallback" }
+    ],
+    "default": "gpt-4o-target"
+  },
+  "targets": [
+    {
+      "name": "claude-sonnet-lb",
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        { "provider": "@anthropic-vk", "override_params": { "model": "claude-sonnet-4-5-20250514" }, "weight": 1 },
+        { "provider": "@vertex-vk",    "override_params": { "model": "claude-sonnet-4-5@20250514" }, "weight": 1 },
+        { "provider": "@bedrock-vk",   "override_params": { "model": "anthropic.claude-sonnet-4-5-20250514-v1:0" }, "weight": 1 }
+      ]
+    },
+    {
+      "name": "gpt-4o-target",
+      "provider": "@openai-vk",
+      "override_params": { "model": "gpt-4o" }
+    },
+    {
+      "name": "gpt-4o-mini-lb",
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        { "provider": "@azure-vk",    "override_params": { "model": "gpt-4o-mini" }, "weight": 1 },
+        { "provider": "@openai-vk-1", "override_params": { "model": "gpt-4o-mini" }, "weight": 1 },
+        { "provider": "@openai-vk-2", "override_params": { "model": "gpt-4o-mini" }, "weight": 1 }
+      ]
+    },
+    {
+      "name": "gemini-lb-with-fallback",
+      "strategy": { "mode": "fallback" },
+      "targets": [
+        {
+          "strategy": { "mode": "loadbalance" },
+          "targets": [
+            { "provider": "@vertex-vk",   "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 },
+            { "provider": "@google-vk-1", "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 },
+            { "provider": "@google-vk-2", "override_params": { "model": "gemini-2.5-pro" }, "weight": 1 }
+          ]
+        },
+        { "provider": "@openai-vk", "override_params": { "model": "gpt-4.1" } }
+      ]
+    }
+  ]
+}
+```
+
+See the [full guide with code samples and setup instructions](/guides/use-cases/combining-routing-strategies).
+</Accordion>
+
 </AccordionGroup>
 
 
