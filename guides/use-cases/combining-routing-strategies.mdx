@@ -1,6 +1,6 @@
 ---
 title: "Combining Routing Strategies: Conditional, Load Balancing & Fallbacks"
-description: "Every Portkey routing strategy — conditional, load balancing, fallback — can be nested inside any other. This guide covers the four most powerful combinations."
+description: "Every Portkey routing strategy — conditional, load balancing, fallback — can be nested inside any other. This guide covers five real-world patterns."
 ---
 
 Portkey's three routing strategies are fully interoperable. Any target in any strategy can itself contain another strategy:
@@ -14,15 +14,15 @@ Portkey's three routing strategies are fully interoperable. Any target in any st
 | Load Balancer | Fallback | Each load-balanced slot has its own independent failover |
 | Load Balancer | Conditional | Each distribution slot picks a model based on request metadata |
 
-This guide shows the four most useful patterns with real configs.
+This guide shows five real-world patterns with complete configs.
 
 ---
 
-## Route by Model, Distribute by Provider
+## Scale One Model Across Multiple Providers
 
 **Pattern: Conditional → Load Balancer**
 
-Use conditional routing to match a model alias, then route that alias to a load balancer spread across multiple providers. Traffic for `claude-sonnet` distributes evenly across Anthropic, Vertex AI, and Bedrock — each with independent rate limit buckets, effectively tripling throughput.
+Use conditional routing to match a model alias, then send that alias to a load balancer spread across multiple providers. Traffic for `claude-sonnet` distributes evenly across Anthropic, Vertex AI, and Bedrock — each with independent rate limit buckets, effectively tripling throughput.
 
 ```json
 {
@@ -56,7 +56,7 @@ Use conditional routing to match a model alias, then route that alias to a load 
 
 ---
 
-## Per-Branch Fallbacks in a Conditional Router
+## Give Each Model Its Own Fallback
 
 **Pattern: Conditional → Fallback**
 
@@ -108,7 +108,7 @@ Each conditional branch points to its own independent fallback chain. When `clau
 
 ---
 
-## Fall Back to a Conditional Router
+## Smart Failover by Request Context
 
 **Pattern: Fallback → Conditional Router**
 
@@ -155,11 +155,11 @@ response = client.with_options(
 
 ---
 
-## Distribute with a Fallback Safety Net
+## Fallback When the Whole Cluster Goes Down
 
-**Pattern: Fallback → Load Balancer (primary)**
+**Pattern: Fallback → Load Balancer**
 
-The primary target is an anonymous load balancer across multiple providers. Individual provider failures are handled by the load balancer. Only when **all** providers in the cluster fail does the outer fallback activate. This avoids over-triggering cross-model fallbacks while still guaranteeing zero downtime.
+The primary target is a load balancer across multiple providers. Individual provider failures are handled by the load balancer — traffic redistributes within the cluster. Only when **all** providers in the cluster fail does the outer fallback activate. This avoids over-triggering cross-model fallbacks while still guaranteeing zero downtime.
 
 ```json
 {
@@ -186,9 +186,9 @@ Without `on_status_codes`, **any** non-2xx response triggers the fallback — in
 
 ---
 
-## Per-Leg Fallbacks in a Load Balancer
+## Isolate Failures Between Model Families
 
-**Pattern: Load Balancer → Fallback (per leg)**
+**Pattern: Load Balancer → Fallback (per slot)**
 
 Each load-balanced slot is itself a fallback chain. Traffic distributes across two model families (OpenAI and Anthropic), and each family has its own independent backup. An OpenAI outage triggers the Azure fallback for that leg only — Anthropic traffic is unaffected.
 
@@ -425,11 +425,11 @@ response = client.with_options(
 
 | Pattern | Best for |
 |---------|----------|
-| **Conditional → Load Balancer** | High-volume model aliases that need rate limit multiplication across providers |
-| **Conditional → Fallback (per branch)** | Different model families that each need their own independent recovery sequence |
-| **Fallback → Conditional Router** | Smart failover with compliance requirements (e.g., EU data-residency even in failure) |
-| **Fallback → Load Balancer** | Protecting a distributed cluster without over-triggering cross-model fallbacks |
-| **Load Balancer → Fallback (per-leg)** | Multi-model distribution where each family needs independent failure isolation |
+| **Scale One Model Across Multiple Providers** | High-volume aliases hitting rate limits on a single provider |
+| **Give Each Model Its Own Fallback** | Different model families that each need an independent recovery sequence |
+| **Smart Failover by Request Context** | Compliance or data-residency requirements that must hold even during outages |
+| **Fallback When the Whole Cluster Goes Down** | High-throughput clusters where individual endpoint failures should not trigger a model switch |
+| **Isolate Failures Between Model Families** | Multi-model load distribution where one family's outage must not affect others |
 
 ## Related
 
