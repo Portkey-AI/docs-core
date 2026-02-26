@@ -679,6 +679,103 @@ EOF
 aws iam put-role-policy --role-name $role_name --policy-name bedrock-access-policy --policy-document file://bedrock-access-policy.json
 ```
 
+#### Google Vertex AI via Workload Identity Federation (Optional)
+
+To allow the Portkey Gateway running on AWS EKS to invoke Google Vertex AI models, you can use GCP Workload Identity Federation. This enables the Gateway's AWS IAM role to authenticate directly with Google Cloud without requiring static GCP service account keys.
+
+<Note>
+This section requires the IAM role created in the steps above (via IRSA or EKS Pod Identity). The IAM role ARN will be used as the trusted identity in the GCP Workload Identity Federation pool.
+</Note>
+
+1. Log in to Google Cloud and set the target project.
+    ```sh
+    gcp_project_id=<GCP_PROJECT_ID>                # GCP project where Vertex AI is enabled.
+    pool_name=<POOL_NAME>                          # Name for the Workload Identity Pool (e.g., eks-id-pool).
+    provider_name=<PROVIDER_NAME>                  # Name for the AWS IAM provider (e.g., aws-iam-provider).
+    aws_account_id=<AWS_ACCOUNT_ID>                # Your AWS account ID.
+    role_name=<AWS_IAM_ROLE>                       # Set AWS IAM Role associated with Gateway deployment
+
+    gcloud auth login
+    gcloud config set project $gcp_project_id
+    ```
+
+2. Create a Workload Identity Pool in your GCP project.
+    ```sh
+    gcloud iam workload-identity-pools create $pool_name \
+      --location="global" \
+      --display-name="EKS Identity Pool"
+    ```
+
+3. Add an AWS IAM provider to the Workload Identity Pool.
+    ```sh
+    gcloud iam workload-identity-pools providers create-aws $provider_name \
+      --location="global" \
+      --workload-identity-pool=$pool_name \
+      --account-id=$aws_account_id \
+      --display-name="AWS IAM Provider"
+    ```
+
+4. Configure attribute mapping on the AWS IAM provider.
+    ```sh
+    gcloud iam workload-identity-pools providers update-aws $provider_name \
+      --location="global" \
+      --workload-identity-pool=$pool_name \
+      --attribute-mapping="\
+    google.subject=assertion.arn,\
+    attribute.aws_role=assertion.arn.extract('assumed-role/{role}/'),\
+    attribute.account=assertion.account"
+    ```
+
+5. Restrict access to a specific AWS IAM role by adding an attribute condition.
+    ```sh
+    gcloud iam workload-identity-pools providers update-aws $provider_name \
+      --location="global" \
+      --workload-identity-pool=$pool_name \
+      --attribute-condition="attribute.aws_role == '${role_name}'"
+    ```
+6. Retrieve the full Workload Identity Federation audience. Make a note of this value — it will be required when configuring the Gateway's `values.yaml`.
+    ```sh
+    WIF_AUDIENCE=$(gcloud iam workload-identity-pools providers describe $provider_name \
+      --location="global" \
+      --workload-identity-pool=$pool_name \
+      --format="value(name)")
+    
+    echo $WIF_AUDIENCE
+    ```
+
+7. Grant Vertex AI access using one of the following methods:
+
+    <Tabs>
+      <Tab title="Direct Access">
+        Grant the Vertex AI User role directly to the federated identity.
+        ```sh
+        gcloud projects add-iam-policy-binding $gcp_project_id \
+          --role="roles/aiplatform.user" \
+          --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $gcp_project_id --format='value(projectNumber)')/locations/global/workloadIdentityPools/$pool_name/attribute.aws_role/${role_name}"
+        ```
+      </Tab>
+      <Tab title="Service Account Impersonation">
+        Create a GCP service account and allow the federated identity to impersonate it.
+        ```sh
+        service_account=<GSA_NAME>                          # Name for the Google Service Account (e.g., portkey-vertex-sa).
+
+        # Create the Google Service Account
+        gcloud iam service-accounts create $service_account \
+          --display-name="Portkey Vertex AI Service Account"
+
+        # Grant the service account Vertex AI access
+        gcloud projects add-iam-policy-binding $gcp_project_id \
+          --role="roles/aiplatform.user" \
+          --member="serviceAccount:${service_account}@${gcp_project_id}.iam.gserviceaccount.com"
+
+        # Allow the federated identity to impersonate the service account
+        gcloud iam service-accounts add-iam-policy-binding ${service_account}@${gcp_project_id}.iam.gserviceaccount.com \
+          --role="roles/iam.workloadIdentityUser" \
+          --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $gcp_project_id --format='value(projectNumber)')/locations/global/workloadIdentityPools/$pool_name/attribute.aws_role/${role_name}"
+        ```
+      </Tab>
+    </Tabs>
+
 
 
 ## Examples
