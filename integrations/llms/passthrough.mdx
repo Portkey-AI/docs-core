@@ -13,6 +13,8 @@ The Passthrough provider allows you to send requests exactly as they are to any 
 | **Request transformation** | Portkey maps parameters to provider format | No transformation - request sent unchanged |
 | **Provider-specific params** | May be rejected or ignored | Fully supported |
 | **Unified routes** | Parameters normalized across providers | Original request body preserved |
+| **Header forwarding** | Portkey manages headers | All non-`x-portkey-*` headers forwarded to endpoint |
+| **Target endpoint** | Configured per provider | Set via `x-portkey-custom-host` header |
 | **Error handling** | Standardized error responses | Raw provider errors returned |
 | **Use case** | Cross-provider compatibility | Direct provider access with full control |
 
@@ -29,23 +31,59 @@ With standard providers like Anthropic or OpenAI, Portkey validates and transfor
 
 ## Quick start
 
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: passthrough" \
+  -H "x-portkey-custom-host: https://my.vllm.com/v1" \
+  -H "authorization: Bearer sk-your-api-key" \
+  -H "my-custom-header: my-custom-value" \
+  -d '{
+    "model": "my-custom-vllm-model",
+    "stream": true,
+    "max_completion_tokens": 1000,
+    "random-key": "value",
+    "messages": [
+      { "role": "developer", "content": "You are a helpful assistant" },
+      { "role": "user", "content": "Hello!" }
+    ]
+  }'
+```
+
+### Required headers
+
+| Header | Description |
+|--------|-------------|
+| `x-portkey-api-key` | Your Portkey API key |
+| `x-portkey-provider` | Set to `passthrough` |
+| `x-portkey-custom-host` | The base URL of your target endpoint (e.g., `https://my.vllm.com/v1`) |
+
+### Header forwarding
+
+All headers **except** those starting with `x-portkey-` are forwarded to the target endpoint. This includes:
+- `authorization` - Your target provider's API key
+- `Content-Type` - Request content type
+- Any custom headers your endpoint requires
+
 <CodeGroup>
 ```python Python icon="python"
 from portkey_ai import Portkey
 
-# 1. Install: pip install portkey-ai
-# 2. Add @passthrough provider in model catalog with your target provider credentials
-# 3. Use it:
-
-portkey = Portkey(api_key="PORTKEY_API_KEY")
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="passthrough",
+    custom_host="https://my.vllm.com/v1"
+)
 
 # Request body is sent directly without transformation
 response = portkey.chat.completions.create(
-    model="@passthrough/gpt-4",
+    model="my-custom-vllm-model",
     messages=[{"role": "user", "content": "Hello!"}],
     # Any parameters you include are passed through unchanged
-    custom_param="custom_value",
-    provider_specific_option=True
+    stream=True,
+    max_completion_tokens=1000,
+    random_key="value"  # Custom parameters supported
 )
 
 print(response.choices[0].message.content)
@@ -54,21 +92,20 @@ print(response.choices[0].message.content)
 ```js Javascript icon="square-js"
 import Portkey from 'portkey-ai'
 
-// 1. Install: npm install portkey-ai
-// 2. Add @passthrough provider in model catalog with your target provider credentials
-// 3. Use it:
-
 const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY"
+    apiKey: "PORTKEY_API_KEY",
+    provider: "passthrough",
+    customHost: "https://my.vllm.com/v1"
 })
 
 // Request body is sent directly without transformation
 const response = await portkey.chat.completions.create({
-    model: "@passthrough/gpt-4",
+    model: "my-custom-vllm-model",
     messages: [{ role: "user", content: "Hello!" }],
     // Any parameters you include are passed through unchanged
-    custom_param: "custom_value",
-    provider_specific_option: true
+    stream: true,
+    max_completion_tokens: 1000,
+    random_key: "value"  // Custom parameters supported
 })
 
 console.log(response.choices[0].message.content)
@@ -76,19 +113,19 @@ console.log(response.choices[0].message.content)
 
 ```python OpenAI Py icon="python"
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL
-
-# 1. Install: pip install openai portkey-ai
-# 2. Add @passthrough provider in model catalog
-# 3. Use it:
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 client = OpenAI(
     api_key="PORTKEY_API_KEY",
-    base_url=PORTKEY_GATEWAY_URL
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="passthrough",
+        custom_host="https://my.vllm.com/v1"
+    )
 )
 
 response = client.chat.completions.create(
-    model="@passthrough/gpt-4",
+    model="my-custom-vllm-model",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 
@@ -97,52 +134,35 @@ print(response.choices[0].message.content)
 
 ```js OpenAI JS icon="square-js"
 import OpenAI from "openai"
-import { PORTKEY_GATEWAY_URL } from "portkey-ai"
-
-// 1. Install: npm install openai portkey-ai
-// 2. Add @passthrough provider in model catalog
-// 3. Use it:
+import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai"
 
 const client = new OpenAI({
     apiKey: "PORTKEY_API_KEY",
-    baseURL: PORTKEY_GATEWAY_URL
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "passthrough",
+        customHost: "https://my.vllm.com/v1"
+    })
 })
 
 const response = await client.chat.completions.create({
-    model: "@passthrough/gpt-4",
+    model: "my-custom-vllm-model",
     messages: [{ role: "user", content: "Hello!" }]
 })
 
 console.log(response.choices[0].message.content)
 ```
-
-```sh cURL icon="square-terminal"
-# 1. Add @passthrough provider in model catalog
-# 2. Use it:
-
-curl https://api.portkey.ai/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -d '{
-    "model": "@passthrough/gpt-4",
-    "messages": [
-      { "role": "user", "content": "Hello!" }
-    ],
-    "custom_param": "custom_value"
-  }'
-```
 </CodeGroup>
 
-## Add provider in Model Catalog
+## Configuration
 
-1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
-2. Select **Passthrough**
-3. Configure your target provider credentials (API key, endpoint URL, etc.)
-4. Name your provider (e.g., `passthrough-prod`)
+Passthrough requires you to specify the target endpoint using the `x-portkey-custom-host` header. This tells Portkey where to forward your requests.
 
-<Card title="Complete Setup Guide →" href="/product/model-catalog">
-  See all setup options, code examples, and detailed instructions
-</Card>
+```
+x-portkey-custom-host: https://your-endpoint.com/v1
+```
+
+The path from your request (e.g., `/chat/completions`) is appended to this base URL.
 
 ## How it works
 
@@ -170,15 +190,28 @@ This differs from standard providers where Portkey normalizes parameters, valida
 
 **Passthrough provider**:
 ```json
-// Your request
+// Your request - with x-portkey-custom-host header set
 {
-  "model": "@passthrough/claude-sonnet-4-5-20250929",
+  "model": "claude-sonnet-4-5-20250929",
   "messages": [{"role": "user", "content": "Hi"}],
   "unknown_param": "value"  // Passed through unchanged
 }
 
 // Sent directly to the backend exactly as provided
 ```
+
+### Header behavior
+
+When you send a request through Passthrough:
+
+| Header type | Behavior |
+|-------------|----------|
+| `x-portkey-*` headers | Used by Portkey, **not** forwarded |
+| `authorization` | Forwarded to target endpoint |
+| `Content-Type` | Forwarded to target endpoint |
+| Custom headers | Forwarded to target endpoint |
+
+This allows you to pass authentication and custom headers directly to your target provider.
 
 ## Supported routes
 
@@ -220,17 +253,21 @@ const response = await portkey.chat.completions.create({
 ```
 </CodeGroup>
 
-### Custom request bodies
+### Self-hosted vLLM or custom endpoints
 
-Send exactly the request body you need:
+Connect to your own vLLM deployment or any OpenAI-compatible endpoint:
 
 ```sh cURL icon="square-terminal"
 curl https://api.portkey.ai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: passthrough" \
+  -H "x-portkey-custom-host: https://my.vllm.com/v1" \
+  -H "authorization: Bearer $VLLM_API_KEY" \
   -d '{
-    "model": "@passthrough/custom-model",
+    "model": "my-custom-model",
     "messages": [{"role": "user", "content": "Hello"}],
+    "max_completion_tokens": 1000,
     "experimental_feature": true,
     "custom_config": {
       "nested": "parameters",
