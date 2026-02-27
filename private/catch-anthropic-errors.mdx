@@ -24,6 +24,10 @@ Because the status code is `200`, standard fallback logic (like Portkey's `on_st
 
 We'll use Portkey's **Output Guardrails** to inspect the *content* of the response stream. This allows us to create a rule that looks for the specific `overloaded_error` message and triggers a fallback, even when the status code is `200`.
 
+<Warning>
+**Important limitation:** Output guardrails are not supported for streaming requests. This solution only works with non-streaming (synchronous) requests. If you're using streaming, the output guardrail won't be able to detect the `overloaded_error`.
+</Warning>
+
 Here's the plan:
 1.  **Create an Output Guardrail** to detect the `"type":"overloaded_error"` string in the response.
 2.  **Build a Fallback Config** that uses this guardrail to trigger a fallback to a different model (like GPT-4o).
@@ -40,8 +44,14 @@ First, we'll create a simple guardrail on Portkey that scans the response for th
 1.  Navigate to the **Guardrails** page in your Portkey dashboard.
 2.  Click **Create Guardrail** and configure it with the following settings:
     *   **Guardrail Type:** `Contains`
-    *   **Check:** `ANY`
+    *   **Check:** `NONE`
     *   **Words or Phrases:** `"type":"overloaded_error"`
+
+<Info>
+**Why use `NONE` instead of `ANY`?** The operator determines when the guardrail passes or fails:
+- With `ANY`: The guardrail passes when the phrase IS found and fails when it's NOT found. Since normal responses don't contain `"type":"overloaded_error"`, it would fail on every request and trigger a fallback unnecessarily.
+- With `NONE`: The guardrail passes when the phrase is NOT found and fails when it IS found. Normal responses pass through, while responses containing the overloaded error trigger the fallback as intended.
+</Info>
 
 <Frame caption="Configuring the 'Contains' Output Guardrail in Portkey">
 	<img src="/images/guides/anthropic-errors/full.png" />
@@ -93,18 +103,20 @@ portkey = Portkey(
     config="cfg_..." # 👈 Replace with your Config ID
 )
 
-stream = portkey.chat.completions.create(
+response = portkey.chat.completions.create(
     messages=[{"role": "user", "content": "Tell me a story about a brave robot."}],
-    stream=True
+    stream=False  # Output guardrails only work with non-streaming requests
 )
 
 print("Response from model:")
-  for chunk in stream:
-      if chunk.choices:
-          print(chunk.choices[0].delta.content or "", end="")
+print(response.choices[0].message.content)
 ```
 
 With this setup, if Anthropic returns an `overloaded_error`, the guardrail will catch it, and Portkey will automatically retry the request with your fallback model (OpenAI's GPT-4o), ensuring your application remains operational.
+
+<Note>
+Remember that this approach only works with non-streaming requests. For streaming use cases, consider implementing client-side error detection or using alternative resilience strategies.
+</Note>
 
 ---
 
