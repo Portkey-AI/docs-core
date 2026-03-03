@@ -1,0 +1,170 @@
+---
+title: "Guardrail Capabilities & Support"
+description: "A complete reference for which endpoints, providers, input types, and execution modes are supported by Portkey Guardrails."
+---
+
+Portkey Guardrails run on the Gateway — meaning they are provider-agnostic and sit between your application and any upstream LLM. This page answers the most common questions about what Guardrails support, and where the boundaries are.
+
+---
+
+## Supported Endpoints
+
+Guardrails can be attached to the following Portkey API endpoints:
+
+| Endpoint | Guardrails Supported |
+|:---|:---|
+| `/v1/chat/completions` | Input & Output |
+| `/v1/completions` | Input & Output |
+| `/v1/embeddings` | Input only (no model output to guard) |
+| `/v1/messages` (Anthropic) | Input & Output |
+
+<Note>
+  For embeddings, only `input_guardrails` (before request hooks) apply — there is no model-generated output to evaluate.
+  See [Guardrails for Embedding Requests](/product/guardrails/embedding-guardrails) for details.
+</Note>
+
+---
+
+## Supported Providers & Models
+
+Guardrails are **provider-agnostic**. Because they run at the Gateway layer — before and after the request reaches any LLM provider — they work with every provider and model Portkey supports, including:
+
+- OpenAI, Azure OpenAI
+- Anthropic, AWS Bedrock
+- Google Gemini / Vertex AI
+- Mistral, Cohere, and all other supported providers
+- Self-hosted / open-source models routed through Portkey
+
+You do not need to configure anything provider-specific to enable Guardrails. The same Guardrail ID works across any provider you route to.
+
+---
+
+## Input vs. Output
+
+Guardrails can be applied to **both the input (prompt) and the output (response)**, independently:
+
+| Direction | Config Key | When It Runs |
+|:---|:---|:---|
+| **Input** | `input_guardrails` | Before the request is sent to the LLM provider |
+| **Output** | `output_guardrails` | After the LLM response is received, before it reaches your app |
+
+A single Guardrail is scoped to either input or output — you cannot mix both in one Guardrail definition. Attach separate Guardrail IDs for each direction in your Config:
+
+```json
+{
+  "input_guardrails": ["guardrail-id-for-input"],
+  "output_guardrails": ["guardrail-id-for-output"]
+}
+```
+
+---
+
+## Sync vs. Async Execution
+
+Each Guardrail can be run **synchronously** or **asynchronously**, controlled by the `async` setting on the Guardrail.
+
+| Mode | `async` Setting | Behavior | Latency Impact |
+|:---|:---|:---|:---|
+| **Async** (default) | `true` | Guardrail runs in parallel with the LLM request. Results are logged but do not affect the response. | None — no added latency |
+| **Sync** | `false` | Guardrail runs before the request is forwarded (input) or before the response is returned (output). Results can deny or modify the request. | Adds the guardrail check latency |
+
+Use **async mode** when you want to observe and log Guardrail results without impacting your users. Use **sync mode** when the Guardrail result must gate whether the request proceeds.
+
+<Info>
+  When `async=true`, Portkey returns the standard LLM provider status codes and logs guardrail results separately. When `async=false`, Portkey can return `246` (failed but allowed) or `446` (failed and denied) status codes. See [Guardrail Behaviour on the Gateway](/product/guardrails#guardrail-behaviour-on-the-gateway) for full details.
+</Info>
+
+---
+
+## Streaming Support
+
+Guardrails have **partial support** for streaming requests.
+
+| Guardrail Type | Streaming Support |
+|:---|:---|
+| **Input guardrails** (`input_guardrails` / `before_request_hooks`) | **Supported** — runs before the stream begins |
+| **Output guardrails** (`output_guardrails` / `after_request_hooks`) | **Not supported** — the full response is required for output evaluation |
+
+When streaming is enabled and you have input guardrails configured, Portkey evaluates the input first. If the check passes, the stream proceeds normally. If it fails and `deny=true`, the stream is blocked with a `446` status before any tokens are sent.
+
+To receive `hook_results` inline in streaming responses, set the header:
+
+```
+x-portkey-strict-open-ai-compliance: false
+```
+
+The `hook_results` are delivered as part of the first chunk of the stream (for `/chat/completions`) or as a separate `hook_results` event (for `/messages`).
+
+<Note>
+  For the Anthropic `/messages` endpoint, `hook_results` cannot be accessed through the Anthropic SDK when streaming. Use cURL or raw HTTP requests instead.
+</Note>
+
+See [Streaming Hook Results](/product/guardrails#streaming-responses) for code examples across SDKs.
+
+---
+
+## What Content Is Evaluated?
+
+Understanding exactly which part of a request or response is sent to a Guardrail check is important for configuring checks correctly.
+
+### Text Content
+
+Portkey evaluates the **last message** in the request body for input guardrails, and the **generated text content** in the response for output guardrails.
+
+### Image Inputs
+
+Guardrail checks operate on **text content only**. Image inputs (e.g., base64-encoded images or image URLs in a multimodal message) are **not evaluated** by Guardrails.
+
+If your request contains both text and images in a message, only the text portion of that message is passed to the Guardrail checks.
+
+### Tool Calls & Tool Results
+
+| Scenario | Guardrail Behavior |
+|:---|:---|
+| Tool call **request** (model deciding to call a tool) | Evaluated as part of the output if output guardrails are configured |
+| Tool call **result** (tool output sent back to the model) | Evaluated as part of the input if input guardrails are configured on the follow-up request |
+| Function definitions in the system prompt | Included in the text evaluated by input guardrails |
+
+<Note>
+  Guardrails evaluate the text content of messages. Structured tool call arguments (JSON parameters) are treated as text and evaluated accordingly by checks like Regex Match or Contains. LLM-based checks (e.g., Prompt Injection detection) also process tool-call text.
+</Note>
+
+---
+
+## Summary Table
+
+| Capability | Supported |
+|:---|:---|
+| Chat Completions endpoint | Yes |
+| Completions endpoint | Yes |
+| Embeddings endpoint | Yes (input only) |
+| Anthropic Messages endpoint | Yes |
+| All providers & models | Yes |
+| Input (prompt) guardrails | Yes |
+| Output (response) guardrails | Yes |
+| Sync execution | Yes |
+| Async execution | Yes (default) |
+| Streaming — input guardrails | Yes |
+| Streaming — output guardrails | No |
+| Image input evaluation | No |
+| Text in multimodal messages | Yes |
+| Tool call text evaluation | Yes |
+
+---
+
+## Related Pages
+
+<CardGroup cols={2}>
+  <Card title="Guardrails Overview" href="/product/guardrails">
+    How to create Guardrails, configure actions, and attach them to requests
+  </Card>
+  <Card title="Guardrails for Embeddings" href="/product/guardrails/embedding-guardrails">
+    Applying Guardrails specifically to embedding workflows
+  </Card>
+  <Card title="List of Guardrail Checks" href="/product/guardrails/list-of-guardrail-checks">
+    All available built-in and partner Guardrail checks
+  </Card>
+  <Card title="Creating Raw Guardrails in JSON" href="/product/guardrails/creating-raw-guardrails-in-json">
+    Define Guardrails directly in code without the UI
+  </Card>
+</CardGroup>
