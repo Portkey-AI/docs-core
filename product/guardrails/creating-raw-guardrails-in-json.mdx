@@ -1,64 +1,135 @@
 ---
 title: "Creating Raw Guardrails (in JSON)"
-description: With the raw Guardrails mode, we let you define your Guardrail checks & actions however you want, directly in code.
+description: Define guardrail checks & actions directly in your request/config JSON (no UI required).
 ---
 
-At Portkey, we believe in helping you make your workflows [as modular as possible](https://portkey.ai/blog/what-it-means-to-go-to-prod/).
+Raw guardrails are the way to use Portkey Guardrails by implementing them via code.
+
+Instead of creating a Guardrail in the dashboard and referencing a Guardrail ID, you embed the guardrail definition directly inside your Config (or `x-portkey-config` header).
+
 This is useful when:
-* You want the same Guardrail checks but want to take different basic actions on them
-* Your Guardrail checks definitions are dependent on an upstream task and are updated in code
-* You want greater control over how you want to handle Guardrails
 
-With the Raw Guardrails mode, you can achieve all this.
+- You want **infrastructure-as-code** guardrails (reviewed, versioned, deployed with your app).
+- You want the **same checks** but **different actions** depending on endpoint, customer tier, or environment.
+- Your check parameters are computed in code (for example, a dynamic allowlist/denylist).
+- You’re prototyping and want to iterate quickly without touching the UI.
 
-### Example of a Raw Guardrail
+<Note>
+  Raw guardrails use the same runtime behavior described in the Guardrails overview (status codes `246`/`446` for synchronous failures). See [Guardrails](/product/guardrails).
+</Note>
 
-```JSON
-"before_request_hooks": [{
-    "type": "guardrail",
-    "id": "my_solid_guardrail",
-    "checks": [{
-      "id": "default.regexMatch",
-      "parameters": {
-        "regex": "test"
-      }
-    }]
-}]
+---
+
+## How raw guardrails map to input vs output
+
+- **Input guardrails** live in `before_request_hooks` (run before the request goes to the LLM).
+- **Output guardrails** live in `after_request_hooks` (run after the LLM responds, before Portkey returns to your app).
+
+---
+
+## Example: input guardrail (warn, don’t block)
+
+This example checks the input with a regex and **warns** on failure (`246`) instead of blocking.
+
+```json
+{
+  "before_request_hooks": [
+    {
+      "type": "guardrail",
+      "id": "my_input_guardrail",
+      "checks": [
+        {
+          "id": "default.regexMatch",
+          "parameters": {
+            "rule": "\\b(jailbreak|ignore previous instructions)\\b",
+            "not": false
+          }
+        }
+      ],
+      "async": false,
+      "deny": false,
+      "sequential": false
+    }
+  ]
+}
 ```
 
-In this example:
+---
 
-* `type`: Specifies the type of hook, which is `guardrail`.
-* `name`: Gives a name to the guardrail for identification.
-* `checks`: Lists the checks that make up the guardrail. Each check includes an `id` and `parameters` for the specific conditions to validate.
+## Example: output guardrail (block on failure)
 
-### Configuring Guardrail Actions
+This example validates the model output and **blocks** if it fails (`446`).
 
-```JSON
-"before_request_hooks": [{
-    "type": "guardrail",
-    "id": "my_solid_guardrail",
-    "checks": [{
-      "id": "default.regexMatch",
-      "parameters": {
-        "regex": "test"
-      }
-    }],
-    "deny": false,
-    "async": false,
-    "sequential": false,
-    "on_success": {
-        "feedback": {"value": 1,"weight": 1}
-    },
-    "on_fail": {
-        "feedback": {"value": -1,"weight": 1}
-     }
-}]
+```json
+{
+  "after_request_hooks": [
+    {
+      "type": "guardrail",
+      "id": "my_output_guardrail",
+      "checks": [
+        {
+          "id": "default.jsonSchema",
+          "parameters": {
+            "schema": {
+              "type": "object",
+              "properties": { "answer": { "type": "string" } },
+              "required": ["answer"],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "async": false,
+      "deny": true,
+      "sequential": false
+    }
+  ]
+}
 ```
-In this example,
 
-* `deny`: Is set to `TRUE` or `FALSE`
-* `async`: Is set to `TRUE` or `FALSE`
-* `sequential`: Is set to `TRUE` or `FALSE` - when `TRUE`, guardrail checks run one after another instead of in parallel
-* `on_success`: Used to pass custom `feedback`
-* `on_failure`: Used to pass custom `feedback`
+---
+
+## Understanding the action fields
+
+### `async`
+
+- `async=true`: checks run in the background → request/response is **not affected** (results show in logs).
+- `async=false`: checks run inline → Portkey can **warn** (`246`) or **block** (`446`) based on `deny`.
+
+### `deny`
+
+- `deny=true`: if checks fail (and `async=false`) → Portkey **blocks** with `446`.
+- `deny=false`: if checks fail (and `async=false`) → Portkey **continues** but returns `246`.
+
+### `sequential`
+
+- `sequential=false` (default): run checks in parallel (faster).
+- `sequential=true`: run checks one-by-one (more predictable, slower).
+
+### `on_success` and `on_fail` (feedback)
+
+Use these to attach feedback metadata (useful for eval datasets and analytics):
+
+```json
+{
+  "before_request_hooks": [
+    {
+      "type": "guardrail",
+      "id": "my_guardrail_with_feedback",
+      "checks": [{ "id": "default.regexMatch", "parameters": { "rule": ".*", "not": false } }],
+      "async": false,
+      "deny": false,
+      "sequential": false,
+      "on_success": { "feedback": { "value": 1, "weight": 1, "metadata": "" } },
+      "on_fail": { "feedback": { "value": -1, "weight": 1, "metadata": "" } }
+    }
+  ]
+}
+```
+
+---
+
+## Next steps
+
+- Want the full set of checks and parameters? Go to the [List of Guardrail checks](/product/guardrails/list-of-guardrail-checks).
+- Want to understand how `async`, `deny`, and status codes behave end-to-end? Start with the [Guardrails overview](/product/guardrails).
