@@ -1,0 +1,384 @@
+---
+title: "More On Guardrails"
+description: "Logs, response structure, streaming hook results, and other advanced Guardrails topics."
+---
+
+This page is a continuation of overview page of Guardrails. If you’re just getting started, start with the overview:
+
+<Card title="Guardrails (Overview)" href="/product/guardrails"/>
+
+---
+
+## Viewing Guardrail Results in Portkey Logs
+
+Portkey Logs show detailed information about Guardrail results for each request.
+
+### On the `Feedback & Guardrails` tab, you can see
+
+#### Guardrail Details
+
+- **Overview**: how many checks passed and how many failed
+- **Verdict**: the verdict for each check in your Guardrail
+- **Latency**: round-trip time for each check
+
+#### Feedback Details
+
+If you’ve configured feedback actions, Portkey also shows the feedback object logged for the request:
+
+- **value**: the numerical feedback value you passed
+- **weight**: the numerical feedback weight
+- **metadata**: any custom metadata sent with the feedback
+- **successfulChecks**: which checks passed
+- **failedChecks**: which checks failed
+- **erroredChecks**: which checks errored
+
+<Frame>
+  <img src="/images/product/ai-gateway/ai-34.gif"/>
+</Frame>
+
+---
+
+## Understanding Guardrail Response Structure (`hook_results`)
+
+When Guardrails run synchronously (`async=false`), Portkey adds a `hook_results` object to your API responses. This contains the guardrail checks that were run and their outcomes.
+
+### Hook Results Structure
+
+The `hook_results` object contains two main sections:
+
+```json
+"hook_results": {
+  "before_request_hooks": [...],  // Guardrails applied to the input
+  "after_request_hooks": [...]    // Guardrails applied to the output
+}
+```
+
+Each section contains an array of guardrail execution results, structured as follows:
+
+<Expandable title="Hook Result Object Structure">
+  <ResponseField name="verdict" type="boolean">
+    Overall verdict of this guardrail (`true` = passed, `false` = failed). Only `true` if all checks within this guardrail passed.
+  </ResponseField>
+  <ResponseField name="id" type="string">
+    The ID of the guardrail that was executed (for example, `"pg-check-cfa540"`).
+  </ResponseField>
+  <ResponseField name="transformed" type="boolean">
+    Indicates if the guardrail modified the request or response (for example, PII redaction).
+  </ResponseField>
+  <ResponseField name="checks" type="array">
+    An array of individual check results within this guardrail.
+    <Expandable title="Check Object Structure">
+      <ResponseField name="data" type="object">
+        Check-specific data that varies based on the guardrail type.
+      </ResponseField>
+      <ResponseField name="verdict" type="boolean">
+        Result of this specific check (`true` = passed, `false` = failed).
+      </ResponseField>
+      <ResponseField name="id" type="string">
+        Identifier of the specific check (for example, `"default.sentenceCount"`).
+      </ResponseField>
+      <ResponseField name="execution_time" type="number">
+        Time taken to execute this check in milliseconds.
+      </ResponseField>
+      <ResponseField name="transformed" type="boolean">
+        Whether this check modified the content.
+      </ResponseField>
+      <ResponseField name="created_at" type="string">
+        Timestamp when the check was executed.
+      </ResponseField>
+      <ResponseField name="log" type="string|null">
+        Additional logging information (if available).
+      </ResponseField>
+      <ResponseField name="error" type="string|object">
+        Error message or object if the guardrail encountered an error.
+      </ResponseField>
+    </Expandable>
+  </ResponseField>
+  <ResponseField name="feedback" type="object">
+    Feedback information configured in the guardrail (if enabled).
+    <Expandable title="Feedback Object Structure">
+      <ResponseField name="value" type="number">
+        The numerical feedback value.
+      </ResponseField>
+      <ResponseField name="weight" type="number">
+        The weight assigned to this feedback.
+      </ResponseField>
+      <ResponseField name="metadata" type="object">
+        Additional metadata including which checks succeeded or failed.
+        <ResponseField name="successfulChecks" type="string">
+          Comma-separated list of checks that passed.
+        </ResponseField>
+        <ResponseField name="failedChecks" type="string">
+          Comma-separated list of checks that failed.
+        </ResponseField>
+        <ResponseField name="erroredChecks" type="string">
+          Comma-separated list of checks that encountered errors.
+        </ResponseField>
+      </ResponseField>
+    </Expandable>
+  </ResponseField>
+  <ResponseField name="execution_time" type="number">
+    Total execution time for the guardrail in milliseconds.
+  </ResponseField>
+  <ResponseField name="async" type="boolean">
+    Whether the guardrail was run asynchronously.
+  </ResponseField>
+  <ResponseField name="type" type="string">
+    Always `"guardrail"` for guardrail hooks.
+  </ResponseField>
+  <ResponseField name="created_at" type="string">
+    Timestamp when the guardrail was executed.
+  </ResponseField>
+  <ResponseField name="deny" type="boolean">
+    Whether failed checks should deny the request/response.
+  </ResponseField>
+</Expandable>
+
+### Example Hook Results
+
+#### Non-Streaming Responses
+
+```json [expandable]
+"hook_results": {
+  "before_request_hooks": [
+    {
+      "verdict": true,
+      "id": "sentence_and_word_check_guardrail",
+      "transformed": false,
+      "checks": [
+        {
+          "data": {
+            "sentenceCount": 1,
+            "minCount": 1,
+            "maxCount": 99999,
+            "not": false,
+            "verdict": true,
+            "explanation": "The sentence count (1) is within the specified range of 1 to 99999.",
+            "textExcerpt": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number,..."
+          },
+          "verdict": true,
+          "id": "default.sentenceCount",
+          "execution_time": 0,
+          "transformed": false,
+          "created_at": "2025-05-20T08:00:59.492Z",
+          "log": null
+        },
+        {
+          "data": {
+            "wordCount": 24,
+            "minWords": 1,
+            "maxWords": 99999,
+            "not": false,
+            "verdict": true,
+            "explanation": "The text contains 24 words, which is within the specified range of 1-99999 words.",
+            "textExcerpt": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number,..."
+          },
+          "verdict": true,
+          "id": "default.wordCount",
+          "execution_time": 0,
+          "transformed": false,
+          "created_at": "2025-05-20T08:00:59.492Z",
+          "log": null
+        }
+      ],
+      "feedback": {
+        "value": 5,
+        "weight": 1,
+        "metadata": {
+          "successfulChecks": "default.sentenceCount, default.wordCount",
+          "failedChecks": "",
+          "erroredChecks": ""
+        }
+      },
+      "execution_time": 0,
+      "async": false,
+      "type": "guardrail",
+      "created_at": "2025-05-20T08:00:59.492Z",
+      "deny": false
+    }
+  ],
+  "after_request_hooks": []
+}
+```
+
+This example corresponds to a `config` like:
+
+```json
+{
+  "input_guardrails": ["sentence_and_word_check_guardrail"],
+  "output_guardrails": []
+}
+```
+
+---
+
+## Streaming Hook Results
+
+<Note>
+  Portkey supports hook results in streaming responses for `/chat/completions`, `/completions`, `/embeddings`, and `/messages`. For streaming requests, **only `input_guardrails` (before request hooks) are supported**. Output guardrails (`output_guardrails` / after request hooks) are not supported for streaming responses.
+</Note>
+
+To receive hook results in streaming responses, set the `x-portkey-strict-open-ai-compliance` header to `false`.
+
+<CodeGroup>
+```bash cURL - /chat/completions
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: PORTKEY_API_KEY' \
+--header 'x-portkey-config: {"beforeRequestHooks":[{"type":"guardrail","id":"my_solid_guardrail","checks":[{"id":"default.regexMatch","parameters":{"rule": "*asd"}}]}],"retry": {"attempts": 1}}' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@my-openai/gpt-3.5-turbo",
+    "max_tokens": 100,
+    "stream": true,
+    "messages": [
+        { "role": "system", "content": "You are a helpful assistant" },
+        { "role": "user", "content": "hello sir how are you?" }
+    ]
+}'
+```
+
+```python Python
+from portkey_ai import AsyncPortkey
+import asyncio
+
+portkey = AsyncPortkey(
+    api_key="PORTKEY_API_KEY",
+    provider="openai",
+    config={
+        "beforeRequestHooks": [
+            {
+                "type": "guardrail",
+                "id": "my_solid_guardrail",
+                "checks": [{"id": "default.regexMatch", "parameters": {"rule": "*"}}],
+            }
+        ],
+        "cache": {"mode": "simple"},
+    },
+)
+
+
+async def main():
+    hook_results = None
+    response = await portkey.chat.completions.create(
+        model="@my-openai/gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello!"},
+        ],
+        stream=True,
+    )
+
+    async for chunk in response:
+        if chunk.model_extra and chunk.model_extra.get("hook_results"):
+            hook_results = chunk.model_extra.get("hook_results")
+        print(chunk.choices, end="", flush=True)
+        print("\n")
+
+    return hook_results
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+```javascript Node
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "openai",
+  config: {
+    beforeRequestHooks: [
+      {
+        type: "guardrail",
+        id: "my_solid_guardrail",
+        checks: [{ id: "default.regexMatch", parameters: { rule: "*" } }],
+      },
+    ],
+  },
+});
+
+async function main() {
+  for await (const chunk of await portkey.chat.completions.create({
+    model: "@my-openai/gpt-3.5-turbo",
+    messages: [
+      { role: "system", content: "You are a helpful assistant." },
+      { role: "user", content: "Hello!" },
+    ],
+    stream: true,
+  })) {
+    if (chunk.model_extra?.hook_results) {
+      // Access hook results here
+    }
+    process.stdout.write(JSON.stringify(chunk.choices));
+    process.stdout.write("\n");
+  }
+}
+
+main();
+```
+
+```bash cURL - /messages (Anthropic)
+curl --location 'https://api.portkey.ai/v1/messages' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'x-portkey-config: {"beforeRequestHooks":[{"type":"guardrail","id":"my_solid_guardrail","checks":[{"id":"default.regexMatch","parameters":{"rule": "*asd"}}]}],"retry": {"attempts": 1}}' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@dev-anthropic/claude-haiku-4-5",
+    "max_tokens": 100,
+    "stream": true,
+    "messages": [
+      { "role": "user", "content": "tell me a story?" }
+    ]
+  }'
+```
+</CodeGroup>
+
+**Response chunk for `/chat/completions`:**
+
+```json
+data: {"hook_results":{"before_request_hooks":[{"verdict":true,"id":"my_solid_guardrail","transformed":false,"checks":[{"data":{"explanation":"An error occurred while processing the regex: Invalid regular expression: /*/: Nothing to repeat","regexPattern":"*","not":false,"textExcerpt":"hello sir how are you?"},"verdict":false,"id":"default.regexMatch","error":{"name":"SyntaxError","message":"Invalid regular expression: /*/: Nothing to repeat"},"execution_time":0,"created_at":"2025-11-14T08:14:04.772Z","transformed":false,"fail_on_error":false}],"feedback":null,"execution_time":0,"async":false,"type":"guardrail","created_at":"2025-11-14T08:14:04.772Z","deny":false}]}}
+```
+
+**Response chunk for `/messages`:**
+
+```
+event: hook_results
+data: {"hook_results":{"before_request_hooks":[{"verdict":true,"id":"my_solid_guardrail","transformed":false,"checks":[{"data":{"explanation":"An error occurred while processing the regex: Invalid regular expression: /*asd/: Nothing to repeat","regexPattern":"*asd","not":false,"textExcerpt":"tell me a story?"},"verdict":false,"id":"default.regexMatch","error":{"name":"SyntaxError","message":"Invalid regular expression: /*asd/: Nothing to repeat"},"execution_time":0,"transformed":false,"created_at":"2025-11-14T09:23:12.457Z","log":null,"fail_on_error":false}],"feedback":null,"execution_time":0,"async":false,"type":"guardrail","created_at":"2025-11-14T09:23:12.457Z","deny":false}]}}
+```
+
+<Note>
+  For the `/messages` endpoint (Anthropic), it is not possible to access hook results through the Anthropic SDK because the SDK only parses Anthropic-specific events. Use cURL or raw HTTP requests to access hook results for this endpoint.
+</Note>
+
+---
+
+## Raw Guardrails and BYO Guardrails
+
+### Defining Guardrails Directly in JSON
+
+On Portkey, you can also create Guardrails in code and attach them to Configs:
+
+<Card title="Creating Raw Guardrails (in JSON)" href="/product/guardrails/creating-raw-guardrails-in-json"/>
+
+---
+
+### Bring Your Own Guardrails
+
+If you already have a custom guardrail pipeline, you can integrate it with Portkey using a webhook:
+
+<Card title="Bring Your Own Guardrails" href="/integrations/guardrails/bring-your-own-guardrails"/>
+
+---
+
+## Examples of When to Deny Requests with Guardrails
+
+1. **Prompt injection checks**: prevent inputs that try to override system instructions or jailbreak the model.
+2. **Moderation checks**: block harmful or disallowed content.
+3. **Compliance checks**: enforce policy and regulatory constraints.
+4. **Security checks**: block suspicious payloads (for example, SQL injection or XSS patterns).
+
+To enable Guardrails for your org, ping us on the [Portkey Discord](https://portkey.ai/community).
+
