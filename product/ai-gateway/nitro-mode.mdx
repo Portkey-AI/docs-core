@@ -1,0 +1,243 @@
+---
+title: "Nitro Mode (Beta)"
+description: "Forward the request body directly to the provider without any transformations. Best when your request and response structure already matches the provider's API."
+---
+
+<Info>
+**Beta (conditional availability)** <br/> Nitro mode is in beta and available only to selected enterprises. Contact your Portkey account team to get access.
+</Info>
+
+<Note>
+Nitro mode is currently in **beta**. Behavior may change based on feedback.
+</Note>
+
+The Portkey Gateway supports **Nitro mode** through the `x-portkey-nitro-mode` header. When enabled, the gateway forwards your request body directly to the upstream provider **without reading or transforming it**. This is useful when your request and response structure already matches the provider's expected format and you don't need the gateway to modify the payload.
+
+## How It Works
+
+By default, the gateway reads the request body to power features like transformations, retries, fallbacks, guardrails, and other body-based configurations.
+
+With Nitro mode enabled, the gateway **skips reading the request body entirely** and streams it straight to the provider. Since the body is never parsed, features that depend on inspecting or modifying the payload are not available in this mode. See [Limitations](#limitations) for details.
+
+## When to Use Nitro Mode
+
+Nitro mode is a good fit when:
+
+- Your request and response structure **already matches the provider's API** and you don't need the gateway to transform the payload. This removes redundant request parsing, which is particularly beneficial for large payloads.
+- You are routing to a **single provider** and don't need body-based gateway features like fallbacks, retries, or input guardrails.
+
+If your use case depends on features like **fallbacks, retries, load balancing, request transformations, or input guardrails**, use the standard mode instead.
+
+## Example
+
+Add the header to your request:
+
+| Header | Value |
+|--------|--------|
+| `x-portkey-nitro-mode` | `true` |
+
+<CodeGroup>
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "x-portkey-nitro-mode: true" \
+  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+```py Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@openai-prod"
+)
+
+response = portkey.with_options(
+    extra_headers={"x-portkey-nitro-mode": "true"}
+).chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+```js JavaScript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@openai-prod"
+});
+
+const response = await portkey.chat.completions.create(
+    { model: "gpt-4o", messages: [{ role: "user", content: "Hello" }] },
+    { headers: { "x-portkey-nitro-mode": "true" } }
+);
+```
+
+</CodeGroup>
+
+## Supported Endpoints
+
+Nitro mode works only on the following endpoints:
+
+| Endpoint | Description | Currently Supported Providers |
+|----------|-------------|---------------------|
+| `/v1/chat/completions` | Chat completions | OpenAI, Fireworks, OpenRouter |
+| `/v1/embeddings` | Embeddings | OpenAI, Fireworks, OpenRouter |
+| `/v1/messages` | Messages API | Anthropic |
+| `/v1/responses` | Responses API | OpenAI, OpenRouter |
+
+## Limitations
+
+Since the gateway does not read the request body in Nitro mode, there are a few constraints on how you configure your request.
+
+### Specifying the Provider
+
+Because the body is never read, the provider **must** be specified through headers, not in the request body. There are two supported ways:
+
+**Option 1: `x-portkey-provider` header**
+
+Pass the provider slug directly as a header.
+
+```sh
+-H "x-portkey-provider: @openai-prod"
+```
+
+**Option 2: `x-portkey-config` header**
+
+Pass a config that contains a single provider at the top level.
+
+```json
+// ✅ Works: single provider at top level
+{
+  "provider": "@openai-prod"
+}
+```
+
+```json
+// ❌ Does not work: multiple targets
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@openai-backup" }
+  ]
+}
+```
+
+```json
+// ❌ Does not work: fallback strategy
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@anthropic-prod" }
+  ]
+}
+```
+
+### Config Constraints
+
+The following constraints apply when using `x-portkey-config`. If violated, the gateway returns an error (except for caching, which is silently ignored).
+
+<AccordionGroup>
+<Accordion title="Single target only">
+The config must route to exactly one provider. Strategies like `loadbalance`, `fallback`, or `conditional` with multiple targets are not supported.
+
+```json
+// ❌ Does not work
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@openai-backup" }
+  ]
+}
+```
+
+```json
+// ✅ Works
+{
+  "provider": "@openai-prod"
+}
+```
+</Accordion>
+
+<Accordion title="No retries">
+Retries require re-reading the request body. Set `retry.attempts` to `0` or omit `retry` entirely.
+
+```json
+// ❌ Does not work
+{
+  "provider": "@openai-prod",
+  "retry": { "attempts": 3 }
+}
+```
+
+```json
+// ✅ Works
+{
+  "provider": "@openai-prod"
+}
+```
+</Accordion>
+
+<Accordion title="No body-dependent hooks">
+Hooks that inspect the request body (such as `input_guardrails` or `before_request_hooks`) are not supported. This also applies to default input guardrails set at the workspace or organisation level.
+
+```json
+// ❌ Does not work
+{
+  "provider": "@openai-prod",
+  "input_guardrails": [{ "id": "guardrail-1" }]
+}
+```
+
+```json
+// ✅ Works
+{
+  "provider": "@openai-prod"
+}
+```
+</Accordion>
+
+<Accordion title="No override_params">
+Since the body is not read, `override_params` that change request body fields (such as `model` or `temperature`) have no effect and are not supported.
+
+```json
+// ❌ Does not work
+{
+  "provider": "@openai-prod",
+  "override_params": { "model": "gpt-4o-mini", "temperature": 0 }
+}
+```
+
+```json
+// ✅ Works: pass model and parameters directly in the request body instead
+{
+  "provider": "@openai-prod"
+}
+```
+</Accordion>
+
+<Accordion title="Caching is ignored">
+Caching requires reading the full request body to build cache keys. If your config includes `cache`, it will be **silently ignored**. No error is thrown, but the cache will not be used.
+
+```json
+// ⚠️ cache is silently ignored (no error, but no caching either)
+{
+  "provider": "@openai-prod",
+  "cache": { "mode": "simple" }
+}
+```
+</Accordion>
+</AccordionGroup>
+
+## Errors
+
+If your configuration violates any of the constraints above (except caching, which is silently ignored), the gateway returns an HTTP 4xx error describing the issue.
+
+Fix the configuration as indicated in the error message, or remove the `x-portkey-nitro-mode` header to use standard gateway behavior.
