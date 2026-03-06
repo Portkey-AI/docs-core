@@ -1,0 +1,315 @@
+---
+title: "Passthrough"
+description: "Send requests directly to a custom model without parameter transformation"
+---
+
+The Passthrough provider allows you to send requests exactly as they are to any backend provider, without Portkey's usual parameter mapping or validation. 
+This is not recommended because you lose out on features like cost attribution and rate limiting, 
+but useful when you need full control over the request body or when working with provider-specific features that aren't part of the standard API signatures.
+
+## Passthrough vs standard providers
+
+| Feature | Regular Providers | Passthrough Provider |
+|---------|-------------------|---------------------|
+| **Parameter validation** | Strict - only base signature parameters allowed | None - all parameters forwarded as-is |
+| **Request transformation** | Portkey maps parameters to unified format | No transformation - request sent unchanged |
+| **Response transformation** | Response is transformed to unified format | No transformation - response sent unchanged | 
+| **Provider-specific params** | May be rejected or ignored | Fully supported |
+| **Unified routes** | Parameters normalized across providers | Original request body preserved |
+| **Header forwarding** | Portkey manages headers | All non-`x-portkey-*` headers forwarded to endpoint |
+| **Target endpoint** | Configured per provider | Set via `x-portkey-custom-host` header |
+| **Error handling** | Standardized error responses | Raw provider errors returned |
+| **Use case** | Cross-provider compatibility | Direct provider access with full control |
+
+<Note>
+With standard providers like Anthropic or OpenAI, Portkey validates and transforms your request to match the expected API signature. With Passthrough, your request body is forwarded directly to the target endpoint without any modifications.
+</Note>
+
+## When to use Passthrough
+
+- **Provider-specific parameters**: When you need to use parameters that aren't in Portkey's standard API signatures
+- **Direct API access**: When you want to interact with a provider's API exactly as documented
+- **Custom integrations**: When working with endpoints or features not yet mapped by Portkey
+- **Debugging**: When you need to see exactly what the provider receives
+
+## Quick start
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: passthrough" \
+  -H "x-portkey-custom-host: https://my.vllm.com/v1" \
+  -H "authorization: Bearer sk-your-api-key" \
+  -H "my-custom-header: my-custom-value" \
+  -d '{
+    "model": "my-custom-vllm-model",
+    "stream": true,
+    "max_completion_tokens": 1000,
+    "random-key": "value",
+    "messages": [
+      { "role": "developer", "content": "You are a helpful assistant" },
+      { "role": "user", "content": "Hello!" }
+    ]
+  }'
+```
+
+### Required headers
+
+| Header | Description |
+|--------|-------------|
+| `x-portkey-api-key` | Your Portkey API key |
+| `x-portkey-provider` | Set to `passthrough` |
+| `x-portkey-custom-host` | The base URL of your target endpoint (e.g., `https://my.vllm.com/v1`) |
+
+### Header forwarding
+
+All headers **except** those starting with `x-portkey-` are forwarded to the target endpoint. This includes:
+- `authorization` - Your target provider's API key
+- `Content-Type` - Request content type
+- Any custom headers your endpoint requires
+
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="passthrough",
+    custom_host="https://my.vllm.com/v1",
+    default_headers={
+        "my_custom_header": "abc"
+    }
+)
+
+# Request body is sent directly without transformation
+response = portkey.chat.completions.create(
+    model="my-custom-vllm-model",
+    messages=[{"role": "user", "content": "Hello!"}],
+    # Any parameters you include are passed through unchanged
+    stream=True,
+    max_completion_tokens=1000,
+    random_key="value"  # Custom parameters supported
+)
+
+print(response.choices[0].message.content)
+```
+
+```js Javascript icon="square-js"
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "passthrough",
+    customHost: "https://my.vllm.com/v1",
+    defaultHeaders: {
+        "my-custom-header": "abc"
+    }
+})
+
+// Request body is sent directly without transformation
+const response = await portkey.chat.completions.create({
+    model: "my-custom-vllm-model",
+    messages: [{ role: "user", content: "Hello!" }],
+    // Any parameters you include are passed through unchanged
+    stream: true,
+    max_completion_tokens: 1000,
+    random_key: "value"  // Custom parameters supported
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```python OpenAI Py icon="python"
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="passthrough",
+        custom_host="https://my.vllm.com/v1",
+        my_custom_header="abc"
+    )
+)
+
+response = client.chat.completions.create(
+    model="my-custom-vllm-model",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+```js OpenAI JS icon="square-js"
+import OpenAI from "openai"
+import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai"
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "passthrough",
+        customHost: "https://my.vllm.com/v1",
+        myCustomHeader: "abc"
+    })
+})
+
+const response = await client.chat.completions.create({
+    model: "my-custom-vllm-model",
+    messages: [{ role: "user", content: "Hello!" }]
+})
+
+console.log(response.choices[0].message.content)
+```
+</CodeGroup>
+
+## Configuration
+
+Passthrough requires you to specify the target endpoint using the `x-portkey-custom-host` header. This tells Portkey where to forward your requests.
+
+```
+x-portkey-custom-host: https://your-endpoint.com/v1
+```
+
+The path from your request (e.g., `/chat/completions`) is appended to this base URL.
+
+## How it works
+
+When you use the Passthrough provider with any unified route (like `/v1/chat/completions` or `/v1/messages`), Portkey:
+
+1. **Receives your request** as-is without validating against standard parameter signatures
+2. **Forwards the entire request body** directly to the configured backend
+3. **Returns the response** from the provider without transformation
+
+This differs from standard providers where Portkey normalizes parameters, validates required fields, and transforms requests to match each provider's API format.
+
+### Example: Standard vs Passthrough
+
+**Standard provider (Anthropic)**:
+```json
+// Your request
+{
+  "model": "@anthropic/claude-sonnet-4-5-20250929",
+  "messages": [{"role": "user", "content": "Hi"}],
+  "unknown_param": "value"  // This may be rejected or ignored
+}
+
+// Portkey validates and transforms before sending to Anthropic
+```
+
+**Passthrough provider**:
+```json
+// Your request - with x-portkey-custom-host header set
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "messages": [{"role": "user", "content": "Hi"}],
+  "unknown_param": "value"  // Passed through unchanged
+}
+
+// Sent directly to the backend exactly as provided
+```
+
+### Header behavior
+
+When you send a request through Passthrough:
+
+| Header type | Behavior |
+|-------------|----------|
+| `x-portkey-*` headers | Used by Portkey, **not** forwarded |
+| `authorization` | Forwarded to target endpoint |
+| `Content-Type` | Forwarded to target endpoint |
+| Custom headers | Forwarded to target endpoint |
+
+This allows you to pass authentication and custom headers directly to your target provider.
+
+## Supported routes
+
+Passthrough works with all unified routes:
+
+- `/v1/chat/completions` - Chat completions
+- `/v1/messages` - Anthropic-style messages
+- `/v1/completions` - Text completions
+- `/v1/embeddings` - Embeddings
+- Any other supported endpoint
+
+The key difference is that no parameter mapping or validation is applied—your request body reaches the provider exactly as you sent it.
+
+## Use cases
+
+### Provider-specific features
+
+Use parameters that are unique to a specific provider:
+
+<CodeGroup>
+```python Python icon="python"
+response = portkey.chat.completions.create(
+    model="@passthrough/model-name",
+    messages=[{"role": "user", "content": "Analyze this"}],
+    # Provider-specific parameters passed through directly
+    provider_specific_mode="advanced",
+    custom_sampling_params={"top_k": 50, "repetition_penalty": 1.2}
+)
+```
+
+```js Javascript icon="square-js"
+const response = await portkey.chat.completions.create({
+    model: "@passthrough/model-name",
+    messages: [{ role: "user", content: "Analyze this" }],
+    // Provider-specific parameters passed through directly
+    provider_specific_mode: "advanced",
+    custom_sampling_params: { top_k: 50, repetition_penalty: 1.2 }
+})
+```
+</CodeGroup>
+
+### Self-hosted vLLM or custom endpoints
+
+Connect to your own vLLM deployment or any OpenAI-compatible endpoint:
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: passthrough" \
+  -H "x-portkey-custom-host: https://my.vllm.com/v1" \
+  -H "authorization: Bearer $VLLM_API_KEY" \
+  -d '{
+    "model": "my-custom-model",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "max_completion_tokens": 1000,
+    "experimental_feature": true,
+    "custom_config": {
+      "nested": "parameters",
+      "are": "supported"
+    }
+  }'
+```
+
+## Gateway features
+
+Passthrough requests still benefit from Portkey's gateway features:
+
+- **Observability**: Full logging and monitoring of requests/responses
+- **Caching**: Response caching works as expected
+- **Rate limiting**: Budget and rate controls apply
+- **Retries**: Automatic retry logic on failures
+- **Fallbacks**: Configure fallback providers in your config
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Add Metadata" icon="tags" href="/product/observability/metadata">
+    Add metadata to your Passthrough requests
+  </Card>
+  <Card title="Gateway Configs" icon="gear" href="/product/ai-gateway/configs">
+    Configure fallbacks, retries, and caching
+  </Card>
+  <Card title="Tracing" icon="chart-line" href="/product/observability/traces">
+    Trace your Passthrough requests
+  </Card>
+  <Card title="Model Catalog" icon="list" href="/product/model-catalog">
+    Set up your Passthrough provider
+  </Card>
+</CardGroup>

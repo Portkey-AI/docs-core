@@ -1,0 +1,538 @@
+---
+title: "JWT Token Validator"
+description: "Validate JWT tokens with signature verification, claim validation, and custom business logic rules."
+---
+
+The JWT Token Validator guardrail provides comprehensive JWT (JSON Web Token) validation and authentication for the Portkey Gateway. It supports signature verification, claim validation, and custom business logic rules.
+
+## Features
+
+- **Signature Verification**: Validates JWT signatures using JWKS (JSON Web Key Set)
+- **Inline JWKS Support**: Provide JWKS directly without requiring external URI
+- **Token Introspection**: Validates tokens via external introspection endpoint (RFC 7662)
+- **Required Claims**: Ensures specific claims are present in the token
+- **Claim Value Validation**: Validates claim values with flexible matching strategies
+- **Header-Payload Matching**: Ensures consistency between header and payload values
+- **JWKS Caching**: Efficient JWKS caching to reduce external calls (URI-based)
+- **Introspection Caching**: Cache introspection results with automatic expiry validation
+- **Multi-tenant Support**: Validate tenant IDs and other organizational claims
+- **Role-Based Access**: Validate user groups, roles, and permissions
+- **OAuth2/OIDC Support**: Standard audience, issuer, and scope validation
+- **Claim Extraction**: Extract JWT claims and inject them into request context as headers
+
+## Validation Methods
+
+The guardrail supports three validation methods:
+
+| Method | Best For | Pros | Cons |
+|--------|----------|------|------|
+| **Inline JWKS** | Testing, static key deployments | No external dependencies, fastest validation | Requires config updates for key rotation |
+| **JWKS URI** | Production with key rotation | Automatic key rotation, caching, industry standard | Requires network access |
+| **Token Introspection** | Opaque tokens, revocation support | Works with opaque tokens, immediate revocation | Network latency, external dependency |
+
+## Configuration Parameters
+
+### Core Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `jwks` | object | Conditional* | - | Inline JWKS object for token verification |
+| `jwksUri` | string | Conditional* | - | URI to fetch JSON Web Key Set for token verification |
+| `introspectEndpoint` | string | Conditional* | - | Token introspection endpoint URL (RFC 7662) |
+| `headerKey` | string | No | `"Authorization"` | Header containing the JWT token |
+
+*Either `jwks`, `jwksUri`, or `introspectEndpoint` must be provided.
+
+### JWKS Validation Parameters
+
+When using `jwks` or `jwksUri`:
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `algorithms` | string[] | No | `["RS256"]` | Allowed signing algorithms |
+| `cacheMaxAge` | number | No | `86400` | JWKS cache duration in seconds (24h) - only applies to `jwksUri` |
+| `clockTolerance` | number | No | `5` | Clock tolerance in seconds for time-based claims (`exp`, `nbf`) |
+| `maxTokenAge` | string | No | `"1d"` | Maximum token age (e.g., '1d', '12h', '30m') |
+
+### Token Introspection Parameters
+
+When using `introspectEndpoint`:
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `introspectContentType` | string | No | - | Content type for Introspection Endpoint |
+| `introspectCacheMaxAge` | number | No | - | Cache introspection results for this many seconds |
+| `clockTolerance` | number | No | `5` | Clock tolerance in seconds for time-based claims |
+
+### Claim Validation Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `requiredClaims` | string[] | No | Array of claim names that must be present |
+| `claimValues` | object | No | Object mapping claim names to expected values with match types |
+| `headerPayloadMatch` | string[] | No | Array of keys where header[key] must equal payload[key] |
+| `extractClaims` | string[] | No | Array of claim names to extract and inject into request context |
+| `claimPrefix` | string | No | Prefix for extracted claim headers (default: `"x-jwt-"`) |
+
+## Match Types
+
+The `claimValues` parameter supports different match types for flexible validation:
+
+### `exact` (default)
+
+The claim value must exactly equal the expected value. Requires single-value string claim and single expected value.
+
+**Use cases**: `iss`, `sub`, `client_id` - single exact value validation
+
+```json
+{
+  "claimValues": {
+    "iss": {
+      "values": "https://auth.example.com"
+    }
+  }
+}
+```
+
+### `contains`
+
+Array/string must contain at least one of the expected values (OR logic). Use this for array claims.
+
+**Use cases**: `aud` (JWT audience arrays), `groups`, `roles`, `permissions`
+
+```json
+{
+  "claimValues": {
+    "groups": {
+      "values": ["admin", "moderator"],
+      "matchType": "contains"
+    }
+  }
+}
+```
+
+### `containsAll`
+
+Array/string must contain ALL of the expected values (AND logic). Use this when ALL values are required.
+
+**Use cases**: `scope` (requires ALL specified scopes), required permissions
+
+```json
+{
+  "claimValues": {
+    "scope": {
+      "values": ["read:api", "write:api"],
+      "matchType": "containsAll"
+    }
+  }
+}
+```
+
+### `regex`
+
+Value must match the regex pattern.
+
+**Use cases**: Email domain validation, pattern matching
+
+```json
+{
+  "claimValues": {
+    "email": {
+      "values": ".*@(company1|company2)\\.com$",
+      "matchType": "regex"
+    }
+  }
+}
+```
+
+### Quick Reference
+
+| Claim Type | Example | Recommended matchType |
+|------------|---------|----------------------|
+| Single value, exact match | `iss`, `sub`, `client_id` | `exact` |
+| Single value, OR logic | `tenant_id` with multiple tenants | `contains` |
+| Array - check if contains any | `aud`, `groups` (OR logic) | `contains` |
+| Array - check if contains all | `scope` (AND logic) | `containsAll` |
+| Pattern matching | `email` domain validation | `regex` |
+
+## Usage Examples
+
+### Basic JWT Validation (Inline JWKS)
+
+```json
+{
+  "jwks": {
+    "keys": [
+      {
+        "kty": "RSA",
+        "kid": "my-key-id",
+        "use": "sig",
+        "alg": "RS256",
+        "n": "xGOr-H7A-PWH_4...",
+        "e": "AQAB"
+      }
+    ]
+  },
+  "algorithms": ["RS256"]
+}
+```
+
+### Basic JWT Validation (JWKS URI)
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "algorithms": ["RS256"]
+}
+```
+
+### Token Introspection with Caching
+
+```json
+{
+  "introspectEndpoint": "https://auth.example.com/oauth/introspect",
+  "introspectCacheMaxAge": 300,
+  "clockTolerance": 5
+}
+```
+
+### Required Claims Validation
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "requiredClaims": ["sub", "email", "tenant_id"]
+}
+```
+
+### Issuer and Audience Validation
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "claimValues": {
+    "iss": {
+      "values": "https://auth.example.com"
+    },
+    "aud": {
+      "values": ["https://api.example.com"],
+      "matchType": "contains"
+    }
+  }
+}
+```
+
+### Group/Role Validation (OR logic)
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "claimValues": {
+    "groups": {
+      "values": ["admin", "moderator"],
+      "matchType": "contains"
+    }
+  }
+}
+```
+
+### Scope Validation (AND logic)
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "claimValues": {
+    "scope": {
+      "values": ["read:api", "write:api"],
+      "matchType": "containsAll"
+    }
+  }
+}
+```
+
+### Multi-Tenant Validation
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "requiredClaims": ["tenant_id"],
+  "claimValues": {
+    "tenant_id": {
+      "values": ["tenant-123", "tenant-456", "tenant-789"],
+      "matchType": "contains"
+    }
+  }
+}
+```
+
+### Email Domain Validation
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "claimValues": {
+    "email": {
+      "values": ".*@(company1|company2)\\.com$",
+      "matchType": "regex"
+    }
+  }
+}
+```
+
+### Claim Extraction to Context
+
+Extracts validated JWT claims and injects them as headers for downstream services:
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "extractClaims": ["sub", "email", "tenant_id", "groups"],
+  "claimPrefix": "x-jwt-"
+}
+```
+
+**Result**: Claims are extracted and added as headers:
+- `x-jwt-sub`: user-123
+- `x-jwt-email`: user@example.com
+- `x-jwt-tenant-id`: tenant-456
+- `x-jwt-groups`: admin,developer
+
+### Comprehensive Production Setup
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "algorithms": ["RS256", "ES256"],
+  "cacheMaxAge": 86400,
+  "clockTolerance": 5,
+  "maxTokenAge": "1d",
+  "requiredClaims": ["sub", "email", "tenant_id"],
+  "claimValues": {
+    "iss": {
+      "values": "https://auth.example.com"
+    },
+    "aud": {
+      "values": "https://api.example.com",
+      "matchType": "contains"
+    },
+    "tenant_id": {
+      "values": ["tenant-123", "tenant-456"],
+      "matchType": "contains"
+    },
+    "groups": {
+      "values": ["admin", "developer"],
+      "matchType": "contains"
+    },
+    "scope": {
+      "values": ["read:api", "write:api"],
+      "matchType": "containsAll"
+    },
+    "email": {
+      "values": ".*@(company1|company2)\\.com$",
+      "matchType": "regex"
+    }
+  },
+  "headerPayloadMatch": ["kid"],
+  "extractClaims": ["sub", "email", "tenant_id", "groups", "scope"],
+  "claimPrefix": "x-jwt-"
+}
+```
+
+## Response Format
+
+### Success Response
+
+```json
+{
+  "error": null,
+  "verdict": true,
+  "data": {
+    "verdict": true,
+    "explanation": "JWT token validation succeeded",
+    "validations": {
+      "signatureValid": true,
+      "requiredClaims": { "valid": true },
+      "claimValues": { "valid": true },
+      "headerPayloadMatch": { "valid": true }
+    }
+  },
+  "transformedData": {
+    "headers": {
+      "x-jwt-sub": "user-123",
+      "x-jwt-email": "user@example.com",
+      "x-jwt-tenant-id": "tenant-456"
+    }
+  },
+  "transformed": true
+}
+```
+
+### Failure Response
+
+```json
+{
+  "error": null,
+  "verdict": false,
+  "data": {
+    "verdict": false,
+    "explanation": "JWT validation failed: Missing required claims: email, tenant_id; Invalid claim values: groups",
+    "validations": {
+      "signatureValid": true,
+      "requiredClaims": {
+        "valid": false,
+        "missing": ["email", "tenant_id"]
+      },
+      "claimValues": {
+        "valid": false,
+        "failed": ["groups"]
+      }
+    }
+  }
+}
+```
+
+## Token Format
+
+The guardrail expects JWT tokens in the following format:
+
+```
+Authorization: Bearer <JWT_TOKEN>
+```
+
+Or with a custom header:
+
+```
+X-API-Token: Bearer <JWT_TOKEN>
+```
+
+The `Bearer` prefix is optional and will be automatically stripped if present.
+
+## Common Patterns
+
+### API Gateway Authentication
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "requiredClaims": ["sub"],
+  "claimValues": {
+    "iss": { "values": "https://auth.example.com" },
+    "aud": { "values": "https://api.example.com", "matchType": "contains" }
+  }
+}
+```
+
+### Admin-Only Access
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "claimValues": {
+    "groups": {
+      "values": ["admin"],
+      "matchType": "contains"
+    }
+  }
+}
+```
+
+### Tenant Isolation
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "requiredClaims": ["tenant_id"],
+  "claimValues": {
+    "tenant_id": {
+      "values": ["<SPECIFIC_TENANT_ID>"]
+    }
+  }
+}
+```
+
+### Service-to-Service Authentication
+
+```json
+{
+  "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+  "requiredClaims": ["client_id"],
+  "claimValues": {
+    "scope": {
+      "values": ["service:read", "service:write"],
+      "matchType": "containsAll"
+    }
+  }
+}
+```
+
+## Best Practices
+
+### Security
+
+- Always validate the issuer (`iss`) to prevent token substitution attacks
+- Validate the audience (`aud`) to ensure tokens are intended for your API
+- Use appropriate `clockTolerance` (5-10 seconds) to handle clock skew
+- Set reasonable `maxTokenAge` to limit token lifetime
+- Enable `headerPayloadMatch` for `kid` to prevent key confusion attacks
+
+### Performance
+
+- Set appropriate `cacheMaxAge` (default 24h) to reduce JWKS fetches
+- Inline JWKS provides the fastest validation (no external calls)
+- Use introspection caching when using token introspection endpoint
+
+### Multi-Tenancy
+
+- Always include `tenant_id` in `requiredClaims`
+- Validate `tenant_id` values explicitly
+- Consider adding tenant-specific JWKS URIs for larger deployments
+
+### Claim Extraction
+
+- Only extract claims needed by downstream services
+- Use consistent `claimPrefix` across your infrastructure
+- Be mindful of header size limits when extracting large claims
+- Extracted claims are only added if validation succeeds
+
+## Troubleshooting
+
+### Token Not Found
+
+```
+Missing authorization header
+```
+
+Ensure the token is sent in the correct header (`Authorization` by default).
+
+### Invalid Signature
+
+```
+JWT signature validation error: ...
+```
+
+Verify your JWKS URI is correct and the token was signed by the expected issuer.
+
+### Missing Claims
+
+```
+JWT validation failed: Missing required claims: email, tenant_id
+```
+
+Ensure your auth provider includes these claims in the token.
+
+### Invalid Claim Values
+
+```
+JWT validation failed: Invalid claim values: groups
+```
+
+Check that the claim values in your token match the expected values in your configuration.
+
+### Clock Skew Issues
+
+```
+JWT signature validation error: token is expired
+```
+
+Increase `clockTolerance` to handle clock differences between systems.
+

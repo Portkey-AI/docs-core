@@ -14,7 +14,7 @@ There are many real-world use cases where it's possible to run into rate limits:
 
 | LLM Provider                                                                    | Example Model         | Rate Limits                                                                   |
 | ------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------- |
-| [OpenAI](https://platform.openai.com/docs/guides/rate-limits/usage-tiers)       | gpt-4                 | Tier 1:500 Requests per Minute10,000 Tokens per Minute10,000 Requests per Day |
+| [OpenAI](https://platform.openai.com/docs/guides/rate-limits/usage-tiers)       | gpt-5                 | Tier 1:500 Requests per Minute10,000 Tokens per Minute10,000 Requests per Day |
 | [Anthropic](https://docs.anthropic.com/claude/reference/errors-and-rate-limits) | All models            | Tier 1:50 RPM50,000 TPM1 Million Tokens per Day                               |
 | [Cohere](https://docs.cohere.com/docs/going-live#trial-key-limitations)         | Co.Generate models    | Production Key:10,000 RPM                                                     |
 | [Anyscale](https://www.anyscale.com/endpoints)                                  | All models            | Endpoints:30 concurrent requests                                              |
@@ -30,28 +30,29 @@ In this cookbook, we'll show you **2 ways of ensuring** that your app **never ge
 ## 1\. Install Portkey SDK
 
 
-```json
+```sh
 npm i portkey-ai
 ```
 
 Let's start by making a generic `chat.completions` call using the Portkey SDK:
 
 
-```json
+```js
 import Portkey from "portkey-ai";
 
 const portkey = new Portkey({
-  apiKey: process.env.PORTKEYAI_API_KEY,
-  virtualKey: process.env.OPENAI_VIRTUAL_KEY,
+    apiKey: process.env.PORTKEY_API_KEY
 });
 
 response = await portkey.chat.completions.create({
-  messages: [ {role: "user", content: "Hello!"} ],
-  model: "gpt-4",
+    messages: [{role: "user", content: "Hello!"}],
+    model: "@openai-prod/gpt-5-mini"  // @provider-slug/model-name
 });
 
 console.log(response.choices[0].message.content);
 ```
+
+Add your OpenAI credentials in [Model Catalog](https://app.portkey.ai/model-catalog) to get a provider slug like `@openai-prod`.
 
 To ensure your request doesn't get rate limited, we'll utilise Portkey's **fallback** & **loadbalance** features:
 
@@ -60,29 +61,18 @@ To ensure your request doesn't get rate limited, we'll utilise Portkey's **fallb
 With Portkey, you can write a call routing strategy that helps you fallback from one provider to another provider in case of rate limit errors. This is done by passing a Config object while instantiating your Portkey client:
 
 
-```json
-
+```js
 import Portkey from "portkey-ai";
 
 const portkey = new Portkey({
-   apiKey: process.env.PORTKEY_API_KEY,
-   config: JSON.stringify({
-      strategy: {
-         mode: "fallback",
-         on_status_codes:[429]
-      },
-      targets: [
-         {
-            provider: "opeanai",
-            api_key: "OPENAI_API_KEY"
-         },
-         {
-            provider: "anthropic",
-            api_key: "ANTHROPIC_API_KEY",
-            override_params: { "max_tokens":254 }
-         }
-      ],
-   }),
+    apiKey: process.env.PORTKEY_API_KEY,
+    config: JSON.stringify({
+        strategy: {mode: "fallback", on_status_codes: [429]},
+        targets: [
+            {override_params: {model: "@openai-prod/gpt-5-mini"}},
+            {override_params: {model: "@anthropic-prod/claude-4.5-sonnet", max_tokens: 254}}
+        ]
+    })
 });
 ```
 
@@ -90,7 +80,7 @@ const portkey = new Portkey({
 
 * The routing `strategy` is set as `fallback`
 * `on_status_codes` param ensures that the fallback is only triggered on the `429` error code, which is generated for rate limit errors
-* `targets` array contains the details of the LLMs and the order of the fallback
+* `targets` array contains the model slugs from Model Catalog and the order of the fallback
 * The `override_params` in the second target lets you add more params for the specific provider. (`max_tokens` for Anthropic in this case)
 
 That's it! The rest of your code remains the same. Based on the Config, Portkey will do the orchestration and ensure that Anthropic is called as a fallback option whenever you get rate limit errors on OpenAI.
@@ -102,39 +92,26 @@ Fallback is still reactive - it only gets triggered once you actually get an err
 Instead of sending all your requests to a single provider on a single account, you can split your traffic across multiple provider accounts using Portkey - this ensures that a single account does not get overburdened with requests and thus avoids rate limits. It is very easy to setup this "loadbalancing" using Portkey - just write the relevant loadbalance Config and pass it while instantiating your Portkey client once:
 
 
-```json
-
+```js
 import Portkey from "portkey-ai";
 
 const portkey = new Portkey({
-   apiKey: process.env.PORTKEY_API_KEY,
-   config: JSON.stringify({
-      strategy: {
-         mode: "loadbalance",
-      },
-      targets: [
-         {
-            provider: "openai", api_key: "OPENAI_KEY_1",
-            weight: 1,
-         },
-         {
-            provider: "openai", api_key: "OPENAI_KEY_2",
-            weight: 1,
-         },
-         {
-            provider: "openai", api_key: "OPENAI_KEY_3",
-            weight: 1,
-         },
-      ],
-   }),
+    apiKey: process.env.PORTKEY_API_KEY,
+    config: JSON.stringify({
+        strategy: {mode: "loadbalance"},
+        targets: [
+            {override_params: {model: "@openai-account1/gpt-5-mini"}, weight: 1},
+            {override_params: {model: "@openai-account2/gpt-5-mini"}, weight: 1},
+            {override_params: {model: "@openai-account3/gpt-5-mini"}, weight: 1}
+        ]
+    })
 });
-
 ```
 
 ### In this Config object:
 
 * The routing `strategy` is set as `loadbalance`
-* `targets` contain 3 different OpenAI API keys from 3 different accounts, all with equal weight - which means Portkey will split the traffic 1/3rd equally among the 3 keys
+* `targets` contain 3 different OpenAI provider slugs from Model Catalog (representing 3 different accounts), all with equal weight - which means Portkey will split the traffic 1/3rd equally among the 3
 
 With Loadbalance on different accounts, you can effectively multiply your rate limits and make your app much more robust.
 

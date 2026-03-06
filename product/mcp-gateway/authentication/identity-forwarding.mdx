@@ -1,0 +1,464 @@
+---
+title: Identity Forwarding
+description: Pass authenticated user identity to MCP servers.
+---
+
+Identity forwarding sends authenticated user information to MCP servers. The server can use this for authorization, logging, or personalization—without implementing its own authentication.
+
+## When to Use
+
+MCP servers often need to know who is making requests—for access controls based on user roles, audit logging, or personalized responses.
+
+Without identity forwarding, the MCP server sees requests coming from Portkey, not from individual users. Identity forwarding bridges that gap.
+
+Common scenarios:
+
+- **Audit logging.** MCP server logs user identity for compliance
+- **Authorization.** MCP server enforces per-user permissions
+- **Multi-tenancy.** MCP server scopes data by user or organization
+- **Analytics.** Track usage patterns by user or team
+- **Personalization.** Customize responses based on user context
+
+---
+
+## How It Works
+
+```
+1. User authenticates to Portkey (API key, OAuth, or external IdP)
+2. Portkey extracts user claims from the authentication
+3. Portkey forwards claims to the MCP server (as configured)
+4. MCP server uses claims for authorization/logging/personalization
+```
+
+The MCP server doesn't need to validate tokens or implement OAuth. It receives trusted user identity from Portkey.
+
+---
+
+## Forwarding Methods
+
+### Claims Header
+
+Send user claims as a JSON header. Simple to parse, no cryptographic verification needed.
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["sub", "email", "workspace_id"],
+    "header_name": "X-User-Claims"
+  }
+}
+```
+
+The MCP server receives:
+
+```
+X-User-Claims: {"sub":"user123","email":"user@example.com","workspace_id":"ws_abc"}
+```
+
+Parse the JSON to get user identity:
+
+<Tabs>
+  <Tab title="Python">
+```python
+import json
+
+def get_user_identity(request):
+    claims_header = request.headers.get("X-User-Claims")
+    if claims_header:
+        return json.loads(claims_header)
+    return None
+```
+  </Tab>
+  <Tab title="TypeScript">
+```typescript
+function getUserIdentity(request: Request) {
+  const claimsHeader = request.headers.get("X-User-Claims");
+  if (claimsHeader) {
+    return JSON.parse(claimsHeader);
+  }
+  return null;
+}
+```
+  </Tab>
+</Tabs>
+
+**Best for:** Internal MCP servers in trusted networks that trust Portkey's claims without cryptographic verification.
+
+### Bearer Token Passthrough
+
+Forward the original access token unchanged.
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "bearer"
+  }
+}
+```
+
+The MCP server receives:
+
+```
+Authorization: Bearer <original-token>
+```
+
+The MCP server validates the token itself against the same IdP that issued it.
+
+**Best for:** When the MCP server already has token validation infrastructure and uses the same IdP.
+
+### Signed JWT
+
+Portkey generates a new JWT containing user claims, signed with Portkey's private key.
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "jwt_header",
+    "include_claims": ["sub", "email", "workspace_id", "organisation_id"],
+    "header_name": "X-User-JWT",
+    "jwt_expiry_seconds": 300
+  }
+}
+```
+
+The MCP server receives:
+
+```
+X-User-JWT: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImFiYzEyMyJ9...
+```
+
+The JWT contains:
+- User claims (filtered by `include_claims`)
+- `iss`: `"portkey-mcp-gateway"`
+- `iat`: Issued at timestamp
+- `exp`: Expiration timestamp
+
+**Best for:** Cryptographic proof that Portkey issued the claims. MCP servers verify the signature without trusting the network.
+
+---
+
+## Configuration Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `method` | string | Required | `"claims_header"`, `"bearer"`, or `"jwt_header"` |
+| `include_claims` | string[] | See below | Claims to include |
+| `header_name` | string | Method-specific | Custom header name |
+| `jwt_expiry_seconds` | number | `300` | JWT expiry (only for `jwt_header`) |
+
+### Default Header Names
+
+| Method | Default Header |
+|--------|----------------|
+| `claims_header` | `X-User-Claims` |
+| `bearer` | `Authorization` |
+| `jwt_header` | `X-User-JWT` |
+
+### Default Claims
+
+If you don't specify `include_claims`, Portkey includes:
+
+| Claim | Description |
+|-------|-------------|
+| `sub` | Subject (user identifier) |
+| `email` | User's email address |
+| `username` | Username |
+| `user_id` | Portkey user ID |
+| `workspace_id` | Workspace identifier |
+| `organisation_id` | Organization identifier |
+| `scope` | OAuth scopes |
+| `client_id` | OAuth client ID |
+
+These defaults cover common authorization and logging needs. Customize `include_claims` to add or restrict which claims are forwarded.
+
+---
+
+## Verifying Signed JWTs
+
+For `jwt_header`, MCP servers verify tokens using Portkey's public keys.
+
+### Fetch Public Keys
+
+```
+GET https://mcp.portkey.ai/.well-known/jwks.json
+```
+
+Response:
+
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "n": "0vx7agoebGcQSuu...",
+      "e": "AQAB",
+      "kid": "key-id-123",
+      "use": "sig",
+      "alg": "RS256"
+    }
+  ]
+}
+```
+
+### Verify in Your MCP Server
+
+Standard JWT libraries fetch and cache these keys automatically:
+
+<Tabs>
+  <Tab title="Python">
+```python
+import jwt
+from jwt import PyJWKClient
+
+# Initialize JWKS client (caches keys automatically)
+jwks_client = PyJWKClient("https://mcp.portkey.ai/.well-known/jwks.json")
+
+def verify_user_jwt(request):
+    token = request.headers.get("X-User-JWT")
+    if not token:
+        return None
+    
+    try:
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            issuer="portkey-mcp-gateway"
+        )
+        return claims
+    except jwt.InvalidTokenError:
+        return None
+```
+  </Tab>
+  <Tab title="TypeScript">
+```typescript
+import * as jose from 'jose';
+
+const JWKS = jose.createRemoteJWKSet(
+  new URL('https://mcp.portkey.ai/.well-known/jwks.json')
+);
+
+async function verifyUserJwt(request: Request) {
+  const token = request.headers.get('X-User-JWT');
+  if (!token) return null;
+  
+  try {
+    const { payload } = await jose.jwtVerify(token, JWKS, {
+      issuer: 'portkey-mcp-gateway',
+      algorithms: ['RS256']
+    });
+    return payload;
+  } catch {
+    return null;
+  }
+}
+```
+  </Tab>
+</Tabs>
+
+---
+
+## Security
+
+### Identity Headers Are Protected
+
+Portkey adds identity headers (`X-User-Claims`, `X-User-JWT`) to the protected headers list. This means:
+
+- **Clients cannot spoof identity.** If an agent sends a fake `X-User-Claims` header, it's stripped before processing.
+- **Identity headers have highest priority.** They override any other headers with the same name.
+- **Header forwarding cannot bypass this.** Even with `forward_headers: { mode: "all-except", headers: [] }`, identity headers from clients are blocked.
+
+This ensures MCP servers can trust identity information from Portkey.
+
+### JWT Security Properties
+
+Signed JWTs provide:
+- **Integrity**: Claims cannot be modified without invalidating the signature
+- **Authenticity**: Only Portkey can sign with its private key
+- **Expiry**: Short-lived tokens (default 5 minutes) limit replay window
+
+The signing key is RSA-2048, and JWTs use RS256 algorithm.
+
+---
+
+## Performance
+
+### JWT Caching
+
+Signing JWTs involves expensive cryptographic operations. Portkey caches signed JWTs to avoid this overhead:
+
+| Scenario | Latency |
+|----------|---------|
+| Cache hit | ~0.01ms |
+| Cache miss (signing) | ~1ms |
+
+Cache details:
+- Max 10,000 cached entries
+- LRU eviction when full
+- Cache key includes user identity and included claims
+- Cache entries expire with the JWT
+
+### JWKS Caching on MCP Server
+
+Cache Portkey's JWKS on the MCP server. Most JWT libraries handle this automatically with configurable TTL.
+
+---
+
+## Self-Hosted Setup
+
+Self-hosted Portkey deployments using `jwt_header` require a signing key.
+
+### Generate Key Pair
+
+```bash
+# Generate RSA private key
+openssl genrsa -out private.pem 2048
+
+# Extract public key
+openssl rsa -in private.pem -pubout -out public.pem
+```
+
+### Configure Environment
+
+```bash
+export JWT_PRIVATE_KEY="$(cat private.pem)"
+```
+
+Portkey automatically exposes the public key at `/.well-known/jwks.json` for MCP servers to verify.
+
+---
+
+## Examples
+
+### Basic Claims Forwarding
+
+Forward essential identity for logging:
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["sub", "email"]
+  }
+}
+```
+
+### Signed JWT with Custom Expiry
+
+MCP servers needing cryptographic verification with longer validity:
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "jwt_header",
+    "include_claims": ["sub", "email", "workspace_id", "organisation_id", "groups"],
+    "jwt_expiry_seconds": 600
+  }
+}
+```
+
+### Combined with External OAuth
+
+Authenticate via IdP and forward validated claims to MCP servers:
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://your-idp.com/.well-known/jwks.json",
+    "requiredClaims": ["sub", "email", "groups"]
+  },
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["sub", "email", "groups"]
+  }
+}
+```
+
+Flow:
+1. User authenticates with your IdP, gets token
+2. User sends request to Portkey with IdP token
+3. Portkey validates token against your IdP
+4. Portkey extracts claims and forwards to MCP server
+5. MCP server uses claims for authorization
+
+---
+
+## Use Case: Per-User Authorization
+
+An MCP server exposes project management tools. Users should only access their own projects.
+
+**Configuration:**
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "jwt_header",
+    "include_claims": ["sub", "email", "org_id"]
+  }
+}
+```
+
+**MCP Server Implementation:**
+
+```python
+async def list_projects(request):
+    claims = verify_user_jwt(request)
+    if not claims:
+        raise Unauthorized("Missing or invalid user identity")
+    
+    # Scope query to user's organization
+    projects = await db.query(
+        "SELECT * FROM projects WHERE org_id = ?",
+        claims["org_id"]
+    )
+    return projects
+```
+
+---
+
+## Use Case: Audit Logging
+
+Log every tool call with user identity:
+
+**Configuration:**
+
+```json
+{
+  "user_identity_forwarding": {
+    "method": "claims_header",
+    "include_claims": ["sub", "email", "workspace_id"]
+  }
+}
+```
+
+**MCP Server Logging:**
+
+```python
+import json
+import logging
+
+def log_tool_call(request, tool_name, params):
+    claims = json.loads(request.headers.get("X-User-Claims", "{}"))
+    logging.info(
+        "Tool called",
+        extra={
+            "tool": tool_name,
+            "params": params,
+            "user_sub": claims.get("sub"),
+            "user_email": claims.get("email"),
+            "workspace_id": claims.get("workspace_id")
+        }
+    )
+```
+
+---
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [External OAuth](/product/mcp-gateway/authentication/external-oauth) | Use your own IdP for gateway authentication |
+| [JWT Validation](/product/mcp-gateway/authentication/jwt) | Validate tokens from external IdPs |
+| [Forwarding Headers](/product/mcp-gateway/authentication/forwarding-headers) | Pass request headers to MCP servers |

@@ -1,0 +1,857 @@
+---
+title: "Open Responses"
+description: "Use the Responses API with any LLM provider through Portkey's AI Gateway — fully compliant with the Open Responses specification."
+---
+
+<Info>
+Available on all Portkey [plans](https://portkey.ai/pricing).
+</Info>
+
+[Open Responses](https://www.openresponses.org/) is an open-source specification for multi-provider, interoperable LLM interfaces based on the OpenAI Responses API. It defines a shared schema for calling language models, streaming results, and composing agentic workflows — independent of provider.
+
+**Portkey is fully Open Responses compliant.** The Responses API works with every provider and model in Portkey's catalog — including Anthropic, Gemini, Bedrock, and 60+ other providers that don't natively support it.
+
+## Why Responses API
+
+The Responses API is becoming the standard for agentic AI:
+
+- **Agentic loops** — Models emit tool calls, receive results, and continue autonomously
+- **Items as atomic units** — Clear state machines for context management
+- **Semantic streaming** — Predictable, provider-agnostic streaming events
+- **Unified tool calling** — Consistent function calling interface across all providers
+
+Previously, the Responses API only worked with OpenAI. Portkey extends it to all providers.
+
+## Quick Start
+
+Send a Responses API request to any provider. Change the `model` string -- the API format stays the same.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="Explain quantum computing in simple terms"
+)
+
+print(response.output_text)
+```
+
+```javascript JavaScript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: "Explain quantum computing in simple terms"
+});
+
+console.log(response.output_text);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "input": "Explain quantum computing in simple terms"
+  }'
+```
+</CodeGroup>
+
+<Info>
+The same code works for **any provider**. Switch the `@provider/model` string to use OpenAI, Gemini, Groq, Bedrock, or any of the 3000+ supported models. See [Model Catalog](/product/model-catalog) for setup.
+</Info>
+
+### Using the OpenAI SDK
+
+The Portkey SDK is a superset of the OpenAI SDK, so `portkey.responses.create()` works identically. The OpenAI SDK also works directly with Portkey's base URL:
+
+<CodeGroup>
+```python OpenAI Python SDK
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai/v1"
+)
+
+response = client.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="Explain quantum computing in simple terms"
+)
+
+print(response.output_text)
+```
+
+```javascript OpenAI Node SDK
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai/v1"
+});
+
+const response = await client.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: "Explain quantum computing in simple terms"
+});
+
+console.log(response.output_text);
+```
+</CodeGroup>
+
+## Text Generation
+
+### Instructions (System Prompt)
+
+Set a system prompt with `instructions` or pass a `system` role message in the `input` array. Both work identically.
+
+<CodeGroup>
+```python Using instructions
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    instructions="You are a pirate. Always respond in pirate speak.",
+    input="Say hello."
+)
+```
+
+```python Using system message
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input=[
+        {"type": "message", "role": "system", "content": "You are a pirate. Always respond in pirate speak."},
+        {"type": "message", "role": "user", "content": "Say hello."}
+    ]
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    instructions: "You are a pirate. Always respond in pirate speak.",
+    input: "Say hello."
+});
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "instructions": "You are a pirate. Always respond in pirate speak.",
+    "input": "Say hello."
+  }'
+```
+</CodeGroup>
+
+### Streaming
+
+Enable streaming with `stream: true`.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+stream = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="Write a haiku about AI",
+    stream=True
+)
+
+for event in stream:
+    if hasattr(event, 'delta'):
+        print(event.delta, end="", flush=True)
+```
+
+```javascript JavaScript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+const stream = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: "Write a haiku about AI",
+    stream: true
+});
+
+for await (const event of stream) {
+    if (event.type === 'response.output_text.delta') {
+        process.stdout.write(event.delta);
+    }
+}
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "input": "Write a haiku about AI",
+    "stream": true
+  }'
+```
+</CodeGroup>
+
+Portkey's adapter produces the same SSE event stream format (`response.created`, `response.output_text.delta`, `response.completed`, etc.) regardless of the underlying provider.
+
+### Multi-turn Conversations
+
+Pass previous messages in the `input` array for multi-turn conversations. Two formats are supported:
+
+<CodeGroup>
+```python Shorthand format
+# Shorthand: just role + content
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input=[
+        {"role": "user", "content": "My name is Alice."},
+        {"role": "assistant", "content": "Hello Alice! How can I help you?"},
+        {"role": "user", "content": "What is my name?"}
+    ]
+)
+```
+
+```python Explicit format
+# Explicit: type: "message" wrapper (matches Open Responses spec)
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input=[
+        {"type": "message", "role": "user", "content": "My name is Alice."},
+        {"type": "message", "role": "assistant", "content": "Hello Alice! How can I help you?"},
+        {"type": "message", "role": "user", "content": "What is my name?"}
+    ]
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: [
+        { type: "message", role: "user", content: "My name is Alice." },
+        { type: "message", role: "assistant", content: "Hello Alice! How can I help you?" },
+        { type: "message", role: "user", content: "What is my name?" }
+    ]
+});
+```
+</CodeGroup>
+
+Supported roles: `user`, `assistant`, `developer` (maps to system), `system`, and `tool`.
+
+### Generation Parameters
+
+Control generation behavior with optional parameters:
+
+<CodeGroup>
+```python Python
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="Write a creative story",
+    max_output_tokens=2048,
+    temperature=0.8,
+    top_p=0.95,
+    parallel_tool_calls=True
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: "Write a creative story",
+    max_output_tokens: 2048,
+    temperature: 0.8,
+    top_p: 0.95,
+    parallel_tool_calls: true
+});
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "input": "Write a creative story",
+    "max_output_tokens": 2048,
+    "temperature": 0.8,
+    "top_p": 0.95
+  }'
+```
+</CodeGroup>
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `max_output_tokens` | integer | Maximum tokens in the response. If not set, uses the provider's default |
+| `temperature` | float | Sampling temperature (0-2). Higher = more creative |
+| `top_p` | float | Nucleus sampling threshold (0-1) |
+| `parallel_tool_calls` | boolean | Allow multiple tool calls in a single response (default: `true`) |
+| `user` | string | End-user identifier for abuse tracking |
+| `metadata` | object | Arbitrary metadata to attach to the response |
+
+## Tool Calling
+
+Define tools with the Responses API `function` tool format. Works across all providers that support function calling.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="What's the weather in San Francisco?",
+    tools=[{
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get current weather for a location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name"}
+            },
+            "required": ["location"]
+        }
+    }]
+)
+
+print(response.output)
+```
+
+```javascript JavaScript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: "What's the weather in San Francisco?",
+    tools: [{
+        type: "function",
+        name: "get_weather",
+        description: "Get current weather for a location",
+        parameters: {
+            type: "object",
+            properties: {
+                location: { type: "string", description: "City name" }
+            },
+            required: ["location"]
+        }
+    }]
+});
+
+console.log(response.output);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "input": "What'\''s the weather in San Francisco?",
+    "tools": [{
+      "type": "function",
+      "name": "get_weather",
+      "description": "Get current weather for a location",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": {"type": "string", "description": "City name"}
+        },
+        "required": ["location"]
+      }
+    }]
+  }'
+```
+</CodeGroup>
+
+### Tool Choice
+
+Control tool usage with `tool_choice`:
+
+| Value | Behavior |
+|-------|----------|
+| `"auto"` | Model decides whether to call a tool (default) |
+| `"none"` | Model will not call any tools |
+| `"required"` | Model must call at least one tool |
+| `{"type": "function", "name": "get_weather"}` | Force a specific tool |
+
+```python Python
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="What's the weather in San Francisco?",
+    tools=[...],
+    tool_choice="required"
+)
+```
+
+### Function Call Results
+
+Return function call results in a multi-turn flow with `function_call` and `function_call_output` items:
+
+<CodeGroup>
+```python Python
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input=[
+        {"role": "user", "content": "What's the weather in Paris?"},
+        {"type": "function_call", "name": "get_weather", "call_id": "call_123", "arguments": '{"location": "Paris"}'},
+        {"type": "function_call_output", "call_id": "call_123", "output": '{"temp": "22°C", "condition": "sunny"}'}
+    ],
+    tools=[{
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get weather for a location",
+        "parameters": {"type": "object", "properties": {"location": {"type": "string"}}, "required": ["location"]}
+    }]
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: [
+        { role: "user", content: "What's the weather in Paris?" },
+        { type: "function_call", name: "get_weather", call_id: "call_123", arguments: '{"location": "Paris"}' },
+        { type: "function_call_output", call_id: "call_123", output: '{"temp": "22°C", "condition": "sunny"}' }
+    ],
+    tools: [{
+        type: "function",
+        name: "get_weather",
+        description: "Get weather for a location",
+        parameters: { type: "object", properties: { location: { type: "string" } }, required: ["location"] }
+    }]
+});
+```
+</CodeGroup>
+
+## Input Types
+
+### Vision
+
+Send images with the `input_image` content type. The optional `detail` parameter (`"high"`, `"low"`, `"auto"`) controls processing fidelity.
+
+<CodeGroup>
+```python Python
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input=[{
+        "role": "user",
+        "content": [
+            {"type": "input_image", "image_url": "https://example.com/image.jpg", "detail": "high"},
+            {"type": "input_text", "text": "Describe this image"}
+        ]
+    }]
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: [{
+        role: "user",
+        content: [
+            { type: "input_image", image_url: "https://example.com/image.jpg", detail: "high" },
+            { type: "input_text", text: "Describe this image" }
+        ]
+    }]
+});
+```
+</CodeGroup>
+
+### File Inputs
+
+Send files with the `input_file` content type. Pass file data as a base64-encoded data URL or reference an existing file by `file_id`.
+
+<CodeGroup>
+```python Python
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input=[{
+        "role": "user",
+        "content": [
+            {"type": "input_file", "filename": "report.pdf", "file_data": "data:application/pdf;base64,JVBERi0xLjQ..."},
+            {"type": "input_text", "text": "Summarize this document"}
+        ]
+    }]
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: [{
+        role: "user",
+        content: [
+            { type: "input_file", filename: "report.pdf", file_data: "data:application/pdf;base64,JVBERi0xLjQ..." },
+            { type: "input_text", text: "Summarize this document" }
+        ]
+    }]
+});
+```
+</CodeGroup>
+
+## Structured Output
+
+Control output format with `text.format`. Supports `json_schema` for strict structured output and `json_object` for free-form JSON.
+
+### JSON Schema
+
+<CodeGroup>
+```python Python
+response = portkey.responses.create(
+    model="@openai-provider/gpt-4.1",
+    input="Extract the name and age from: John is 30 years old.",
+    text={
+        "format": {
+            "type": "json_schema",
+            "name": "person",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"}
+                },
+                "required": ["name", "age"]
+            }
+        }
+    }
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@openai-provider/gpt-4.1",
+    input: "Extract the name and age from: John is 30 years old.",
+    text: {
+        format: {
+            type: "json_schema",
+            name: "person",
+            schema: {
+                type: "object",
+                properties: {
+                    name: { type: "string" },
+                    age: { type: "integer" }
+                },
+                required: ["name", "age"]
+            }
+        }
+    }
+});
+```
+</CodeGroup>
+
+### JSON Object
+
+For free-form JSON output without a strict schema:
+
+<CodeGroup>
+```python Python
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="List 3 programming languages and their main use cases as JSON",
+    text={"format": {"type": "json_object"}}
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: "List 3 programming languages and their main use cases as JSON",
+    text: { format: { type: "json_object" } }
+});
+```
+</CodeGroup>
+
+## Reasoning and Thinking
+
+Control reasoning with the unified `reasoning` parameter. Portkey maps this to each provider's native thinking mechanism automatically.
+
+### Reasoning Effort
+
+`reasoning.effort` controls how much the model reasons before responding. Works across OpenAI, Anthropic, and Gemini — Portkey translates to each provider's native format.
+
+<CodeGroup>
+```python Anthropic
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="Solve this step by step: What is 127 * 43?",
+    reasoning={"effort": "high"}
+)
+```
+
+```python OpenAI
+response = portkey.responses.create(
+    model="@openai-provider/o4-mini",
+    input="Solve this step by step: What is 127 * 43?",
+    reasoning={"effort": "high"}
+)
+```
+
+```python Gemini
+response = portkey.responses.create(
+    model="@google-provider/gemini-2.5-flash",
+    input="Solve this step by step: What is 127 * 43?",
+    reasoning={"effort": "high"}
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: "Solve this step by step: What is 127 * 43?",
+    reasoning: { effort: "high" }
+});
+```
+</CodeGroup>
+
+Portkey maps `reasoning.effort` to each provider's native thinking configuration:
+
+<AccordionGroup>
+
+<Accordion title="Anthropic — maps to thinking.budget_tokens">
+| Effort | Budget Tokens |
+|--------|--------------|
+| `low` | 1,024 |
+| `medium` | 8,192 |
+| `high` | 16,384 |
+| `xhigh` | 32,768 |
+</Accordion>
+
+<Accordion title="Gemini 2.5 — maps to thinking_config.thinking_budget">
+| Effort | Budget Tokens |
+|--------|--------------|
+| `low` | 1,024 |
+| `medium` | 8,192 |
+| `high` | 24,576 |
+</Accordion>
+
+<Accordion title="OpenAI o-series">
+Passed through as `reasoning_effort` natively. No translation needed.
+</Accordion>
+
+</AccordionGroup>
+
+### Anthropic Extended Thinking
+
+For fine-grained control over Anthropic's extended thinking, pass the `thinking` parameter directly with an exact `budget_tokens` value. This takes precedence over `reasoning.effort` if both are set.
+
+<CodeGroup>
+```python Python
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="Analyze the implications of quantum computing on cryptography",
+    thinking={"type": "enabled", "budget_tokens": 10000}
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: "Analyze the implications of quantum computing on cryptography",
+    thinking: { type: "enabled", budget_tokens: 10000 }
+});
+```
+</CodeGroup>
+
+## Prompt Caching
+
+Enable prompt caching with `cache_control` on content items and tools. Works with Anthropic and other compatible providers.
+
+<CodeGroup>
+```python Python
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input=[{
+        "role": "user",
+        "content": [
+            {"type": "input_text", "text": "Here is a long document to analyze...", "cache_control": {"type": "ephemeral"}},
+            {"type": "input_text", "text": "Summarize the key points"}
+        ]
+    }]
+)
+```
+
+```javascript JavaScript
+const response = await portkey.responses.create({
+    model: "@anthropic-provider/claude-sonnet-4-5-20250514",
+    input: [{
+        role: "user",
+        content: [
+            { type: "input_text", text: "Here is a long document to analyze...", cache_control: { type: "ephemeral" } },
+            { type: "input_text", text: "Summarize the key points" }
+        ]
+    }]
+});
+```
+</CodeGroup>
+
+Cache control also works on tool definitions:
+
+```python Python
+tools=[{
+    "type": "function",
+    "name": "search",
+    "description": "Search the knowledge base",
+    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+    "cache_control": {"type": "ephemeral"}
+}]
+```
+
+## Using with Portkey Features
+
+The Responses API works with all Portkey gateway features.
+
+<CardGroup cols={2}>
+  <Card title="Configs" icon="sliders" href="/product/ai-gateway/configs">
+    Route, load balance, and set fallbacks
+  </Card>
+  <Card title="Caching" icon="bolt" href="/product/ai-gateway/cache-simple-and-semantic">
+    Cache responses for faster, cheaper calls
+  </Card>
+  <Card title="Guardrails" icon="shield-halved" href="/product/guardrails">
+    Input/output guardrails
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Full logging and tracing
+  </Card>
+</CardGroup>
+
+Pass features through headers or the config parameter:
+
+<CodeGroup>
+```python Python
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pp-config-xxx"  # Your Portkey config with fallbacks, load balancing, etc.
+)
+
+response = portkey.responses.create(
+    model="@anthropic-provider/claude-sonnet-4-5-20250514",
+    input="Hello!"
+)
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: pp-config-xxx" \
+  -d '{
+    "model": "@anthropic-provider/claude-sonnet-4-5-20250514",
+    "input": "Hello!"
+  }'
+```
+</CodeGroup>
+
+## Provider Support
+
+Portkey handles the Responses API in two ways depending on the provider:
+
+- **Native providers** — Requests pass through directly to the provider's Responses API endpoint
+- **Adapter providers** — Portkey automatically translates between Responses API and Chat Completions formats
+
+
+This translation is transparent — the response format is identical regardless of which provider handles the request.
+
+**Native providers:** OpenAI, Azure OpenAI, Grok (x.ai), Groq, OpenRouter, Azure AI
+
+**Adapter providers:** Anthropic, Google Gemini, Google Vertex AI, AWS Bedrock, Mistral AI, Together AI, and [all other providers](/integrations)
+
+All features documented on this page — text generation, streaming, tool calling, reasoning, vision, structured output, prompt caching, and multi-turn conversations — work with both native and adapter providers.
+
+### Native-Only Features
+
+A few features require server-side state and are limited to native providers:
+
+- **`previous_response_id`** — Use [multi-turn conversations](#multi-turn-conversations) to pass history in the `input` array instead
+- **`store`** — Silently ignored on adapter providers; responses are not persisted server-side
+- **Retrieve / Delete** — `GET` and `DELETE` on `/v1/responses/:id` are not available
+- **Built-in tools** — `web_search`, `file_search`, `computer_use` are native-only. Use [Remote MCP](/product/ai-gateway/remote-mcp) or custom function tools instead
+
+Everything else — text generation, streaming, instructions, tool calling, structured output, reasoning, vision, file inputs, prompt caching, and multi-turn conversations — works with **every provider**.
+
+## Reference
+
+### Supported Parameters
+
+Complete list of parameters supported by the Responses API and how they map internally:
+
+| Responses API Parameter | Chat Completions Equivalent | Notes |
+|------------------------|---------------------------|-------|
+| `input` | `messages` | String, message array, or typed input items |
+| `instructions` | System message (prepended) | Added as the first message with `role: system` |
+| `model` | `model` | Use `@provider/model` format or set provider via headers |
+| `stream` | `stream` | SSE events are translated to Responses API format |
+| `max_output_tokens` | `max_tokens` | Only sent if explicitly set |
+| `temperature` | `temperature` | Direct mapping |
+| `top_p` | `top_p` | Direct mapping |
+| `tools` | `tools` | Only `function` type is supported |
+| `tool_choice` | `tool_choice` | `auto`, `none`, `required`, or specific function |
+| `parallel_tool_calls` | `parallel_tool_calls` | Direct mapping |
+| `text.format` | `response_format` | `json_schema` and `json_object` supported |
+| `reasoning.effort` | Provider-specific | Mapped to thinking for Anthropic/Gemini, `reasoning_effort` for OpenAI |
+| `thinking` | `thinking` | Anthropic-specific passthrough |
+| `top_logprobs` | `top_logprobs` | Direct mapping |
+| `user` | `user` | Direct mapping |
+| `metadata` | `metadata` | Direct mapping |
+
+<AccordionGroup>
+
+<Accordion title="Input Content Types">
+| Content Type | Description |
+|-------------|-------------|
+| `input_text` | Text content (maps to `text` in Chat Completions) |
+| `input_image` | Image URL with optional `detail` parameter |
+| `input_file` | File with `filename` and `file_data` (base64 data URL) or `file_id` |
+| `function_call` | Tool call record with `name`, `call_id`, and `arguments` |
+| `function_call_output` | Tool result with `call_id` and `output` |
+</Accordion>
+
+<Accordion title="Response Output Types">
+| Output Type | Description |
+|------------|-------------|
+| `message` | Text response with `output_text` content |
+| `function_call` | Tool call with `name`, `call_id`, `arguments`, and `status` |
+| `reasoning` | Thinking/reasoning content with `summary` array (from providers that support it) |
+</Accordion>
+
+</AccordionGroup>
+
+### API Endpoints
+
+- [Create a Response](/api-reference/inference-api/responses/responses) -- `POST /v1/responses`
+- [Retrieve a Response](/api-reference/inference-api/responses/retrieve-response) -- `GET /v1/responses/{response_id}`
+- [Delete a Response](/api-reference/inference-api/responses/delete-response) -- `DELETE /v1/responses/{response_id}`
+- [List Input Items](/api-reference/inference-api/responses/retrieve-inputs) -- `GET /v1/responses/{response_id}/input_items`
+
+<CardGroup cols={2}>
+  <Card title="Open Responses Spec" icon="book" href="https://www.openresponses.org/specification">
+    Full specification
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/inference-api/responses/responses">
+    Responses API reference
+  </Card>
+  <Card title="Remote MCP" icon="server" href="/product/ai-gateway/remote-mcp">
+    MCP via Responses API
+  </Card>
+  <Card title="Universal API" icon="arrows-rotate" href="/product/ai-gateway/universal-api">
+    All three API formats
+  </Card>
+  <Card title="Messages API" icon="comment" href="/product/ai-gateway/messages-api">
+    Anthropic Messages format
+  </Card>
+  <Card title="Chat Completions" icon="message" href="/product/ai-gateway/chat-completions">
+    OpenAI Chat Completions format
+  </Card>
+</CardGroup>

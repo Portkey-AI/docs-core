@@ -1,0 +1,242 @@
+---
+title: Custom Auth
+description: Configure custom authentication for MCP servers.
+---
+
+For MCP servers that don't use standard OAuth, configure custom authentication with headers. Use this for API key-based services, internal servers with static tokens, or any server expecting specific headers.
+
+## When to Use
+
+Custom auth is for MCP servers where:
+- Authentication uses API keys instead of OAuth
+- Internal servers use static tokens
+- The server expects specific headers for authorization
+- You want shared credentials (all users use the same authentication)
+
+---
+
+## Static Headers
+
+Configure headers that Portkey includes with every request to the MCP server.
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer your_api_key",
+    "X-API-Key": "your_key"
+  }
+}
+```
+
+All requests to this MCP server include these headers. All users share the same credentials.
+
+### Common Patterns
+
+**Bearer token:**
+```json
+{
+  "headers": {
+    "Authorization": "Bearer sk_live_xxx"
+  }
+}
+```
+
+**API key header:**
+```json
+{
+  "headers": {
+    "X-API-Key": "your_api_key"
+  }
+}
+```
+
+**Basic authentication:**
+```json
+{
+  "headers": {
+    "Authorization": "Basic dXNlcm5hbWU6cGFzc3dvcmQ="
+  }
+}
+```
+
+**Multiple headers:**
+```json
+{
+  "headers": {
+    "Authorization": "Bearer api_key",
+    "X-Custom-Auth": "additional_token"
+  }
+}
+```
+
+---
+
+## Passthrough Headers
+
+Add static metadata headers separate from authentication:
+
+```json
+{
+  "passthrough_headers": {
+    "X-API-Version": "2024-01",
+    "X-Client": "portkey-gateway"
+  }
+}
+```
+
+These are included alongside auth headers. Use for:
+- API versioning
+- Client identification
+- Metadata the server expects
+
+---
+
+## Header Merge Order
+
+When multiple header sources are configured, they merge in this order (later values override earlier):
+
+| Priority | Source | Description |
+|----------|--------|-------------|
+| 1 (lowest) | Forwarded headers | Headers from agent requests (via `forward_headers`) |
+| 2 | Auth headers | `headers` configured on the MCP server |
+| 3 | Passthrough headers | `passthrough_headers` configured on the server |
+| 4 (highest) | Identity headers | Headers from identity forwarding |
+
+**What this means:**
+
+- Auth headers override anything forwarded from agents
+- Passthrough headers override auth headers if there's a conflict
+- Identity headers always win (prevents spoofing)
+
+**Example conflict:**
+
+```
+Agent sends:           X-Custom: agent-value
+Server auth headers:   X-Custom: auth-value
+```
+
+Result: MCP server receives `X-Custom: auth-value` (auth headers take precedence).
+
+---
+
+## Combining with Forwarded Headers
+
+Combine static headers with [forwarded headers](/product/mcp-gateway/authentication/forwarding-headers):
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer api_key_xxx"
+  },
+  "passthrough_headers": {
+    "X-API-Version": "v2"
+  },
+  "forward_headers": ["x-request-id", "x-trace-id"]
+}
+```
+
+Every request to the MCP server includes:
+- `Authorization: Bearer api_key_xxx` (authentication)
+- `X-API-Version: v2` (static metadata)
+- `x-request-id` and `x-trace-id` (from agent, if provided)
+
+This is useful for:
+- Shared authentication to the MCP server
+- Distributed tracing from agents
+- Consistent API versioning
+
+---
+
+## Complete Configuration Example
+
+Full server configuration combining all header features:
+
+```json
+{
+  "mcp_integration_details": {
+    "transport": "http",
+    "auth_type": "custom",
+    
+    "configurations": {
+      "headers": {
+        "Authorization": "Bearer sk_live_xxx"
+      },
+      "passthrough_headers": {
+        "X-API-Version": "2024-01",
+        "X-Client-ID": "portkey-mcp-gateway"
+      },
+      "forward_headers": ["x-request-id", "x-correlation-id", "x-tenant-id"],
+      "user_identity_forwarding": {
+        "method": "claims_header",
+        "include_claims": ["sub", "email", "workspace_id"]
+      }
+    }
+  }
+}
+```
+
+**Result for each request:**
+
+| Header | Source | Value |
+|--------|--------|-------|
+| `Authorization` | Auth headers | `Bearer sk_live_xxx` |
+| `X-API-Version` | Passthrough | `2024-01` |
+| `X-Client-ID` | Passthrough | `portkey-mcp-gateway` |
+| `x-request-id` | Forwarded | From agent request |
+| `x-correlation-id` | Forwarded | From agent request |
+| `x-tenant-id` | Forwarded | From agent request |
+| `X-User-Claims` | Identity | JSON with user claims |
+
+---
+
+## When to Use Shared Credentials
+
+Shared credentials make sense when:
+- The MCP server provides shared resources (knowledge bases, analytics)
+- All users should see the same data
+- You don't need per-user attribution at the MCP server level
+- The external service doesn't support per-user OAuth
+
+Shared credentials **don't** make sense when:
+- Users access personal data (email, messages, private repos)
+- Actions need attribution to individual users
+- The MCP server enforces per-user permissions
+
+For per-user access, use OAuth Auto. Each user authorizes their own access, and Portkey manages tokens per user.
+
+---
+
+## Security Considerations
+
+### Credential Storage
+
+Headers configured in the MCP Registry are stored encrypted. They're never exposed to agents or included in logs.
+
+### Credential Isolation
+
+```
+Agent knows:      Portkey API key only
+Portkey knows:    MCP server auth headers
+MCP Server knows: Its own credentials
+```
+
+Agents never see the MCP server's authentication credentials. If an agent's Portkey API key is compromised, the attacker still can't access the raw MCP server credentials.
+
+### Rotation
+
+To rotate MCP server credentials:
+1. Generate new credentials with the MCP server
+2. Update the headers in Portkey's MCP Registry
+3. Old credentials can be revoked immediately
+
+No agent configuration changes required.
+
+---
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [Forwarding Headers](/product/mcp-gateway/authentication/forwarding-headers) | Pass headers from agents to MCP servers |
+| [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwarding) | Pass user identity to MCP servers |
+| [Authentication Overview](/product/mcp-gateway/authentication) | Understanding gateway authentication |

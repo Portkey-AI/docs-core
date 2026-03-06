@@ -1,0 +1,441 @@
+---
+title: "Combining Routing Strategies: Conditional, Load Balancing & Fallbacks"
+description: "Every Portkey routing strategy — conditional, load balancing, fallback — can be nested inside any other. This guide covers five real-world patterns."
+---
+
+Portkey's three routing strategies are fully interoperable. Any target in any strategy can itself contain another strategy:
+
+| Outer strategy | Inner strategy (as a target) | What it achieves |
+|---------------|------------------------------|------------------|
+| Conditional | Load Balancer | Route by model, then distribute within each model across providers |
+| Conditional | Fallback | Route by model, with a safety chain per branch |
+| Fallback | Conditional Router | Smart fallback — pick the backup based on request context, not a static model |
+| Fallback | Load Balancer | Protect a distributed cluster with a cross-provider safety net |
+| Load Balancer | Fallback | Each load-balanced slot has its own independent failover |
+| Load Balancer | Conditional | Each distribution slot picks a model based on request metadata |
+
+This guide shows five real-world patterns with complete configs.
+
+---
+
+## Scale One Model Across Multiple Providers
+
+**Pattern: Conditional → Load Balancer**
+
+Use conditional routing to match a model alias, then send that alias to a load balancer spread across multiple providers. Traffic for `claude-sonnet` distributes evenly across Anthropic, Vertex AI, and Bedrock — each with independent rate limit buckets, effectively tripling throughput.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      { "query": { "params.model": { "$eq": "claude-sonnet" } }, "then": "claude-sonnet-lb" },
+      { "query": { "params.model": { "$eq": "gpt-4o" } }, "then": "gpt-4o-direct" }
+    ],
+    "default": "gpt-4o-direct"
+  },
+  "targets": [
+    {
+      "name": "claude-sonnet-lb",
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        { "override_params": { "model": "@anthropic/claude-sonnet-4-5-20250514" }, "weight": 1 },
+        { "override_params": { "model": "@vertex/claude-sonnet-4-5@20250514" }, "weight": 1 },
+        { "override_params": { "model": "@bedrock/anthropic.claude-sonnet-4-5-20250514-v1:0" }, "weight": 1 }
+      ]
+    },
+    {
+      "name": "gpt-4o-direct",
+      "override_params": { "model": "@openai/gpt-4o" }
+    }
+  ]
+}
+```
+
+**Why this matters:** Each provider's rate limit is independent. Spreading across three triples available throughput with no code changes — the app sends `model: "claude-sonnet"` and Portkey handles the rest.
+
+---
+
+## Give Each Model Its Own Fallback
+
+**Pattern: Conditional → Fallback**
+
+Each conditional branch points to its own independent fallback chain. When `claude-sonnet` is requested, Portkey tries Anthropic first, then Vertex AI, then Bedrock — in order. When `gpt-4o` is requested, it tries OpenAI first, then Azure. The two chains are completely isolated: an OpenAI outage has no effect on Claude routing.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      { "query": { "params.model": { "$eq": "claude-sonnet" } }, "then": "claude-with-fallback" },
+      { "query": { "params.model": { "$eq": "gpt-4o" } }, "then": "gpt4o-with-fallback" }
+    ],
+    "default": "gpt4o-with-fallback"
+  },
+  "targets": [
+    {
+      "name": "claude-with-fallback",
+      "strategy": {
+        "mode": "fallback",
+        "on_status_codes": [429, 500, 502, 503, 504]
+      },
+      "targets": [
+        { "override_params": { "model": "@anthropic/claude-sonnet-4-5-20250514" } },
+        { "override_params": { "model": "@vertex/claude-sonnet-4-5@20250514" } },
+        { "override_params": { "model": "@bedrock/anthropic.claude-sonnet-4-5-20250514-v1:0" } }
+      ]
+    },
+    {
+      "name": "gpt4o-with-fallback",
+      "strategy": {
+        "mode": "fallback",
+        "on_status_codes": [429, 500, 502, 503, 504]
+      },
+      "targets": [
+        { "override_params": { "model": "@openai/gpt-4o" } },
+        { "override_params": { "model": "@azure/gpt-4o" } }
+      ]
+    }
+  ]
+}
+```
+
+<Note>
+`on_status_codes` controls when a fallback triggers. If the primary returns a 400 (bad request) but your list only includes `[429, 500, 502, 503, 504]`, the fallback will **not** activate — the error is returned to the caller immediately. Tune this list based on which errors you consider recoverable.
+</Note>
+
+**Why this matters:** A single flat fallback chain shares across all model types. Per-branch fallbacks give each model family its own dedicated recovery sequence — with independent `on_status_codes`, retry configuration, and provider ordering.
+
+---
+
+## Smart Failover by Request Context
+
+**Pattern: Fallback → Conditional Router**
+
+The fallback target doesn't have to be a static model — it can be a conditional router that picks the best available backup based on request context. This is useful for compliance and data-residency requirements: if the primary fails, EU users automatically route to an EU-hosted backup while others get a US backup.
+
+For this pattern to work, the application must pass the routing dimension in the request metadata. The conditional router reads it via the `metadata.*` query path:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    {
+      "override_params": { "model": "@openai/gpt-4o" }
+    },
+    {
+      "strategy": {
+        "mode": "conditional",
+        "conditions": [
+          { "query": { "metadata.user_region": { "$eq": "EU" } }, "then": "eu-backup" }
+        ],
+        "default": "us-backup"
+      },
+      "targets": [
+        { "name": "eu-backup", "override_params": { "model": "@azure-eu/gpt-4o" } },
+        { "name": "us-backup", "override_params": { "model": "@azure-us/gpt-4o" } }
+      ]
+    }
+  ]
+}
+```
+
+The application passes `user_region` via the `x-portkey-metadata` header (or the `metadata` SDK parameter):
+
+```python
+response = client.with_options(
+    metadata={"user_region": "EU"}
+).chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "..."}]
+)
+```
+
+**Why this matters:** A static fallback chain treats all requests the same when the primary fails. A conditional fallback makes the backup as smart as the primary — EU users always land on EU infrastructure, even in a failure scenario.
+
+---
+
+## Fallback When the Whole Cluster Goes Down
+
+**Pattern: Fallback → Load Balancer**
+
+The primary target is a load balancer across multiple providers. Individual provider failures are handled by the load balancer — traffic redistributes within the cluster. Only when **all** providers in the cluster fail does the outer fallback activate. This avoids over-triggering cross-model fallbacks while still guaranteeing zero downtime.
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    {
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        { "override_params": { "model": "@vertex/gemini-2.5-pro" }, "weight": 1 },
+        { "override_params": { "model": "@google-1/gemini-2.5-pro" }, "weight": 1 },
+        { "override_params": { "model": "@google-2/gemini-2.5-pro" }, "weight": 1 }
+      ]
+    },
+    { "override_params": { "model": "@openai/gpt-4.1" } }
+  ]
+}
+```
+
+**Why this matters:** Without this pattern, any single Gemini endpoint failure triggers a model switch to GPT-4.1. With the load balancer as primary, a single failure just redistributes within Gemini — GPT-4.1 only activates when the entire Gemini cluster is down.
+
+<Tip>
+Without `on_status_codes`, **any** non-2xx response triggers the fallback — including 400 and 403 errors. To limit fallback to specific recoverable errors only, set `on_status_codes` explicitly: `"strategy": { "mode": "fallback", "on_status_codes": [429, 500, 502, 503, 504] }`. With that list set, a 400 or 403 will not activate the fallback and the error is returned to the caller immediately.
+</Tip>
+
+---
+
+## Isolate Failures Between Model Families
+
+**Pattern: Load Balancer → Fallback (per slot)**
+
+Each load-balanced slot is itself a fallback chain. Traffic distributes across two model families (OpenAI and Anthropic), and each family has its own independent backup. An OpenAI outage triggers the Azure fallback for that leg only — Anthropic traffic is unaffected.
+
+```json
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    {
+      "strategy": { "mode": "fallback" },
+      "targets": [
+        { "override_params": { "model": "@openai/gpt-4o" } },
+        { "override_params": { "model": "@azure/gpt-4o" } }
+      ],
+      "weight": 1
+    },
+    {
+      "strategy": { "mode": "fallback" },
+      "targets": [
+        { "override_params": { "model": "@anthropic/claude-sonnet-4-5-20250514" } },
+        { "override_params": { "model": "@bedrock/anthropic.claude-sonnet-4-5-20250514-v1:0" } }
+      ],
+      "weight": 1
+    }
+  ]
+}
+```
+
+**Why this matters:** A top-level fallback on a load balancer means any failure sends all traffic to the backup. Per-leg fallbacks give each model family its own safety net — an OpenAI issue doesn't affect Anthropic routing at all.
+
+---
+
+## The Full Config
+
+All four patterns combined: a conditional router with four model aliases, each targeting a different strategy composition.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      { "query": { "params.model": { "$eq": "claude-sonnet" } }, "then": "claude-sonnet-lb" },
+      { "query": { "params.model": { "$eq": "gpt-4o" } }, "then": "gpt-4o-target" },
+      { "query": { "params.model": { "$eq": "gpt-4o-mini" } }, "then": "gpt-4o-mini-lb" },
+      { "query": { "params.model": { "$eq": "gemini-2.5-pro" } }, "then": "gemini-lb-with-fallback" }
+    ],
+    "default": "gpt-4o-target"
+  },
+  "targets": [
+    {
+      "name": "claude-sonnet-lb",
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        { "override_params": { "model": "@anthropic/claude-sonnet-4-5-20250514" }, "weight": 1 },
+        { "override_params": { "model": "@vertex/claude-sonnet-4-5@20250514" }, "weight": 1 },
+        { "override_params": { "model": "@bedrock/anthropic.claude-sonnet-4-5-20250514-v1:0" }, "weight": 1 }
+      ]
+    },
+    {
+      "name": "gpt-4o-target",
+      "override_params": { "model": "@openai/gpt-4o" }
+    },
+    {
+      "name": "gpt-4o-mini-lb",
+      "strategy": { "mode": "loadbalance" },
+      "targets": [
+        { "override_params": { "model": "@azure/gpt-4o-mini" }, "weight": 1 },
+        { "override_params": { "model": "@openai-1/gpt-4o-mini" }, "weight": 1 },
+        { "override_params": { "model": "@openai-2/gpt-4o-mini" }, "weight": 1 }
+      ]
+    },
+    {
+      "name": "gemini-lb-with-fallback",
+      "strategy": { "mode": "fallback" },
+      "targets": [
+        {
+          "strategy": { "mode": "loadbalance" },
+          "targets": [
+            { "override_params": { "model": "@vertex/gemini-2.5-pro" }, "weight": 1 },
+            { "override_params": { "model": "@google-1/gemini-2.5-pro" }, "weight": 1 },
+            { "override_params": { "model": "@google-2/gemini-2.5-pro" }, "weight": 1 }
+          ]
+        },
+        { "override_params": { "model": "@openai/gpt-4.1" } }
+      ]
+    }
+  ]
+}
+```
+
+Save this in the [Portkey UI](https://app.portkey.ai/configs) and copy the resulting Config ID.
+
+## Using the Config
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-multi-routing-xxxxx"
+)
+
+# Conditional → LB: routes to claude-sonnet-lb (Anthropic + Vertex + Bedrock)
+response = client.chat.completions.create(
+    model="claude-sonnet",
+    messages=[{"role": "user", "content": "Explain transformer architecture"}]
+)
+
+# Conditional → direct: routes to gpt-4o-target
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Write a unit test for this function"}]
+)
+
+# Conditional → LB: routes to gpt-4o-mini-lb (Azure + 2× OpenAI)
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Classify this support ticket"}]
+)
+
+# Conditional → Fallback(LB): routes to gemini-lb-with-fallback
+response = client.chat.completions.create(
+    model="gemini-2.5-pro",
+    messages=[{"role": "user", "content": "Analyze this 100k-token document"}]
+)
+```
+
+```js Node.js
+import Portkey from "portkey-ai";
+
+const client = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-multi-routing-xxxxx"
+});
+
+// Conditional → LB: routes to claude-sonnet-lb
+const claudeResponse = await client.chat.completions.create({
+    model: "claude-sonnet",
+    messages: [{ role: "user", content: "Explain transformer architecture" }]
+});
+
+// Conditional → LB: routes to gpt-4o-mini-lb (Azure + 2× OpenAI)
+const miniResponse = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Classify this support ticket" }]
+});
+
+// Conditional → Fallback(LB): routes to gemini-lb-with-fallback
+const geminiResponse = await client.chat.completions.create({
+    model: "gemini-2.5-pro",
+    messages: [{ role: "user", content: "Analyze this 100k-token document" }]
+});
+```
+
+```sh cURL
+# Conditional → LB: routes to claude-sonnet-lb
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: pc-multi-routing-xxxxx" \
+  -d '{"model": "claude-sonnet", "messages": [{"role": "user", "content": "Explain transformer architecture"}]}'
+
+# Conditional → Fallback(LB): routes to gemini-lb-with-fallback
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: pc-multi-routing-xxxxx" \
+  -d '{"model": "gemini-2.5-pro", "messages": [{"role": "user", "content": "Analyze this 100k-token document"}]}'
+```
+
+```python OpenAI SDK
+from openai import OpenAI
+from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        api_key="PORTKEY_API_KEY",
+        config="pc-multi-routing-xxxxx"
+    )
+)
+
+# The model value matches the conditional routing condition
+response = client.chat.completions.create(
+    model="claude-sonnet",
+    messages=[{"role": "user", "content": "Explain transformer architecture"}]
+)
+```
+
+</CodeGroup>
+
+## Setting Up AI Providers
+
+Add each provider in the [Model Catalog](https://app.portkey.ai/model-catalog) and assign it a slug. The slug becomes the `@provider-slug` prefix in model strings.
+
+| Slug used in config | Provider | Notes |
+|---------------------|----------|-------|
+| `@anthropic` | Anthropic | Direct API |
+| `@vertex` | Google Vertex AI | Requires GCP credentials |
+| `@bedrock` | AWS Bedrock | Requires AWS credentials |
+| `@openai` | OpenAI | Primary account |
+| `@openai-1` | OpenAI | Second account (rate limit headroom) |
+| `@openai-2` | OpenAI | Third account (rate limit headroom) |
+| `@azure` | Azure OpenAI | Requires Azure deployment |
+| `@azure-eu` | Azure OpenAI (EU region) | For data-residency compliance |
+| `@azure-us` | Azure OpenAI (US region) | For data-residency compliance |
+| `@google-1` | Google AI Studio | First account |
+| `@google-2` | Google AI Studio | Second account (rate limit headroom) |
+
+See [Model Catalog](/product/model-catalog) for the full setup guide.
+
+## Observability
+
+Every request is logged with its full routing path. In [Portkey Logs](https://app.portkey.ai/logs):
+
+- Filter by **Config ID** to see all requests through this config
+- Filter by **Trace ID** to see every attempt for a single request — which load-balanced target was selected, whether a fallback triggered, which conditional branch matched
+- The **model** field shows the actual provider model used (not the alias)
+
+Add a `trace_id` for programmatic tracing:
+
+```python
+response = client.with_options(
+    trace_id="user-req-20250514-abc123"
+).chat.completions.create(
+    model="gemini-2.5-pro",
+    messages=[{"role": "user", "content": "Summarize this document"}]
+)
+```
+
+## When to Use Each Pattern
+
+| Pattern | Best for |
+|---------|----------|
+| **Scale One Model Across Multiple Providers** | High-volume aliases hitting rate limits on a single provider |
+| **Give Each Model Its Own Fallback** | Different model families that each need an independent recovery sequence |
+| **Smart Failover by Request Context** | Compliance or data-residency requirements that must hold even during outages |
+| **Fallback When the Whole Cluster Goes Down** | High-throughput clusters where individual endpoint failures should not trigger a model switch |
+| **Isolate Failures Between Model Families** | Multi-model load distribution where one family's outage must not affect others |
+
+## Related
+
+- [Conditional Routing](/product/ai-gateway/conditional-routing) — conditions, operators, and metadata-based routing
+- [Load Balancing](/product/ai-gateway/load-balancing) — weights, sticky sessions, and multi-key distribution
+- [Fallbacks](/product/ai-gateway/fallbacks) — status code triggers and tracing fallback chains
+- [Gateway Configs](/product/ai-gateway/configs) — creating, saving, and referencing configs
+- [Model Catalog](/product/model-catalog) — setting up AI Providers and managing model access
+- [Resilient load balancers with fallbacks](/guides/use-cases/setting-up-resilient-load-balancers-with-failure-mitigating-fallbacks) — Node.js deep-dive
