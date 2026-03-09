@@ -1,0 +1,218 @@
+---
+title: 'Structured Outputs'
+description: "Structured Outputs ensure that the model always follows your supplied [JSON schema](https://json-schema.org/overview/what-is-jsonschema). Portkey supports Anthropic models, allowing them to return structured data that conforms to a schema defined in code (Pydantic/Zod) or via JSON schema directly."
+---
+
+Anthropic's models are highly capable of following complex schemas. Portkey simplifies this process by providing a unified `response_format` interface. Whether you are using OpenAI or Anthropic, you can use the same code structure to get reliable, structured JSON.
+
+Portkey SDKs for [Python](https://github.com/openai/openai-python/blob/main/helpers.md#structured-outputs-parsing-helpers) and [JavaScript](https://github.com/openai/openai-node/blob/master/helpers.md#structured-outputs-parsing-helpers) make it easy to define object schemas using [Pydantic](https://docs.pydantic.dev/latest/) and [Zod](https://zod.dev/) respectively. Below, you can see how to extract information from unstructured text that conforms to a schema defined in code.
+
+### 1. Using Pydantic or Zod (Recommended)
+
+This approach provides the best developer experience with full type hinting and automatic validation of the model's response.
+
+<Tabs>
+  <Tab title="Pydantic with Python">
+    ```python
+    from portkey_ai import Portkey
+    from pydantic import BaseModel
+
+    class Step(BaseModel):
+        explanation: str
+        output: str
+
+    class MathReasoning(BaseModel):
+        steps: list[Step]
+        final_answer: str
+
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",
+        provider="anthropic" # Or your specific virtual key
+    )
+
+    # Use the .parse() method for automatic response parsing
+    completion = portkey.chat.completions.parse(
+        model="claude-3-5-sonnet-20241022",
+        messages=[
+            {"role": "system", "content": "You are a helpful math tutor. Guide the user through the solution step by step."},
+            {"role": "user", "content": "how can I solve 8x + 7 = -23"}
+        ],
+        response_format=MathReasoning,
+    )
+
+    print(completion.choices[0].message)
+    print(completion.choices[0].message.parsed)
+    ```
+  </Tab>
+  <Tab title="Zod with NodeJS">
+    ```typescript
+    import { Portkey } from 'portkey-ai';
+    import { z } from 'zod';
+    import { zodResponseFormat } from "openai/helpers/zod"; // Optional helper
+
+    const MathReasoning = z.object({
+      steps: z.array(z.object({ explanation: z.string(), output: z.string() })),
+      final_answer: z.string()
+    });
+
+    const portkey = new Portkey({
+        apiKey: "PORTKEY_API_KEY",
+        provider: "anthropic"
+    });
+
+    async function runMathTutor() {
+      const completion = await portkey.chat.completions.create({
+        model: "claude-3-5-sonnet-20241022",
+        messages: [
+          { role: "system", content: "You are a helpful math tutor." },
+          { role: "user", content: "Solve 8x + 7 = -23" }
+        ],
+        response_format: zodResponseFormat(MathReasoning, "MathReasoning")
+      });
+
+      // Portkey returns the structured object in the content
+      console.log(JSON.parse(completion.choices[0].message.content));
+    }
+
+    runMathTutor();
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+### 2. Using Raw JSON Schema
+
+If you prefer not to use Pydantic or Zod, you can pass a standard JSON schema directly. This is useful for cross-language compatibility or when schemas are generated dynamically.
+
+<Tabs>
+  <Tab title="NodeJS">
+    ```typescript
+    import Portkey from "portkey-ai";
+
+    const portkey = new Portkey({
+      apiKey: "PORTKEY_API_KEY",
+      provider: "anthropic",
+    });
+
+    async function main() {
+      const completion = await portkey.chat.completions.create({
+        model: "claude-3-5-sonnet-20241022",
+        messages: [
+          { role: "system", content: "Extract the event information." },
+          {
+            role: "user",
+            content: "Alice and Bob are going to a science fair on Friday.",
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "event_extraction",
+            schema: {
+              type: "object",
+              properties: {
+                location: { type: "string" },
+                date: { type: "string" },
+                participants: { type: "array", items: { type: "string" } },
+              },
+              required: ["location", "date", "participants"],
+              additionalProperties: false,
+            },
+            strict: true,
+          },
+        },
+      });
+      console.log(completion.choices[0].message.content);
+    }
+
+    main();
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from portkey_ai import Portkey
+
+    portkey = Portkey(
+        api_key="PORTKEY_API_KEY",
+        provider="anthropic"
+    )
+
+    completion = portkey.chat.completions.create(
+        model="claude-3-5-sonnet-20241022",
+        messages=[
+            {"role": "system", "content": "Extract the event information."},
+            {"role": "user", "content": "Alice and Bob are going to a science fair on Friday."},
+        ],
+        response_format={
+              "type": "json_schema",
+              "json_schema": {
+                "name": "event_extraction",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": { "type": "string" },
+                    "date": { "type": "string" },
+                    "participants": { "type": "array", "items": { "type": "string" } }
+                  },
+                  "required": ["location", "date", "participants"],
+                  "additionalProperties": False
+                },
+                "strict": True
+              }
+            },
+    )
+
+    print(completion.choices[0].message.content)
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```sh
+    curl https://api.portkey.ai/v1/chat/completions \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: anthropic" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": [
+          {
+            "role": "system",
+            "content": "Extract the event information."
+          },
+          {
+            "role": "user",
+            "content": "Alice and Bob are going to a science fair on Friday."
+          }
+        ],
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "event_extraction",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "location": { "type": "string" },
+                "date": { "type": "string" },
+                "participants": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["location", "date", "participants"],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+## How Portkey Enables Structured Outputs for Anthropic
+
+Portkey provides a seamless bridge to handle structured data across different providers. When you send a `response_format` to an Anthropic model via Portkey:
+
+1. **Native Mapping**: Portkey automatically maps your `response_format` to Anthropic's native `output_config` parameter (available on latest Claude 3.5 models).
+2. **Unified Interface**: Use the same OpenAI-compatible JSON schema structure; Portkey handles the provider-specific translation under the hood.
+3. **Strict Adherence**: By setting `strict: true`, Portkey ensures the model's output strictly follows the provided schema.
+4. **Automatic Parsing**: The Python SDK's `.parse()` method automatically converts the response into a fully-typed object, eliminating manual `json.loads()` calls.
+
+This allows you to write provider-agnostic code while taking full advantage of the best-structured data capabilities from each model.
