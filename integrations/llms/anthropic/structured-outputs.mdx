@@ -1,0 +1,378 @@
+---
+title: 'Structured Outputs'
+description: "Direct models to return data that conforms to a specific JSON schema."
+---
+
+Structured Outputs ensure that models follow your supplied [JSON schema](https://json-schema.org/overview/what-is-jsonschema). Portkey supports this for Anthropic models using a unified `response_format` interface.
+
+Define object schemas using [Pydantic](https://docs.pydantic.dev/latest/) (Python) or [Zod](https://zod.dev/) (JavaScript) to extract structured information from unstructured text.
+
+### 1. Using Pydantic or Zod (Recommended)
+
+This approach provides type hinting and automatic validation.
+
+<CodeGroup>
+```python Portkey Python SDK
+from portkey_ai import Portkey
+from pydantic import BaseModel
+
+class Step(BaseModel):
+    explanation: str
+    output: str
+
+class MathReasoning(BaseModel):
+    steps: list[Step]
+    final_answer: str
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="anthropic"
+)
+
+# Use .parse() for automatic parsing
+completion = portkey.chat.completions.parse(
+    model="claude-3-5-sonnet-20241022",
+    messages=[
+        {"role": "system", "content": "You are a helpful math tutor. Guide the user through the solution step by step."},
+        {"role": "user", "content": "how can I solve 8x + 7 = -23"}
+    ],
+    response_format=MathReasoning
+)
+
+print(completion.choices[0].message.parsed)
+```
+
+```javascript Portkey Node SDK
+import { Portkey } from 'portkey-ai';
+import { z } from 'zod';
+import { zodResponseFormat } from "openai/helpers/zod";
+
+const MathReasoning = z.object({
+    steps: z.array(z.object({ explanation: z.string(), output: z.string() })),
+    final_answer: z.string()
+});
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "anthropic"
+});
+
+async function runMathTutor() {
+    const completion = await portkey.chat.completions.create({
+        model: "claude-3-5-sonnet-20241022",
+        messages: [
+            { role: "system", content: "You are a helpful math tutor." },
+            { role: "user", content: "Solve 8x + 7 = -23" }
+        ],
+        response_format: zodResponseFormat(MathReasoning, "MathReasoning")
+    });
+
+    console.log(JSON.parse(completion.choices[0].message.content));
+}
+
+runMathTutor();
+```
+
+```python Anthropic Python SDK
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key="PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai/v1"
+)
+
+# Use extra_body to pass response_format through the gateway
+message = client.messages.create(
+    model="claude-3-5-sonnet-20241022",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Solve 8x + 7 = -23"}],
+    extra_body={
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "math_reasoning",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "final_answer": {"type": "string"}
+                    },
+                    "required": ["final_answer"],
+                    "additionalProperties": false
+                }
+            }
+        }
+    }
+)
+
+print(message.content)
+```
+
+```typescript Anthropic TS SDK
+import Anthropic from '@anthropic-ai/sdk';
+
+const client = new Anthropic({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai/v1"
+});
+
+async function main() {
+    // Use extraBody to pass response_format through the gateway
+    const message = await client.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: "Solve 8x + 7 = -23" }],
+        extraBody: {
+            response_format: {
+                type: "json_schema",
+                json_schema: {
+                    name: "math_reasoning",
+                    schema: {
+                        type: "object",
+                        properties: {
+                            final_answer: { type: "string" }
+                        },
+                        required: ["final_answer"],
+                        additionalProperties: false
+                    }
+                }
+            }
+        }
+    });
+
+    console.log(message.content);
+}
+
+main();
+```
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: anthropic" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-3-5-sonnet-20241022",
+    "messages": [
+      {"role": "system", "content": "You are a helpful math tutor. Guide the user through the solution step by step."},
+      {"role": "user", "content": "how can I solve 8x + 7 = -23"}
+    ],
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "math_reasoning",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "explanation": {"type": "string"},
+                  "output": {"type": "string"}
+                },
+                "required": ["explanation", "output"],
+                "additionalProperties": false
+              }
+            },
+            "final_answer": {"type": "string"}
+          },
+          "required": ["steps", "final_answer"],
+          "additionalProperties": false
+        }
+      }
+    }
+  }'
+```
+</CodeGroup>
+
+### 2. Using Raw JSON Schema
+
+For cross-language compatibility or dynamic schemas, pass a standard JSON schema directly.
+
+<CodeGroup>
+```python Portkey Python SDK
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="anthropic"
+)
+
+completion = portkey.chat.completions.create(
+    model="claude-3-5-sonnet-20241022",
+    messages=[
+        {"role": "system", "content": "Extract the event information."},
+        {"role": "user", "content": "Alice and Bob are going to a science fair on Friday."}
+    ],
+    response_format={
+        "type": "json_schema",
+        "json_schema": {
+            "name": "event_extraction",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "location": { "type": "string" },
+                    "date": { "type": "string" },
+                    "participants": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["location", "date", "participants"],
+                "additionalProperties": False
+            },
+            "strict": True
+        }
+    }
+)
+
+print(completion.choices[0].message.content)
+```
+
+```javascript Portkey Node SDK
+import Portkey from "portkey-ai";
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "anthropic"
+});
+
+async function main() {
+    const completion = await portkey.chat.completions.create({
+        model: "claude-3-5-sonnet-20241022",
+        messages: [
+            { role: "system", content: "Extract the event information." },
+            { role: "user", content: "Alice and Bob are going to a science fair on Friday." }
+        ],
+        response_format: {
+            type: "json_schema",
+            json_schema: {
+                name: "event_extraction",
+                schema: {
+                    type: "object",
+                    properties: {
+                        location: { type: "string" },
+                        date: { type: "string" },
+                        participants: { type: "array", items: { type: "string" } }
+                    },
+                    required: ["location", "date", "participants"],
+                    additionalProperties: false
+                },
+                strict: true
+            }
+        }
+    });
+    console.log(completion.choices[0].message.content);
+}
+
+main();
+```
+
+```python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL
+)
+
+# Use OpenAI SDK with Portkey Gateway
+completion = client.chat.completions.create(
+    model="claude-3-5-sonnet-20241022",
+    messages=[
+        {"role": "system", "content": "Extract the event information."},
+        {"role": "user", "content": "Alice and Bob are going to a science fair on Friday."}
+    ],
+    response_format={
+        "type": "json_schema",
+        "json_schema": {
+            "name": "event_extraction",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "location": { "type": "string" },
+                    "date": { "type": "string" },
+                    "participants": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["location", "date", "participants"],
+                "additionalProperties": False
+            },
+            "strict": True
+        }
+    }
+)
+
+print(completion.choices[0].message.content)
+```
+
+```javascript OpenAI Node SDK
+import OpenAI from "openai"
+import { PORTKEY_GATEWAY_URL } from "portkey-ai"
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL
+})
+
+async function main() {
+    const completion = await client.chat.completions.create({
+        model: "claude-3-5-sonnet-20241022",
+        messages: [
+            { role: "system", content: "Extract the event information." },
+            { role: "user", content: "Alice and Bob are going to a science fair on Friday." }
+        ],
+        response_format: {
+            type: "json_schema",
+            json_schema: {
+                name: "event_extraction",
+                schema: {
+                    type: "object",
+                    properties: {
+                        location: { type: "string" },
+                        date: { type: "string" },
+                        participants: { type: "array", items: { type: "string" } }
+                    },
+                    required: ["location", "date", "participants"],
+                    additionalProperties: false
+                },
+                strict: true
+            }
+        }
+    });
+    console.log(completion.choices[0].message.content);
+}
+
+main();
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: anthropic" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-3-5-sonnet-20241022",
+    "messages": [
+      { "role": "system", "content": "Extract event information." },
+      { "role": "user", "content": "Alice and Bob are going to a science fair on Friday." }
+    ],
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "event_extraction",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "location": { "type": "string" },
+            "date": { "type": "string" },
+            "participants": { "type": "array", "items": { "type": "string" } }
+          },
+          "required": ["location", "date", "participants"],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    }
+  }'
+```
+</CodeGroup>
+
+For more, refer to Anthropic's [detailed documentation on Structured Outputs here](https://docs.anthropic.com/en/docs/build-with-claude/structured-outputs).
