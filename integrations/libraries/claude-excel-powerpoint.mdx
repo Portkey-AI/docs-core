@@ -1,0 +1,239 @@
+---
+title: 'Claude for Excel & PowerPoint'
+description: 'Use Portkey as the LLM gateway for Claude for Excel and Claude for PowerPoint add-ins — with observability, governance, and multi-provider routing.'
+---
+
+[Claude for Excel](https://support.claude.com/en/articles/12650343-use-claude-for-excel) and [Claude for PowerPoint](https://support.claude.com/en/articles/13521390-use-claude-in-powerpoint) are Microsoft Office add-ins that let users chat with their spreadsheets and presentations using Claude. Both add-ins support an **Enterprise Gateway** mode — instead of signing in with a Claude account, users point the add-in at your organization's LLM gateway.
+
+Portkey works as a drop-in gateway for this setup. It exposes the Anthropic Messages API format the add-ins require, and adds observability, budget controls, and multi-provider routing on top.
+
+<CardGroup cols={2}>
+  <Card title="Cost Visibility" icon="chart-line">
+    See exactly what each user, team, or department is spending through the add-ins. Set hard budget limits before bills surprise you.
+  </Card>
+  <Card title="Governance & Access Control" icon="shield-check">
+    No raw API keys handed to employees. One Portkey API key controls access. Revoke or rotate centrally.
+  </Card>
+  <Card title="Multi-Provider Routing" icon="shuffle">
+    Route to Anthropic directly, AWS Bedrock, or Google Vertex AI — switch providers with a single config change.
+  </Card>
+  <Card title="Full Request Logs" icon="list">
+    Every prompt and response logged in Portkey. Search, filter, and audit usage across your organization.
+  </Card>
+</CardGroup>
+
+## How It Works
+
+The add-ins connect to any Anthropic Messages API-compatible endpoint. You give each user:
+
+- **Gateway URL**: `https://api.portkey.ai`
+- **API token**: A Portkey API key (optionally scoped with a Config)
+
+```
+Claude for Excel/PowerPoint → Portkey Gateway → Anthropic / Bedrock / Vertex AI
+```
+
+Portkey exposes the two endpoints the add-ins require:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/messages` | Send messages to Claude (streaming + non-streaming) |
+| `GET /v1/models` | Model discovery for the add-in login flow |
+
+## Setup
+
+### Step 1: Add Your Provider in Model Catalog
+
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Select your provider — **Anthropic**, **AWS Bedrock**, or **Google Vertex AI**
+3. Enter your credentials and save with a slug (e.g., `anthropic-prod`)
+
+<Card title="Model Catalog Setup Guide →" href="/product/model-catalog">
+  Full instructions for adding providers and managing credentials
+</Card>
+
+### Step 2: Create a Config (Recommended)
+
+Create a [Config](/product/ai-gateway/configs) to set the default provider and model, and to forward the required headers. This ensures the add-in works correctly without any additional configuration from end users.
+
+```json
+{
+  "provider": "@anthropic-prod",
+  "forward_headers": ["anthropic-beta", "anthropic-version"]
+}
+```
+
+<Note>
+Forwarding `anthropic-beta` and `anthropic-version` headers is required. The add-ins use these headers to enable beta features and specify the API version. If your gateway doesn't forward them, the add-ins may not work correctly.
+</Note>
+
+Save the Config and note the **Config ID**.
+
+### Step 3: Create a Portkey API Key
+
+1. Go to [**API Keys**](https://app.portkey.ai/api-keys) → **Create new key**
+2. (Optional) Attach your Config from Step 2
+3. (Optional) Set a budget limit for this key
+4. Copy the API key
+
+### Step 4: Configure the Add-In
+
+Share the following credentials with your users:
+
+- **Gateway URL**: `https://api.portkey.ai`
+- **API token**: The Portkey API key from Step 3
+
+In Excel or PowerPoint:
+1. Open the Claude add-in
+2. On the sign-in screen, select **"Enterprise gateway"**
+3. Enter the Gateway URL and API token
+4. Click **Test connection** — the add-in validates the connection and discovers available models
+
+<Note>
+Credentials are stored locally in the add-in's browser `localStorage`. They are never sent to Anthropic. Only distribute gateway-issued tokens — not raw cloud provider credentials.
+</Note>
+
+## Provider Configurations
+
+### Route to Anthropic Directly
+
+```json
+{
+  "provider": "@anthropic-prod",
+  "forward_headers": ["anthropic-beta", "anthropic-version"]
+}
+```
+
+Set up `@anthropic-prod` in Model Catalog with your [Anthropic API key](https://console.anthropic.com/settings/keys).
+
+### Route to Amazon Bedrock
+
+```json
+{
+  "provider": "@bedrock-prod",
+  "forward_headers": ["anthropic-beta", "anthropic-version"]
+}
+```
+
+Set up `@bedrock-prod` in Model Catalog with your AWS credentials. Portkey handles the translation from Anthropic Messages API format to Bedrock's InvokeModel format.
+
+### Route to Google Vertex AI
+
+```json
+{
+  "provider": "@vertex-prod",
+  "forward_headers": ["anthropic-beta", "anthropic-version"]
+}
+```
+
+Set up `@vertex-prod` in Model Catalog with your GCP service account credentials.
+
+### Multi-Provider Fallback
+
+For high availability, configure automatic fallback across providers:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    {
+      "provider": "@anthropic-prod",
+      "forward_headers": ["anthropic-beta", "anthropic-version"]
+    },
+    {
+      "provider": "@bedrock-prod",
+      "forward_headers": ["anthropic-beta", "anthropic-version"]
+    },
+    {
+      "provider": "@vertex-prod",
+      "forward_headers": ["anthropic-beta", "anthropic-version"]
+    }
+  ]
+}
+```
+
+If Anthropic's API is down, requests automatically route to Bedrock — users never see an error.
+
+## Enterprise Governance
+
+### Budget Controls Per Team
+
+Create separate API keys for different teams, each with their own budget:
+
+1. Go to [API Keys](https://app.portkey.ai/api-keys) → Create key for each team
+2. Attach a budget limit (e.g., $500/month per team)
+3. Distribute the team-specific key to that team's employees
+
+When a team hits their budget, their key stops working — other teams are unaffected.
+
+### Workspace Isolation
+
+Use [Portkey Workspaces](/product/enterprise-offering/workspaces) to fully isolate teams. Each workspace gets its own:
+- Logs and analytics
+- Budget limits
+- API keys and access controls
+
+### Add Metadata for Chargeback
+
+Add metadata to track usage by department, cost center, or user. Attach this to your Config or API key:
+
+```json
+{
+  "provider": "@anthropic-prod",
+  "metadata": {
+    "department": "finance",
+    "cost_center": "CC-1234"
+  },
+  "forward_headers": ["anthropic-beta", "anthropic-version"]
+}
+```
+
+Filter logs in the [Portkey Dashboard](https://app.portkey.ai/logs) by any metadata field.
+
+## What's Supported Through the Gateway
+
+| Feature | Available |
+|---|---|
+| Chat with spreadsheet / deck | ✓ |
+| Read and edit cells, slides, formulas | ✓ |
+| Streaming responses | ✓ |
+| Web search (Vertex AI) | ✓ |
+| Connectors (S&P, FactSet, etc.) | — |
+| File uploads | — |
+| Memory | — |
+| Skills | — |
+| Working across apps | — |
+
+<Note>
+Connectors, file uploads, memory, and skills require a Claude account sign-in. These are not available through any LLM gateway (including Portkey). If your users need these features, they should sign in with a Claude account instead.
+</Note>
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Connection refused" or network error | Gateway URL unreachable | Verify users can reach `https://api.portkey.ai` — check firewall/VPN rules |
+| 401 Unauthorized | Invalid or expired API key | Regenerate the Portkey API key and redistribute |
+| 403 Forbidden | Provider credentials lack permissions | Check your provider credentials in [Model Catalog](https://app.portkey.ai/model-catalog) |
+| 404 Not Found | Wrong base URL format | Use `https://api.portkey.ai` — do **not** append `/v1/messages` |
+| "No models available" | `/v1/models` not returning results | Models are discovered automatically via Portkey — verify your provider slug is correct |
+| Streaming fails or hangs | SSE not passing through | Portkey supports SSE natively — check if a corporate proxy is stripping SSE connections |
+| Requests not appearing in logs | API key misconfigured | Ensure the API key attached to the Config is a valid Portkey key |
+| Features missing (Connectors, Skills) | Gateway limitation | These require Claude account sign-in — see the [feature comparison](#whats-supported-through-the-gateway) |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Gateway Configs" icon="gear" href="/product/ai-gateway/configs">
+    Learn about fallbacks, load balancing, and routing strategies
+  </Card>
+  <Card title="Budget & Rate Limits" icon="dollar-sign" href="/product/model-catalog/integrations#3-budget--rate-limits">
+    Set spending controls per team or user
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Logs, traces, and analytics for all add-in requests
+  </Card>
+  <Card title="Workspaces" icon="building" href="/product/enterprise-offering/workspaces">
+    Isolate teams with separate budgets and access controls
+  </Card>
+</CardGroup>
