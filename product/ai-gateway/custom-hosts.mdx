@@ -166,51 +166,7 @@ Set the environment variable as a comma-separated list of hosts:
 TRUSTED_CUSTOM_HOSTS="localhost,127.0.0.1,::1,host.docker.internal,172.31.2.45"
 ```
 
-After setting this, requests with the custom host will pass validation:
-
-<CodeGroup>
-```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="openai",
-    custom_host="http://172.31.2.45:8008/v1/"
-)
-
-response = portkey.chat.completions.create(
-    model="your-model",
-    messages=[{"role": "user", "content": "Hello"}]
-)
-```
-
-```javascript Node.js
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",
-    provider: "openai",
-    customHost: "http://172.31.2.45:8008/v1/"
-});
-
-const response = await portkey.chat.completions.create({
-    model: "your-model",
-    messages: [{ role: "user", content: "Hello" }]
-});
-```
-
-```sh cURL
-curl https://api.portkey.ai/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: openai" \
-  -H "x-portkey-custom-host: http://172.31.2.45:8008/v1/" \
-  -d '{
-    "model": "your-model",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
-```
-</CodeGroup>
+After setting this, requests with `custom_host` set to `http://172.31.2.45:8008/v1/` will pass validation.
 
 <Warning>
 When overriding `TRUSTED_CUSTOM_HOSTS`, include the default values (`localhost`, `127.0.0.1`, `::1`, `host.docker.internal`) along with your additions to preserve the default behavior.
@@ -227,36 +183,9 @@ Even for trusted hosts, Portkey enforces:
 
 ## Common scenarios
 
-### Self-hosted models on a private network
-
-If your model runs on a private IP like `172.31.2.45:8008`, it will be blocked because `172.16.0.0/12` is a private range. Add it to `TRUSTED_CUSTOM_HOSTS`:
-
-```bash
-TRUSTED_CUSTOM_HOSTS="localhost,127.0.0.1,::1,host.docker.internal,172.31.2.45"
-```
-
-### Local development with Ollama
-
-`localhost` and `127.0.0.1` are trusted by default, so local Ollama instances work without extra configuration:
-
-```python
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="openai",
-    custom_host="http://localhost:11434/v1/"
-)
-```
-
-See the [Ollama integration guide](/integrations/llms/ollama) for more details.
-
-### Docker containers
-
-`host.docker.internal` is trusted by default, so you can route to services running on the Docker host:
-
-```python
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="openai",
-    custom_host="http://host.docker.internal:8080/v1/"
-)
-```
+| Scenario | Default behavior | Action needed |
+|----------|-----------------|---------------|
+| **Local development** (e.g., Ollama on `localhost`) | Allowed -- `localhost` and `127.0.0.1` are trusted by default | None. See the [Ollama integration guide](/integrations/llms/ollama). |
+| **Docker containers** (`host.docker.internal`) | Allowed -- trusted by default | None |
+| **Private network IP** (e.g., `172.31.2.45:8008`) | Blocked -- falls within `172.16.0.0/12` | Add the IP to `TRUSTED_CUSTOM_HOSTS` |
+| **Cloud metadata** (`169.254.169.254`) | Blocked | Cannot be allowlisted for security reasons |
