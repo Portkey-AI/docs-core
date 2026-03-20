@@ -3,11 +3,15 @@ title: "Custom hosts"
 description: "Route requests to privately hosted or local models using custom host URLs, and understand Portkey's host validation and security rules."
 ---
 
-The `custom_host` parameter lets you route Portkey Gateway requests to your own model endpoints -- whether they're running locally, in a private cloud, or on a custom infrastructure. Portkey applies security validation to all custom host URLs to prevent [SSRF](https://owasp.org/www-community/attacks/Server_Side_Request_Forgery) attacks.
+<Info>
+Custom hosts with private network routing — including the `TRUSTED_CUSTOM_HOSTS` allowlist — applies only to **hybrid and air-gapped enterprise deployments** of the Portkey AI Gateway. On Portkey SaaS, custom host URLs must be publicly reachable; routing to private or internal network IPs is not supported.
+</Info>
+
+The `custom_host` parameter routes Portkey Gateway requests to your own model endpoints — whether running locally, in a private cloud, or on custom infrastructure. Portkey validates all custom host URLs to prevent [SSRF](https://owasp.org/www-community/attacks/Server_Side_Request_Forgery) attacks.
 
 ## Setting a custom host
 
-You can specify a custom host in three ways:
+Specify a custom host using one of these methods:
 
 | Method | Parameter |
 |--------|-----------|
@@ -33,18 +37,18 @@ response = portkey.chat.completions.create(
 ```
 
 ```javascript Node.js
-import Portkey from 'portkey-ai';
+import Portkey from 'portkey-ai'
 
 const portkey = new Portkey({
     apiKey: "PORTKEY_API_KEY",
     provider: "openai",
     customHost: "https://your-llm-server.com/v1/"
-});
+})
 
 const response = await portkey.chat.completions.create({
     model: "your-model",
     messages: [{ role: "user", content: "Hello" }]
-});
+})
 ```
 
 ```sh cURL
@@ -60,7 +64,7 @@ curl https://api.portkey.ai/v1/chat/completions \
 ```
 </CodeGroup>
 
-You can also set `custom_host` in a [Gateway config](/product/ai-gateway/configs) target:
+Also set `custom_host` in a [Gateway config](/product/ai-gateway/configs) target:
 
 ```json
 {
@@ -152,12 +156,12 @@ Portkey maintains a trusted hosts allowlist that **overrides** the blocked patte
 Even though `127.0.0.1` and `::1` fall within blocked ranges, they are allowed through the trusted hosts path. Port validation still applies (must be between 1 and 65535).
 </Note>
 
-### Whitelisting additional hosts
+### Adding hosts to the allowlist
 
-If you're running models on a private network IP (e.g., `172.31.2.45`) and need Portkey to route requests there, you can add it to the trusted hosts allowlist using the `TRUSTED_CUSTOM_HOSTS` environment variable.
+To route to a private network IP (e.g., `172.31.2.45`), add it to the trusted hosts allowlist using the `TRUSTED_CUSTOM_HOSTS` environment variable.
 
 <Note>
-The `TRUSTED_CUSTOM_HOSTS` environment variable is available when you [self-host](/self-hosting/hybrid-deployments/architecture) the Portkey AI Gateway.
+`TRUSTED_CUSTOM_HOSTS` is available only on [self-hosted](/self-hosting/hybrid-deployments/architecture) hybrid and air-gapped enterprise deployments of the Portkey AI Gateway.
 </Note>
 
 Set the environment variable as a comma-separated list of hosts:
@@ -166,7 +170,7 @@ Set the environment variable as a comma-separated list of hosts:
 TRUSTED_CUSTOM_HOSTS="localhost,127.0.0.1,::1,host.docker.internal,172.31.2.45"
 ```
 
-After setting this, requests with `custom_host` set to `http://172.31.2.45:8008/v1/` will pass validation.
+Requests with `custom_host` set to `http://172.31.2.45:8008/v1/` will then pass validation.
 
 <Warning>
 When overriding `TRUSTED_CUSTOM_HOSTS`, include the default values (`localhost`, `127.0.0.1`, `::1`, `host.docker.internal`) along with your additions to preserve the default behavior.
@@ -187,5 +191,5 @@ Even for trusted hosts, Portkey enforces:
 |----------|-----------------|---------------|
 | **Local development** (e.g., Ollama on `localhost`) | Allowed -- `localhost` and `127.0.0.1` are trusted by default | None. See the [Ollama integration guide](/integrations/llms/ollama). |
 | **Docker containers** (`host.docker.internal`) | Allowed -- trusted by default | None |
-| **Private network IP** (e.g., `172.31.2.45:8008`) | Blocked -- falls within `172.16.0.0/12` | Add the IP to `TRUSTED_CUSTOM_HOSTS` |
+| **Private network IP** (e.g., `172.31.2.45:8008`) | Blocked -- falls within `172.16.0.0/12` | Add the IP to `TRUSTED_CUSTOM_HOSTS` (hybrid/air-gapped only) |
 | **Cloud metadata** (`169.254.169.254`) | Blocked | Cannot be allowlisted for security reasons |
