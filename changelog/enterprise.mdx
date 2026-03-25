@@ -1,12 +1,111 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.4.0]"
+sidebarTitle: "Enterprise Gateway [2.4.4]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="2.4.4" description="2026-03-25">
+
+## v2.4.4
+---
+
+### OpenTelemetry Semconv 1.40.0 Alignment
+
+The experimental GenAI OTel export now follows [semconv 1.40.0](https://opentelemetry.io/docs/specs/semconv/) for inference and embeddings spans. Key changes:
+
+- **Structured messages**: `gen_ai.input.messages`, `gen_ai.output.messages`, and `gen_ai.system_instructions` replace the previous indexed `gen_ai.prompt.{index}.*` format. Messages include multimodal `parts` with normalized types (text, tool_call, tool_call_response, image, audio, file, reasoning)
+- **Normalized tool semantics**: `tool_use` (Anthropic), `tool_calls` (OpenAI), and `function_call` are all mapped to the standard `tool_call` type
+- **Normalized finish reasons**: Provider-specific finish reasons (e.g., `tool_use`) are mapped to standard values (e.g., `tool_call`)
+- **Provider normalization**: Provider names use semconv-compliant identifiers (e.g., `aws.bedrock`, `azure.ai.openai`, `gcp.gemini`). `gen_ai.system` is retained as a backward-compatible alias for `gen_ai.provider.name`
+- **Embeddings support**: Spans for embedding requests include `gen_ai.request.encoding_formats` and `gen_ai.embeddings.dimension.count`
+- **New attributes**: `gen_ai.operation.name`, `gen_ai.conversation.id`, `gen_ai.output.type`, `gen_ai.request.choice.count`, `gen_ai.request.top_k`, `gen_ai.usage.cache_creation.input_tokens`, `gen_ai.usage.cache_read.input_tokens`
+- **Span updates**: Span kind changed from `SERVER` to `CLIENT`; span name now follows `{operation} {model}` format (e.g., `chat gpt-4o`)
+- **New environment variable**: `EXPERIMENTAL_GEN_AI_OTEL_RESOURCE_ATTRIBUTES` allows setting custom OTLP resource attributes as comma-separated `key=value` pairs
+
+[OTel Export Documentation](/product/enterprise-offering/otel/complete-logs)
+
+### Anthropic Files API Support
+
+Added support for Anthropic's [Files API](https://docs.anthropic.com/en/docs/build-with-claude/files) (beta) through the gateway. You can now upload, list, retrieve, delete, and fetch content for files using the unified `/v1/files` endpoint. Uploaded files can be referenced in chat completions using `file_id` instead of re-uploading content with each request.
+
+[Anthropic Documentation](/integrations/llms/anthropic#files-api)
+
+### Prompt Caching TTL Support
+
+`cache_control` now supports an optional `ttl` field with values `"5m"` (default) or `"1h"` for both Anthropic and Bedrock providers. The 1-hour TTL is useful for agentic workflows and long conversations where follow-up requests may exceed the default 5-minute window.
+
+- [Anthropic Prompt Caching](/integrations/llms/anthropic/prompt-caching#cache-ttl-options)
+- [Bedrock Prompt Caching](/integrations/llms/bedrock/prompt-caching#cache-ttl-options)
+
+### Fixes and Improvements
+- **Anthropic**: Reverted `strict` parameter support for tool definitions (Anthropic tool input schema supports only a limited subset of JSON Schema)
+- **Anthropic**: Fixed cache replay stream serialization for tool_use content blocks
+- **Gemini/Bedrock**: Fixed cost logging when Gemini models respond in Anthropic Messages SSE stream format
+- **Bedrock**: Fixed MCP logging hardcoded log path to use configurable paths
+- **Azure AI Inference**: Added cache token pricing support
+- **Vertex AI**: Added pricing support for embeddings on proxy routes
+- **Budget Tracking**: Fixed race conditions in budget tracking pipeline to prevent data loss and double-counting
+- **API Key Rotation**: Improved API key cache invalidation to use set-based lookups for more reliable key rotation
+- **mTLS**: Fixed mTLS certificate handling with other internal services
+- Updated model pricing configurations
+
+</Update>
+
+<Update label="2.4.3" description="2026-03-17">
+
+## v2.4.3
+---
+
+### MCP Gateway Observability
+
+Enhanced MCP Gateway logging to capture all MCP events (not just tool calls). Logs now include caller identity, authorization scope and decision, and gateway `trace_id` for end-to-end traceability across MCP tool calls.
+
+### MCP Connection Pool Improvements
+
+Fixed MCP upstream connection pool invalidation when server configurations change. Connections are now properly refreshed based on configuration hashes, and OAuth session management has been hardened with masked token logging and improved user identity resolution.
+
+### Fixes and Improvements
+- **Prometheus**: Added missing environment variable support for `PROMETHEUS_INCLUDE_MODEL_LABEL`, `PROMETHEUS_INCLUDE_METADATA_LABELS`, `PROMETHEUS_HISTOGRAM_BUCKETS`, `PROMETHEUS_HTTP_DURATION_BUCKETS`, and `PROMETHEUS_GC_BUCKETS` (these were documented in v2.2.5 but not wired into the env config)
+- Updated model pricing configurations
+
+</Update>
+
+<Update label="2.4.2" description="2026-03-16">
+
+## v2.4.2
+---
+
+### Bedrock Structured Outputs (Converse API)
+
+Bedrock structured outputs now use Bedrock's native `outputConfig` with `json_schema` text format via the Converse API, replacing the previous pass-through approach. This provides more reliable structured output enforcement for Claude models on Bedrock.
+
+[Bedrock Structured Outputs Documentation](/integrations/llms/bedrock/structured-outputs)
+
+### Fixes and Improvements
+- **Anthropic**: Preserved `additionalProperties` field in tool `input_schema` conversion
+- **Vertex AI**: Fixed metadata labels not being forwarded correctly for some request types
+- **Azure OpenAI**: Fixed embedding pricing calculation
+- **Azure Redis**: Fixed cluster mode connection handling for Azure Managed Redis
+- **Akto Guardrail**: Updated schema configuration
+- **Hooks**: Fixed sensitive header masking (Authorization, Portkey API key) in guardrail hook log responses
+- Security dependency updates (zlib vulnerability patch, audit fixes)
+- Updated model pricing configurations
+
+</Update>
+
+<Update label="2.4.1" description="2026-03-12">
+
+## v2.4.1
+---
+
+### Fixes and Improvements
+- **Zscaler Guardrail**: Fixed block reason handling to correctly parse and return block reasons from Zscaler AI Guard responses
+
+</Update>
 
 <Update label="2.4.0" description="2026-03-11">
 
