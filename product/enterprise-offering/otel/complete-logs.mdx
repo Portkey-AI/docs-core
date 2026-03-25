@@ -80,6 +80,7 @@ graph LR
 | `EXPERIMENTAL_GEN_AI_OTEL_TRACES_ENABLED` | Yes | Set to `true` to enable log pushing |
 | `EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_ENDPOINT` | Yes | The OTLP endpoint URL (without `/v1/traces` suffix) |
 | `EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_HEADERS` | No | Comma-separated headers in `key=value` format |
+| `EXPERIMENTAL_GEN_AI_OTEL_RESOURCE_ATTRIBUTES` | No | Comma-separated `key=value` pairs added as OTLP resource attributes |
 
 ### Example Configuration
 
@@ -120,57 +121,72 @@ Logs are exported as OpenTelemetry spans with attributes following the [GenAI se
 | Attribute | Value | Description |
 |-----------|-------|-------------|
 | `service.name` | `portkey` | Service identifier |
-| `otel.semconv.version` | `1.37.0` | Semantic convention version |
+| `otel.semconv.version` | `1.40.0` | Semantic convention version |
+| Custom attributes | Configurable | Additional attributes from `EXPERIMENTAL_GEN_AI_OTEL_RESOURCE_ATTRIBUTES` |
 
-### Request Attributes
+### Common Attributes
+
+These attributes are set on all spans (inference and embeddings):
 
 | Attribute | Source | Description |
 |-----------|--------|-------------|
+| `gen_ai.operation.name` | Derived | Operation type: `chat`, `embeddings`, or derived from request URL |
+| `gen_ai.provider.name` | Metrics | Semconv-normalized provider name (e.g., `openai`, `anthropic`, `aws.bedrock`, `azure.ai.openai`) |
+| `gen_ai.system` | Metrics | Backward-compatible alias for `gen_ai.provider.name` |
 | `gen_ai.request.model` | Request body | Model identifier |
-| `gen_ai.request.max_tokens` | Request body | Maximum tokens to generate |
+| `gen_ai.response.model` | Response body | Model used for generation |
+| `server.address` | Request URL | Provider endpoint hostname |
+| `server.port` | Request URL | Server port (derived from URL, 443 for HTTPS) |
+| `error.type` | Response | HTTP status code (for errors ≥300) |
+
+### Inference Attributes
+
+These attributes are set on inference (chat completion) spans:
+
+| Attribute | Source | Description |
+|-----------|--------|-------------|
+| `gen_ai.request.max_tokens` | Request body | Maximum tokens to generate (from `max_tokens` or `max_completion_tokens`) |
 | `gen_ai.request.temperature` | Request body | Sampling temperature |
 | `gen_ai.request.top_p` | Request body | Top-p sampling parameter |
+| `gen_ai.request.top_k` | Request body | Top-k sampling parameter |
 | `gen_ai.request.stop_sequences` | Request body | Stop sequences |
 | `gen_ai.request.frequency_penalty` | Request body | Frequency penalty |
 | `gen_ai.request.presence_penalty` | Request body | Presence penalty |
 | `gen_ai.request.seed` | Request body | Random seed |
-
-### Response Attributes
-
-| Attribute | Source | Description |
-|-----------|--------|-------------|
+| `gen_ai.request.choice.count` | Request body | Number of choices requested (only set when > 1) |
 | `gen_ai.response.id` | Response body | Response identifier |
-| `gen_ai.response.model` | Response body | Model used for generation |
-| `gen_ai.response.finish_reasons` | Response body | Array of finish reasons |
-| `gen_ai.response.input_tokens` | Metrics | Input token count |
-| `gen_ai.response.output_tokens` | Metrics | Output token count |
+| `gen_ai.response.finish_reasons` | Response body | Normalized finish reasons (e.g., `tool_use`/`tool_calls`/`function_call` → `tool_call`) |
+| `gen_ai.usage.input_tokens` | Response usage | Input token count |
+| `gen_ai.usage.output_tokens` | Response usage | Output token count |
+| `gen_ai.usage.cache_creation.input_tokens` | Response usage | Tokens written to prompt cache |
+| `gen_ai.usage.cache_read.input_tokens` | Response usage | Tokens read from prompt cache |
+| `gen_ai.conversation.id` | Request/Response | Conversation or thread identifier |
+| `gen_ai.output.type` | Request body | Output format type: `json`, `image`, `speech`, or `text` |
 
-### Provider & Server Attributes
+### Embeddings Attributes
+
+These attributes are set on embeddings spans:
 
 | Attribute | Source | Description |
 |-----------|--------|-------------|
-| `gen_ai.provider.name` | Metrics | LLM provider name |
-| `server.address` | Request | Provider endpoint URL |
-| `server.port` | Constant | Server port (443 for HTTPS) |
-| `error.type` | Response | HTTP status code (for errors ≥300) |
+| `gen_ai.request.encoding_formats` | Request body | Requested encoding formats |
+| `gen_ai.embeddings.dimension.count` | Request body | Embedding dimensions |
+| `gen_ai.usage.input_tokens` | Response usage | Input token count |
 
 ### Message Attributes
 
-Prompt messages are exported using an indexed format for LangSmith compatibility:
+Messages are exported using structured semconv 1.40.0 format with role-based grouping and multimodal part normalization:
 
 | Attribute | Description |
 |-----------|-------------|
-| `gen_ai.prompt.{index}.role` | Message role (system, user, assistant) |
-| `gen_ai.prompt.{index}.content` | Message content |
-| `gen_ai.input.messages` | Raw input (for embedding/completion endpoints) |
-| `gen_ai.output.messages` | Response messages or embeddings |
-
-### Tool Attributes
-
-| Attribute | Description |
-|-----------|-------------|
+| `gen_ai.input.messages` | Array of input messages (excluding system), each with `role` and `parts` (text, tool_call, tool_call_response, image, audio, file, reasoning) |
+| `gen_ai.system_instructions` | System message content extracted as instruction parts |
+| `gen_ai.output.messages` | Array of output messages, each with `role`, `parts`, and `finish_reason` |
 | `gen_ai.tool.definitions` | Array of tool definitions from request |
-| `tools` | LangSmith-specific tool definitions copy |
+
+<Note>
+Tool call semantics are normalized across providers: `tool_use` (Anthropic), `tool_calls` (OpenAI), and `function_call` are all mapped to the standard `tool_call` type.
+</Note>
 
 ## Span Structure
 
@@ -182,7 +198,7 @@ Each log is exported as a span with the following structure:
     "resource": {
       "attributes": [
         { "key": "service.name", "value": { "stringValue": "portkey" } },
-        { "key": "otel.semconv.version", "value": { "stringValue": "1.37.0" } }
+        { "key": "otel.semconv.version", "value": { "stringValue": "1.40.0" } }
       ]
     },
     "scopeSpans": [{
@@ -191,7 +207,8 @@ Each log is exported as a span with the following structure:
         "traceId": "<32-char-hex>",
         "spanId": "<16-char-hex>",
         "parentSpanId": "<optional-16-char-hex>",
-        "name": "<span-name>",
+        "name": "chat gpt-4o",
+        "kind": 3,
         "startTimeUnixNano": "<nanoseconds>",
         "endTimeUnixNano": "<nanoseconds>",
         "status": { "code": 1, "message": "200" },
@@ -201,6 +218,9 @@ Each log is exported as a span with the following structure:
   }]
 }
 ```
+
+- **Span name** follows the format `{operation_name} {model}` (e.g., `chat gpt-4o`, `embeddings text-embedding-3-small`)
+- **Span kind** is `CLIENT` (3), reflecting that the gateway acts as a client to the LLM provider
 
 ## Trace Context
 
@@ -240,10 +260,7 @@ This allows correlation with upstream traces in distributed tracing scenarios.
 
 ## Integration with LangSmith
 
-LangSmith uses a slightly different attribute format than the standard GenAI semantic conventions. Portkey includes compatibility attributes:
-
-- Prompt messages use indexed format: `gen_ai.prompt.{index}.role` and `gen_ai.prompt.{index}.content`
-- Tool definitions are duplicated in the `tools` attribute for LangSmith parsing
+Portkey exports spans using the semconv 1.40.0 structured message format (`gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`), which is compatible with LangSmith and other modern GenAI observability tools.
 
 For LangSmith setup, refer to [LangSmith OpenTelemetry documentation](https://docs.smith.langchain.com/observability/how_to_guides/trace_with_opentelemetry).
 
