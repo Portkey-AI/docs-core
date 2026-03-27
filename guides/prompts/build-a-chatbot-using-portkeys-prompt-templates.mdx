@@ -35,14 +35,14 @@ Start by defining your system prompt. This sets the initial context and behavior
 ]
 ```
 
-### Step 2: Create a Variable to Store Conversation History
+### Step 2: Create a Variable for Conversation History
 
-In the Portkey UI, set the variable type: Look for two icons next to the variable name: "T" and "\{..}". Click the "\{...}" icon to switch to **JSON** **mode**.
+In the Portkey UI, create a variable for the conversation. Look for two icons next to the variable name: "T" and "\{..}". Click the "\{...}" icon to switch to **JSON** **mode** if you need to set a default.
 
-**Initialize the variable:** This array will store the conversation history, allowing your chatbot to maintain context. We can just initialize the variable with `[]`.
+**Variable name must match your code:** Use **`chat_history`** as the variable name so it matches the placeholder `{{chat_history}}` in your prompt (Step 1). In your application code, you will pass `chat_history` as a **plain-text string** (e.g. `"Assistant: Hello...\n\nUser: Hi\n\n"`), not as a raw JSON array. Formatting the history as text avoids JSON embedding issues and keeps the API request valid.
 
 <Note>
-As your chatbot interacts with users, it will append new messages to this array, building a comprehensive conversation history.
+As your chatbot interacts with users, append each turn to the conversation in memory, then format the full history as a single string and pass it in `variables.chat_history` on each request. The model will see the full thread and respond in context.
 </Note>
 
 
@@ -53,111 +53,284 @@ As your chatbot interacts with users, it will append new messages to this array,
 
 ### Step 3: Implementing the Chatbot
 
-Use Portkey's API to generate responses based on your prompt template. Here's a Python example::
+Use Portkey's API to generate responses based on your prompt template. Pass the variable **`chat_history`** (not `variable`) so it matches the placeholder in your prompt. Format the conversation as a **plain-text string** before sending to avoid JSON parsing errors when the value is embedded in the request.
 
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from portkey_ai import Portkey
 
+    client = Portkey(api_key="YOUR_PORTKEY_API_KEY")  # or use env
 
-```python
-from portkey_ai import Portkey
+    def format_chat_history(conversation_history):
+        """Format conversation for the prompt (plain text)."""
+        lines = []
+        for m in conversation_history:
+            role = "User" if m["role"] == "user" else "Assistant"
+            lines.append(f"{role}: {m['content']}")
+        return "\n\n".join(lines)
 
-client = Portkey(
-    api_key="YOUR_PORTKEY_API_KEY"  # You can also set this as an environment variable
-)
+    def generate_response(conversation_history):
+        chat_history_str = format_chat_history(conversation_history)
+        prompt_completion = client.prompts.completions.create(
+            prompt_id="YOUR_PROMPT_ID",
+            variables={"chat_history": chat_history_str},
+        )
+        return prompt_completion.choices[0].message.content
 
-def generate_response(conversation_history):
-    prompt_completion = client.prompts.completions.create(
-        prompt_id="YOUR_PROMPT_ID",  # Replace with your actual prompt ID
-        variables={"variable": conversation_history}
-    )
-    return prompt_completion.choices[0].message.content
+    # Example usage
+    conversation_history = [
+        {"content": "Hello, how can I assist you today?", "role": "assistant"},
+        {"content": "What's the weather like?", "role": "user"},
+    ]
+    response = generate_response(conversation_history)
+    print(response)
+    ```
+  </Tab>
+  <Tab title="NodeJS SDK">
+    ```javascript
+    import { Portkey } from 'portkey-ai';
 
-# Example usage
-conversation_history = [
-    {"content": "Hello, how can I assist you today?", "role": "assistant"},
-    {"content": "What's the weather like?", "role": "user"}
-]
+    const portkey = new Portkey({
+      apiKey: 'YOUR_PORTKEY_API_KEY',
+      baseURL: 'https://api.portkey.ai/v1',
+    });
 
-response = generate_response(conversation_history)
-print(response)
-```
+    const PROMPT_ID = 'YOUR_PROMPT_ID';
+
+    function formatChatHistory(conversationHistory) {
+      return conversationHistory
+        .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .join('\n\n');
+    }
+
+    async function generateResponse(conversationHistory) {
+      const chatHistoryStr = formatChatHistory(conversationHistory);
+      const completion = await portkey.prompts.completions.create({
+        promptID: PROMPT_ID,
+        variables: { chat_history: chatHistoryStr },
+      });
+      return completion.choices[0].message.content;
+    }
+
+    // Example usage
+    const conversationHistory = [
+      { content: 'Hello, how can I assist you today?', role: 'assistant' },
+      { content: "What's the weather like?", role: 'user' },
+    ];
+    const response = await generateResponse(conversationHistory);
+    console.log(response);
+    ```
+  </Tab>
+</Tabs>
 
 ### Step 4: Append the Response
 
 After generating a response, append it to your conversation history:
 
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    def append_response(conversation_history, response):
+        conversation_history.append({"content": response, "role": "assistant"})
+        return conversation_history
 
-```python
-def append_response(conversation_history, response):
-    conversation_history.append({"content": response, "role": "assistant"})
-    return conversation_history
+    # Continuing from the previous example
+    conversation_history = append_response(conversation_history, response)
+    ```
+  </Tab>
+  <Tab title="NodeJS SDK">
+    ```javascript
+    function appendResponse(conversationHistory, response) {
+      conversationHistory.push({ content: response, role: 'assistant' });
+      return conversationHistory;
+    }
 
-# Continuing from the previous example
-conversation_history = append_response(conversation_history, response)
-```
+    // Continuing from the previous example
+    conversationHistory = appendResponse(conversationHistory, response);
+    ```
+  </Tab>
+</Tabs>
 
 ### Step 5: Take User Input to Continue the Conversation
+
 Implement a loop to continuously take user input and generate responses:
-```python
-# Continue the conversation
-while True:
-    user_input = input("You: ")
-    if user_input.lower() == 'exit':
-        break
 
-    conversation_history.append({
-        "content": user_input,
-        "role": "user"
-    })
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    # Continue the conversation
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() == 'exit':
+            break
 
-    response = generate_response(conversation_history)
-    conversation_history = append_response(conversation_history, response)
+        conversation_history.append({
+            "content": user_input,
+            "role": "user"
+        })
 
-    print("Bot:", response)
-print("Conversation ended.")
-```
+        response = generate_response(conversation_history)
+        conversation_history = append_response(conversation_history, response)
+
+        print("Bot:", response)
+    print("Conversation ended.")
+    ```
+  </Tab>
+  <Tab title="NodeJS SDK">
+    ```javascript
+    import * as readline from 'readline';
+
+    function ask(rl, prompt) {
+      return new Promise((resolve) => rl.question(prompt, resolve));
+    }
+
+    // Continue the conversation (run inside async function)
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    while (true) {
+      const userInput = await ask(rl, 'You: ');
+      if (!userInput || userInput.toLowerCase().trim() === 'exit') break;
+
+      conversationHistory.push({ content: userInput.trim(), role: 'user' });
+      const response = await generateResponse(conversationHistory);
+      conversationHistory = appendResponse(conversationHistory, response);
+      console.log('Bot:', response);
+    }
+    rl.close();
+    console.log('Conversation ended.');
+    ```
+  </Tab>
+</Tabs>
 
 ### Complete Example
 
-Here's a complete example that puts all these steps together:
+Here's a complete example that puts all these steps together. Use the variable **`chat_history`**, format the conversation as **plain text**, and pass it in `variables.chat_history` so the model sees the full thread and responds in context. For the Node.js SDK use **`promptID`** (capital "ID"); see the [Prompt API reference](https://portkey.ai/docs/product/prompt-engineering-studio/prompt-api).
 
+<Tabs>
+  <Tab title="Python SDK">
+    ```python
+    from portkey_ai import Portkey
 
-```python
-from portkey_ai import Portkey
+    client = Portkey(api_key="YOUR_PORTKEY_API_KEY")
 
-client = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+    def format_chat_history(conversation_history):
+        """Format conversation for the prompt template (plain text, no nested JSON)."""
+        lines = []
+        for m in conversation_history:
+            role = "User" if m["role"] == "user" else "Assistant"
+            lines.append(f"{role}: {m['content']}")
+        return "\n\n".join(lines)
 
-def generate_response(conversation_history):
-    prompt_completion = client.prompts.completions.create(
-        prompt_id="YOUR_PROMPT_ID",
-        variables={"variable": conversation_history}
-    )
-    return prompt_completion.choices[0].message.content
+    def generate_response(conversation_history):
+        chat_history_str = format_chat_history(conversation_history)
+        prompt_completion = client.prompts.completions.create(
+            prompt_id="YOUR_PROMPT_ID",
+            variables={"chat_history": chat_history_str},
+        )
+        return prompt_completion.choices[0].message.content
 
-def append_response(conversation_history, response):
-    conversation_history.append({"content": response, "role": "assistant"})
-    return conversation_history
+    def append_response(conversation_history, response):
+        conversation_history.append({"content": response, "role": "assistant"})
+        return conversation_history
 
-# Initial conversation
-conversation_history = [{"content": "Hello, how can I assist you today?", "role": "assistant"}]
+    # Initial conversation
+    conversation_history = [{"content": "Hello, how can I assist you today?", "role": "assistant"}]
 
-# Generate and append response
-response = generate_response(conversation_history)
-conversation_history = append_response(conversation_history, response)
-print("Bot:", response)
-
-# Continue the conversation
-while True:
-    user_input = input("You: ")
-    if user_input.lower() == 'exit':
-        break
-
-    conversation_history.append({"content": user_input, "role": "user"})
     response = generate_response(conversation_history)
     conversation_history = append_response(conversation_history, response)
     print("Bot:", response)
 
-print("Conversation ended.")
-```
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() == "exit":
+            break
+        conversation_history.append({"content": user_input, "role": "user"})
+        response = generate_response(conversation_history)
+        conversation_history = append_response(conversation_history, response)
+        print("Bot:", response)
+
+    print("Conversation ended.")
+    ```
+  </Tab>
+  <Tab title="NodeJS SDK">
+    Use **`promptID`** (capital "ID") and **`chat_history`** as a formatted string. Requires Node 18+, `"type": "module"` in `package.json`, and `npm install portkey-ai`.
+
+    ```javascript
+    import { Portkey } from 'portkey-ai';
+    import * as readline from 'readline';
+
+    const portkey = new Portkey({
+      apiKey: process.env.PORTKEY_API_KEY || 'YOUR_PORTKEY_API_KEY',
+      baseURL: 'https://api.portkey.ai/v1',
+    });
+
+    const PROMPT_ID = process.env.PORTKEY_PROMPT_ID || 'YOUR_PROMPT_ID';
+
+    function formatChatHistory(conversationHistory) {
+      return conversationHistory
+        .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .join('\n\n');
+    }
+
+    async function generateResponse(conversationHistory) {
+      const chatHistoryStr = formatChatHistory(conversationHistory);
+      const completion = await portkey.prompts.completions.create({
+        promptID: PROMPT_ID,
+        variables: { chat_history: chatHistoryStr },
+      });
+      return completion.choices[0].message.content;
+    }
+
+    function appendResponse(conversationHistory, response) {
+      conversationHistory.push({ content: response, role: 'assistant' });
+      return conversationHistory;
+    }
+
+    function ask(rl, prompt) {
+      return new Promise((resolve) => rl.question(prompt, resolve));
+    }
+
+    async function main() {
+      let conversationHistory = [
+        { content: 'Hello, how can I assist you today?', role: 'assistant' },
+      ];
+
+      try {
+        const response = await generateResponse(conversationHistory);
+        conversationHistory = appendResponse(conversationHistory, response);
+        console.log('Bot:', response);
+      } catch (err) {
+        console.error('Initial generation failed:', err.message);
+      }
+
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+      while (true) {
+        const userInput = await ask(rl, 'You: ');
+        if (!userInput || userInput.toLowerCase().trim() === 'exit') break;
+        conversationHistory.push({ content: userInput.trim(), role: 'user' });
+        try {
+          const response = await generateResponse(conversationHistory);
+          conversationHistory = appendResponse(conversationHistory, response);
+          console.log('Bot:', response);
+        } catch (err) {
+          console.error('Error:', err.message);
+        }
+      }
+
+      rl.close();
+      console.log('Conversation ended.');
+    }
+
+    main();
+    ```
+  </Tab>
+</Tabs>
+
+<Note title="SDK differences">
+- **Python:** Use `prompt_id` and `variables={"chat_history": chat_history_str}`.
+- **Node.js:** Use `promptID` (capital "ID") and `variables: { chat_history: chatHistoryStr }`. Pass a string for `chat_history` in both.
+</Note>
 
 ## Conclusion
 

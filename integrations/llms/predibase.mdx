@@ -1,294 +1,351 @@
 ---
 title: "Predibase"
+description: Use Predibase's open-source and fine-tuned LLMs through Portkey.
 ---
 
-Portkey provides a robust and secure gateway to seamlessly integrate **open-source** and **fine-tuned** LLMs from Predibase into your applications. With Portkey, you can leverage powerful features like fast AI gateway, caching, observability, prompt management, and more, while securely managing your LLM API keys through a virtual key system.
-<Note>
-Provider Slug. `predibase`
-</Note>
-## Portkey SDK Integration with Predibase
+## Quick Start
 
-Using Portkey, you can call your Predibase models in the familar **OpenAI-spec** and try out your existing pipelines on Predibase fine-tuned models with 2 LOC change.
+Get started with Predibase in under 2 minutes:
 
-### 1\. Install the Portkey SDK
+<CodeGroup>
 
-Install the Portkey SDK in your project using npm or pip:
-<Tabs>
-  <Tab title="NodeJS">
-    ```sh
-    npm install --save portkey-ai
-    ```
-  </Tab>
-  <Tab title="Python">
-```sh
-pip install portkey-ai
-```
-  </Tab>
-
-</Tabs>
-
-
-
-
-### 2\. Initialize Portkey with the Virtual Key
-
-To use Predibase with Portkey, [get your API key from here](https://app.predibase.com/settings), then add it to Portkey to create the virtual key.
-<Tabs>
-  <Tab title="NodeJS SDK">
-    ```js
-    import Portkey from 'portkey-ai'
-
-    const portkey = new Portkey({
-        apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
-        provider:"@PROVIDER" // Your Predibase Virtual Key
-    })
-    ```
-  </Tab>
-  <Tab title="Python SDK">
-```python
+```python Python icon="python"
 from portkey_ai import Portkey
 
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="@PROVIDER"   # Replace with your virtual key for Predibase
+# 1. Install: pip install portkey-ai
+# 2. Add @predibase provider in model catalog
+# 3. Use it:
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@predibase/llama-3-8b-instruct",
+    messages=[{"role": "user", "content": "Hello!"}]
 )
-```
-  </Tab>
 
-  <Tab title="OpenAI Node SDK">
-```js
-import OpenAI from "openai";
-import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai";
-
-const portkey = new OpenAI({
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    apiKey: "PORTKEY_API_KEY",
-    provider:"@PREDIBASE_PROVIDER",
-  }),
-});
+print(response.choices[0].message.content)
 ```
-  </Tab>
-  <Tab title="OpenAI Python SDK">
-```python
+
+```js Javascript icon="square-js"
+import Portkey from 'portkey-ai'
+
+// 1. Install: npm install portkey-ai
+// 2. Add @predibase provider in model catalog
+// 3. Use it:
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+})
+
+const response = await portkey.chat.completions.create({
+    model: "@predibase/llama-3-8b-instruct",
+    messages: [{ role: "user", content: "Hello!" }]
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```python OpenAI Py icon="python"
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+from portkey_ai import PORTKEY_GATEWAY_URL
 
-portkey = OpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        provider="@PREDIBASE_PROVIDER"
-    )
-)
-```
-  </Tab>
-</Tabs>
+# 1. Install: pip install openai portkey-ai
+# 2. Add @predibase provider in model catalog
+# 3. Use it:
 
-
-
-
-### 3\. Invoke Chat Completions on Predibase Serverless Endpoints
-
-Predibase offers LLMs like **Llama 3**, **Mistral**, **Gemma**, etc. on its [serverless infra](https://docs.predibase.com/user-guide/inference/models#serverless-endpoints) that you can query instantly.
-<Note>
-#### Sending Predibase Tenand ID
-
-Predibase expects your **account tenant ID** along with the API key in each request. With Portkey, you can send [**your Tenand ID**](https://app.predibase.com/settings) with the `user` param while making your request.
-</Note>
-<Tabs>
-  <Tab title="Portkey OR OpenAI NodeJS SDK">
-
-    ```js
-    const chatCompletion = await portkey.chat.completions.create({
-        messages: [{ role: 'user', content: 'Say this is a test' }],
-        model: 'llama-3-8b	',
-        user: 'PREDIBASE_TENANT_ID'
-    });
-
-    console.log(chatCompletion.choices);
-    ```
-  </Tab>
-  <Tab title="Portkey OR OpenAI Python SDK">
-```python
-completion = portkey.chat.completions.create(
-    messages= [{ "role": 'user', "content": 'Say this is a test' }],
-    model= 'llama-3-8b',
-    user= "PREDIBASE_TENANT_ID"
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",  # Portkey API key
+    base_url=PORTKEY_GATEWAY_URL
 )
 
-print(completion)
-```
-  </Tab>
-<Tab title="cURL">
-  ```sh
-  curl https://api.portkey.ai/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-    -H "x-portkey-provider: $PREDIBASE_PROVIDER" \
-    -d '{
-      "messages": [{"role": "user","content": "Hello!"}],
-      "model": "llama-3-8b",
-      "user": "PREDIBASE_TENANT_ID"
-    }'
-  ```
-  </Tab>
-
-</Tabs>
-
-
-
-### 4\. Invoke Predibase Fine-Tuned Models
-
-With Portkey, you can send your fine-tune model & adapter details directly with the `model` param while making a request.
-<Note>
-The format is:
-
-`model = <base_model>:<adapter-repo-name/adapter-version-number>`
-</Note>
-
-For example, if your base model is `llama-3-8b` and the adapter repo name is `sentiment-analysis`, you can make a request like this:
-
-<Tabs>
-  <Tab title="Portkey OR OpenAI NodeJS SDK">
-    ```js
-    const chatCompletion = await portkey.chat.completions.create({
-        messages: [{ role: 'user', content: 'Say this is a test' }],
-        model: 'llama-3-8b:sentiment-analysis/1',
-        user: 'PREDIBASE_TENANT_ID'
-    });
-
-    console.log(chatCompletion.choices);
-    ```
-  </Tab>
-  <Tab title="Portkey OR OpenAI Python SDK">
-```python
-completion = portkey.chat.completions.create(
-    messages= [{ "role": 'user', "content": 'Say this is a test' }],
-    model= 'llama-3-8b:sentiment-analysis/1',
-    user= "PREDIBASE_TENANT_ID"
+response = client.chat.completions.create(
+    model="@predibase/llama-3-8b-instruct",
+    messages=[{"role": "user", "content": "Hello!"}]
 )
 
-print(completion)
+print(response.choices[0].message.content)
 ```
-  </Tab>
-<Tab title="cURL">
-  ```sh
-  curl https://api.portkey.ai/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-    -H "x-portkey-provider: $PREDIBASE_PROVIDER" \
-    -d '{
-      "messages": [{"role": "user","content": "Hello!"}],
-      "model": "llama-3-8b:sentiment-analysis/1",
-      "user": "PREDIBASE_TENANT_ID"
-    }'
-  ```
-  </Tab>
 
-</Tabs>
+```js OpenAI JS icon="square-js"
+import OpenAI from "openai"
+import { PORTKEY_GATEWAY_URL } from "portkey-ai"
 
+// 1. Install: npm install openai portkey-ai
+// 2. Add @predibase provider in model catalog
+// 3. Use it:
 
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",  // Portkey API key
+    baseURL: PORTKEY_GATEWAY_URL
+})
+
+const response = await client.chat.completions.create({
+    model: "@predibase/llama-3-8b-instruct",
+    messages: [{ role: "user", content: "Hello!" }]
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```sh cURL icon="square-terminal"
+# 1. Add @predibase provider in model catalog
+# 2. Use it:
+
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@predibase/llama-3-8b-instruct",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+</CodeGroup>
+
+## Add Provider in Model Catalog
+
+Before making requests, add Predibase to your Model Catalog:
+
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Select **Predibase**
+3. Enter your [Predibase API key](https://app.predibase.com/settings)
+4. Name your provider (e.g., `predibase`)
+
+<Card title="Complete Setup Guide" icon="book" href="/product/model-catalog">
+  See all setup options and detailed configuration instructions
+</Card>
 
 ---
 
-### Routing to Dedicated Deployments
+## Predibase Capabilities
 
-Using Portkey, you can easily route to your dedicatedly deployed models as well. Just pass the dedicated deployment name in the `model` param:
+### Serverless Endpoints
+
+Predibase offers LLMs like **Llama 3**, **Mistral**, **Gemma**, etc. on its [serverless infrastructure](https://docs.predibase.com/user-guide/inference/models#serverless-endpoints) that you can query instantly.
 
 <Note>
-`model = "my-dedicated-mistral-deployment-name"`
+**Sending Predibase Tenant ID**
+
+Predibase expects your **account tenant ID** along with the API key in each request. With Portkey, you can send [**your Tenant ID**](https://app.predibase.com/settings) with the `user` param while making your request.
 </Note>
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY", provider="@predibase")
+
+response = portkey.chat.completions.create(
+    model="llama-3-8b-instruct",
+    messages=[{"role": "user", "content": "Hello!"}],
+    user="PREDIBASE_TENANT_ID"  # Required: Your Predibase tenant ID
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript Node.js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: 'PORTKEY_API_KEY',
+    provider: '@predibase'
+});
+
+const response = await portkey.chat.completions.create({
+    model: "llama-3-8b-instruct",
+    messages: [{ role: "user", content: "Hello!" }],
+    user: "PREDIBASE_TENANT_ID"  // Required: Your Predibase tenant ID
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+### Using Fine-Tuned Models
+
+Predibase allows you to deploy and use fine-tuned models with adapters. Use the special format with your model identifier from your Predibase dashboard:
+
+<Note>
+**Fine-Tuned Model Format:**  
+`model = base_model:adapter-repo-name/adapter-version-number`
+
+For example: `llama-3-8b:sentiment-analysis/1`
+</Note>
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY", provider="@predibase")
+
+response = portkey.chat.completions.create(
+    model="llama-3-8b:sentiment-analysis/1",  # Base model + adapter
+    messages=[{"role": "user", "content": "This product is amazing!"}],
+    user="PREDIBASE_TENANT_ID"
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript Node.js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: 'PORTKEY_API_KEY',
+    provider: '@predibase'
+});
+
+const response = await portkey.chat.completions.create({
+    model: "llama-3-8b:sentiment-analysis/1",  // Base model + adapter
+    messages: [{ role: "user", content: "This product is amazing!" }],
+    user: "PREDIBASE_TENANT_ID"
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+### Dedicated Deployments
+
+Route requests to your dedicated deployed models by passing the deployment name in the `model` parameter:
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY", provider="@predibase")
+
+response = portkey.chat.completions.create(
+    model="my-dedicated-mistral-deployment",  # Your deployment name
+    messages=[{"role": "user", "content": "Hello!"}],
+    user="PREDIBASE_TENANT_ID"
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript Node.js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: 'PORTKEY_API_KEY',
+    provider: '@predibase'
+});
+
+const response = await portkey.chat.completions.create({
+    model: "my-dedicated-mistral-deployment",  // Your deployment name
+    messages: [{ role: "user", content: "Hello!" }],
+    user: "PREDIBASE_TENANT_ID"
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
 ### JSON Schema Mode
 
-You can enforce JSON schema for all Predibase models - just set the `response_format` to `json_object` and pass the relevant schema while making your request. Portkey logs will show your JSON output separately
+Enforce JSON schema for all Predibase models by setting `response_format` to `json_object` with your schema:
 
-<Tabs>
-  <Tab title="Portkey OR OpenAI NodeJS SDK">
-    ```js
-    const chatCompletion = await portkey.chat.completions.create({
-        messages: [{ role: 'user', content: 'Say this is a test' }],
-        model: 'llama-3-8b	',
-        user: 'PREDIBASE_TENANT_ID',
-        response_format: {
-          "type": "json_object",
-          "schema": {"properties": {
-            "name": {"maxLength": 10, "title": "Name", "type": "string"},
-            "age": {"title": "Age", "type": "integer"},
-            "required": ["name", "age", "strength"],
-            "title": "Character",
-            "type": "object"
-          }
-        }
-    });
+<CodeGroup>
 
-    console.log(chatCompletion.choices);
-    ```
-  </Tab>
-  <Tab title="Portkey OR OpenAI Python SDK">
-```python
-# Using Pydantic to define the schema
+```python Python
+from portkey_ai import Portkey
 from pydantic import BaseModel, constr
 
-# Define JSON Schema
+# Define JSON Schema with Pydantic
 class Character(BaseModel):
     name: constr(max_length=10)
     age: int
     strength: int
 
-completion = portkey.chat.completions.create(
-    messages= [{ "role": 'user', "content": 'Say this is a test' }],
-    model= 'llama-3-8b',
-    user= "PREDIBASE_TENANT_ID",
+portkey = Portkey(api_key="PORTKEY_API_KEY", provider="@predibase")
+
+response = portkey.chat.completions.create(
+    model="llama-3-8b",
+    messages=[{"role": "user", "content": "Create a character profile"}],
+    user="PREDIBASE_TENANT_ID",
     response_format={
         "type": "json_object",
-        "schema": Character.schema(),
-    },
+        "schema": Character.schema()
+    }
 )
 
-print(completion)
+print(response.choices[0].message.content)
 ```
-  </Tab>
-<Tab title="cURL">
-  ```sh
-  curl https://api.portkey.ai/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-    -H "x-portkey-provider: $PREDIBASE_PROVIDER" \
-    -d '{
-      "messages": [{"role": "user","content": "Hello!"}],
-      "model": "llama-3-8b",
-      "user": "PREDIBASE_TENANT_ID",
-      "response_format": {
-        "type": "json_object",
-        "schema": {"properties": {
-          "name": {"maxLength": 10, "title": "Name", "type": "string"},
-          "age": {"title": "Age", "type": "integer"},
-          "required": ["name", "age", "strength"],
-          "title": "Character",
-          "type": "object"
+
+```javascript Node.js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: 'PORTKEY_API_KEY',
+    provider: '@predibase'
+});
+
+const response = await portkey.chat.completions.create({
+    model: "llama-3-8b",
+    messages: [{ role: "user", content: "Create a character profile" }],
+    user: "PREDIBASE_TENANT_ID",
+    response_format: {
+        type: "json_object",
+        schema: {
+            properties: {
+                name: { maxLength: 10, title: "Name", type: "string" },
+                age: { title: "Age", type: "integer" },
+                strength: { title: "Strength", type: "integer" }
+            },
+            required: ["name", "age", "strength"],
+            title: "Character",
+            type: "object"
         }
-      }
-    }'
-  ```
-  </Tab>
+    }
+});
 
-</Tabs>
+console.log(response.choices[0].message.content);
+```
 
+</CodeGroup>
 
+---
+
+## Supported Models
+
+Predibase provides access to various open-source and fine-tuned models:
+
+- Llama 3 (various sizes)
+- Mistral
+- Zephyr
+- Your custom fine-tuned models
+
+Check [Predibase's documentation](https://docs.predibase.com/) for the complete model list and fine-tuning options.
 
 ---
 
 ## Next Steps
 
-The complete list of features supported in the SDK are available on the link below.
+<CardGroup cols={2}>
+  <Card title="Gateway Configs" icon="sliders" href="/product/ai-gateway">
+    Add fallbacks, load balancing, and more
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Monitor and trace your Predibase requests
+  </Card>
+  <Card title="Prompt Library" icon="book" href="/product/prompt-engineering-studio">
+    Manage and version your prompts
+  </Card>
+  <Card title="Fine-Tuning Logs" icon="chart-mixed" href="/product/observability">
+    Track performance of fine-tuned models
+  </Card>
+</CardGroup>
 
-<Card title="SDK" href="/api-reference/sdk">
+For complete SDK documentation:
+
+<Card title="SDK Reference" icon="code" href="/api-reference/sdk/list">
+  Complete Portkey SDK documentation
 </Card>
-
-You'll find more information in the relevant sections:
-
-1. [Add metadata to your requests](/product/observability/metadata)
-2. [Add gateway configs to your Predibase requests](/product/ai-gateway/configs)
-3. [Tracing Predibase requests](/product/observability/traces)
-4. [Setup a fallback from OpenAI to Predibase](/product/ai-gateway/fallbacks)

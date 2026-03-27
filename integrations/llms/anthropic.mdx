@@ -63,7 +63,7 @@ const response = await portkey.chat.completions.create({
 console.log(response.choices[0].message.content)
 ```
 
-```python OpenAI Py icon="openai"
+```python OpenAI Py icon="python"
 from openai import OpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL
 
@@ -85,7 +85,7 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-```js OpenAI JS icon="openai"
+```js OpenAI JS icon="square-js"
 import OpenAI from "openai"
 import { PORTKEY_GATEWAY_URL } from "portkey-ai"
 
@@ -412,6 +412,7 @@ const portkey = new Portkey({
 const pdfUrl = "https://assets.anthropic.com/m/1cd9d098ac3e6467/original/Claude-3-Model-Card-October-Addendum.pdf"
 const pdfResponse = await axios.get(pdfUrl, { responseType: 'arraybuffer' })
 const pdfBase64 = Buffer.from(pdfResponse.data).toString('base64')
+const pdfData = `data:application/pdf;base64,${pdfBase64}`
 
 const response = await portkey.chat.completions.create({
     model: "@anthropic/claude-sonnet-4-5-20250929",
@@ -422,7 +423,7 @@ const response = await portkey.chat.completions.create({
             role: "user",
             content: [
                 { type: "text", text: "What are the key findings in this document?" },
-                { type: "file", file: { mime_type: "application/pdf", file_data: pdfBase64 } }
+                { type: "file", file: { mime_type: "application/pdf", file_data: pdfData } }
             ]
         }
     ]
@@ -564,9 +565,156 @@ You can use all Portkey features (like caching, observability, configs) with thi
 
 Portkey works with Anthropic's prompt caching feature to save time and money. Refer to this guide:
 
-<Card title="Prompt Caching" href="/integrations/llms/anthropic/prompt-caching">
+<Card title="Prompt Caching" icon="bolt" href="/integrations/llms/anthropic/prompt-caching">
   Learn how to enable prompt caching for Anthropic requests
 </Card>
+
+### Structured Outputs
+
+Ensure that the model always follows your supplied JSON schema with Portkey's structured outputs support.
+
+<Card title="Structured Outputs" icon="brackets-curly" href="/integrations/llms/anthropic/structured-outputs">
+  Learn how to use Pydantic, Zod, or JSON schema for structured data from Anthropic
+</Card>
+
+### Web Search
+
+Anthropic Claude models support web search as a tool, allowing the model to search the web for up-to-date information.
+
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    strict_open_ai_compliance=False
+)
+
+response = portkey.chat.completions.create(
+    model="@anthropic/claude-haiku-4-5-20250929",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "What is the latest news on Poland?"}],
+    tools=[{
+        "type": "web_search",
+        "web_search": {
+            "name": "web_search_20250305",
+            "max_uses": 2
+        }
+    }]
+)
+
+print(response.choices[0].message.content)
+```
+
+```js Javascript icon="square-js"
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    strictOpenAiCompliance: false
+})
+
+const response = await portkey.chat.completions.create({
+    model: "@anthropic/claude-haiku-4-5-20250929",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "What is the latest news on Poland?" }],
+    tools: [{
+        type: "web_search",
+        web_search: {
+            name: "web_search_20250305",
+            max_uses: 2
+        }
+    }]
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```sh cURL icon="square-terminal"
+curl POST 'https://api.portkey.ai/v1/chat/completions' \
+  --header 'x-portkey-provider: @my-anthropic' \
+  --header 'Content-Type: application/json' \
+  --header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+  --header 'x-portkey-strict-open-ai-compliance: false' \
+  --data '{
+    "model": "claude-haiku-4-5",
+    "max_tokens": 1024,
+    "messages": [
+        {
+            "role": "user",
+            "content": "What is the latest news on Poland?"
+        }
+    ],
+    "tools": [
+        {
+            "type": "web_search",
+            "web_search": {
+                "name": "web_search_20250305",
+                "max_uses": 2
+            }
+        }
+    ]
+}'
+```
+</CodeGroup>
+
+<Note>
+Set `strict_open_ai_compliance` to `false` (or use the header `x-portkey-strict-open-ai-compliance: false`) to receive citations in the response.
+</Note>
+
+### Files API
+
+Portkey supports Anthropic's [Files API](https://docs.anthropic.com/en/docs/build-with-claude/files) (beta), enabling you to upload, list, retrieve, and delete files through the gateway. Uploaded files can be referenced in chat completions using `file_id` instead of re-uploading content each request.
+
+<CodeGroup>
+```python Upload a file
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+file = portkey.with_options(provider="@anthropic").files.create(
+    purpose="assistants",
+    file=open("document.pdf", "rb")
+)
+
+print(file.id)
+```
+
+```sh cURL - Upload
+curl -X POST https://api.portkey.ai/v1/files \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: anthropic" \
+  -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
+  -F "file=@document.pdf"
+```
+
+```sh cURL - List files
+curl https://api.portkey.ai/v1/files \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: anthropic" \
+  -H "Authorization: Bearer $ANTHROPIC_API_KEY"
+```
+</CodeGroup>
+
+Once uploaded, reference files in chat completions via `file_id`:
+
+```python
+response = portkey.chat.completions.create(
+    model="@anthropic/claude-sonnet-4-5-20250929",
+    max_tokens=1024,
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Summarize this document"},
+            {"type": "file", "file": {"file_id": file.id}}
+        ]
+    }]
+)
+```
+
+<Note>
+The Files API is in beta and requires the `files-api-2025-04-14` beta header. Portkey sets this automatically for file endpoints. The Files API is not supported on Bedrock or Vertex AI.
+</Note>
 
 ### Beta Features
 

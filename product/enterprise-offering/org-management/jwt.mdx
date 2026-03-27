@@ -60,6 +60,14 @@ Your JWT payload must contain the following claims:
 - `exp` is mandatory. Tokens without `exp` or with expired `exp` are rejected.
 - `iat` and/or `nbf` are recommended but optional.
 
+### Optional Claims
+
+| **Claim Key** | **Description**                                                                 |
+|--------------|---------------------------------------------------------------------------------|
+| `defaults`   | Object containing default settings applied to all requests made with this token. See [Embedding Default Configs](#embedding-default-configs-in-jwt) below. |
+| `usage_limits` | Usage limits to enforce on requests made with this token.                     |
+| `rate_limits`  | Rate limits to enforce on requests made with this token.                      |
+
 ### User Identification
 
 Portkey identifies users in the following order of precedence for logging and metrics:
@@ -113,7 +121,9 @@ const jwt = await new SignJWT({
   portkey_workspace: '<YOUR_WORKSPACE_SLUG>',
   scope: ['completions.write', 'logs.view'],
   email_id: 'user@example.com',
-  sub: '<YOUR_USER_ID>'
+  sub: '<YOUR_USER_ID>',
+  // Optional: embed default config and metadata
+  // defaults: { config_id: 'pc-your-config-id', metadata: { environment: 'production' } }
 })
   .setProtectedHeader({ alg: 'RS256', kid: publicJwk.kid, typ: 'JWT' })
   .setIssuedAt(now)
@@ -307,6 +317,43 @@ Scopes can also be prefixed with `portkey.` (e.g., `portkey.completions.write`).
 
 - This matches the signing example (`.setProtectedHeader({ alg: 'RS256', kid: publicJwk.kid, typ: 'JWT' })`).
 - Ensure `kid` exactly matches one key in your configured JWKS.
+
+## Embedding Default Configs in JWT
+
+You can embed a default [config](/product/ai-gateway/configs) directly in the JWT payload using the `defaults` claim. This works the same way as [attaching default configs to API keys](/product/administration/enforce-default-config), but lets you control it per-token — useful when different users or services need different routing rules.
+
+The `defaults` object supports the following fields:
+
+| **Field**      | **Description**                                                                 |
+|---------------|---------------------------------------------------------------------------------|
+| `config_id`   | The ID of the config to apply as the default for all requests made with this token. |
+| `metadata`    | A JSON object with custom metadata to attach to all requests.                   |
+
+When a JWT with a `defaults.config_id` is used, Portkey validates that the config belongs to the same organization before applying it. If the config is not found or doesn't belong to the org, the default is ignored.
+
+<Note>
+  This follows the same precedence rules as API key default configs — if a user explicitly passes a config ID in their request headers, it will override the JWT default unless config override is disabled at the workspace level.
+</Note>
+
+### Example JWT Payload with Defaults
+
+```json
+{
+  "portkey_oid": "3ed1b666-7e3d-416a-9260-da10e1610d1a",
+  "portkey_workspace": "ws-shared-8622d1",
+  "scope": ["completions.write", "logs.view"],
+  "email_id": "user@example.com",
+  "sub": "user-123",
+  "exp": 1735689600,
+  "defaults": {
+    "config_id": "pc-your-config-id",
+    "metadata": {
+      "environment": "production",
+      "team": "backend"
+    }
+  }
+}
+```
 
 ## Example JWT Payload
 

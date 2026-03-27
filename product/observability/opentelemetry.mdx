@@ -11,7 +11,7 @@ Many popular AI development tools and SDKs, like the Vercel AI SDK, LlamaIndex, 
 
 Portkey's strength lies in its unique combination of an intelligent **LLM Gateway** and a powerful **Observability** backend.
 
-- **Enriched Data from the Gateway:** Your LLM calls routed through the Portkey Gateway are automatically enriched with deep contextual information—virtual keys, caching status, retry attempts, prompt versions, and more. This data flows seamlessly into Portkey Observability.
+- **Enriched Data from the Gateway:** Your LLM calls routed through the Portkey Gateway are automatically enriched with deep contextual information—provider configuration, caching status, retry attempts, prompt versions, and more. This data flows seamlessly into Portkey Observability.
 
 - **Holistic View with OpenTelemetry:** By adding an OTel endpoint, Portkey now ingests traces and logs from your *entire* application stack, not just the LLM calls. Instrument your frontend, backend services, databases, and any other component with OTel, and send that data to Portkey.
 
@@ -176,13 +176,15 @@ Navigate to the [Logs page](https://app.portkey.ai/logs) to view your traces, fi
   [OpenTelemetry conventions on GenAI Traces](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/) are still under development and have not been widely adapted, hence the feature is still experimental.
 </Warning>
 
-When enabled, Portkey Gateway pushes logs to an OpenTelemetry-compatible endpoint following the experimental semantic conventions for GenAI. This includes rich attributes such as:
+When enabled, Portkey Gateway pushes logs to an OpenTelemetry-compatible endpoint following the [semconv 1.40.0](https://opentelemetry.io/docs/specs/semconv/) semantic conventions for GenAI. This includes rich attributes such as:
 
-- Request attributes: `gen_ai.request.model`, `gen_ai.request.max_tokens`, `gen_ai.request.temperature`, etc.
-- Response attributes: `gen_ai.response.id`, `gen_ai.response.model`, `gen_ai.response.input_tokens`, `gen_ai.response.output_tokens`, etc.
-- Provider information: `gen_ai.provider.name`
-- Prompt and output messages: `gen_ai.prompt.*`, `gen_ai.output.messages`
+- Operation and provider: `gen_ai.operation.name`, `gen_ai.provider.name`
+- Request attributes: `gen_ai.request.model`, `gen_ai.request.max_tokens`, `gen_ai.request.temperature`, `gen_ai.request.top_k`, etc.
+- Response attributes: `gen_ai.response.id`, `gen_ai.response.model`, `gen_ai.response.finish_reasons`
+- Token usage: `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_creation.input_tokens`, `gen_ai.usage.cache_read.input_tokens`
+- Structured messages: `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`
 - Tool definitions: `gen_ai.tool.definitions`
+- Embeddings support: `gen_ai.request.encoding_formats`, `gen_ai.embeddings.dimension.count`
 
 To push logs to an OpenTelemetry compatible endpoint, you can set the following environment variables in your deployment configuration:
 
@@ -191,12 +193,14 @@ This is an example configuration for LangSmith, but all OpenTelemetry compatible
 EXPERIMENTAL_GEN_AI_OTEL_TRACES_ENABLED: "true"
 EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_ENDPOINT: https://api.smith.langchain.com/otel
 EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_HEADERS: x-api-key=langsmith-api-key
+EXPERIMENTAL_GEN_AI_OTEL_RESOURCE_ATTRIBUTES: deployment.environment=production,service.version=1.0
 ```
 
 **Environment Variables:**
 - `EXPERIMENTAL_GEN_AI_OTEL_TRACES_ENABLED`: Set to `"true"` to enable pushing logs to an OpenTelemetry endpoint
 - `EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_ENDPOINT`: The OpenTelemetry OTLP endpoint URL (e.g., `https://api.smith.langchain.com/otel`)
 - `EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_HEADERS`: Comma-separated list of headers in the format `key=value` (e.g., `x-api-key=langsmith-api-key`)
+- `EXPERIMENTAL_GEN_AI_OTEL_RESOURCE_ATTRIBUTES`: Comma-separated `key=value` pairs added as OTLP resource attributes (e.g., `deployment.environment=production`)
 
 The logs are pushed to the endpoint specified in `EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_ENDPOINT` at the `/v1/traces` path.
 
