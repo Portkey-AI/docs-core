@@ -1,0 +1,189 @@
+---
+title: "March"
+---
+
+March brings stronger enterprise controls: **vault-backed credentials**, **gateway limits** that match how teams plan spend, and **guardrails** that align with your existing security stack.
+
+Alongside those themes, we’ve shipped significant upgrades across the platform, gateway, observability, guardrails, and provider ecosystem, empowering teams with more robust, enterprise-ready infrastructure. 
+
+See what’s new:
+
+## Summary
+
+| Area | Updates |
+| --- | --- |
+| **Platform** | Secret References; weekly rate and budget windows (**rpw**) and endpoint-scoped rate limits |
+| **Observability** | GCS log storage via GCP WIF from AWS; analytics for archived workspaces and workspace slugs in filters |
+| **Guardrails** | Zscaler AI Guard; Akto Agentic Security; Bedrock Guardrails `customHost`; required metadata key–value guardrails |
+| **Models and providers** | DeepInfra; DeepSeek; Vertex metadata labels, enterprise web search, AWS–GCP WIF; Azure AI Foundry rerank; Bedrock batch embeddings |
+
+## Platform
+
+### Secret References
+
+Instead of entering keys directly in Portkey, use Secret References to point Portkey at credentials stored in your external vault (AWS Secrets Manager, Azure Key Vault, or HashiCorp Vault). Map integrations and virtual keys with `secret_mappings` so Portkey fetches values at runtime.
+
+<Frame>
+  <img src="/images/product/creating-secret-references.png" alt="Creating Secret References" />
+</Frame>
+
+This keeps sensitive material in infrastructure you already control and audit.
+
+[See how to configure Secret References](/product/enterprise-offering/secret-references)
+
+### Weekly and endpoint-scoped rate limits
+
+You can now set budget and usage limits on **weekly** windows (**rpw**), so caps align with how teams plan and review spend week over week, not just minute-by-minute or monthly aggregates.
+<Frame>
+  <img
+    src="/images/changelog/weekly-policies.png"
+    alt="Weekly policies"
+    style={{ maxWidth: "60%", height: "auto", display: "block", margin: "16px auto", borderRadius: "8px" }}
+  />
+</Frame>
+
+You can also scope limits by **endpoint type**, so different API surfaces (for example chat completions, embeddings, or admin-style routes) can carry different limits instead of one global rule across everything.
+
+[Budget & rate limit policies](/product/enterprise-offering/budget-policies)
+
+## Observability
+
+### Log storage: GCP workload identity from AWS
+
+When the gateway runs in AWS but you write logs to Google Cloud Storage, configure `GCP_WIF_AUDIENCE` and `GCP_WIF_SERVICE_ACCOUNT_EMAIL` so the gateway authenticates through GCP Workload Identity Federation (`gcs_assume` style flows), without long-lived GCP keys sitting in AWS.
+
+This keeps cross-cloud log delivery out of static secrets in config or images.
+
+[See hybrid GCP deployment & `gcs_assume` log storage](/self-hosting/hybrid-deployments/gcp)
+
+### Analytics for archived workspaces
+
+Organization admins and owners can include archived workspaces in analytics graphs, groups, and summaries. Saved filters also accept workspace slugs alongside IDs.
+
+This keeps reporting and automation stable as teams wind down or rename workspaces.
+
+[See analytics export](/product/enterprise-offering/otel/analytics)
+
+## Guardrails
+
+### Zscaler AI Guard
+
+Connect Zscaler AI Guard so Zscaler Detections Policies apply to LLM inputs and outputs through `beforeRequestHook` and `afterRequestHook`, with a required `policyId` and optional `timeout` (default 10000 ms).
+
+This reuses the same policy class your security org already operates.
+
+[See how to connect Zscaler AI Guard](/integrations/guardrails/zscaler)
+
+### Akto Agentic Security
+
+Add Akto as a guardrails partner to scan LLM inputs and outputs for threats such as prompt injection and sensitive data leakage, with hooks and a configurable timeout (default 5000 ms).
+
+This aligns agentic traffic with how you scan other production services.
+
+[See how to add Akto](/integrations/guardrails/akto)
+
+### Bedrock Guardrails custom host
+
+Set `customHost` on the Bedrock guardrail plugin so checks hit private or regional Bedrock-compatible endpoints, not only default public URLs.
+
+This keeps guardrail evaluation on private or regional endpoints your network and security policies already trust, instead of the default public Bedrock URLs.
+
+[See how to configure Bedrock Guardrails](/integrations/guardrails/bedrock-guardrails)
+
+### Required metadata key–value guardrails
+
+You can configure guardrails to enforce required metadata on every request. If any required field is missing or invalid, the gateway blocks the request before it ever reaches the model.
+
+[Learn more](/product/guardrails)
+
+## Why customers choose Portkey!
+<Frame>
+  <img
+    src="/images/changelog/test-litellm.png"
+    alt="Weekly policies"
+    style={{ maxWidth: "90%", height: "auto", display: "block", margin: "16px auto", borderRadius: "8px" }}
+  />
+</Frame>
+
+## Models and providers
+
+<ul>
+  <li>
+    <b>DeepInfra</b>
+    <ul>
+      <li>Tool calling with <code>tools</code>, <code>tool_choice</code>, and <code>parallel_tool_calls</code>.</li>
+      <li>Completions and embeddings endpoints alongside chat.</li>
+    </ul>
+  </li>
+  <li>
+    <b>DeepSeek</b>
+    <ul>
+      <li><code>deepseek-chat</code>: <code>tools</code>, <code>tool_choice</code>, and <code>stream_options</code>.</li>
+      <li><code>deepseek-reasoner</code>: maps <code>reasoning_effort</code> to thinking mode and returns <code>reasoning_content</code> in streams.</li>
+      <li>Streaming usage honors <code>stream_options</code> for reporting.</li>
+    </ul>
+  </li>
+  <li><b>Bedrock</b>: Batch inference supports embeddings as well as chat completions, so you can run large embedding jobs with the same batch patterns you use for chat.</li>
+  <li>
+    <b>Vertex AI</b>
+    <ul>
+      <li>Portkey metadata maps to Vertex resource labels.</li>
+      <li>Enterprise search grounding via <code>enterpriseWebSearch</code> / <code>enterprise_web_search</code> (cost attribution separate from standard Search grounding).</li>
+      <li>AWS workloads reach Vertex with AWS–GCP WIF (<code>GCP_WIF_AUDIENCE</code>, <code>GCP_WIF_SERVICE_ACCOUNT_EMAIL</code>).</li>
+    </ul>
+  </li>
+  <li>
+    <b>Azure AI Foundry rerank</b>
+    <ul>
+      <li>Cohere rerank models (e.g. <code>cohere.Cohere-rerank-v4.0-pro</code>).</li>
+      <li>Gateway strips the <code>cohere.</code> prefix for the provider.</li>
+    </ul>
+  </li>
+</ul>
+
+## Bug fixes and improvements
+
+- **OpenTelemetry:** GenAI semantic spans follow semconv **1.40.0** for inference and embeddings, with OTEL exporter support for guardrail flows and custom resource attributes—making downstream APM and tracing easier to standardize on. 
+- **Header forwarding:** the gateway no longer forwards `x-portkey-forward-headxers`, preventing header-forwarding loops and obscured provenance in chained setups.
+- **Streaming usage:** usage metadata is passed through for the Responses API and DeepSeek (and related routes) so streaming responses stay consistent for cost and usage reporting.
+- **Together AI:** cost logging for video generation requests.
+- **Anthropic / OpenAI-style image routes:** `strict` tool parameters and `response_format` handling for non–DALL·E image models where applicable.
+- **Budget tracking:** fixes to avoid double-counting and data loss in the budget pipeline (where applicable in this release window).
+
+## Resources
+
+### Which AI Model are companies actually Paying For in 2026?
+
+Over 1 trillion AI tokens pass through Portkey every day, **The Neon Show** talks with **Rohit Agarwal (Portkey)** about which models enterprises actually pay for in production and what changes after the prototype ships.
+
+<iframe
+  width="560"
+  height="315"
+  src="https://www.youtube.com/embed/lSgxAKaeREw?si=07cT7-8oDXxyROpG"
+  title="Which AI Model are companies actually Paying For in 2026? | Rohit Agarwal, Portkey"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+  allowfullscreen
+  style={{ maxWidth: "100%", borderRadius: "8px", marginBottom: "24px" }}
+></iframe>
+
+- **Blog:** [LLM Deployment Pipeline Explained Step by Step](https://portkey.ai/blog/llm-deployment/)
+- **Blog:** [What is AI lifecycle management?](https://portkey.ai/blog/what-is-ai-lifecycle-management)
+- **Blog:** [MCP vs Function Calling](https://portkey.ai/blog/mcp-vs-function-calling)
+- **Blog:** [1 Trillion Tokens and the Death of the Chatbot](https://portkey.ai/blog/1-trillion-tokens-and-the-death-of-the-chatbot)
+
+## Community Contributors
+
+Shoutout to Pinji Chen (Tsinghua University) for identifying an edge case with custom host and header forwarding;grateful for contributors who help us improve!
+
+## Support
+
+<CardGroup cols={2}>
+<Card title="Need Help?" icon="bug" href="https://github.com/Portkey-AI/gateway/issues">
+Open an issue on GitHub
+</Card>
+<Card title="Join Us" icon="discord" href="https://portkey.wiki/community">
+Get support in our Discord
+</Card>
+</CardGroup>
+
