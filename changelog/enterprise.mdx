@@ -1,12 +1,91 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.4.4]"
+sidebarTitle: "Enterprise Gateway [2.5.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="2.5.0" description="2026-04-01">
+
+## v2.5.0
+---
+
+### Gateway-Local JWT Authentication
+
+The gateway can now validate JWT tokens locally without calling the control plane, reducing authentication latency for self-hosted deployments. When `JWT_ENABLED=ON` is set, JWTs are decoded, verified against the configured JWKS, and cached locally until expiry. The gateway resolves organization, workspace, and deployment details from its local data sync, making JWT authentication fully independent of the control plane at request time.
+
+- Supports all existing JWT claims: `portkey_oid`, `portkey_workspace`, `scope`, `defaults`, `usage_limits`, `rate_limits`
+- Organisation ID can be resolved from the token (`portkey_oid` / `organisation_id`) or from `ORGANISATIONS_TO_SYNC` when a single org is configured
+- JWT-authenticated requests work with rate limit and usage limit policies
+
+[JWT Authentication Documentation](/product/enterprise-offering/org-management/jwt)
+
+### Headers-to-Metadata Injection
+
+New `HEADERS_TO_METADATA` environment variable allows automatically injecting request header values into metadata. This enables enriching observability data with upstream context (e.g., caller identity, trace IDs, or environment tags) without requiring clients to set `x-portkey-metadata`.
+
+Configure with a comma-separated list of header names:
+```
+HEADERS_TO_METADATA=x-request-id,x-caller-service,x-environment
+```
+
+Header values are matched case-insensitively and injected into the request metadata alongside any existing metadata from `x-portkey-metadata`.
+
+[Metadata Documentation](/product/observability/metadata)
+
+### Rate Limit Policies: Weekly Window and Endpoint Type Conditions
+
+- **Requests per week (`rpw`)**: Rate limit policies now support a weekly window in addition to per-minute, per-hour, and per-day
+- **`endpoint_type` condition**: Rate limit policies can now target specific endpoint types (e.g., `chatComplete`, `embed`, `complete`) using the `endpoint_type` condition key
+
+[Usage & Rate Limit Policies Documentation](/product/enterprise-offering/budget-policies)
+
+### Mistral AI: `response_format` Support
+
+Added `response_format` parameter support for Mistral AI, enabling structured JSON output and strict JSON schema enforcement. Previously, the gateway silently dropped this parameter for Mistral requests.
+
+[Mistral AI Documentation](/integrations/llms/mistral-ai)
+
+### New Guardrail: Required Metadata Key-Value Pairs
+
+Added a new native guardrail that validates specific metadata key-value pairs before processing a request. Supports `all`, `any`, and `none` operators for flexible matching.
+
+| Check Name | Parameters | Supported Hooks |
+|---|---|---|
+| Required Metadata Key-Value Pairs | `metadataPairs` (object), `operator` (all/any/none) | `beforeRequestHook` |
+
+[Guardrail Checks Documentation](/product/guardrails/list-of-guardrail-checks)
+
+### Lasso Security Guardrail: v3 API Upgrade
+
+Upgraded the Lasso Security integration from v2 to v3 Classify API with the following improvements:
+- **Findings-based detection**: Responses now include structured findings with name, category, action (BLOCK/AUTO_MASKING/WARN), and severity
+- **Session and user tracking**: Supports `sessionId` and `userId` for conversation-level analysis
+- **Multi-format support**: Handles `chatComplete`, `messages`, `complete`, and `embed` request types
+- **Custom API endpoint**: Supports configurable `apiEndpoint` for self-hosted Lasso deployments
+
+[Lasso Security Documentation](/integrations/guardrails/lasso)
+
+### Image Format Support: HEIC and HEIF
+
+Added `image/heic` and `image/heif` to the list of supported image MIME types for multimodal requests and the Inline Image URLs guardrail.
+
+### Google Embeddings: `dimensions` Parameter Fix
+
+Fixed the Google provider's embedding endpoint to correctly map the OpenAI-compatible `dimensions` parameter to Google's `output_dimensionality` parameter.
+
+### Fixes and Improvements
+- **Bedrock**: Improved tool calling support — Anthropic-format tool calls in Bedrock now correctly handle tool result content, cache control blocks, and strict role alternation
+- **Bedrock**: Tool descriptions are now optional in Bedrock Converse API requests
+- **Vertex AI**: Fixed model allowlist checking for proxy context-cache create routes
+- **Forward Headers**: Prevented `x-portkey-forward-headers` from being forwarded to prevent infinite request loops
+- **Google Vertex**: Fixed schema conversion to correctly move type-specific properties (items, properties, etc.) inside `anyOf` branches
+- Updated model pricing: Bedrock (`zai.glm-5`, `minimax.minimax-m2.5`), DeepInfra (`Qwen/Qwen3.5-122B-A10B`), xAI (`grok-4.20-reasoning-latest`)
+
+</Update>
 
 <Update label="2.4.4" description="2026-03-25">
 
