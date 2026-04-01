@@ -601,10 +601,12 @@ This example corresponds to a `config` like:
 #### Streaming Responses
 
 <Note>
-Portkey supports hook results in streaming responses for `/chat/completions`, `/completions`, `/embeddings`, and `/messages` endpoints. For streaming requests, **only `input_guardrails` (before request hooks) are supported**. Output guardrails (`output_guardrails` / after request hooks) are not supported for streaming responses.
+Portkey supports hook results in streaming responses for `/chat/completions`, `/completions`, `/embeddings`, and `/messages` endpoints. Both **input guardrails** (before request hooks) and **output guardrails** (after request hooks) are supported for streaming responses.
 </Note>
 
 To receive hook results in streaming responses, you must set the `x-portkey-strict-open-ai-compliance` header to `false`.
+
+**How output guardrails work with streaming:** Portkey accumulates all stream chunks, then parses the complete response and runs the output guardrails after the stream ends. The guardrail results are sent as an additional SSE chunk at the end of the stream.
 
 <CodeGroup>
 ```bash cURL - /chat/completions
@@ -665,7 +667,10 @@ async def main():
             if chunk.model_extra and chunk.model_extra.get("hook_results"):
                 hook_results = chunk.model_extra.get("hook_results")
                 if len(hook_results.get("before_request_hooks", [])) > 0:
-                    # Check for deny guardrails or handle as necessary
+                    # Input guardrails — sent before the stream starts
+                    pass
+                if len(hook_results.get("after_request_hooks", [])) > 0:
+                    # Output guardrails — sent after the stream ends
                     pass
             print(chunk.choices, end="", flush=True)
             print("\n")
@@ -712,7 +717,10 @@ async function main() {
             if (chunk.model_extra && chunk.model_extra.hook_results) {
                 hookResults = chunk.model_extra.hook_results;
                 if (hookResults.before_request_hooks?.length > 0) {
-                    // Check for deny guardrails or handle as necessary
+                    // Input guardrails — sent before the stream starts
+                }
+                if (hookResults.after_request_hooks?.length > 0) {
+                    // Output guardrails — sent after the stream ends
                 }
             }
             process.stdout.write(JSON.stringify(chunk.choices));
@@ -756,7 +764,10 @@ async def main():
             if chunk.model_extra and chunk.model_extra.get("hook_results"):
                 hook_results = chunk.model_extra.get("hook_results")
                 if len(hook_results.get("before_request_hooks", [])) > 0:
-                    # Check for deny guardrails or handle as necessary
+                    # Input guardrails — sent before the stream starts
+                    pass
+                if len(hook_results.get("after_request_hooks", [])) > 0:
+                    # Output guardrails — sent after the stream ends
                     pass
             print(chunk.choices, end="", flush=True)
             print("\n")
@@ -806,7 +817,10 @@ async function main() {
             if (chunk.model_extra && chunk.model_extra.hook_results) {
                 hookResults = chunk.model_extra.hook_results;
                 if (hookResults.before_request_hooks?.length > 0) {
-                    // Check for deny guardrails or handle as necessary
+                    // Input guardrails — sent before the stream starts
+                }
+                if (hookResults.after_request_hooks?.length > 0) {
+                    // Output guardrails — sent after the stream ends
                 }
             }
             process.stdout.write(JSON.stringify(chunk.choices));
@@ -840,15 +854,26 @@ curl --location 'https://api.portkey.ai/v1/messages' \
 ```
 </CodeGroup>
 
-**Response chunk for /chat/completions:**
+**Input guardrail response chunk for /chat/completions** (sent before the stream):
 ```json
 data: {"hook_results":{"before_request_hooks":[{"verdict":true,"id":"my_solid_guardrail","transformed":false,"checks":[{"data":{"explanation":"An error occurred while processing the regex: Invalid regular expression: /*/: Nothing to repeat","regexPattern":"*","not":false,"textExcerpt":"hello sir how are you?"},"verdict":false,"id":"default.regexMatch","error":{"name":"SyntaxError","message":"Invalid regular expression: /*/: Nothing to repeat"},"execution_time":0,"created_at":"2025-11-14T08:14:04.772Z","transformed":false,"fail_on_error":false}],"feedback":null,"execution_time":0,"async":false,"type":"guardrail","created_at":"2025-11-14T08:14:04.772Z","deny":false}]}}
 ```
 
-**Response chunk for /messages:**
+**Output guardrail response chunk for /chat/completions** (sent after the stream ends):
+```json
+data: {"hook_results":{"after_request_hooks":[{"verdict":true,"id":"my_output_guardrail","transformed":false,"checks":[...],"feedback":null,"execution_time":12,"async":false,"type":"guardrail","created_at":"2025-11-14T08:14:06.772Z","deny":false}]}}
+```
+
+**Input guardrail response chunk for /messages** (sent before the stream):
 ```
 event: hook_results
 data: {"hook_results":{"before_request_hooks":[{"verdict":true,"id":"my_solid_guardrail","transformed":false,"checks":[{"data":{"explanation":"An error occurred while processing the regex: Invalid regular expression: /*asd/: Nothing to repeat","regexPattern":"*asd","not":false,"textExcerpt":"tell me a story?"},"verdict":false,"id":"default.regexMatch","error":{"name":"SyntaxError","message":"Invalid regular expression: /*asd/: Nothing to repeat"},"execution_time":0,"transformed":false,"created_at":"2025-11-14T09:23:12.457Z","log":null,"fail_on_error":false}],"feedback":null,"execution_time":0,"async":false,"type":"guardrail","created_at":"2025-11-14T09:23:12.457Z","deny":false}]}}
+```
+
+**Output guardrail response chunk for /messages** (sent after the stream ends):
+```
+event: hook_results
+data: {"hook_results":{"after_request_hooks":[{"verdict":true,"id":"my_output_guardrail","transformed":false,"checks":[...],"feedback":null,"execution_time":12,"async":false,"type":"guardrail","created_at":"2025-11-14T09:23:15.457Z","deny":false}]}}
 ```
 
 <Note>
@@ -857,7 +882,7 @@ For the `/messages` endpoint (Anthropic), it is not possible to access hook resu
 
 **Accessing Hook Results in SDKs**
 
-When using Portkey or OpenAI SDKs with streaming enabled (`stream=True`), the hook results are available in the `.model_extra.hook_results` parameter of the response chunks. This applies to:
+When using Portkey or OpenAI SDKs with streaming enabled (`stream=True`), the hook results are available in the `.model_extra.hook_results` parameter of the response chunks. Input guardrail results (`before_request_hooks`) appear in the first chunk before the stream, while output guardrail results (`after_request_hooks`) appear in the final chunk after the stream ends. This applies to:
 - `.chat.completions.create()` with `stream=True`
 - `.completions.create()` with `stream=True`
 - `.embeddings.create()` with `stream=True`
