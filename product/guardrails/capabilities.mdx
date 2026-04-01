@@ -63,9 +63,10 @@ Use async to observe and log without blocking. Use sync when the guardrail resul
 | Guardrail Type | Streaming |
 |:---|:---|
 | `input_guardrails` | **Supported** — evaluated before the stream starts |
-| `output_guardrails` | **Not supported** — requires the full response |
+| `output_guardrails` | **Supported** — evaluated on the full response after stream completes (informational only) |
 
-With input guardrails on a streaming request: if the check passes, the stream proceeds normally. If it fails with `deny=true`, the stream is blocked with `446` before any tokens are sent.
+- **Input guardrails**: If the check passes, the stream proceeds normally. If it fails with `deny=true`, the stream is blocked with `446` before any tokens are sent.
+- **Output guardrails**: After the stream completes and the `[DONE]` chunk is sent, Portkey evaluates the full assembled response against your output guardrails. The results are delivered as an additional `hook_results` chunk. Output guardrail results on streaming are **informational only** — no fallback or retry actions are triggered.
 
 To receive `hook_results` inside streaming chunks, set:
 
@@ -73,13 +74,15 @@ To receive `hook_results` inside streaming chunks, set:
 x-portkey-strict-open-ai-compliance: false
 ```
 
-`hook_results` appear in the first chunk for `/chat/completions`, or as a separate `hook_results` event for `/messages`.
+By default this header is `true`, and `hook_results` chunks will not be visible.
+
+`hook_results` for input guardrails appear in the first chunk for `/chat/completions`, or as a separate `hook_results` event for `/messages`. Output guardrail results are sent as a chunk after `[DONE]`.
 
 <Note>
   For Anthropic `/messages` streaming, `hook_results` aren't accessible via the Anthropic SDK. Use cURL or raw HTTP requests.
 </Note>
 
-See [Streaming Hook Results](/product/guardrails/response-structure#streaming-responses) for SDK examples.
+See [Streaming Hook Results](/product/guardrails#streaming-responses) for SDK examples.
 
 ---
 
@@ -119,7 +122,7 @@ Tool call arguments (JSON) are treated as text — checks like Regex Match, Cont
 | Async execution | ✓ (default) |
 | Sync execution | ✓ |
 | Streaming — input | ✓ |
-| Streaming — output | ✗ |
+| Streaming — output | ✓ (informational only, no fallback/retry) |
 | Image inputs | ✗ |
 | Text in multimodal messages | ✓ |
 | Tool call text | ✓ |
