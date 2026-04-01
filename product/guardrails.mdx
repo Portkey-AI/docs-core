@@ -604,7 +604,10 @@ This example corresponds to a `config` like:
 Portkey supports hook results in streaming responses for `/chat/completions`, `/completions`, `/embeddings`, and `/messages` endpoints. Both **input guardrails** (before request hooks) and **output guardrails** (after request hooks) are supported for streaming responses.
 </Note>
 
-To receive hook results in streaming responses, you must set the `x-portkey-strict-open-ai-compliance` header to `false`.
+- **Input guardrails** (`input_guardrails` / before request hooks) are evaluated before the stream starts.
+- **Output guardrails** (`output_guardrails` / after request hooks) are evaluated on the full assembled response after the stream completes. After the final `[DONE]` chunk, the `hook_results` for output guardrails are sent as an additional chunk.  Note that **no action is taken** for output guardrails on streaming — fallback and retry are not triggered; results are informational only.
+
+To receive `hook_results` inside streaming chunks, set the `x-portkey-strict-open-ai-compliance` header to `false`. By default this header is `true`, and `hook_results` chunks will not be visible.
 
 **How output guardrails work with streaming:** Portkey accumulates all stream chunks, then parses the complete response and runs the output guardrails after the stream ends. The guardrail results are sent as an additional SSE chunk at the end of the stream.
 
@@ -670,7 +673,7 @@ async def main():
                     # Input guardrails — sent before the stream starts
                     pass
                 if len(hook_results.get("after_request_hooks", [])) > 0:
-                    # Output guardrails — sent after the stream ends
+                    # Output guardrail - sent after the stream ends (informational only, no fallback/retry)
                     pass
             print(chunk.choices, end="", flush=True)
             print("\n")
@@ -720,7 +723,7 @@ async function main() {
                     // Input guardrails — sent before the stream starts
                 }
                 if (hookResults.after_request_hooks?.length > 0) {
-                    // Output guardrails — sent after the stream ends
+                    // Output guardrails — sent after the stream ends (informational only, no fallback/retry)
                 }
             }
             process.stdout.write(JSON.stringify(chunk.choices));
@@ -767,8 +770,9 @@ async def main():
                     # Input guardrails — sent before the stream starts
                     pass
                 if len(hook_results.get("after_request_hooks", [])) > 0:
-                    # Output guardrails — sent after the stream ends
+                    # Output guardrails — sent after the stream ends (informational only, no fallback/retry)
                     pass
+
             print(chunk.choices, end="", flush=True)
             print("\n")
             
@@ -820,7 +824,7 @@ async function main() {
                     // Input guardrails — sent before the stream starts
                 }
                 if (hookResults.after_request_hooks?.length > 0) {
-                    // Output guardrails — sent after the stream ends
+                    // Output guardrails — sent after the stream ends (informational only, no fallback/retry)
                 }
             }
             process.stdout.write(JSON.stringify(chunk.choices));
@@ -886,9 +890,13 @@ When using Portkey or OpenAI SDKs with streaming enabled (`stream=True`), the ho
 - `.chat.completions.create()` with `stream=True`
 - `.completions.create()` with `stream=True`
 - `.embeddings.create()` with `stream=True`
+
+For input guardrails, `hook_results` appear in the first chunk (before any content). For output guardrails, `hook_results` are sent as an additional chunk after the `[DONE]` chunk — these contain the `after_request_hooks` array with the guardrail verdicts.
+
 ### Important Notes
 
 - If a guardrail is configured to run asynchronously (`async=true`), the `hook_results` will not appear in the API response. The results will only be available in the Portkey logs.
+- Output guardrails on streaming requests are **informational only** — no fallback or retry actions are triggered based on the results.
 - The `data` field varies based on the type of guardrail check being performed. Each guardrail type returns different information relevant to its function.
 - The overall `verdict` for a guardrail is `true` only if all individual checks pass. If any check fails, the verdict will be `false`.
 - When `transformed` is `true`, it indicates that the guardrail has modified the content (such as redacting PII).
