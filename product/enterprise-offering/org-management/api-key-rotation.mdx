@@ -4,7 +4,11 @@ description: "Periodically replace API key secrets without downtime using manual
 ---
 
 <Note>
-**Availability:** This feature is live on Portkey Cloud. For self-hosted deployments — **Airgapped:** Backend `v1.13.0+` | **Hybrid:** Gateway Enterprise `v2.5.0+`.
+**Availability:** This feature is live on Portkey Cloud. 
+
+For self-hosted deployments 
+  - **Airgapped:** Backend `v1.13.0+`
+  - **Hybrid:** Gateway Enterprise `v2.5.0+`.
 </Note>
 
 <Warning>
@@ -13,18 +17,60 @@ Most older versions are compatible, but there are known edge cases around cache 
 
 ## Overview
 
-API Key Rotation allows customers to periodically replace their API key secrets without downtime. When a key is rotated, a new key is issued immediately while the old key continues to work for a configurable **transition period**, giving teams time to update their integrations. Rotation can be triggered manually or run automatically on a schedule.
+API Key Rotation enables you to replace API key secrets without causing service disruption.
+
+When a key is rotated:
+
+* A new secret is generated immediately.
+* The previous secret remains valid for a configurable **transition period**, allowing time to update existing integrations.
+* After the transition period ends, the old secret is automatically revoked.
+
+You can initiate rotation:
+
+* **Manually**, on demand
+* **Automatically**, using a defined schedule
+
+**Key Characteristics**
+
+* The **API key ID remains unchanged** during rotation.
+* Only the **secret value is updated**.
+* Existing usage data, such as budget tracking, cost attribution, and analytics - continues to be associated with the same key.
 
 ## Key Concepts
 
-| Concept | Description |
-|---|---|
-| **Rotation** | Replacing the current API key secret with a new one |
-| **Transition Period** | Window during which both old and new keys are valid (minimum & default: 30 minutes) |
-| **Rotation Policy** | Per-key schedule configuration that drives automatic rotation |
-| **Key Version** | A record of the old key kept active during the transition period |
+| Concept               | Description                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Rotation**          | Replaces the current API key secret with a newly generated secret                                                   |
+| **Transition Period** | A configurable window during which both the previous and new secrets remain valid (minimum and default: 30 minutes) |
+| **Rotation Policy**   | A per-key configuration that defines when automatic rotation occurs                                                 |
+| **Key Version**       | A previous secret retained temporarily during the transition period                                                 |
 
-At any point, **at most 2 keys are active** for a given API key: the current key and one previous version still within its transition window.
+## How Rotation Works
+
+1. A new API key secret is generated.
+2. The current secret is retained as a **previous version**, with a `key_transition_expires_at` timestamp.
+3. The API key is updated with the new secret, and `last_rotated_at` is recorded.
+4. The new secret becomes immediately valid for authentication.
+5. If a `rotation_period` is configured, `next_rotation_at` is recalculated for the next cycle.
+
+**During the transition window**
+
+* Both the **previous** and **current** secrets are accepted.
+* Requests authenticated with either secret resolve to the same API key.
+
+## Transition Window Lifecycle
+
+```mermaid
+flowchart TD
+    A[Rotation triggered] --> B[New secret issued]
+    A --> C[Transition window starts]
+    C --> D[Old secret valid]
+    C --> E[New secret active]
+    D --> G[24h before expiry: warning sent]
+    G --> H[Transition ends]
+    H --> I[Old secret expires]
+    H --> J[Only new secret valid]
+```
 
 ## Rotation Modes
 
@@ -62,14 +108,14 @@ Triggered via API call. The caller receives the new key in the response.
 
 ### Automatic Rotation
 
-Driven by a background worker that runs on a recurring schedule. It performs four phases each run:
+Automatic rotation is handled by a background worker that runs on a recurring schedule. On each run, the worker executes the following phases in order:
 
-| Phase | Action |
-|---|---|
-| **Expire old versions** | Marks version keys past their transition window as `EXPIRED` and invalidates their gateway cache |
-| **Rotate due keys** | Rotates any key whose `next_rotation_at <= now()`, generates a new secret, and computes the next rotation date |
-| **Transition expiry warnings** | Sends email alerts for old key versions expiring within the next 24 hours |
-| **Upcoming rotation warnings** | Sends email alerts for keys scheduled to rotate within the next 24 hours |
+| Phase                          | Description                                                                                                                 |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| **Expire old versions**        | Marks key versions whose transition window has ended as `EXPIRED`, making them unusable                                     |
+| **Rotate due keys**            | Rotates keys that have reached their scheduled rotation time, issuing a new secret and updating the next rotation timestamp |
+| **Transition expiry warnings** | Sends notifications for key versions that will expire within the next 24 hours                                              |
+| **Upcoming rotation warnings** | Sends notifications for keys scheduled to rotate within the next 24 hours                                                   |
 
 ## Rotation Policy Configuration
 
@@ -81,7 +127,12 @@ A rotation policy can be attached to any API key at [**creation**](/api-referenc
 | `next_rotation_at` | ISO 8601 datetime | One of `rotation_period` or `next_rotation_at` | Explicit one-time or override date for the next rotation (normalized to UTC midnight) |
 | `key_transition_period_ms` | integer (ms) | No | How long the old key stays valid after rotation. Min: `1800000` (30 min). Default: `1800000` |
 
-<Note>`key_transition_period_ms` must be strictly less than the rotation period duration.</Note>
+<Note>
+- `key_transition_period_ms` must be strictly less than the rotation period duration.
+- If both `rotation_period` and `next_rotation_at` are provided, 
+`next_rotation_at` takes precedence for the upcoming rotation. 
+- Subsequent rotations follow the `rotation_period`.
+</Note>
 
 **Setting a policy on create:**
 
@@ -108,36 +159,9 @@ A rotation policy can be attached to any API key at [**creation**](/api-referenc
 
 **Removing a policy:** Set `rotation_policy` to `null` in the update request.
 
-## How Rotation Works
-
-1. A new API key secret is generated.
-2. The current (old) key is saved to the **api_key_versions** table with a `key_transition_expires_at` timestamp.
-3. The API key record is atomically updated with the new secret and `last_rotated_at` is set (both operations run in a single database transaction).
-4. Gateway cache is invalidated for the old key.
-5. A gateway sync job is queued to propagate the change.
-6. If a recurring `rotation_period` exists, `next_rotation_at` is recomputed for the next cycle.
-
-During the transition window, both the old and new key resolve to the same API key record. The gateway falls back to the versions table when a key string isn't found in the primary table.
-
-## Transition Window Lifecycle
-
-```mermaid
-flowchart TD
-    A[Rotation triggered] --> B[Transition window starts]
-    B --> D[Old key still valid]
-    B --> E[New key active]
-    B --> F["Duration: key_transition_period_ms"]
-    D --> G[24h before expiry → warning email]
-    E --> G
-    G --> H[Transition expires]
-    H --> I[Old key marked EXPIRED]
-    H --> J[Gateway cache invalidated]
-    H --> K[Only new key works]
-```
-
 ## Email Notifications
 
-Three types of emails are sent by the system:
+These notifications are triggered during automatic rotation runs.:
 
 | Email | Trigger | Subject |
 |---|---|---|
@@ -165,14 +189,6 @@ Three types of emails are sent by the system:
 }
 ```
 
-## Cascade Behavior
-
-| Event | Effect on Rotation |
-|---|---|
-| **API key deleted** | Rotation policy archived, active versions expired (all in one transaction) |
-| **API key expired** | Same — policy archived, versions expired |
-| **Rotation policy removed** (set to `null`) | Policy archived; no more auto-rotations; existing transition windows continue until they expire naturally |
-
 ## Permissions & Authorization
 
 | Action | Required Scope Pattern |
@@ -185,12 +201,25 @@ Admins (org admin/owner, workspace admin/manager) can rotate any key within thei
 
 ## Constraints & Limits
 
-- Maximum 2 active key secrets at any time (current + one version in transition)
-- Cannot rotate again while a previous transition is active
-- `key_transition_period_ms` minimum: 30 minutes (`1800000` ms)
-- `key_transition_period_ms` must be less than the rotation period
-- `rotation_period` options: `weekly`, `monthly`
-- `next_rotation_at` is always normalized to UTC midnight
+* A maximum of **two active secrets** can exist per API key at any time:
+
+  * The current secret
+  * One previous secret within its transition window
+
+* Rotation is **blocked while a transition is active** (i.e., until the previous secret expires)
+
+* `key_transition_period_ms`:
+
+  * Minimum: **30 minutes** (`1800000` ms)
+  * Must be **strictly less than** the configured rotation period
+
+* Supported `rotation_period` values:
+
+  * `weekly`
+  * `monthly`
+
+* `next_rotation_at` is always normalized to **UTC midnight** for consistency across schedules
+
 
 ## Audit Logging
 
@@ -202,6 +231,12 @@ Every rotation (manual and automatic) produces an audit log entry containing:
 | `rotation_mode` | `"manual"` or `"auto"` |
 | `old_key_masked` | Masked version of the old key for traceability |
 | `transition_expires_at` | When the old key stops working |
+
+## Notes
+
+* Automatic rotation phases are executed sequentially within a single run.
+* A single run may process multiple keys across different phases.
+* Notifications are advisory and do not affect key validity.
 
 ## Related
 
