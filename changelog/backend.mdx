@@ -1,12 +1,209 @@
 ---
 title: "Backend"
-sidebarTitle: "Backend [1.10.0]"
+sidebarTitle: "Backend [1.13.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="1.13.0" description="2026-04-01">
+
+## v1.13.0
+---
+
+### API Key Rotation
+- Added **API key rotation** with support for automatic and manual rotation
+- Configure rotation policies when creating or updating API keys with `rotation_policy` parameter:
+  - `rotation_period`: `weekly` or `monthly` auto-rotation schedule
+  - `next_rotation_at`: ISO 8601 date for the next scheduled rotation
+  - `key_transition_period_ms`: Grace period (minimum 30 minutes) during which both old and new keys are valid
+- New **`POST /api-keys/:apiKeyId/rotate`** endpoint for manual key rotation — works with or without an auto-rotation policy
+- Auto-rotation processor with email alerts for upcoming rotations, completed rotations, and expiry warnings
+
+### Organization Session Management
+- Added **session management** settings at the organization level
+- Configure `session_settings` in organization auth settings with `max_session_ttl` (minimum 900 seconds / 15 minutes)
+- When set, user sessions exceeding the TTL are automatically rejected, requiring re-authentication
+
+### New Guardrail: Required Metadata Key-Value Pairs
+- Added **Required Metadata Key-Value Pairs** guardrail (`default.requiredMetadataKeyPairs`) to validate that requests contain specified metadata key-value pairs
+- Configurable parameters:
+  - `metadataPairs`: Object defining required key-value pairs
+  - `operator`: `all` (all pairs must match), `any` (at least one pair must match), or `none` (no pairs should match)
+- Runs on the `beforeRequestHook`
+
+### Rate Limits Enhancements
+- Added **`rpw`** (requests per week) as a new rate limit unit alongside existing `rpm`, `rph`, and `rpd`
+- Added **`endpoint_type`** as a new condition key for rate limit policies, allowing rate limits to target specific endpoint types (e.g., `chatComplete`, `embed`, `imageGenerate`)
+- [Documentation](/product/enterprise-offering/budget-policies)
+
+### Agent Gateway
+- Added **Agent Gateway** with full CRUD APIs for managing agent integrations and agent servers
+- Includes agent skills management, workspace-level access control, and user access management
+- RBAC support for agent resources
+
+### Self-Hosting Improvements
+- Added **ClickHouse replication and sharding** support for high-availability analytics deployments
+- Added support for **decoupled JWT authentication** in private deployments, allowing the data plane to validate tokens independently from the control plane
+<Note> 
+Requires Gateway v2.5.0 or higher
+</Note>
+
+### Fixes and Improvements
+- Fixed provisioning for empty groups
+- Added `last_reset_at` field to API key, workspace, integration, and virtual key responses
+- Model configuration and pricing updates
+- Security dependency updates
+
+</Update>
+
+<Update label="1.12.1" description="2026-03-16">
+
+## v1.12.1
+---
+
+### New Guardrail: Akto Agentic Security
+- Added **Akto Agentic Security** guardrail integration for advanced threat detection and security scanning of LLM inputs and outputs
+- [Documentation](/integrations/guardrails/akto)
+
+### New Guardrail: Inline Image URLs
+- Added **Inline Image URLs** guardrail that fetches external image URLs and converts them to Base64 inline data
+- Useful for VPC-SC environments where LLM providers cannot access external URLs
+- Configurable parameters: `providers` (target providers), `maxSizeBytes` (default: 20MB), `timeoutMs` (default: 30000), `failOnError` (default: false)
+
+### AWS Bedrock Guardrails
+- Added optional **Custom Host** field to the Bedrock guardrail integration schema, allowing use of private or custom Bedrock endpoints
+
+### Fixes and Improvements
+- Fixed SCIM user update validation to correctly handle user reactivation flows
+- Model configuration and pricing updates across multiple providers
+- Security dependency updates
+
+</Update>
+
+<Update label="1.12.0" description="2026-03-09">
+
+## v1.12.0
+---
+
+<Note>
+This version requires a Helm chart upgrade to **app-1.6.0** or higher to function correctly.
+</Note>
+
+### Secret Manager Integrations
+- Added **Secret References** - a new enterprise feature for managing external secret manager integrations with full CRUD API
+- Supports three secret manager backends:
+  - **AWS Secrets Manager** - with access key, assumed role, and service role authentication
+  - **Azure Key Vault** - with Entra ID, managed identity, and default credential authentication
+  - **HashiCorp Vault** - with token, AppRole, and Kubernetes authentication
+- Secret references can be mapped to **integrations** and **virtual keys** via `secret_mappings`, allowing provider credentials to be dynamically fetched from external secret managers at runtime
+- Workspace-level access control for secret references with `allow_all_workspaces` or scoped `allowed_workspaces`
+- Requires `secret_references` RBAC permissions (available to org owners and admins)
+- [Documentation](/product/enterprise-offering/secret-references)
+
+### New Guardrail: Zscaler AI Guard
+- Added **Zscaler AI Guard** guardrail integration for enforcing Zscaler Detections Policies on LLM inputs and outputs
+- Supports `beforeRequestHook` and `afterRequestHook` hooks
+- Configurable parameters: `policyId` (required) and `timeout` (default: 10000ms)
+- [Documentation](/integrations/guardrails/zscaler)
+
+### GCP Workload Identity Federation for Log Storage
+- Added support for **GCP Workload Identity Federation (WIF)** to authenticate with Google Cloud Storage from AWS-hosted deployments
+- New environment variables: `GCP_WIF_AUDIENCE` and `GCP_WIF_SERVICE_ACCOUNT_EMAIL`
+- Enables cross-cloud log storage using `gcs_assume` log store type with AWS-to-GCP federated authentication
+
+### Analytics Enhancements
+- Extended analytics graph, group, and summary routes to support **archived workspaces** for organization admins and owners
+- Saved filters now support workspace slugs in addition to workspace IDs
+
+### Fixes and Improvements
+- Improved JWT authentication error responses with more descriptive error messages
+- Added `log_format` field to the get-log API response
+- Fixed ClickHouse migration file sorting to use numeric ordering
+- Security dependency updates and Docker image optimizations
+
+</Update>
+
+<Update label="1.11.2" description="2026-02-27">
+
+## v1.11.2
+---
+
+### Analytics Enhancements
+- Added **generic grouped analytics endpoint** (`GET /v1/analytics/groups/:groupBy` and `GET /v1/logs/groups/:groupBy`) with configurable columns
+  - Supports grouping by: `ai_service`, `model`, `status_code`, `api_key`, `config`, `workspace`, `provider`, `prompt`
+  - Configurable columns via query parameter: `cost`, `total_tokens`, `avg_tokens`, `avg_input_tokens`, `avg_output_tokens`, `avg_latency`, `p95_latency`, `p99_latency`, `success_rate`, `error_count`, `cache_hit_rate`, `last_seen`, `first_seen`
+  - Default response includes only request count; additional columns are opt-in via `columns` parameter
+- Analytics chart routes now support viewing data from **archived workspaces** for organization admins and owners
+
+### Workspace Management API Enhancements
+- Added `status` query parameter to the workspace list API (`GET /workspaces`) to filter by workspace status
+  - Supports comma-separated values: `active`, `archived`
+  - Only admins and owners can list archived workspaces
+
+### Integration Creation API Enhancements
+- Added `create_default_provider` and `default_provider_slug` fields to the **integration creation** API for workspace integrations
+- Custom provider slugs can be set during integration creation, and default provider creation can be skipped by setting `create_default_provider: false`
+
+### Prompts API Enhancements
+- Added `patch` flag to `PUT /prompts/{promptId}` to enable **partial version field updates**
+- When `patch: true`, missing version fields (`string`, `parameters`, `metadata`, model) are automatically backfilled from the current latest version, allowing updates to individual fields without resending all version data
+
+### Gateway Config Updates
+- Added `azure_entra_scope` option to the gateway config schema for specifying custom Azure Entra ID authentication scopes at the config level
+
+### Fixes and Improvements
+- Internal caching optimizations for workspace authorization queries
+- Fixed cache key handling for workspace status in admin views
+
+</Update>
+
+<Update label="1.11.1" description="2026-02-24">
+
+## v1.11.1
+---
+
+### SSO Enhancements
+- Added `OIDC_CUSTOM_SCOPES` environment variable to configure additional custom OIDC scopes (comma-separated) for airgapped deployments
+- [Documentation](/product/enterprise-offering/org-management/sso)
+
+### Fixes and Improvements
+- Fixed workspace usage limit check to correctly consider current usage when fetching workspace details
+- Fixed integration and MCP integration workspace bulk update to allow passing an empty workspace array when using the override access flag
+- Security dependency updates
+
+</Update>
+
+<Update label="1.11.0" description="2026-02-20">
+
+## v1.11.0
+---
+
+### Data Visibility Security Settings
+- Added new **Data Visibility** security settings to control whether workspace members and managers can view all observability data or only their own
+  - `membersViewAllData` - when `false`, members can only see logs and analytics generated by their own API keys
+  - `managersViewAllData` - when `false`, managers can only see logs and analytics generated by their own API keys
+- Both settings default to `true` (no restriction). Organization Owners and Admins always have full access
+- Supports **workspace-level overrides** via the new `data_visibility` override category
+- Applied across all log, analytics, trace, and generation routes
+- [Documentation](/product/administration/configure-data-visibility-settings)
+
+### Usage Limits
+- Fixed alert and status reset behavior when credit limits or alert thresholds are updated
+  - Increasing the credit limit now properly resets both threshold and exhausted alerts
+  - Increasing the alert threshold (or setting it to null) properly resets threshold alerts
+  - Applies to API keys, virtual keys, and integration workspaces
+
+### Model Config Updates
+- Updated model configurations and pricing across 50+ providers including Anthropic, Azure OpenAI, Bedrock, Google, OpenAI, Vertex AI, and many more
+
+### Fixes and Improvements
+- Fixed analytics security settings migration to correctly handle boolean defaults
+- Security dependency updates and CVE fixes
+
+</Update>
 
 <Update label="1.10.0" description="2026-02-18">
 
@@ -468,7 +665,7 @@ For complete air-gapped deployment setup including Gateway configuration, see th
 - Fixed pagination bug in the list users API (`/admin/users`)
 - Made the inference component field optional for AWs Sagemaker Integrations
 - Added a setting to disable the Getting Started page
-- Improved error handling when a user is already part of an organisation during invite join attempts
+- Improved error handling when a user is already part of an organization during invite join attempts
 - Added strict validations for `rate_limits` and `usage_limits` across api-keys, providers, integrations, and workspaces for data consistency
 - Added JWT errors to audit logs for better security tracking
 - Fixed integration `global_workspace_access_settings` rate limits to map correctly

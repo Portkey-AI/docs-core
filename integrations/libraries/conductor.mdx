@@ -1,0 +1,187 @@
+---
+title: 'Conductor'
+description: 'Add usage tracking, cost controls, and security guardrails to Conductor with Portkey'
+---
+
+**[Conductor](https://conductor.build)** is a macOS AI coding app built on top of Claude Code. It manages workspaces (git worktrees), sessions, and parallel development environments. Conductor configures providers through environment variables in its **Settings → Providers** panel. Add Portkey to get:
+
+- **1600+ LLMs** through one interface — switch providers by updating environment variables
+- **Observability** — track costs, tokens, and latency for every request
+- **Reliability** — automatic fallbacks, retries, and caching
+- **Governance** — budget limits, usage tracking, and team access controls
+
+<Note>
+  For enterprise deployments across teams, see [Enterprise Governance](#3-enterprise-governance).
+</Note>
+
+## 1. Setup
+
+<Steps>
+<Step title="Add Provider">
+Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **Add Provider**.
+
+<Frame>
+<img src="/Screenshot2025-07-21at5.29.57PM.png" width="500"/>
+</Frame>
+</Step>
+
+<Step title="Configure Credentials">
+Select provider (OpenAI, Anthropic, etc.), enter API key, and create a slug like `anthropic-prod`.
+
+<Frame>
+<img src="/images/product/model-catalog/create-provider-page.png" width="500"/>
+</Frame>
+</Step>
+
+<Step title="Get Portkey API Key">
+Go to [API Keys](https://app.portkey.ai/api-keys) and generate your Portkey API key.
+</Step>
+</Steps>
+
+## 2. Configure Portkey in Conductor
+
+Conductor sets provider configuration through environment variables in its **Settings → Providers** panel. Since Conductor uses Claude Code under the hood, it accepts the same `ANTHROPIC_*` environment variables.
+
+Set the following variables in **Settings → Providers** under Claude Code:
+
+```bash
+ANTHROPIC_BASE_URL=https://api.portkey.ai
+ANTHROPIC_AUTH_TOKEN=YOUR_PORTKEY_API_KEY
+ANTHROPIC_CUSTOM_HEADERS=x-portkey-api-key: YOUR_PORTKEY_API_KEY
+ANTHROPIC_CUSTOM_HEADERS=x-portkey-provider: @anthropic-prod
+ANTHROPIC_API_KEY=
+```
+
+
+### Choose your provider
+
+The configuration pattern is the same for all providers — only the provider slug and model names change:
+
+<CodeGroup>
+```bash Anthropic
+ANTHROPIC_BASE_URL=https://api.portkey.ai
+ANTHROPIC_AUTH_TOKEN=YOUR_PORTKEY_API_KEY
+ANTHROPIC_CUSTOM_HEADERS=x-portkey-api-key: YOUR_PORTKEY_API_KEY
+ANTHROPIC_CUSTOM_HEADERS=x-portkey-provider: @anthropic-prod
+ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-4-20250514
+ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-20250514
+ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-20250514
+ANTHROPIC_API_KEY=
+```
+
+```bash Bedrock
+ANTHROPIC_BASE_URL=https://api.portkey.ai
+ANTHROPIC_AUTH_TOKEN=YOUR_PORTKEY_API_KEY
+ANTHROPIC_CUSTOM_HEADERS=x-portkey-api-key: YOUR_PORTKEY_API_KEY
+ANTHROPIC_CUSTOM_HEADERS=x-portkey-provider: @anthropic-prod
+ANTHROPIC_DEFAULT_SONNET_MODEL=us.anthropic.claude-sonnet-4-20250514-v1:0
+ANTHROPIC_DEFAULT_OPUS_MODEL=us.anthropic.claude-opus-4-20250514-v1:0
+ANTHROPIC_DEFAULT_HAIKU_MODEL=us.anthropic.claude-haiku-4-20250514-v1:0
+ANTHROPIC_API_KEY=
+```
+
+```bash Vertex AI
+ANTHROPIC_BASE_URL=https://api.portkey.ai
+ANTHROPIC_AUTH_TOKEN=YOUR_PORTKEY_API_KEY
+ANTHROPIC_CUSTOM_HEADERS=x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: @vertex-prod
+ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-4-20250514
+ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-20250514
+ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-20250514
+ANTHROPIC_API_KEY=
+```
+
+</CodeGroup>
+
+<Warning>
+**Model names are required.** Each provider uses different model IDs. Without the correct model settings, requests will fail.
+</Warning>
+
+Monitor usage in the [Portkey Dashboard](https://app.portkey.ai/dashboard).
+
+## 3. Using Conductor with 1600+ models
+
+With Portkey, you can route Conductor requests to any of 1600+ models. Change the `x-portkey-provider` header to your desired provider slug from [Model Catalog](https://app.portkey.ai/model-catalog).
+
+### Universal provider (any model)
+
+Use Portkey's unified gateway to route to any supported model:
+
+```bash
+ANTHROPIC_BASE_URL=https://api.portkey.ai
+ANTHROPIC_AUTH_TOKEN=YOUR_PORTKEY_API_KEY
+ANTHROPIC_CUSTOM_HEADERS=x-portkey-api-key: YOUR_PORTKEY_API_KEY
+ANTHROPIC_CUSTOM_HEADERS=x-portkey-provider: @your-provider
+ANTHROPIC_MODEL=$YOUR_MODEL
+ANTHROPIC_API_KEY=
+```
+
+Swap `@your-provider` to any provider slug (e.g., `@openai-prod`, `@xai-prod`, `@moonshot-prod`) and set `ANTHROPIC_MODEL` to your target model ID.
+
+## Why use Portkey with Conductor?
+
+### Cross-provider fallbacks
+
+Never lose a coding session due to provider outages. Configure automatic failover:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@anthropic-prod" },
+    { "provider": "@bedrock-prod" },
+    { "provider": "@vertex-prod" }
+  ]
+}
+```
+
+### Budget controls for agentic coding
+
+Conductor sessions can run expensive agentic loops. Set hard limits:
+
+- **Cost limits**: Maximum spend per day/week/month
+- **Token limits**: Maximum tokens consumed
+- **Rate limits**: Requests per minute/hour
+
+### Full session observability
+
+Track every request in your coding session:
+
+- Request/response logs with full context
+- Token usage and cost breakdowns
+- Latency metrics
+- Trace IDs for grouping related requests
+
+### Caching
+
+Reduce costs and latency for repeated queries (common in iterative coding):
+
+```json
+{
+  "cache": { "mode": "simple" }
+}
+```
+
+## Common configuration
+
+### Forward headers (required)
+
+Some Claude Code features need the `anthropic-beta` header forwarded. Add this to your [Portkey Config](/product/ai-gateway/configs):
+
+```json
+{
+  "provider": "@your-provider-slug",
+  "forward_headers": ["anthropic-beta"]
+}
+```
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `API Error: 500 fetch failed` | Wrong base URL | Use `https://api.portkey.ai` (no `/v1`) |
+| Lightning symbol (⚡) in logs | Passthrough request | Check provider slug and API key |
+| Requests not appearing | Authentication issue | Ensure `ANTHROPIC_API_KEY` is set to empty string |
+
+import AdvancedFeatures from '/snippets/portkey-advanced-features.mdx';
+
+<AdvancedFeatures />
