@@ -1,0 +1,173 @@
+---
+title: 'Pi Agent'
+description: 'Route Pi coding agent through Portkey for observability, cost tracking, and access to 200+ LLMs'
+---
+
+import AdvancedFeatures from '/snippets/portkey-advanced-features.mdx';
+
+[Pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) is a minimal, extensible terminal coding agent. It supports custom providers via `~/.pi/agent/models.json`, making it straightforward to route through Portkey's AI Gateway.
+
+With Portkey, you get full observability, cost tracking, budget controls, and access to any model from 200+ providers — all without changing how you use Pi.
+
+## Quick start
+
+<Steps>
+<Step title="Add a provider in Portkey">
+
+Go to [AI Providers](https://app.portkey.ai/ai-providers) → **Add Provider** → select your LLM provider (e.g., OpenAI, Anthropic, Google).
+
+Enter your provider API key and create a slug like `openai-prod` or `anthropic-prod`.
+
+<Frame>
+<img src="/images/product/model-catalog/create-provider-page.png" width="500"/>
+</Frame>
+</Step>
+
+<Step title="Get your Portkey API key">
+
+Go to [API Keys](https://app.portkey.ai/api-keys) → **Generate a new key**.
+
+</Step>
+
+<Step title="Configure Pi">
+
+Edit `~/.pi/agent/models.json` (create it if it doesn't exist):
+
+```json
+{
+  "providers": {
+    "portkey": {
+      "api": "openai-completions",
+      "baseUrl": "https://api.portkey.ai/v1",
+      "apiKey": "YOUR_PORTKEY_API_KEY",
+      "models": [
+        {
+          "id": "@openai-prod/gpt-4o",
+          "name": "GPT-4o via Portkey"
+        }
+      ]
+    }
+  }
+}
+```
+
+Replace:
+- `YOUR_PORTKEY_API_KEY` with your Portkey API key
+- `@openai-prod` with your provider slug
+- `gpt-4o` with the model you want to use
+
+The model `id` format is `@<provider-slug>/<model-name>` — this maps directly to a provider integration in your Portkey workspace.
+
+</Step>
+
+<Step title="Start Pi with Portkey">
+
+```bash
+pi --provider portkey --model gpt-4o
+```
+
+Or use the model selector inside Pi with <kbd>Ctrl</kbd>+<kbd>L</kbd> and pick your Portkey model.
+
+</Step>
+</Steps>
+
+All Pi requests now route through Portkey. Monitor usage, costs, and traces in the [Portkey Dashboard](https://app.portkey.ai/logs).
+
+## Add multiple models
+
+Add as many models as you need under the `models` array. Pi lets you cycle through them with <kbd>Ctrl</kbd>+<kbd>P</kbd>:
+
+```json
+{
+  "providers": {
+    "portkey": {
+      "api": "openai-completions",
+      "baseUrl": "https://api.portkey.ai/v1",
+      "apiKey": "YOUR_PORTKEY_API_KEY",
+      "models": [
+        {
+          "id": "@openai-prod/gpt-4o",
+          "name": "GPT-4o"
+        },
+        {
+          "id": "@anthropic-prod/claude-sonnet-4-20250514",
+          "name": "Claude Sonnet 4"
+        },
+        {
+          "id": "@gemini-prod/gemini-2.5-pro",
+          "name": "Gemini 2.5 Pro"
+        }
+      ]
+    }
+  }
+}
+```
+
+Each model `id` maps to a different provider integration in Portkey. This lets you switch between providers without managing separate API keys in Pi.
+
+## Use a Portkey Config
+
+For advanced routing — fallbacks, retries, caching, load balancing — create a [Portkey Config](/product/ai-gateway/configs) and reference it via a virtual key.
+
+<Steps>
+<Step title="Create a Config">
+
+Go to [Configs](https://app.portkey.ai/configs) → **Create Config**:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@anthropic-prod" }
+  ]
+}
+```
+
+Save and copy the Config ID.
+
+</Step>
+
+<Step title="Create a virtual key with the Config">
+
+Go to [API Keys](https://app.portkey.ai/api-keys) → **Create Key** → attach your Config ID under **Advanced Settings**.
+
+Use this key as your `apiKey` in `models.json` and set the model `id` to any supported model name.
+
+</Step>
+</Steps>
+
+## Budget limits
+
+Set spending controls at the provider level to prevent runaway costs from long coding sessions:
+
+1. Go to [AI Providers](https://app.portkey.ai/ai-providers) → select your provider
+2. Click **Budget & Limits**
+3. Configure:
+   - **Cost limit**: Maximum spend (e.g., $100/month)
+   - **Token limit**: Maximum tokens (e.g., 5M tokens/week)
+   - **Rate limit**: Requests per minute
+
+<Frame>
+<img src="/images/product/model-catalog/budget-and-limits-page-model-catalog.png" width="500"/>
+</Frame>
+
+## Troubleshooting
+
+### Requests not appearing in Portkey logs
+
+**Cause:** Pi may not be using the configured provider.
+
+**Fix:**
+1. Verify `~/.pi/agent/models.json` is valid JSON — run `cat ~/.pi/agent/models.json` to check
+2. Start Pi with `--provider portkey` explicitly
+3. Confirm `baseUrl` is `https://api.portkey.ai/v1` (with `/v1`)
+4. Check that `apiKey` matches your Portkey API key
+
+### Model not found error
+
+**Cause:** The model `id` doesn't match a valid provider slug and model in your Portkey workspace.
+
+**Fix:** Go to [AI Providers](https://app.portkey.ai/ai-providers), confirm the provider slug, and verify the model name is supported by that provider.
+
+<AdvancedFeatures />
