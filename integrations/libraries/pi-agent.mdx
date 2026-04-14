@@ -103,39 +103,118 @@ Add as many models as you need under the `models` array. Pi lets you cycle throu
 }
 ```
 
-Each model `id` maps to a different provider integration in Portkey. This lets you switch between providers without managing separate API keys in Pi.
+Each model `id` maps to a different provider integration in Portkey. Switch providers without managing separate API keys in Pi.
 
-## Use a Portkey Config
+## Trace requests
 
-For advanced routing — fallbacks, retries, caching, load balancing — create a [Portkey Config](/product/ai-gateway/configs) and reference it via a virtual key.
+Add trace IDs to group and debug requests in the Portkey Dashboard. Create a [Portkey Config](/product/ai-gateway/configs) with metadata and attach it to a scoped API key:
 
 <Steps>
-<Step title="Create a Config">
+<Step title="Create a Config with metadata">
 
 Go to [Configs](https://app.portkey.ai/configs) → **Create Config**:
+
+```json
+{
+  "provider": "@openai-prod",
+  "metadata": {
+    "environment": "development",
+    "agent": "pi"
+  }
+}
+```
+
+Save and copy the Config ID.
+</Step>
+
+<Step title="Create a scoped API key with the Config">
+
+Go to [API Keys](https://app.portkey.ai/api-keys) → **Create Key** → attach your Config ID under **Advanced Settings**.
+
+</Step>
+
+<Step title="Use the scoped key in Pi">
+
+```json
+{
+  "providers": {
+    "portkey": {
+      "api": "openai-completions",
+      "baseUrl": "https://api.portkey.ai/v1",
+      "apiKey": "YOUR_SCOPED_PORTKEY_KEY",
+      "models": [
+        {
+          "id": "gpt-4o",
+          "name": "GPT-4o"
+        }
+      ]
+    }
+  }
+}
+```
+
+</Step>
+</Steps>
+
+Use trace metadata to:
+- Group all requests from a coding session
+- Debug issues by filtering logs by environment or agent
+- Track usage per project or task
+
+## Advanced configuration
+
+All advanced routing is configured through [Portkey Configs](/product/ai-gateway/configs), then attached to a scoped API key used as `apiKey` in `models.json`. Pi passes the key as a Bearer token — Portkey applies the routing logic server-side.
+
+### Fallbacks
+
+Route to backup providers when the primary fails. Create a config with fallback targets:
 
 ```json
 {
   "strategy": { "mode": "fallback" },
   "targets": [
     { "provider": "@openai-prod" },
-    { "provider": "@anthropic-prod" }
+    { "provider": "@anthropic-prod" },
+    { "provider": "@bedrock-prod" }
   ]
 }
 ```
 
-Save and copy the Config ID.
+### Load balancing
 
-</Step>
+Distribute requests across multiple API keys or providers:
 
-<Step title="Create a virtual key with the Config">
+```json
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "provider": "@openai-key-1", "weight": 0.5 },
+    { "provider": "@openai-key-2", "weight": 0.5 }
+  ]
+}
+```
 
-Go to [API Keys](https://app.portkey.ai/api-keys) → **Create Key** → attach your Config ID under **Advanced Settings**.
+### Caching
 
-Use this key as your `apiKey` in `models.json` and set the model `id` to any supported model name.
+Reduce costs and latency for repeated queries:
 
-</Step>
-</Steps>
+```json
+{
+  "provider": "@openai-prod",
+  "cache": { "mode": "simple" }
+}
+```
+
+### Retries
+
+Automatically retry failed requests:
+
+```json
+{
+  "provider": "@openai-prod",
+  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] }
+}
+```
 
 ## Budget limits
 
@@ -151,6 +230,56 @@ Set spending controls at the provider level to prevent runaway costs from long c
 <Frame>
 <img src="/images/product/model-catalog/budget-and-limits-page-model-catalog.png" width="500"/>
 </Frame>
+
+Budget limits prevent runaway costs from agentic coding sessions.
+
+## Complete example
+
+Full `~/.pi/agent/models.json` with multiple providers and a scoped key that applies fallback + retry logic:
+
+```json
+{
+  "providers": {
+    "portkey": {
+      "api": "openai-completions",
+      "baseUrl": "https://api.portkey.ai/v1",
+      "apiKey": "YOUR_SCOPED_PORTKEY_KEY",
+      "models": [
+        {
+          "id": "gpt-4o",
+          "name": "GPT-4o (with fallback)"
+        },
+        {
+          "id": "@anthropic-prod/claude-sonnet-4-20250514",
+          "name": "Claude Sonnet 4"
+        },
+        {
+          "id": "@gemini-prod/gemini-2.5-pro",
+          "name": "Gemini 2.5 Pro"
+        }
+      ]
+    }
+  }
+}
+```
+
+Corresponding Portkey Config attached to the scoped key:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@anthropic-prod" }
+  ],
+  "cache": { "mode": "simple" },
+  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] },
+  "metadata": {
+    "agent": "pi",
+    "environment": "production"
+  }
+}
+```
 
 ## Troubleshooting
 
@@ -169,5 +298,14 @@ Set spending controls at the provider level to prevent runaway costs from long c
 **Cause:** The model `id` doesn't match a valid provider slug and model in your Portkey workspace.
 
 **Fix:** Go to [AI Providers](https://app.portkey.ai/ai-providers), confirm the provider slug, and verify the model name is supported by that provider.
+
+### Pi version issues
+
+**Cause:** Older versions of Pi may not support the `models.json` custom provider format.
+
+**Fix:** Update to the latest version:
+```bash
+npm update -g @mariozechner/pi-coding-agent
+```
 
 <AdvancedFeatures />
