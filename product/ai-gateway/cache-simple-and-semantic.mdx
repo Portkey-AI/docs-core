@@ -61,7 +61,7 @@ To enable semantic caching on a self-hosted Portkey gateway, configure the embed
 
 <Steps>
   <Step title="Configure the embedding provider">
-    Set the following environment variables in your gateway environment:
+    Set the following environment variables in your gateway environment for generating vector embeddings:
 
     ```bash
     SEMANTIC_CACHE_EMBEDDING_PROVIDER=openai
@@ -73,7 +73,7 @@ To enable semantic caching on a self-hosted Portkey gateway, configure the embed
     ```
   </Step>
   <Step title="Configure the vector database">
-    Set the following environment variables to connect to your vector store (Milvus or Pinecone):
+    Set the following environment variables in your gateway environment to connect to your vector store (Milvus or Pinecone):
 
     ```bash
     VECTOR_STORE=milvus # supported values: milvus, pinecone
@@ -81,6 +81,26 @@ To enable semantic caching on a self-hosted Portkey gateway, configure the embed
     VECTOR_STORE_COLLECTION_NAME=<your-collection-name>
     VECTOR_STORE_API_KEY=<your-vector-db-api-key>
     ```
+
+    **Milvus**
+
+    Create a collection whose **name matches** `SEMANTIC_CACHE_EMBEDDING_MODEL` (for example, `text-embedding-3-small` when using that model). The collection must define these fields:
+
+    | Field | Type |
+    |-------|------|
+    | `id` | `Varchar` |
+    | `values` | `FloatVector` with dimension **1536** (must match `SEMANTIC_CACHE_EMBEDDING_DIMENSIONS`) |
+    | `metadata` | `JSON` |
+
+    If you change the embedding model or dimension, update the collection schema and `SEMANTIC_CACHE_EMBEDDING_DIMENSIONS` so the vector field size stays aligned.
+
+    **Pinecone**
+
+    - **`VECTOR_STORE_COLLECTION_NAME`** — Omit this; it is not used for Pinecone.
+    - **`VECTOR_STORE_ADDRESS`** — Set to your **Pinecone index name** (not a generic host string).
+    - **`SEMANTIC_CACHE_EMBEDDING_DIMENSIONS`** — Must match the **dimension** configured on the index (same as your embedding vectors).
+    - In the Pinecone console, create or use an index with **cosine** as the similarity metric so it matches Portkey’s semantic cache behavior.
+
   </Step>
   <Step title="Enable semantic caching per request">
     Set the cache mode to `semantic` in your [config object](/api-reference/config-object#cache-object-details) for each LLM request:
@@ -97,8 +117,6 @@ To enable semantic caching on a self-hosted Portkey gateway, configure the embed
   - The LLM model used for generating responses must also be OpenAI-compatible.
   - Each request must include at least one `user` message along with system messages. Requests with only system messages are dropped.
 </Warning>
-
-For more details on configuring the vector database, see [Enterprise components](/product/enterprise-offering/components#semantic-cache-store).
 
 ### Message matching behavior
 
