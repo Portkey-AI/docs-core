@@ -164,6 +164,69 @@ See the [Default Configs documentation](/product/administration/enforce-default-
 If you specify a config in a request (via headers or SDK parameters), it will override the default config for that specific request. The default config only applies when no config is specified in the request itself.
 </Note>
 
+## Passthrough targets
+
+Passthrough targets allow config targets to defer provider resolution to the incoming request, instead of specifying a fixed provider in the config itself. This is useful when you want to define routing strategies (conditional, fallback, loadbalance) at the config level but let the caller decide which provider to use at request time.
+
+### How it works
+
+A target with `"passthrough": true` does not require a `provider` or `virtual_key` field. Instead, the gateway resolves the provider from the incoming request using the following sources, in priority order:
+
+1. **`x-portkey-provider` header** — If the value starts with `@` (e.g., `@anthropic-dev`), the slug after `@` is used as the virtual key.
+2. **`x-portkey-virtual-key` header** — Used directly as the virtual key.
+3. **Request body `model` field** — If the model uses the `@slug/model-name` format (e.g., `@anthropic-dev/claude-sonnet-4-20250514`), the slug is extracted as the virtual key and the model name is passed through to the provider.
+4. **URL query parameter** — Virtual key extracted from the query string (if present).
+
+### Config schema
+
+Set the `passthrough` property to `true` on a target to enable passthrough resolution:
+
+```json
+{
+  "passthrough": true
+}
+```
+
+### Example: Fallback with passthrough targets
+
+```json
+{
+  "strategy": {
+    "mode": "fallback"
+  },
+  "targets": [
+    {
+      "passthrough": true,
+      "override_params": { "model": "gpt-4o" }
+    },
+    {
+      "provider": "@anthropic-backup",
+      "override_params": { "model": "claude-sonnet-4-20250514" }
+    }
+  ]
+}
+```
+
+In this example, the first target resolves the provider from the incoming request. If that fails, the gateway falls back to the second target which uses a fixed provider.
+
+### Example: Load balancing with passthrough targets
+
+```json
+{
+  "strategy": {
+    "mode": "loadbalance"
+  },
+  "targets": [
+    { "passthrough": true, "weight": 0.7 },
+    { "provider": "@openai-backup", "weight": 0.3 }
+  ]
+}
+```
+
+<Note>
+When using passthrough targets, the incoming request must include provider information through one of the supported resolution methods. If the gateway cannot resolve a provider, the request will fail for that target.
+</Note>
+
 ## Configs in Logs
 
 Portkey shows your Config usage smartly on the logs page with the **Status column** and gives you a snapshot of the Gateway activity for every request. [Read more about the status column here](https://portkey.ai/docs/product/observability/logs#request-status-guide).
