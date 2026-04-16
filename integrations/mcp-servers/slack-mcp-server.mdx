@@ -105,6 +105,231 @@ Gateway URL pattern: `https://mcp.portkey.ai/{slug}/mcp` (use the registry slug,
 
 On first tool use, the client opens Slack authorization. Portkey stores and refreshes tokens.
 
+---
+
+## Tools provided
+
+<Note>
+Slack publishes machine-readable tool definitions at runtime (`tools/list` on `https://mcp.slack.com/mcp` after auth). Tool names and optional fields can change—use the client’s tool inspector or `tools/list` as the source of truth. Summaries below follow [Slack MCP server overview](https://docs.slack.dev/ai/slack-mcp-server) and the [developing with Slack MCP](https://docs.slack.dev/ai/slack-mcp-server/developing) scope table.
+
+Tool results are **human-readable markdown** with hydrated user and channel names where applicable—not raw IDs only.
+</Note>
+
+### OAuth scopes by capability
+
+| Capability | User token scopes (examples) |
+|------------|------------------------------|
+| Search messages / channels | `search:read.public`, `search:read.private`, `search:read.mpim`, `search:read.im` |
+| Search files | `search:read.files` |
+| Search users | `search:read.users` |
+| Send message | `chat:write` |
+| Read channel / thread | `channels:history`, `groups:history`, `mpim:history`, `im:history` |
+| Create / update canvas | `canvases:read`, `canvases:write` |
+| Read user profile | `users:read`, `users:read.email` |
+
+Rate limits follow [Slack Web API tiers](https://docs.slack.dev/apis/web-api/rate-limits) per action (see the [overview rate limit table](https://docs.slack.dev/ai/slack-mcp-server#rate-limits)).
+
+---
+
+### **slack\_search\_public**
+
+Search public Slack content (messages and files in accessible public channels). Keyword-oriented unless the workspace has features that enable broader search.
+
+**Arguments:**
+
+* `query` *(string, required)* — Search string; supports Slack modifiers (`in:`, `from:`, dates, etc.).
+* `content_types` *(string, optional)* — Comma-separated: `messages`, `files`.
+* `cursor` *(string, optional)* — Pagination cursor from a prior response.
+* `limit` *(number, optional)* — Page size (capped by Slack).
+* `sort` *(string, optional)* — Often `score` or `timestamp`.
+* `sort_dir` *(string, optional)* — `asc` or `desc`.
+* `response_format` *(string, optional)* — e.g. `detailed` or `concise`.
+* `include_context` *(boolean, optional)* — Include surrounding context messages when supported.
+* `max_context_length` *(number, optional)* — Cap context length per hit.
+* `context_channel_id` *(string, optional)* — Hint channel for ranking or context.
+* `after` / `before` *(string, optional)* — Unix timestamp window filters.
+* `include_bots` *(boolean, optional)* — Include bot-authored messages.
+
+**Returns:** Text (markdown) hits plus pagination fields the server exposes (e.g. `next_cursor`).
+
+---
+
+### **slack\_search\_public\_and\_private**
+
+Same search surface extended to private channels, DMs, and MPIMs the authorized user can access. Requires private search scopes (e.g. `search:read.private`, `search:read.im`, `search:read.mpim`).
+
+**Arguments:** Same family as `slack_search_public` (see `tools/list` for the exact schema on your build).
+
+**Returns:** Markdown search results and pagination metadata.
+
+---
+
+### **slack\_search\_channels**
+
+Find channels by name or description.
+
+**Arguments:**
+
+* `query` *(string, required)* — Search text.
+* `cursor` *(string, optional)* — Pagination.
+* `limit` *(number, optional)* — Page size.
+* `response_format` *(string, optional)* — `detailed` or `concise`.
+* `include_archived` *(boolean, optional)* — Include archived channels.
+
+**Returns:** Channel metadata (IDs, topics, purposes) as markdown or structured text per `response_format`.
+
+---
+
+### **slack\_search\_users**
+
+Find workspace members by name, email, or profile attributes.
+
+**Arguments:**
+
+* `query` *(string, required)* — Search string.
+* `cursor` *(string, optional)* — Pagination.
+* `limit` *(number, optional)* — Page size.
+* `response_format` *(string, optional)* — `detailed` or `concise`.
+
+**Returns:** User summaries (IDs, display names, titles, etc.).
+
+---
+
+### **slack\_read\_channel**
+
+Read recent messages from a channel, group, or conversation ID.
+
+**Arguments:**
+
+* `channel_id` *(string, required)* — Channel or conversation ID (`C…`, `G…`, `D…`).
+* `limit` *(number, optional)* — Messages to return.
+* `cursor` *(string, optional)* — Pagination cursor.
+* `latest` / `oldest` *(string, optional)* — Timestamp bounds.
+* `response_format` *(string, optional)* — `detailed` or `concise`.
+
+**Returns:** Message timeline as markdown (authors and text hydrated where possible).
+
+---
+
+### **slack\_read\_thread**
+
+Read all replies in a thread.
+
+**Arguments:**
+
+* `channel_id` *(string, required)* — Channel containing the thread.
+* `message_ts` *(string, required)* — Parent message timestamp (`1234567890.123456`).
+* `limit` *(number, optional)* — Max replies.
+* `cursor` *(string, optional)* — Pagination.
+* `latest` / `oldest` *(string, optional)* — Bounds.
+* `response_format` *(string, optional)* — `detailed` or `concise`.
+
+**Returns:** Thread transcript as markdown.
+
+---
+
+### **slack\_send\_message**
+
+Post a message to a channel or DM.
+
+**Arguments:**
+
+* `channel_id` *(string, required)* — Destination channel or DM ID.
+* `message` *(string, required)* — Message body (Slack-flavored markdown where supported).
+* `thread_ts` *(string, optional)* — Reply in a thread.
+* `reply_broadcast` *(boolean, optional)* — Also post to channel.
+* `draft_id` *(string, optional)* — Send and consume a drafted message if the flow created one.
+
+**Returns:** Confirmation text and message identifiers when provided by Slack.
+
+---
+
+### **slack\_send\_message\_draft**
+
+Create a draft in a channel or thread without sending.
+
+**Arguments:**
+
+* `channel_id` *(string, required)* — Target conversation.
+* `message` *(string, required)* — Draft markdown.
+* `thread_ts` *(string, optional)* — Draft as a thread reply.
+
+**Returns:** Draft handle or link the client uses to open or send the draft later.
+
+---
+
+### **slack\_schedule\_message**
+
+Schedule a message for later delivery.
+
+**Arguments:**
+
+* `channel_id` *(string, required)* — Target conversation.
+* `message` *(string, required)* — Body to send at `post_at`.
+* `post_at` *(integer, required)* — Unix time (must be in the future; Slack enforces min/max horizon).
+* `thread_ts` *(string, optional)* — Schedule as a thread reply.
+* `reply_broadcast` *(boolean, optional)* — Broadcast thread reply to channel.
+* `draft_id` *(string, optional)* — Delete a draft after scheduling.
+
+**Returns:** Scheduled message metadata (e.g. schedule ID) when Slack returns it.
+
+---
+
+### **slack\_create\_canvas**
+
+Create a Slack Canvas from markdown content.
+
+**Arguments:**
+
+* `title` *(string, required)* — Canvas title.
+* `content` *(string, required)* — Canvas-flavored markdown body.
+
+**Returns:** Canvas URL or ID string the model can surface to the user.
+
+---
+
+### **slack\_read\_canvas**
+
+Fetch a canvas as markdown (and section metadata when supported).
+
+**Arguments:**
+
+* `canvas_id` *(string, required)* — Canvas file / document ID.
+
+**Returns:** Markdown content plus optional `section_id_mapping` for follow-up edits.
+
+---
+
+### **slack\_update\_canvas**
+
+Append, prepend, or replace canvas sections.
+
+**Arguments:**
+
+* `canvas_id` *(string, required)* — Target canvas.
+* `action` *(string, required)* — `append`, `prepend`, or `replace`.
+* `content` *(string, required)* — Markdown to apply (Canvas-flavored rules apply).
+* `section_id` *(string, optional)* — Target section from `slack_read_canvas` mapping; required for safe `replace`.
+* `title` *(string, optional)* — Update canvas title only when updating title-only.
+
+**Returns:** Updated canvas URL and revised section mapping when provided.
+
+---
+
+### **slack\_read\_user\_profile**
+
+Load profile fields for a member (or the authenticated user if `user_id` omitted).
+
+**Arguments:**
+
+* `user_id` *(string, optional)* — Slack user ID; defaults to current user when omitted.
+* `include_locale` *(boolean, optional)* — Include locale fields.
+* `response_format` *(string, optional)* — `detailed` or `concise`.
+
+**Returns:** Profile card text / markdown.
+
+---
+
 <Note>
 Add `"headers": { "x-portkey-api-key": "YOUR_PORTKEY_API_KEY" }` when the workspace requires the Portkey API key on the MCP request—see [Integrations](/product/mcp-gateway/integrations). For self-hosted gateways, replace `mcp.portkey.ai` with the gateway host.
 
