@@ -1,0 +1,118 @@
+---
+title: "Slack MCP server"
+description: "Connect Slack's hosted MCP server through Portkey MCP Gateway for channels, messaging, and workspace context—using OAuth with manual client metadata."
+---
+
+Slack's remote MCP server lets agents read channels, post messages, and work with workspace data. Portkey MCP Gateway adds centralized auth, access control, and observability on top of Slack's endpoint.
+
+## When should you use this server
+
+- Surface channel context or recent threads during agent workflows
+- Draft or send messages from AI assistants with human-in-the-loop review
+- Look up users or channel metadata for routing and notifications
+
+## Key features
+
+- Workspace-aware tools (channels, chat, users—depending on granted Bot Token Scopes)
+- Hosted endpoint—no self-hosted Slack MCP binary to run
+- OAuth-based access aligned with Slack app permissions
+
+## Authentication
+
+- **Method:** OAuth 2.1 with **manual OAuth metadata** (Slack does not use Dynamic Client Registration for this flow)
+- **Slack app:** Create an app at [api.slack.com/apps](https://api.slack.com/apps), configure redirect URL, Bot Token Scopes, and **Agents & AI Apps → Enable MCP** (required)
+
+## Endpoint
+
+**Remote MCP server:**
+
+```
+https://mcp.slack.com/mcp
+```
+
+---
+
+## Connect via Portkey MCP Gateway
+
+<Note>
+Slack requires registering an OAuth app and passing `client_id`, `client_secret`, `redirect_uri`, and `scope` in Portkey **Advanced Configuration**—same pattern as other providers that need manual OAuth metadata (for example [GitHub](/integrations/mcp-servers/github-mcp-server#method-1-oauth-with-github-oauth-app)).
+</Note>
+
+### Step 1: Create a Slack OAuth app
+
+1. Open [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**.
+2. Set an app name (e.g. `Portkey MCP Gateway`) and pick a workspace.
+3. Go to **OAuth & Permissions**.
+4. Under **Redirect URLs**, add exactly:
+
+   ```
+   https://mcp.portkey.ai/oauth/upstream-callback
+   ```
+
+5. Under **Scopes** → **Bot Token Scopes**, add the scopes agents need (e.g. `channels:read`, `chat:write`, `users:read`). Match these to the `scope` string in Step 3.
+6. Open **Basic Information** and copy **Client ID** and **Client Secret**.
+
+### Step 2: Enable MCP (Agents & AI Apps)
+
+<Warning>
+Turn **Enable MCP** on under **Agents & AI Apps** in the Slack app sidebar. If this stays off, tool discovery fails and OAuth breaks at the end of the flow.
+</Warning>
+
+1. In the Slack app settings sidebar, open **Agents & AI Apps**.
+2. Toggle **Enable MCP** to on.
+3. Save.
+
+### Step 3: Register the integration in Portkey
+
+1. In Portkey, go to **MCP Registry** → **Add MCP Integration**.
+2. Set:
+
+| Field | Value |
+|-------|-------|
+| **Name** | Slack |
+| **Slug** | `slack` |
+| **Server URL** | `https://mcp.slack.com/mcp` |
+| **Auth Type** | OAuth 2.1 |
+
+3. Expand **Advanced Configuration** and paste (replace placeholders; align `scope` with Bot Token Scopes from Step 1):
+
+```json
+{
+  "oauth_metadata": {
+    "client_id": "YOUR_SLACK_CLIENT_ID",
+    "client_secret": "YOUR_SLACK_CLIENT_SECRET",
+    "redirect_uri": "https://mcp.portkey.ai/oauth/upstream-callback",
+    "scope": "channels:read chat:write users:read"
+  }
+}
+```
+
+4. Configure workspace access as needed, then save the integration.
+
+### Step 4: Connect from an agent
+
+Gateway URL pattern: `https://mcp.portkey.ai/{slug}/mcp` (use the registry slug, e.g. `slack`).
+
+<CodeGroup>
+
+```json Claude Desktop / Cursor
+{
+  "mcpServers": {
+    "slack": {
+      "url": "https://mcp.portkey.ai/slack/mcp"
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+On first tool use, the client opens Slack authorization. Portkey stores and refreshes tokens.
+
+<Note>
+Add `"headers": { "x-portkey-api-key": "YOUR_PORTKEY_API_KEY" }` when your workspace requires the Portkey API key on the MCP request—see [Integrations](/product/mcp-gateway/integrations). For self-hosted gateways, replace `mcp.portkey.ai` with your gateway host.
+</Note>
+
+<Note>
+Third-party Slack apps send prompts and workspace data to Slack under their terms. Grant only the Bot Token Scopes agents need.
+</Note>
