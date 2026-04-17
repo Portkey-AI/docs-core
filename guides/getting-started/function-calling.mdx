@@ -3,130 +3,164 @@ title: "Function Calling"
 description: "Get the LLM to interact with external APIs!"
 ---
 
-As described in the [Enforcing JSON Schema cookbook](/guides/use-cases/enforcing-json-schema-with-anyscale-and-together), LLMs are now good at generating outputs that follow a specified syntax. We can combine this LLM ability with their reasoning ability to let LLMs interact with external APIs. **This is called Function (or Tool) calling.** In simple terms, function calling:
+Function calling (or Tool calling) lets LLMs interact with external APIs by generating structured arguments for specific functions. This enables LLMs to fetch real-time data, perform calculations, or trigger actions.
 
-1. Informs the user when a question can be answered using an external API
-2. Generates a valid request in the API's format
-3. Converts the API's response to a natural language answer
+Portkey supports function calling across [3000+ models](/product/model-catalog) including those from all major providers.
 
-Function calling is currently supported on select models on **Anyscale**, **Together AI**, **Fireworks AI**, **Google Gemini**, and **OpenAI**. Using Portkey, you can easily experiment with function calling across various providers and gain confidence to ship it to production.
+## How it Works
 
-**Let's understand how it works with an example**:
+1.  **Define tools**: Tell the model about available functions and their parameters.
+2.  **Generate arguments**: The model decides to call a tool and returns the arguments.
+3.  **Execute tool**: Run the function in your application.
+4.  **Final answer**: Send the tool output back to the model to generate a natural language response.
 
-We want the LLM to tell what's the temperature in Delhi today. We'll use a "Weather API" to fetch the weather:
+### Example: Weather Forecast
+
+To get the weather for a specific location:
 
 ```js
 import Portkey from "portkey-ai";
 
 const portkey = new Portkey({
-  apiKey: "PORTKEY_API_KEY",
-  provider: "@anyscale-prod",
+    apiKey: "PORTKEY_API_KEY",
 });
 
-// Describing what the Weather API does and expects
-let tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "getWeather",
-            "description": "Get the current weather in a given location",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The city and state",
-                    },
-                    "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+const tools = [{
+    type: "function",
+    function: {
+        name: "get_weather",
+        description: "Get the current weather in a given location",
+        parameters: {
+            type: "object",
+            properties: {
+                location: {
+                    type: "string",
+                    description: "The city and state",
                 },
-                "required": ["location"],
+                unit: { type: "string", enum: ["celsius", "fahrenheit"] },
             },
+            required: ["location"],
         },
-    }
-];
+    },
+}];
 
-let response = await portkey.chat.completions.create({
-    model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
+const response = await portkey.chat.completions.create({
+    model: "MODEL_NAME",
     messages: [
-        {"role": "system", "content": "You are helpful assistant."},
-        {"role": "user", "content": "What's the weather like in Delhi - respond in JSON"}
+        { role: "user", content: "What's the weather like in Delhi?" }
     ],
     tools,
-    tool_choice: "auto", // auto is default, yet explicit
+    tool_choice: "auto",
 });
 
-console.log(response.choices[0].finish_reason)
+console.log(response.choices[0].message.tool_calls);
 ```
 
-Here, we've defined what the Weather API expects for its requests in the `tool` param, and set `tool_choice` to auto. So, based on the user messages, the LLM will decide if it should do a function call to fulfill the request. Here, it will choose to do that, and we'll see the following output:
-
+The model returns a JSON object with the function name and arguments:
 
 ```json
-{
-    "role": "assistant",
-    "content": null,
-    "tool_calls": [{
-        "id": "call_x8we3xx",
+[
+    {
+        "id": "call_123",
         "type": "function",
         "function": {
-            "name": "getWeather",
-            "arguments": "{\"location\": \"Delhi, India\", \"format\": \"celsius\"}"
+            "name": "get_weather",
+            "arguments": "{\"location\": \"Delhi, India\", \"unit\": \"celsius\"}"
         }
-    }]
-}
+    }
+]
 ```
 
-We can just take the `tool_call` made by the LLM, and pass it to our `getWeather` function - it should return a proper response to our query. We then take that response and send it to our LLM to complete the loop:
-
+Pass the tool output back to the model to complete the loop:
 
 ```js
-// getWeather(..) is a utility to call external weather service APIs
-// Responds with: {"temperature": 20, "unit": "celsius"}
+const toolCall = response.choices[0].message.tool_calls[0];
+const weatherData = await get_weather(JSON.parse(toolCall.function.arguments));
 
-let weatherData = await getWeather(JSON.parse(arguments));
-let content = JSON.stringify(weatherData);
-
-// Push assistant and tool message from earlier generated function arguments
-messages.push(assistantMessage);
-messages.push({
-    role: "tool",
-    content: content,
-    toolCallId: "call_x8we3xx",
-    name: "getWeather"
-});
-
-let response = await portkey.chat.completions.create({
-    model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    tools: tools,
-    messages: messages,
-    tool_choice: "auto"
+const finalResponse = await portkey.chat.completions.create({
+    model: "MODEL_NAME",
+    messages: [
+        { role: "user", content: "What's the weather like in Delhi?" },
+        response.choices[0].message, // Assistant's tool call
+        {
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(weatherData),
+        }
+    ],
 });
 ```
 
-We should see this final output:
+## Unified API Support
 
-```json
-{
-    "role": "assistant",
-    "content": "It's 30 degrees celsius in Delhi, India."
-}
+Portkey supports function calling across different API formats. Use the one that fits your application to call any provider's model.
+
+### /chat/completions
+
+Standard OpenAI-compatible format used by most providers.
+
+<CodeGroup>
+```js JavaScript
+const response = await portkey.chat.completions.create({
+    model: "MODEL_NAME",
+    messages: [{ role: "user", content: "What's the weather?" }],
+    tools: [{
+        type: "function",
+        function: {
+            name: "get_weather",
+            parameters: { ... }
+        }
+    }]
+});
 ```
+</CodeGroup>
 
-## Function Calling Workflow
+### /messages
 
-Recapping, there are 4 key steps to doing function calling, as illustrated below:
+Anthropic-compatible format supported by all models through Portkey's translation.
 
-<Frame caption="Function Calling Workflow">
-  <img src="/images/guides/guides-i-1.webp" alt="Function Calling Workflow" />
-</Frame>
+<CodeGroup>
+```js JavaScript
+const message = await portkey.messages.create({
+    model: "MODEL_NAME",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "What's the weather?" }],
+    tools: [{
+        name: "get_weather",
+        description: "Get the weather",
+        input_schema: {
+            type: "object",
+            properties: { ... }
+        }
+    }]
+});
+```
+</CodeGroup>
 
+### /responses
 
-Function Calling Workflow
+Unified agentic format for multi-provider interoperability.
 
-## Supporting Models
+<CodeGroup>
+```js JavaScript
+const response = await portkey.responses.create({
+    model: "MODEL_NAME",
+    input: "What's the weather?",
+    tools: [{
+        type: "function",
+        name: "get_weather",
+        parameters: { ... }
+    }]
+});
+```
+</CodeGroup>
 
-Portkey's AI Gateway provides native function calling (also known as tool calling) support across our entire ecosystem of AI providers, including OpenAI, Anthropic, Google, Together AI, Fireworks AI, and many more. If you discover a function-calling capable LLM that isn't working with Portkey, please let us know [on Discord](https://portkey.wiki/community).
+## Supported Models
+
+Portkey provides native function calling support for all major providers.
+
+If you discover a function-calling capable LLM that isn't working with Portkey, please let us know [on Discord](https://portkey.wiki/community).
 
 <Note>
-    Portkey also supports parallel tool calling when available from the provider. This feature allows you to submit multiple requests in a single query. The model automatically selects the appropriate tool for each request and returns an array of `tool_calls`, each with a unique identifier. For more details, see the [parallel function calling documentation](https://platform.openai.com/docs/guides/function-calling/parallel-function-calling).
+    Portkey supports parallel tool calling for models that provide it. This allows the model to trigger multiple functions in a single request.
 </Note>

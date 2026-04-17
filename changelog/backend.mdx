@@ -1,12 +1,177 @@
 ---
 title: "Backend"
-sidebarTitle: "Backend [1.11.2]"
+sidebarTitle: "Backend [1.14.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="1.14.0" description="2026-04-12">
+
+## v1.14.0
+---
+
+### API Key Rotation — Generally Available
+- **API key rotation is now generally available**
+- Use API key rotation scopes (`*.rotate`) for organisation-service, workspace-service, and workspace-user API key types
+- [Documentation](/product/enterprise-offering/org-management/api-key-rotation)
+
+### Integration Security Settings
+- Added new **organization security settings** to control workspace manager write access for:
+  - **Workspace Integrations** (`managersWriteWsIntegrations`)
+  - **MCP Integrations** (`managersWriteWsMcpIntegrations`)
+  - **MCP Servers** (`managersWriteMcpServers`)
+- All three settings are **enabled by default** and support **workspace-level overrides**
+- [Documentation](/product/administration/configure-integration-access-permissions)
+
+### MCP Server User Connections API
+- New **List Connections** API (`GET /v2/mcp-servers/:mcpServerId/connections`) to retrieve user connections for an MCP server with pagination support
+- New **Revoke Connection** API (`DELETE /v2/mcp-servers/:mcpServerId/connections`) to revoke a user's connection to an MCP server
+- Admins and workspace managers can view and revoke connections for any user; non-admin users can only manage their own connections
+
+### SCIM Enhancements
+- SCIM provisioning now accepts **case-insensitive roles** — `Admin`, `admin`, and `ADMIN` are all treated identically for both organization and workspace role assignments
+
+### Self-Hosting Improvements
+- Added **configurable MySQL reader** with HADR (High Availability Disaster Recovery) mode for writer failover
+  - New environment variables: `DB_READER_HOST`, `DB_READER_USER`, `DB_READER_PASS`, `DB_READER_PORT`
+  - Enable HADR mode with `MYSQL_WRITER_HADR_MODE=ON` — the backend continues serving reads when the writer is unavailable and reconnects automatically
+  - Health endpoint reports `degraded` status when writer is unavailable in HADR mode
+
+### Security
+- Removed `x-powered-by` response header for improved security posture
+
+### Guardrails Updates
+- Added new **Lasso Classifier** check (`lasso.classify`) and updated Lasso integration schema with optional `apiEndpoint` for self-hosted deployments
+- [Documentation](/integrations/guardrails/lasso)
+
+### Fixes and Improvements
+- Fixed SCIM group update to skip workspace update when workspace is not found
+- Fixed workspace deletion to handle emoji characters when triggered from API keys (Terraform)
+- Fixed `last_updated_by` field for API key defaults configuration
+- Security dependency updates
+
+</Update>
+
+<Update label="1.13.0" description="2026-04-01">
+
+## v1.13.0
+---
+
+### API Key Rotation
+- Added **API key rotation** with support for automatic and manual rotation
+- Configure rotation policies when creating or updating API keys with `rotation_policy` parameter:
+  - `rotation_period`: `weekly` or `monthly` auto-rotation schedule
+  - `next_rotation_at`: ISO 8601 date for the next scheduled rotation
+  - `key_transition_period_ms`: Grace period (minimum 30 minutes) during which both old and new keys are valid
+- New **`POST /api-keys/:apiKeyId/rotate`** endpoint for manual key rotation — works with or without an auto-rotation policy
+- Auto-rotation processor with email alerts for upcoming rotations, completed rotations, and expiry warnings
+
+### Organization Session Management
+- Added **session management** settings at the organization level
+- Configure `session_settings` in organization auth settings with `max_session_ttl` (minimum 900 seconds / 15 minutes)
+- When set, user sessions exceeding the TTL are automatically rejected, requiring re-authentication
+
+### New Guardrail: Required Metadata Key-Value Pairs
+- Added **Required Metadata Key-Value Pairs** guardrail (`default.requiredMetadataKeyPairs`) to validate that requests contain specified metadata key-value pairs
+- Configurable parameters:
+  - `metadataPairs`: Object defining required key-value pairs
+  - `operator`: `all` (all pairs must match), `any` (at least one pair must match), or `none` (no pairs should match)
+- Runs on the `beforeRequestHook`
+
+### Rate Limits Enhancements
+- Added **`rpw`** (requests per week) as a new rate limit unit alongside existing `rpm`, `rph`, and `rpd`
+- Added **`endpoint_type`** as a new condition key for rate limit policies, allowing rate limits to target specific endpoint types (e.g., `chatComplete`, `embed`, `imageGenerate`)
+- [Documentation](/product/enterprise-offering/budget-policies)
+
+### Agent Gateway
+- Added **Agent Gateway** with full CRUD APIs for managing agent integrations and agent servers
+- Includes agent skills management, workspace-level access control, and user access management
+- RBAC support for agent resources
+
+### Self-Hosting Improvements
+- Added **ClickHouse replication and sharding** support for high-availability analytics deployments
+- Added support for **decoupled JWT authentication** in private deployments, allowing the data plane to validate tokens independently from the control plane
+<Note> 
+Requires Gateway v2.5.0 or higher
+</Note>
+
+### Fixes and Improvements
+- Fixed provisioning for empty groups
+- Added `last_reset_at` field to API key, workspace, integration, and virtual key responses
+- Model configuration and pricing updates
+- Security dependency updates
+
+</Update>
+
+<Update label="1.12.1" description="2026-03-16">
+
+## v1.12.1
+---
+
+### New Guardrail: Akto Agentic Security
+- Added **Akto Agentic Security** guardrail integration for advanced threat detection and security scanning of LLM inputs and outputs
+- [Documentation](/integrations/guardrails/akto)
+
+### New Guardrail: Inline Image URLs
+- Added **Inline Image URLs** guardrail that fetches external image URLs and converts them to Base64 inline data
+- Useful for VPC-SC environments where LLM providers cannot access external URLs
+- Configurable parameters: `providers` (target providers), `maxSizeBytes` (default: 20MB), `timeoutMs` (default: 30000), `failOnError` (default: false)
+
+### AWS Bedrock Guardrails
+- Added optional **Custom Host** field to the Bedrock guardrail integration schema, allowing use of private or custom Bedrock endpoints
+
+### Fixes and Improvements
+- Fixed SCIM user update validation to correctly handle user reactivation flows
+- Model configuration and pricing updates across multiple providers
+- Security dependency updates
+
+</Update>
+
+<Update label="1.12.0" description="2026-03-09">
+
+## v1.12.0
+---
+
+<Note>
+This version requires a Helm chart upgrade to **app-1.6.0** or higher to function correctly.
+</Note>
+
+### Secret Manager Integrations
+- Added **Secret References** - a new enterprise feature for managing external secret manager integrations with full CRUD API
+- Supports three secret manager backends:
+  - **AWS Secrets Manager** - with access key, assumed role, and service role authentication
+  - **Azure Key Vault** - with Entra ID, managed identity, and default credential authentication
+  - **HashiCorp Vault** - with token, AppRole, and Kubernetes authentication
+- Secret references can be mapped to **integrations** and **virtual keys** via `secret_mappings`, allowing provider credentials to be dynamically fetched from external secret managers at runtime
+- Workspace-level access control for secret references with `allow_all_workspaces` or scoped `allowed_workspaces`
+- Requires `secret_references` RBAC permissions (available to org owners and admins)
+- [Documentation](/product/enterprise-offering/secret-references)
+
+### New Guardrail: Zscaler AI Guard
+- Added **Zscaler AI Guard** guardrail integration for enforcing Zscaler Detections Policies on LLM inputs and outputs
+- Supports `beforeRequestHook` and `afterRequestHook` hooks
+- Configurable parameters: `policyId` (required) and `timeout` (default: 10000ms)
+- [Documentation](/integrations/guardrails/zscaler)
+
+### GCP Workload Identity Federation for Log Storage
+- Added support for **GCP Workload Identity Federation (WIF)** to authenticate with Google Cloud Storage from AWS-hosted deployments
+- New environment variables: `GCP_WIF_AUDIENCE` and `GCP_WIF_SERVICE_ACCOUNT_EMAIL`
+- Enables cross-cloud log storage using `gcs_assume` log store type with AWS-to-GCP federated authentication
+
+### Analytics Enhancements
+- Extended analytics graph, group, and summary routes to support **archived workspaces** for organization admins and owners
+- Saved filters now support workspace slugs in addition to workspace IDs
+
+### Fixes and Improvements
+- Improved JWT authentication error responses with more descriptive error messages
+- Added `log_format` field to the get-log API response
+- Fixed ClickHouse migration file sorting to use numeric ordering
+- Security dependency updates and Docker image optimizations
+
+</Update>
 
 <Update label="1.11.2" description="2026-02-27">
 
