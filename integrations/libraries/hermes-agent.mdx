@@ -1,0 +1,222 @@
+---
+title: 'Hermes Agent'
+description: 'Route the Hermes autonomous agent through Portkey for observability, cost tracking, fallbacks, and access to 200+ LLMs'
+---
+
+import AdvancedFeatures from '/snippets/portkey-advanced-features.mdx';
+
+[Hermes Agent](https://hermes-agent.nousresearch.com/) is an open-source autonomous agent from [Nous Research](https://nousresearch.com/) that runs on your server — not tethered to an IDE. It lives on CLI, Telegram, Discord, Slack, WhatsApp, and 10+ other platforms, with persistent memory, self-improving skills, and full terminal/browser control.
+
+Hermes works with any OpenAI-compatible endpoint, which makes Portkey a drop-in gateway. Route Hermes through Portkey to get full observability, cost tracking, budget controls, fallbacks, and access to 200+ models — without changing how you use Hermes.
+
+## Quick start
+
+<Steps>
+<Step title="Install Hermes">
+
+```bash
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+```
+
+Supports Linux, macOS, and WSL2. See the [Hermes installation docs](https://hermes-agent.nousresearch.com/docs/getting-started/installation) for details.
+
+</Step>
+
+<Step title="Add a provider in Portkey">
+
+Go to [AI Providers](https://app.portkey.ai/ai-providers) → **Add Provider** → select your LLM provider (OpenAI, Anthropic, Google, etc.).
+
+Enter your provider API key and create a slug like `openai-prod` or `anthropic-prod`.
+
+<Frame>
+<img src="/images/product/model-catalog/create-provider-page.png" width="500"/>
+</Frame>
+
+</Step>
+
+<Step title="Get your Portkey API key">
+
+Go to [API Keys](https://app.portkey.ai/api-keys) → **Generate a new key**.
+
+</Step>
+
+<Step title="Configure Hermes to use Portkey">
+
+Edit `~/.hermes/config.yaml` to point the main model at Portkey's OpenAI-compatible endpoint:
+
+```yaml
+model:
+  provider: custom
+  default: "@openai-prod/gpt-4o"
+  base_url: https://api.portkey.ai/v1
+  api_key: YOUR_PORTKEY_API_KEY
+```
+
+Replace:
+- `YOUR_PORTKEY_API_KEY` with your Portkey API key
+- `@openai-prod` with your provider slug
+- `gpt-4o` with any model that provider supports
+
+The model format is `@<provider-slug>/<model-name>` — this maps directly to a provider integration in your Portkey workspace.
+
+<Tip>
+Use `hermes config set` to save values without opening the file:
+
+```bash
+hermes config set model.provider custom
+hermes config set model.base_url https://api.portkey.ai/v1
+hermes config set model.default "@openai-prod/gpt-4o"
+hermes config set OPENAI_API_KEY YOUR_PORTKEY_API_KEY
+```
+
+API keys are saved to `~/.hermes/.env`; everything else goes to `config.yaml`.
+</Tip>
+
+</Step>
+
+<Step title="Start chatting">
+
+```bash
+hermes chat
+```
+
+All Hermes requests now route through Portkey. Monitor usage, costs, and traces in the [Portkey Dashboard](https://app.portkey.ai/logs).
+
+</Step>
+</Steps>
+
+## Reliability
+
+All reliability controls are configured through [Portkey Configs](/product/ai-gateway/configs) and attached to a scoped API key. Hermes sends the key as a Bearer token — Portkey applies the logic server-side, so Hermes config stays simple.
+
+Create a Config at [Configs](https://app.portkey.ai/configs), then attach the Config ID to a scoped API key at [API Keys](https://app.portkey.ai/api-keys) → **Create Key** → **Advanced Settings**. Use that scoped key as `OPENAI_API_KEY` in Hermes.
+
+### Fallbacks
+
+Route to backup providers when the primary fails — critical for long-running autonomous Hermes sessions where a provider outage shouldn't break the task:
+
+```json
+{
+    "strategy": { "mode": "fallback" },
+    "targets": [
+        { "provider": "@openai-prod" },
+        { "provider": "@anthropic-prod" },
+        { "provider": "@bedrock-prod" }
+    ]
+}
+```
+
+### Load balancing
+
+Distribute requests across multiple keys or providers:
+
+```json
+{
+    "strategy": { "mode": "loadbalance" },
+    "targets": [
+        { "provider": "@openai-key-1", "weight": 0.5 },
+        { "provider": "@openai-key-2", "weight": 0.5 }
+    ]
+}
+```
+
+### Caching
+
+Reduce costs and latency for repeated queries (common with Hermes's scheduled cron jobs):
+
+```json
+{
+    "provider": "@openai-prod",
+    "cache": { "mode": "simple" }
+}
+```
+
+### Retries
+
+Automatically retry failed requests:
+
+```json
+{
+    "provider": "@openai-prod",
+    "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] }
+}
+```
+
+### Metadata for tracing
+
+Attach metadata in the same Config to group and filter logs by session, host, environment, or user:
+
+```json
+{
+    "provider": "@openai-prod",
+    "metadata": {
+        "agent": "hermes",
+        "environment": "production",
+        "host": "vps-01"
+    }
+}
+```
+
+## Budget limits
+
+Hermes runs unattended via cron, messaging gateways, and subagents — costs can spiral without controls. Set provider-level limits in Portkey:
+
+1. Go to [AI Providers](https://app.portkey.ai/ai-providers) → select your provider
+2. Click **Budget & Limits**
+3. Configure:
+   - **Cost limit**: e.g., $200/month
+   - **Token limit**: e.g., 10M tokens/week
+   - **Rate limit**: requests per minute
+
+<Frame>
+<img src="/images/product/model-catalog/budget-and-limits-page-model-catalog.png" width="500"/>
+</Frame>
+
+Budget limits automatically block further requests when thresholds are hit, preventing runaway costs from autonomous sessions.
+
+## Switch models mid-session
+
+Inside a Hermes chat, use `/model` to switch to any model available in your Portkey workspace:
+
+```text
+/model custom:@anthropic-prod/claude-sonnet-4-6
+/model custom:@gemini-prod/gemini-2.5-pro
+```
+
+## Multiple Portkey providers
+
+To keep multiple Portkey-backed routes distinct — say, a production key for your main agent and a separate key for subagents — define them as [named custom providers](https://hermes-agent.nousresearch.com/docs/integrations/providers#named-custom-providers) in `~/.hermes/config.yaml`:
+
+```yaml
+custom_providers:
+  - name: portkey-prod
+    base_url: https://api.portkey.ai/v1
+    key_env: PORTKEY_API_KEY
+    api_mode: chat_completions
+  - name: portkey-dev
+    base_url: https://api.portkey.ai/v1
+    key_env: PORTKEY_DEV_KEY
+    api_mode: chat_completions
+
+model:
+  provider: custom
+  default: "@openai-prod/gpt-4o"
+  base_url: https://api.portkey.ai/v1
+  api_key: ${PORTKEY_API_KEY}
+```
+
+Set both keys in `~/.hermes/.env`:
+
+```bash
+PORTKEY_API_KEY=pk-...
+PORTKEY_DEV_KEY=pk-...
+```
+
+Switch between them mid-session:
+
+```text
+/model custom:portkey-prod:@openai-prod/gpt-4o
+/model custom:portkey-dev:@anthropic-prod/claude-sonnet-4-6
+```
+
+<AdvancedFeatures />
