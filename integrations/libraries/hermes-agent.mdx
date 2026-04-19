@@ -85,6 +85,95 @@ All Hermes requests now route through Portkey. Monitor usage, costs, and traces 
 </Step>
 </Steps>
 
+## Reliability
+
+All reliability controls are configured through [Portkey Configs](/product/ai-gateway/configs) and attached to a scoped API key. Hermes sends the key as a Bearer token — Portkey applies the logic server-side, so Hermes config stays simple.
+
+Create a Config at [Configs](https://app.portkey.ai/configs), then attach the Config ID to a scoped API key at [API Keys](https://app.portkey.ai/api-keys) → **Create Key** → **Advanced Settings**. Use that scoped key as `OPENAI_API_KEY` in Hermes.
+
+### Fallbacks
+
+Route to backup providers when the primary fails — critical for long-running autonomous Hermes sessions where a provider outage shouldn't break the task:
+
+```json
+{
+    "strategy": { "mode": "fallback" },
+    "targets": [
+        { "provider": "@openai-prod" },
+        { "provider": "@anthropic-prod" },
+        { "provider": "@bedrock-prod" }
+    ]
+}
+```
+
+### Load balancing
+
+Distribute requests across multiple keys or providers:
+
+```json
+{
+    "strategy": { "mode": "loadbalance" },
+    "targets": [
+        { "provider": "@openai-key-1", "weight": 0.5 },
+        { "provider": "@openai-key-2", "weight": 0.5 }
+    ]
+}
+```
+
+### Caching
+
+Reduce costs and latency for repeated queries (common with Hermes's scheduled cron jobs):
+
+```json
+{
+    "provider": "@openai-prod",
+    "cache": { "mode": "simple" }
+}
+```
+
+### Retries
+
+Automatically retry failed requests:
+
+```json
+{
+    "provider": "@openai-prod",
+    "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] }
+}
+```
+
+### Metadata for tracing
+
+Attach metadata in the same Config to group and filter logs by session, host, environment, or user:
+
+```json
+{
+    "provider": "@openai-prod",
+    "metadata": {
+        "agent": "hermes",
+        "environment": "production",
+        "host": "vps-01"
+    }
+}
+```
+
+## Budget limits
+
+Hermes runs unattended via cron, messaging gateways, and subagents — costs can spiral without controls. Set provider-level limits in Portkey:
+
+1. Go to [AI Providers](https://app.portkey.ai/ai-providers) → select your provider
+2. Click **Budget & Limits**
+3. Configure:
+   - **Cost limit**: e.g., $200/month
+   - **Token limit**: e.g., 10M tokens/week
+   - **Rate limit**: requests per minute
+
+<Frame>
+<img src="/images/product/model-catalog/budget-and-limits-page-model-catalog.png" width="500"/>
+</Frame>
+
+Budget limits automatically block further requests when thresholds are hit, preventing runaway costs from autonomous sessions.
+
 ## Switch models mid-session
 
 Inside a Hermes chat, use `/model` to switch to any model available in your Portkey workspace:
@@ -129,233 +218,5 @@ Switch between them mid-session:
 /model custom:portkey-prod:@openai-prod/gpt-4o
 /model custom:portkey-dev:@anthropic-prod/claude-sonnet-4-6
 ```
-
-## Route auxiliary models through Portkey
-
-Hermes uses lightweight auxiliary models for vision, web summarization, compression, and memory. Route all of them through Portkey by adding an `auxiliary` block:
-
-```yaml
-auxiliary:
-  vision:
-    base_url: https://api.portkey.ai/v1
-    api_key: ${PORTKEY_API_KEY}
-    model: "@openai-prod/gpt-4o"
-  web_extract:
-    base_url: https://api.portkey.ai/v1
-    api_key: ${PORTKEY_API_KEY}
-    model: "@gemini-prod/gemini-2.5-flash"
-  compression:
-    base_url: https://api.portkey.ai/v1
-    api_key: ${PORTKEY_API_KEY}
-    model: "@gemini-prod/gemini-2.5-flash"
-```
-
-Every auxiliary call now appears in Portkey logs alongside the main agent — unified observability across the entire agent lifecycle.
-
-## Trace requests
-
-Group and debug requests in the Portkey Dashboard by attaching metadata to a scoped API key.
-
-<Steps>
-<Step title="Create a Config with metadata">
-
-Go to [Configs](https://app.portkey.ai/configs) → **Create Config**:
-
-```json
-{
-    "provider": "@openai-prod",
-    "metadata": {
-        "environment": "production",
-        "agent": "hermes",
-        "host": "vps-01"
-    }
-}
-```
-
-Save and copy the Config ID.
-
-</Step>
-
-<Step title="Create a scoped API key with the Config">
-
-Go to [API Keys](https://app.portkey.ai/api-keys) → **Create Key** → attach your Config ID under **Advanced Settings**.
-
-</Step>
-
-<Step title="Use the scoped key in Hermes">
-
-```bash
-hermes config set OPENAI_API_KEY YOUR_SCOPED_PORTKEY_KEY
-```
-
-With a scoped key, the model slug in `config.yaml` can omit the provider prefix since the Config handles routing:
-
-```yaml
-model:
-  provider: custom
-  default: gpt-4o
-  base_url: https://api.portkey.ai/v1
-  api_key: ${OPENAI_API_KEY}
-```
-
-</Step>
-</Steps>
-
-Use trace metadata to:
-- Group all requests from a single Hermes session or host
-- Debug issues by filtering logs by environment, platform, or skill
-- Track usage per user in multi-user gateway deployments
-
-## Advanced routing
-
-All advanced routing is configured through [Portkey Configs](/product/ai-gateway/configs) and attached to a scoped API key. Hermes sends the key as a Bearer token — Portkey applies the routing logic server-side, so Hermes config stays simple.
-
-### Fallbacks
-
-Route to backup providers when the primary fails:
-
-```json
-{
-    "strategy": { "mode": "fallback" },
-    "targets": [
-        { "provider": "@openai-prod" },
-        { "provider": "@anthropic-prod" },
-        { "provider": "@bedrock-prod" }
-    ]
-}
-```
-
-Especially useful for long-running Hermes sessions where a provider outage shouldn't break an autonomous task.
-
-### Load balancing
-
-Distribute requests across multiple keys or providers:
-
-```json
-{
-    "strategy": { "mode": "loadbalance" },
-    "targets": [
-        { "provider": "@openai-key-1", "weight": 0.5 },
-        { "provider": "@openai-key-2", "weight": 0.5 }
-    ]
-}
-```
-
-### Caching
-
-Reduce costs and latency for repeated queries (common with Hermes's scheduled cron jobs):
-
-```json
-{
-    "provider": "@openai-prod",
-    "cache": { "mode": "simple" }
-}
-```
-
-### Retries
-
-Automatically retry failed requests:
-
-```json
-{
-    "provider": "@openai-prod",
-    "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] }
-}
-```
-
-## Budget limits
-
-Hermes runs unattended via cron, messaging gateways, and subagents — costs can spiral without controls. Set provider-level limits in Portkey:
-
-1. Go to [AI Providers](https://app.portkey.ai/ai-providers) → select your provider
-2. Click **Budget & Limits**
-3. Configure:
-   - **Cost limit**: e.g., $200/month
-   - **Token limit**: e.g., 10M tokens/week
-   - **Rate limit**: requests per minute
-
-<Frame>
-<img src="/images/product/model-catalog/budget-and-limits-page-model-catalog.png" width="500"/>
-</Frame>
-
-Budget limits automatically block further requests when thresholds are hit, preventing runaway costs from autonomous sessions.
-
-## Complete example
-
-Full `~/.hermes/config.yaml` routing main agent, subagents, and auxiliary models through Portkey with a scoped key that applies fallback + caching + retries:
-
-```yaml
-model:
-  provider: custom
-  default: gpt-4o
-  base_url: https://api.portkey.ai/v1
-  api_key: ${PORTKEY_API_KEY}
-
-delegation:
-  base_url: https://api.portkey.ai/v1
-  api_key: ${PORTKEY_API_KEY}
-  model: "@anthropic-prod/claude-haiku-4-5"
-
-auxiliary:
-  vision:
-    base_url: https://api.portkey.ai/v1
-    api_key: ${PORTKEY_API_KEY}
-    model: "@openai-prod/gpt-4o"
-  compression:
-    base_url: https://api.portkey.ai/v1
-    api_key: ${PORTKEY_API_KEY}
-    model: "@gemini-prod/gemini-2.5-flash"
-```
-
-Corresponding Portkey Config attached to the scoped key:
-
-```json
-{
-    "strategy": { "mode": "fallback" },
-    "targets": [
-        { "provider": "@openai-prod" },
-        { "provider": "@anthropic-prod" }
-    ],
-    "cache": { "mode": "simple" },
-    "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] },
-    "metadata": {
-        "agent": "hermes",
-        "environment": "production"
-    }
-}
-```
-
-## Troubleshooting
-
-### Requests not appearing in Portkey logs
-
-**Cause:** Hermes may be falling back to another provider.
-
-**Fix:**
-1. Run `hermes config` to confirm `model.provider: custom` and `model.base_url: https://api.portkey.ai/v1`
-2. Check `~/.hermes/logs/errors.log` for auth failures
-3. Verify the scoped key matches your Portkey API key with `cat ~/.hermes/.env | grep PORTKEY`
-
-### Model not found error
-
-**Cause:** The model slug doesn't match a valid provider and model in your Portkey workspace.
-
-**Fix:** Go to [AI Providers](https://app.portkey.ai/ai-providers), confirm the provider slug, and verify the model name is supported. Use `@<slug>/<model>` format — for example, `@openai-prod/gpt-4o`.
-
-### Context length errors during compression
-
-**Cause:** The compression model has a smaller context window than the main agent.
-
-**Fix:** Point compression at a large-context model via Portkey:
-
-```yaml
-auxiliary:
-  compression:
-    base_url: https://api.portkey.ai/v1
-    api_key: ${PORTKEY_API_KEY}
-    model: "@gemini-prod/gemini-2.5-pro"
-```
-
-See [Hermes context compression docs](https://hermes-agent.nousresearch.com/docs/user-guide/configuration#context-compression) for details.
 
 <AdvancedFeatures />
