@@ -1,0 +1,205 @@
+---
+title: Quickstart
+description: Get started with Agent Gateway
+---
+
+All you need to get started is an agent server.
+
+For this quickstart, we will be using an [A2A agent](https://a2a-protocol.org/latest/topics/what-is-a2a/#understanding-the-agent-stack-a2a-mcp-agent-frameworks-and-models).
+
+<Steps>
+  <Step title="Fetch your server URL">
+    Make use of one of the following agent servers and configure it as the
+    upstream agent server. This is used to fetch the agent card and authenticate
+    requests.
+    <Columns cols={2}>
+      <Card title="Hello world A2A Agent" icon="handshake">
+        <a href="https://hello.a2aregistry.org">
+          https://hello.a2aregistry.org
+        </a>
+      </Card>
+      <Card
+        title="Simple A2A Agent with tools and header based authentication"
+        icon="key"
+      >
+        <a href="https://a2a-header-auth.ayush-0a3.workers.dev">
+          https://a2a-header-auth.ayush-0a3.workers.dev
+        </a>
+        headers: `Authorization: Bearer secret-key-1`
+      </Card>
+    </Columns>
+    <Card title="Host your own Agent!" icon="wrench" horizontal>
+      You can host your own A2A Agent server following the instructions in the
+      [Agent Server
+      SDK](https://a2a-protocol.org/latest/tutorials/python/1-introduction/)
+      documentation.
+    </Card>
+  </Step>
+  <Step title="Add agent to registry">
+    <Steps>
+      <Step title="configure the agent">
+        Access the [Agent
+        Registry](https://app.portkey.ai/agent-integrations/integrated) and
+        configure the agent server URL.
+        <Frame>
+          <img src="/images/agent-gateway/create-new-integration.png" />
+        </Frame>
+      </Step>
+      <Step title="Fetch agent card and validate">
+        validate transport and authentication schemes by clicking the `Fetch
+        Agent Card` button.
+        <Frame>
+          <img src="/images/agent-gateway/fetch-agent-card.png" />
+        </Frame>
+      </Step>
+      <Step title="Provision workspaces">
+        <Frame>
+          <img src="/images/agent-gateway/provision-workspaces.png" />
+        </Frame>
+      </Step>
+    </Steps>
+  </Step>
+  <Step title="Verify your integration!">
+    <Steps>
+      <Step title="Grab your portkey API key">
+        Head over to the [API Keys](https://app.portkey.ai/api-keys) page and
+        create a new API key. Make sure the `agents.invoke` scope is enabled for
+        your API key
+        <Frame>
+          <img src="/images/agent-gateway/api-key-scopes-for-agent-invoke.png" />
+        </Frame>
+      </Step>
+      <Step title="Fetch the agent server URL from the agents tab">
+        open the [Agents](https://app.portkey.ai/agents) tab and fetch the
+        corresponding agent server URL. This is the URL you will use to connect
+        your agent to the Portkey Agent Gateway instead of the agent server URL.
+        It looks something like this (you can replace the agent slug with your
+        server's slug):
+        `https://agents.portkey.ai/v1/agent/header-based-authentication`
+        <Frame>
+          <img src="/images/agent-gateway/agent-server.png" />
+        </Frame>
+      </Step>
+    </Steps>
+  </Step>
+</Steps>
+
+## Interface with your agent!!!
+
+You can simply replace your agent server URL with the one you fetched
+from the agents tab and test out the integration.
+
+Alternatively, make use of one of the code snippets below!
+
+<CodeGroup>
+```shell cURL
+curl --location --request POST 'https://agents.portkey.ai/v1/agent/{agent-slug}/.well-known/agent.json' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: {PORTKEY_API_KEY}'
+```
+
+```python python
+import asyncio
+import json
+
+from a2a.client import A2ACardResolver
+import httpx
+
+BASE_URL = "https://agents.portkey.ai/v1/agent/{agent-slug}"
+API_KEY = "{PORTKEY_API_KEY}"
+
+
+async def log_httpx_request(request: httpx.Request) -> None:
+    try:
+        body = request.content.decode("utf-8") if request.content else "<empty>"
+    except Exception:
+        body = "<streaming or unreadable body>"
+    print(f"[httpx] {request.method} {request.url}")
+    print(f"[httpx] body: {body}\n")
+
+
+async def main() -> None:
+    print(f"Fetching agent card from {BASE_URL}...")
+    async with httpx.AsyncClient(
+        base_url=BASE_URL,
+        headers={"x-portkey-api-key": API_KEY},
+        event_hooks={"request": [log_httpx_request]},
+    ) as client:
+        resolver = A2ACardResolver(httpx_client=client, base_url=BASE_URL)
+        agent_card = await resolver.get_agent_card()
+        print(json.dumps(agent_card.model_dump(mode="json", exclude_none=True), indent=2))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+```javascript JavaScript
+import {
+  DefaultAgentCardResolver,
+  ClientFactory,
+  ClientFactoryOptions,
+} from "@a2a-js/sdk/client";
+
+const BASE_URL = "https://agents.portkey.ai/v1/agent/{agent-slug}";
+const API_KEY = "{PORTKEY_API_KEY}";
+
+class HeaderAuthInterceptor {
+  async before(args) {
+    args.options = {
+      ...args.options,
+      serviceParameters: {
+        ...(args.options?.serviceParameters || {}),
+        "x-portkey-api-key": API_KEY,
+      },
+    };
+  }
+
+  async after() {}
+}
+
+function createAuthenticatedFetch() {
+  return async (input, init = {}) => {
+    const headers = new Headers(init.headers || {});
+    headers.set("x-portkey-api-key", API_KEY);
+    return fetch(input, { ...init, headers });
+  };
+}
+
+async function main() {
+  console.log(`Fetching agent card from ${BASE_URL}...`);
+
+  const authFetch = createAuthenticatedFetch();
+  const resolverBaseUrl = BASE_URL.endsWith("/") ? BASE_URL : `${BASE_URL}/`;
+
+  const options = ClientFactoryOptions.createFrom(
+    ClientFactoryOptions.default,
+    {
+      cardResolver: new DefaultAgentCardResolver({
+        fetchImpl: authFetch,
+      }),
+      clientConfig: { interceptors: [new HeaderAuthInterceptor()] },
+    },
+  );
+
+  const factory = new ClientFactory(options);
+  const client = await factory.createFromUrl(resolverBaseUrl);
+
+  const card = client.agentCard;
+
+  if (!card) {
+    throw new Error("Unable to read agent card from SDK client instance.");
+  }
+
+  console.log(JSON.stringify(card, null, 2));
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+```
+
+</CodeGroup>
+
+## Further Reading
