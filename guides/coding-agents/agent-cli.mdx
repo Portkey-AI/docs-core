@@ -1,21 +1,36 @@
 ---
-title: 'Setup Claude Code or Codex using Agent CLI'
-description: 'One command to connect Claude Code or Codex to Portkey — gateway routing, MCP tools, and team skills configured in a single interactive flow.'
+title: 'Portkey CLI'
+description: 'Wire Claude Code, Codex, or Cursor to Portkey — gateway routing, MCP servers, and team skills in one command.'
 ---
 
-One command wires your AI coding agent through Portkey:
+The Portkey CLI sets up AI coding agent integrations from your terminal.
 
 ```bash
-npx github:portkey-ai/agent-cli
+npx portkey
 ```
 
-The wizard asks which agent you're setting up, validates your Portkey key, lets you pick a provider or Config, adds MCP servers, and syncs team skills.
+Or install globally:
+
+```bash
+npm install -g portkey
+portkey
+```
 
 **Requirements:** Node.js 18+ · [Portkey account](https://app.portkey.ai) with at least one provider in [Model Catalog](/product/model-catalog)
+
+<Card title="Source & full changelog" icon="github" href="https://github.com/Portkey-AI/cli">
+  github.com/Portkey-AI/cli
+</Card>
 
 ---
 
 ## What gets configured
+
+Running `npx portkey` (or `npx portkey setup`) opens an interactive wizard. Choose which agent to configure:
+
+- **Claude Code** — sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_CUSTOM_HEADERS` in `~/.claude/settings.json`
+- **Codex** — writes `base_url`, `PORTKEY_API_KEY`, and `wire_api` into `.codex/config.toml`
+- **Cursor (skills only)** — syncs team skills to `.cursor/skills/`
 
 ### Gateway routing
 
@@ -51,6 +66,9 @@ Every request appears in [Portkey Logs](https://app.portkey.ai) with cost, laten
 
 Fetches your workspace's MCP integrations and writes them to each agent's config — your Portkey API key included in headers automatically.
 
+- **Claude Code** — written to `~/.claude.json` / `.mcp.json`
+- **Codex** — written as `[mcp_servers.*]` blocks in `.codex/config.toml`
+
 <Note>
 MCP integrations requiring upstream OAuth (e.g. Linear, Slack) are flagged during setup. For Claude Code, run `/mcp` to complete the OAuth flow. For Codex, run `codex mcp login <server-name>`.
 </Note>
@@ -58,6 +76,12 @@ MCP integrations requiring upstream OAuth (e.g. Linear, Slack) are flagged durin
 ### Team skills
 
 Syncs [Prompt Partials](/product/prompt-engineering-studio/prompt-partial) from Portkey as `SKILL.md` files to the agent's skills directory. Every developer runs one command and gets the same instructions.
+
+| Agent | Skills directory |
+|---|---|
+| Claude Code | `.claude/skills/` |
+| Codex | `.agents/skills/` |
+| Cursor | `.cursor/skills/` |
 
 <Frame>
   <img src="/images/product/prompts/prompt-library.png" alt="Team skills stored as versioned prompt partials in Portkey" />
@@ -69,19 +93,51 @@ Syncs [Prompt Partials](/product/prompt-engineering-studio/prompt-partial) from 
 
 | Command | What it does |
 |---------|-------------|
-| `setup` | Full wizard — gateway, MCP, skills |
-| `status` | Show current config and routing health |
-| `verify` | Send a live test request through Portkey |
-| `mcp add / list / remove` | Manage MCP server entries |
-| `skills sync / list` | Sync team skills from Portkey |
-| `uninstall` | Remove Portkey config from agent settings |
+| `npx portkey` | Interactive menu (Setup Claude Code, Setup Codex, or Cursor skills-only) |
+| `npx portkey setup` | Full setup wizard — gateway, MCP, skills |
+| `npx portkey status` | Show current config, routing hints, and MCP counts |
+| `npx portkey skills sync` | Pull Prompt Partials from Portkey → local `SKILL.md` trees |
+| `npx portkey skills list` | List skills available in the workspace |
+| `npx portkey mcp add` | Add MCP servers from the Portkey registry |
 
 ```bash
-# Examples
-npx github:portkey-ai/agent-cli setup
-npx github:portkey-ai/agent-cli status
-npx github:portkey-ai/agent-cli skills sync
-npx github:portkey-ai/agent-cli mcp add
+npx portkey setup
+npx portkey status
+npx portkey skills sync
+npx portkey mcp add
+```
+
+---
+
+## Non-interactive setup (CI / scripts)
+
+Pass `--yes` to skip all prompts and use flags directly:
+
+```bash
+npx portkey setup \
+  --yes \
+  --portkey-key YOUR_PORTKEY_API_KEY \
+  --provider @anthropic-prod \
+  --skip-mcp \
+  --skip-skills
+```
+
+Available flags:
+
+| Flag | Description |
+|------|-------------|
+| `--yes` | Skip all prompts, accept defaults |
+| `--portkey-key` | Portkey API key |
+| `--provider` | Provider or Config slug (e.g. `@anthropic-prod`) |
+| `--skip-mcp` | Skip MCP server configuration |
+| `--skip-skills` | Skip skills sync |
+| `--codex-wire-api` | Codex only: `chat` (default) or `responses` |
+
+### Refresh skills in CI
+
+```bash
+npx portkey skills sync --yes --agent claude
+npx portkey skills sync --yes --agent codex
 ```
 
 ---
