@@ -1,0 +1,618 @@
+---
+title: "Request metadata use cases"
+description: "Attach business context to every LLM request for observability, cost attribution, multi-tenant billing, experiments, compliance, and agent workflows—patterns, examples, and governance."
+---
+
+Metadata in Portkey is a set of arbitrary string key–value pairs on gateway requests. Tag traffic with who triggered a call, which feature, environment, tenant, session, and trace IDs—then slice Analytics, Logs, and exports on those dimensions without changing provider APIs or prompts.
+
+<Info>
+This feature is available on all Portkey plans. Request-level metadata works everywhere; workspace/API key metadata and required-metadata enforcement are Enterprise capabilities. Reference: [Metadata](/product/observability/metadata). Per-user cost APIs: [Track costs using metadata](/guides/use-cases/track-costs-using-metadata).
+</Info>
+
+```python
+# Example metadata on a request
+{
+    "_user": "user-9821",
+    "environment": "production",
+    "feature": "document-summary",
+    "team": "growth",
+    "session_id": "sess-abc123",
+    "request_id": "req-xyz456",
+}
+```
+
+## Key rules at a glance
+
+| Property | Details |
+|----------|---------|
+| Number of keys | No fixed limit—send as many pairs as needed |
+| Value type | Strings only; max **128 characters** per value |
+| Key names | Any string; some keys have special behaviour (see [Metadata](/product/observability/metadata)) |
+| **`_user`** | Drives per-user analytics in the dashboard |
+| Scope | Request, API key, or workspace (Enterprise) |
+| Precedence (gateway **v1.10.20+**) | Workspace → API key → request (workspace wins on conflict) |
+
+<Info>
+Gateways **before 1.10.20** used the opposite precedence (request highest). See [Metadata](/product/observability/metadata#enterprise-features).
+</Info>
+
+---
+
+## Use case 1 — User-level analytics and attribution
+
+### The problem
+
+In a multi-user SaaS product, AI usage pools in one undifferentiated stream. Heavy users, inactive users, and fair-use enforcement are hard to reason about without per-user attribution; customer billing for AI credits becomes guesswork.
+
+### The solution
+
+Pass **`_user`** on every request made on behalf of an end user. Portkey surfaces this in Analytics and supports **`>Meta`** filters in the dashboard.
+
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY", provider="@OPENAI_PROVIDER")
+
+response = portkey.with_options(
+    metadata={
+        "_user": "user-9821",
+        "plan": "pro",
+        "account_id": "acct-001",
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": "Hello"}],
+    model="gpt-4o",
+)
+```
+
+### What you unlock
+
+- **Per-user token consumption** — prompt and completion tokens over time
+- **Cost per user** — token counts combined with model pricing
+- **Request frequency** — outliers for rate limits or plan upgrades
+- **Cohort comparison** — group by keys like `plan` and compare cost or usage
+- **Support debugging** — filter Logs to one user when triaging bad outputs
+
+<Tip>
+If the OpenAI-compatible request body already includes a `user` field, Portkey copies it to **`_user`**. If both exist, explicit **`_user`** in metadata wins.
+</Tip>
+
+---
+
+## Use case 2 — Feature and component cost attribution
+
+### The problem
+
+Products ship many AI surfaces—chat, summarisation, code completion, search. Without labelling calls by feature, total spend is a single line item: impossible to answer *which feature is expensive*.
+
+### The solution
+
+Tag every request with **`feature`** or **`component`**. Combine with model and token data in Analytics for a feature-level view of AI spend.
+
+```python
+# Document summarisation
+response = portkey.with_options(
+    metadata={
+        "feature": "doc-summariser",
+        "team": "content",
+        "version": "v2.1",
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": "Summarise this document."}],
+    model="gpt-4o",
+)
+
+# Code completion
+response = portkey.with_options(
+    metadata={
+        "feature": "code-completion",
+        "team": "developer-tools",
+        "version": "v1.0",
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": "Complete this function."}],
+    model="gpt-4o",
+)
+```
+
+### What you unlock
+
+- **Feature-level cost breakdown** — compare `doc-summariser` vs `code-completion` in one view
+- **ROI analysis** — join exported data with product analytics
+- **Optimisation targets** — prioritise caching, prompt compression, or cheaper models on the costliest feature
+- **Team accountability** — map keys to owning teams
+- **Version comparison** — tag `version` or `prompt_version` for A/B cost and quality trade-offs
+
+---
+
+## Use case 3 — Environment segmentation (dev / staging / prod)
+
+### The problem
+
+The same app runs in dev, staging, and production. Without separating environments in observability, dev noise pollutes production cost reports and alerts may fire on non-production traffic.
+
+### The solution
+
+Set an **`environment`** key (and optional **`region`**, **`deployment`**) so Analytics and Logs filter cleanly inside one workspace.
+
+```python
+import os
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY", provider="@OPENAI_PROVIDER")
+ENV = os.getenv("DEPLOY_ENV", "development")
+
+response = portkey.with_options(
+    metadata={
+        "environment": ENV,
+        "region": "us-east-1",
+        "deployment": "canary",
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": "Hello"}],
+    model="gpt-4o",
+)
+```
+
+### What you unlock
+
+- **Clean production reports** — filter to `environment=production` for billing views
+- **Regression detection** — compare error and latency patterns across environments
+- **Canary checks** — tag `deployment=canary` vs `stable` for side-by-side metrics
+- **Dev cost visibility** — track experimentation spend before it hits prod
+
+---
+
+## Use case 4 — Multi-tenant SaaS and tenant isolation
+
+### The problem
+
+B2B products generate usage on behalf of many customer orgs. Per-tenant consumption matters for billing, SLAs, and support—and tenant traffic must not blur together in Logs.
+
+### The solution
+
+Add tenant identifiers (for example **`tenant_id`**, **`tenant_plan`**) alongside **`_user`** and **`feature`**.
+
+```python
+response = portkey.with_options(
+    metadata={
+        "tenant_id": "tenant-acme-corp",
+        "tenant_plan": "enterprise",
+        "_user": "user-jane-doe",
+        "feature": "contract-analysis",
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": "Analyse this clause."}],
+    model="gpt-4o",
+)
+```
+
+### What you unlock
+
+- **Per-tenant billing** — aggregate tokens and cost by `tenant_id`
+- **SLA monitoring** — filter Logs to one tenant for latency and error review
+- **Tenant-scoped debugging** — reproduce issues without mixing other customers’ traffic
+- **Plan analysis** — compare usage across `tenant_plan` values
+- **Quota alerts** — export or poll Analytics to warn when a tenant nears a monthly cap
+
+---
+
+## Use case 5 — Session and conversation tracking
+
+### The problem
+
+Chat and agent flows issue many LLM calls per logical conversation. Without a shared id, conversation-level cost and multi-turn debugging stay opaque.
+
+### The solution
+
+Use a stable **`session_id`** for every turn in the same conversation. Optionally add **`turn`** or similar for ordering.
+
+```python
+import uuid
+
+session_id = str(uuid.uuid4())
+
+for i, turn in enumerate(conversation_turns):
+    response = portkey.with_options(
+        metadata={
+            "session_id": session_id,
+            "_user": current_user_id,
+            "turn": str(i),
+        }
+    ).chat.completions.create(
+        messages=turn.messages,
+        model="gpt-4o",
+    )
+```
+
+### What you unlock
+
+- **End-to-end conversation cost** — sum tokens across one `session_id`
+- **Multi-turn debugging** — inspect prior turns when a later response fails
+- **Context growth** — relate token counts across turns to pruning or summarisation needs
+- **Drop-off analysis** — correlate abandoned sessions with errors
+
+---
+
+## Use case 6 — Internal request tracing and correlation
+
+### The problem
+
+LLM calls must tie to application logs, traces, or tickets. Without a shared id, correlating Portkey Logs to the rest of the stack is slow.
+
+### The solution
+
+Propagate **`request_id`** (or trace id) from gateways, queues, or APM. Add **`service`** / **`caller`** when multiple services share one API key.
+
+```python
+import uuid
+
+# Propagate an incoming trace id or generate one
+trace_id = incoming_trace_id or str(uuid.uuid4())
+
+response = portkey.with_options(
+    metadata={
+        "request_id": trace_id,
+        "service": "summarisation-api",
+        "caller": "web-frontend",
+        "_user": user_id,
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": user_text}],
+    model="gpt-4o-mini",
+)
+```
+
+### What you unlock
+
+- **One-hop correlation** — search Logs by `request_id` to match Datadog, Sentry, or internal traces
+- **Service attribution** — see which microservice originated the call
+- **Latency breakdown** — compare app latency vs model latency
+- **Incident review** — filter all LLM calls tied to known trace ids
+
+Also see header **[`x-portkey-trace-id`](/api-reference/inference-api/headers)** for correlating Portkey requests.
+
+---
+
+## Use case 7 — Prompt version and experiment tracking
+
+### The problem
+
+Prompt iteration runs experiments without clear labelling—hard to compare cost, latency, or quality between variants.
+
+### The solution
+
+Tag **`experiment`**, **`variant`**, and **`prompt_version`** (or your own names) on each call.
+
+```python
+response_control = portkey.with_options(
+    metadata={
+        "experiment": "summarisation-v3",
+        "variant": "control",
+        "prompt_version": "v2.4",
+        "_user": user_id,
+    }
+).chat.completions.create(
+    messages=build_prompt_v2(document),
+    model="gpt-4o-mini",
+)
+
+response_treatment = portkey.with_options(
+    metadata={
+        "experiment": "summarisation-v3",
+        "variant": "cot-prompt",
+        "prompt_version": "v3.0",
+        "_user": user_id,
+    }
+).chat.completions.create(
+    messages=build_prompt_v3_cot(document),
+    model="gpt-4o-mini",
+)
+```
+
+### What you unlock
+
+- **Cost and latency by variant** — compare treatments in Analytics
+- **Error and guardrail rates** — segment by `variant`
+- **Gradual rollout** — track metrics as traffic shifts between variants
+
+---
+
+## Use case 8 — Compliance, audit, and data governance
+
+### The problem
+
+Regulated teams need auditable records: who invoked the model, with what data classification, under which policy.
+
+### The solution
+
+Add governance-oriented keys (examples: **`user_role`**, **`data_class`**, **`regulation`**, **`consent_ref`**, **`case_id`**, **`jurisdiction`**). Metadata is stored with request context in Logs—pair with export workflows for evidence packs.
+
+```python
+response = portkey.with_options(
+    metadata={
+        "_user": current_user.id,
+        "user_role": "analyst",
+        "data_class": "pii-adjacent",
+        "regulation": "GDPR",
+        "consent_ref": "consent-2024-001",
+        "case_id": case.id,
+        "jurisdiction": "EU",
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": prompt}],
+    model="gpt-4o",
+)
+```
+
+### What you unlock
+
+- **Structured audit fields** — filter and export by classification and case
+- **DSAR support** — filter by `_user` for access-request bundles
+- **Role segmentation** — review usage by `user_role`
+
+<Warning>
+Metadata appears in Portkey Logs and dashboards for workspace members. Do not put secrets, full PII, or credentials in metadata—use opaque ids and classifications instead.
+</Warning>
+
+See [Logs export](/product/observability/logs-export) for bulk export patterns.
+
+---
+
+## Use case 9 — AI agent and workflow observability
+
+### The problem
+
+Agent runs fan out to many LLM calls (planning, tools, reflection). A flat log list hides which step or tool each call belongs to.
+
+### The solution
+
+Tag **`agent_run_id`**, **`agent_name`**, **`step`**, and optionally **`tool`** on every call in the run.
+
+```python
+# Pattern: propagate run context through each LLM call
+def execute_step(portkey, run_id, step_name, messages, tool_name=None):
+    meta = {
+        "agent_run_id": run_id,
+        "agent_name": "contract-review-agent",
+        "step": step_name,
+        "environment": "production",
+    }
+    if tool_name:
+        meta["tool"] = tool_name
+    return portkey.with_options(metadata=meta).chat.completions.create(
+        messages=messages,
+        model="gpt-4o",
+    )
+```
+
+For Google ADK with Portkey, install extras and use the integration class from the SDK (see the [Python SDK](https://github.com/Portkey-AI/portkey-python-sdk) for current `PortkeyAdk` usage).
+
+### What you unlock
+
+- **Per-run cost** — aggregate tokens by `agent_run_id`
+- **Step-level debugging** — replay ordering when the final answer is wrong
+- **Tool usage** — group by `tool` to see hot tools and token impact
+- **Loop detection** — repeated `step` values under one `agent_run_id` flag potential loops
+
+---
+
+## Use case 10 — Enterprise metadata governance
+
+### The problem
+
+Ad-hoc tagging leaves gaps: missing keys break dashboards and compliance reports.
+
+### The solution
+
+Define metadata at **workspace**, **API key**, and **request** levels. Higher levels merge down; on **v1.10.20+**, **workspace wins** on key conflicts, then API key, then request.
+
+| Level | Precedence | Typical use |
+|-------|------------|-------------|
+| Workspace | Highest | Org-wide tags: `company`, `compliance_region` |
+| API key | Middle | Team or service: `team`, `service`, `environment` |
+| Request | Lowest | Per-call: `_user`, `session_id`, `feature`, `request_id` |
+
+```python
+# Request-only metadata from application code
+response = portkey.with_options(
+    metadata={
+        "_user": "user-001",
+        "feature": "onboarding-assistant",
+        "session_id": "sess-abc",
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": "Hi"}],
+    model="gpt-4o",
+)
+# Effective logged metadata = merge(workspace, api_key, request) per precedence rules
+```
+
+### Enforcing required metadata
+
+Enterprise orgs can attach JSON Schema requirements to **new or updated** API keys and workspaces so required keys are always present. See [Enforcing request metadata](/product/administration/enforcing-request-metadata).
+
+---
+
+## Self-hosted: inject metadata from headers
+
+<Info>
+Enterprise self-hosted; gateway **2.5.0+**.
+</Info>
+
+Set **`HEADERS_TO_METADATA`** so named inbound headers merge into metadata (case-insensitive). Useful when proxies already send `x-request-id` or `x-tenant-id`.
+
+```
+HEADERS_TO_METADATA=x-request-id,x-caller-service,x-environment
+```
+
+Details: [Metadata](/product/observability/metadata#automatic-metadata-from-headers-self-hosted).
+
+---
+
+## Where metadata appears
+
+### Analytics
+
+<Frame>
+  <img src="/images/metadata.png" alt="Analytics with metadata filters" />
+</Frame>
+
+### Logs
+
+Filter by any key used in traffic:
+
+<Frame>
+  <img src="/images/metadata-filters.png" alt="Metadata filters in logs" />
+</Frame>
+
+---
+
+## Implementation reference
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY", provider="@OPENAI_PROVIDER")
+
+response = portkey.with_options(
+    metadata={
+        "_user": "user-123",
+        "environment": "production",
+        "feature": "summarisation",
+        "session_id": "sess-abc",
+        "request_id": "req-xyz",
+    }
+).chat.completions.create(
+    messages=[{"role": "user", "content": "Summarise this article"}],
+    model="gpt-4o",
+)
+```
+
+```javascript Node.js
+import { Portkey } from "portkey-ai";
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "@OPENAI_PROVIDER",
+});
+
+const response = await portkey.chat.completions.create(
+  {
+    messages: [{ role: "user", content: "Summarise this article" }],
+    model: "gpt-4o",
+  },
+  {
+    metadata: {
+      _user: "user-123",
+      environment: "production",
+      feature: "summarisation",
+      session_id: "sess-abc",
+      request_id: "req-xyz",
+    },
+  }
+);
+```
+
+```javascript OpenAI SDK
+import OpenAI from "openai";
+import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai";
+
+const openai = new OpenAI({
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    metadata: { _user: "user-123", feature: "customer-support" },
+  }),
+});
+
+const response = await openai.chat.completions.create({
+  messages: [{ role: "user", content: "Help with my order" }],
+  model: "gpt-4o",
+});
+```
+
+```bash cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: $OPENAI_PROVIDER" \
+  -H 'x-portkey-metadata: {"_user":"user-123","feature":"search","environment":"prod"}' \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user","content": "Find relevant docs"}]
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Best practices
+
+### Naming conventions
+
+Inconsistent keys (`user_id` vs `userId` vs `_user`) fragment Analytics. Define a small schema for the org and route all calls through a shared helper.
+
+```python
+def build_metadata(user_id, feature, session_id=None, **extra):
+    meta = {
+        "_user": str(user_id),
+        "environment": os.getenv("DEPLOY_ENV", "development"),
+        "feature": feature,
+    }
+    if session_id:
+        meta["session_id"] = session_id
+    meta.update(extra)
+    return meta
+```
+
+### Default `_user` for end-user traffic
+
+Include **`_user`** whenever the call is on behalf of a known user so dashboard user analytics stay populated.
+
+### Stay within 128 characters
+
+Use short ids (UUIDs, slugs). Long prose belongs in the message body, not metadata.
+
+### No secrets in metadata
+
+Metadata is visible in Logs and to workspace members with access. Never store API keys, passwords, or sensitive PII—only opaque identifiers and classification labels.
+
+### Saved filters
+
+Use [Filters](/product/observability/filters) for common combinations (for example production + one `feature`) to speed up triage.
+
+### API key metadata for service identity
+
+When each microservice has its own Portkey API key, set **`team`**, **`service`**, **`environment`** on the key so attribution survives forgotten request-level tags.
+
+---
+
+## Summary: metadata use cases at a glance
+
+| Use case | Example keys | Primary benefit |
+|----------|----------------|-----------------|
+| User analytics | `_user`, `plan`, `account_id` | Per-user cost, usage, outliers |
+| Feature attribution | `feature`, `team`, `version` | Feature-level AI spend |
+| Environment segmentation | `environment`, `region`, `deployment` | Clean prod vs non-prod views |
+| Multi-tenant SaaS | `tenant_id`, `tenant_plan`, `_user` | Per-tenant billing and isolation |
+| Session tracking | `session_id`, `_user`, `turn` | Conversation cost and debugging |
+| Internal tracing | `request_id`, `service`, `caller` | Cross-system correlation |
+| Prompt experiments | `experiment`, `variant`, `prompt_version` | A/B cost and quality |
+| Compliance / audit | `_user`, `data_class`, `regulation`, `case_id` | Auditable, filterable records |
+| AI agents | `agent_run_id`, `agent_name`, `step`, `tool` | Per-run cost and step debugging |
+| Enterprise governance | Workspace + API key metadata | Consistent tags org-wide |
+
+---
+
+## Further reading
+
+- [Metadata](/product/observability/metadata) — Special keys, precedence, screenshots
+- [Analytics](/product/observability/analytics)
+- [Filters](/product/observability/filters)
+- [Logs export](/product/observability/logs-export)
+- [Enforcing request metadata](/product/administration/enforcing-request-metadata)
+- [Track costs using metadata](/guides/use-cases/track-costs-using-metadata)
