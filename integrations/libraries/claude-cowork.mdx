@@ -1,142 +1,104 @@
 ---
-title: 'Claude Cowork'
-description: 'Route Claude Cowork on Claude Desktop through Portkey for observability, governance, and multi-provider inference'
+title: "Claude Cowork"
+description: "Add observability, governance, and reliable routing to Claude Cowork with Portkey."
 ---
 
-[Claude Cowork](https://www.anthropic.com/product/claude-cowork) is Anthropic’s desktop agent for long-running knowledge work. In **third-party (3P) inference** mode, Claude Desktop can send Cowork traffic to an LLM gateway that implements the Anthropic [Messages API](https://docs.claude.com/en/api/messages)—including streaming and tool use.
+[Claude Cowork](https://www.anthropic.com/product/claude-cowork) runs on **Claude Desktop** in third-party inference mode and can target any gateway that speaks the Anthropic [Messages API](https://docs.claude.com/en/api/messages). Add Portkey to get:
 
-Portkey is a supported gateway pattern (see Anthropic’s [gateway configuration reference](https://claude.com/docs/cowork/3p/configuration)). Point Cowork at Portkey to centralize credentials, attach [configs](/product/ai-gateway/configs) (fallbacks, budgets, caching), and see every call in [Logs](https://app.portkey.ai/logs).
-
-## Why platform teams use Portkey
-
-<CardGroup cols={2}>
-  <Card title="Governance & keys" icon="shield-check">
-    Issue [virtual keys](/product/model-catalog/virtual-keys) per team or deployment instead of sharing raw provider credentials. Rotate and scope access from the Portkey dashboard.
-  </Card>
-  <Card title="Spend & reliability" icon="chart-line">
-    Agentic sessions add up fast. Enforce budgets and rate limits, and add [fallback](/product/ai-gateway/configs) targets when a provider errors or rate-limits.
-  </Card>
-  <Card title="Full observability" icon="eye">
-    Attribute traffic to the same API key you paste in Cowork. Trace latency, tokens, and costs per workspace or key.
-  </Card>
-  <Card title="Any Claude backend" icon="shuffle">
-    Route to Anthropic direct, [Bedrock](/integrations/libraries/claude-code-bedrock), [Vertex AI](/integrations/libraries/claude-code-vertex), or other catalog providers—without changing the Cowork client beyond Portkey routing.
-  </Card>
-</CardGroup>
-
-## How it works
-
-```
-Claude Cowork (Claude Desktop) → Portkey (/v1/messages) → Your providers (Anthropic, Bedrock, Vertex, …)
-```
-
-Cowork expects `POST /v1/messages` on the gateway base URL. Portkey’s [Messages API](/product/ai-gateway/messages-api) matches that contract, so you use the same `https://api.portkey.ai` base URL as the Anthropic SDK examples in Portkey’s docs.
+- **Observability** — Costs, tokens, and latency per key in [Logs](https://app.portkey.ai/logs)
+- **Governance** — Budget limits, rate limits, and scoped [API keys](https://app.portkey.ai/api-keys)
+- **Routing** — [Configs](/product/ai-gateway/configs) for fallbacks, load balancing, and caching
 
 <Note>
-  Third-party Cowork is a **Claude Desktop** deployment mode (Cowork / Code tabs, no standard Chat tab). For setup prerequisites and MDM export, see Anthropic’s [Install and configure Claude Cowork with third-party platforms](https://support.claude.com/en/articles/14680741-install-and-configure-claude-cowork-with-third-party-platforms) and [Use Claude Cowork with third-party platforms](https://support.claude.com/en/articles/14680729-use-claude-cowork-with-third-party-platforms).
+  Third-party Cowork uses the Cowork and Code experience in Claude Desktop, not standard Chat. Field names and MDM export are documented in Anthropic’s [Cowork on 3P configuration](https://claude.com/docs/cowork/3p/configuration).
 </Note>
 
-## Before you start
-
-1. **Claude Desktop** installed from [claude.com/download](https://claude.com/download), with third-party inference enabled as below.
-2. **Portkey** — At minimum, a [virtual API key](https://app.portkey.ai/api-keys) (optionally scoped to a [config](/product/ai-gateway/configs)) and a provider in the [Model Catalog](https://app.portkey.ai/model-catalog) if your key does not already embed default routing.
-3. **Models** — Requests must use model IDs your gateway understands (for example `@anthropic-prod/claude-sonnet-4-20250514` when routing through Portkey). Align model names with what Cowork exposes or what your Portkey config overrides.
-
-## Quick start
+## 1. Setup
 
 <Steps>
-  <Step title="Enable Developer mode">
-    Open **Claude Desktop**. In the menu bar, choose **Help → Troubleshooting → Enable Developer mode**.
+  <Step title="Add Provider">
+    Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **Add Provider**.
+
+    <Frame>
+      <img
+        src="/Screenshot2025-07-21at5.29.57PM.png"
+        width="500"
+      />
+    </Frame>
+  </Step>
+  <Step title="Configure Credentials">
+    Select the provider (Anthropic, Bedrock, Vertex, etc.), enter credentials, and create a slug like `anthropic-prod`.
+
+    <Frame>
+      <img
+        src="/images/product/model-catalog/create-provider-page.png"
+        width="500"
+      />
+    </Frame>
+  </Step>
+  <Step title="Create Config">
+    Go to [Configs](https://app.portkey.ai/configs) and create:
+
+    ```json
+    {
+      "override_params": {
+        "model": "@anthropic-prod/claude-sonnet-4-20250514"
+      }
+    }
+    ```
 
     <Note>
-      Anthropic’s enterprise guide uses this path so the **Developer** menu is available. If your build labels menus differently, use the equivalent **Troubleshooting** / developer entry from **Help**.
+      Add `"cache_control": {"type": "ephemeral"}` inside `override_params` for Anthropic models to enable caching and reduce cost.
     </Note>
+
+    Save and note the Config ID.
   </Step>
-
-  <Step title="Open Configure third-party inference">
-    With Developer mode on, open **Developer → Configure third-party inference** to launch the inference setup UI.
-
-    For field-level details and export to MDM (`.mobileconfig` / `.reg`), see Anthropic’s [Configuration reference](https://claude.com/docs/cowork/3p/configuration).
-  </Step>
-
-  <Step title="Set inference provider to Gateway">
-    In the setup UI, select **Gateway** (or the option that sets `inferenceProvider` to `gateway` per the configuration reference).
-
-    Enter:
-
-    | Field | Value |
-    | --- | --- |
-    | **Gateway base URL** | `https://api.portkey.ai/v1` |
-    | **Gateway API key** | Your Portkey virtual key from [API Keys](https://app.portkey.ai/api-keys) → **Create new key** (copy after creation). |
-
-    If your organization uses a [self-hosted](/self-hosting) gateway, use that deployment’s HTTPS base URL instead.
-
-    Save the settings.
-  </Step>
-
-  <Step title="Optional: Gateway extra headers">
-    To pin routing or Portkey features, use **Gateway extra headers** (Anthropic’s `inferenceGatewayHeaders`: a JSON array of `"Name: Value"` strings). Examples:
-
-    ```json
-    ["x-portkey-provider: @anthropic-prod"]
-    ```
-
-    ```json
-    ["x-portkey-config: pp-your-config-id"]
-    ```
-
-    Use your real provider slug or config ID. Headers are optional when your virtual key already carries a default [config](/product/ai-gateway/configs).
-
-    <Tip>
-      Some Cowork builds send the gateway credential as `x-api-key` or `Authorization: Bearer` depending on **Gateway auth scheme** (`auto`, `x-api-key`, or `bearer`). If requests fail with `401`, try another auth scheme in the UI or add `x-portkey-api-key` alongside your key per [Portkey inference headers](/api-reference/inference-api/headers).
-    </Tip>
-  </Step>
-
-  <Step title="Restart and verify">
-    Fully quit and reopen **Claude Desktop** (configuration is read at launch). Start a Cowork session and send a message.
-
-    In the Portkey dashboard, open **[Logs](https://app.portkey.ai/logs)**—you should see requests attributed to the API key you configured.
-
-    Anthropic’s [verify the installation](https://support.claude.com/en/articles/14680741-install-and-configure-claude-cowork-with-third-party-platforms) checklist (Cowork/Code tabs, login via gateway, etc.) applies to third-party mode generally.
+  <Step title="Get Portkey API Key">
+    Go to [API Keys](https://app.portkey.ai/api-keys) → **Create new key** → attach the config → save. Copy the key for the next section.
   </Step>
 </Steps>
 
-## Portkey configuration tips
+## 2. Configure Claude Cowork
 
-### Provider and model strings
+1. Open **Claude Desktop**. In the menu bar, choose **Help → Troubleshooting → Enable Developer mode**.
 
-Cowork sends Anthropic-format payloads. With Portkey, set the `model` field to your catalog route, for example `@bedrock-prod/us.anthropic.claude-sonnet-4-20250514-v1:0`, or rely on a virtual key whose [config](/product/ai-gateway/configs) overrides `model` for every request.
+<Frame>
+  <img
+    src="/images/libraries/claude-cowork-enable-developer-mode.png"
+    width="700"
+  />
+</Frame>
 
-### Forwarding beta headers
+2. Open **Developer → Configure third-party inference**.
 
-If you use features that rely on Anthropic beta headers, add `anthropic-beta` to `forward_headers` in your Portkey config (same idea as [Claude Code](/integrations/libraries/claude-code#forward-headers-required)) so the gateway forwards them to the provider.
+<Frame>
+  <img
+    src="/images/libraries/claude-cowork-developer-menu-inference.png"
+    width="700"
+  />
+</Frame>
 
-### Self-hosted Portkey
+3. Select **Gateway (Anthropic-compatible)**. Enter:
+   - **Gateway base URL:** `https://api.portkey.ai/v1`
+   - **Gateway API key:** the Portkey API key from **Get Portkey API Key**
+   - **Gateway auth scheme:** `bearer`
 
-Use your gateway’s public HTTPS origin as **Gateway base URL**. Ensure Cowork’s sandbox can reach that host; Anthropic documents **Allowed egress hosts** (`coworkEgressAllowedHosts`) for sandbox network policy in the [configuration reference](https://claude.com/docs/cowork/3p/configuration).
+<Frame>
+  <img
+    src="/images/libraries/claude-cowork-gateway-settings.png"
+    width="700"
+  />
+</Frame>
 
-## Troubleshooting
+4. Click **Apply locally**. Fully quit and reopen Claude Desktop so the app reloads policy.
+5. Start Cowork and send a message. Confirm traffic in [Logs](https://app.portkey.ai/logs).
 
-| Symptom | Likely cause | What to try |
-| --- | --- | --- |
-| `401` / unauthorized from Portkey | Credential header mismatch | Adjust **Gateway auth scheme**; add `x-portkey-api-key` via extra headers; confirm the virtual key is active. |
-| Wrong model or provider | Model string or routing | Set `x-portkey-provider` / config on the key; align model IDs with [Messages API](/product/ai-gateway/messages-api) `@slug/model` format. |
-| No rows in Portkey Logs | Traffic not hitting Portkey | Confirm base URL is exactly `https://api.portkey.ai` (or your self-host URL), restart the app, and check you are in third-party / gateway mode. |
-| Tool or stream errors | Gateway capability | Confirm your Portkey path supports streaming and tool use for that model; see Anthropic’s gateway requirements in the [configuration reference](https://claude.com/docs/cowork/3p/configuration#gateway). |
+Optional: set **Gateway extra headers** to a JSON array of `"Name: Value"` strings (for example `["x-portkey-provider: @anthropic-prod"]` or `["x-portkey-config: pp-your-config-id"]`) to override routing per request. See [inference headers](/api-reference/inference-api/headers).
 
-## Next steps
+Done! Monitor usage in the [Portkey Dashboard](https://app.portkey.ai/dashboard).
 
-<CardGroup cols={2}>
-  <Card title="Messages API" icon="message" href="/product/ai-gateway/messages-api">
-    Anthropic-format requests, models, and cross-provider behavior on Portkey
-  </Card>
-  <Card title="Configs" icon="gear" href="/product/ai-gateway/configs">
-    Fallbacks, load balancing, caching, and header forwarding
-  </Card>
-  <Card title="Observability" icon="chart-line" href="/product/observability">
-    Logs, traces, and analytics
-  </Card>
-  <Card title="Claude Code on Portkey" icon="terminal" href="/integrations/libraries/claude-code">
-    Related Anthropic desktop / CLI routing patterns
-  </Card>
-</CardGroup>
+---
+
+import AdvancedFeatures from '/snippets/portkey-advanced-features.mdx';
+
+<AdvancedFeatures />
