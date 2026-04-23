@@ -1,12 +1,131 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.5.1]"
+sidebarTitle: "Enterprise Gateway [2.6.1]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="2.6.1" description="2026-04-14">
+
+## v2.6.1
+---
+
+### Anthropic Batch API via `/v1/batches`
+
+Run asynchronous Claude jobs through Portkey's unified `/v1/batches` endpoints. All five operations — **create**, **retrieve**, **cancel**, **list**, and **get output** — proxy to Anthropic's [Message Batches API](https://docs.anthropic.com/en/docs/build-with-claude/batch-processing) while returning OpenAI-compatible Batch objects. Get up to 50% lower cost on large offline jobs without leaving the gateway.
+
+[Anthropic Batches Documentation](/integrations/llms/anthropic/batches)
+
+### Mask Sensitive Headers in Logs
+
+New `x-portkey-sensitive-headers` request header (alias `sensitive_headers` / `sensitiveHeaders` in the SDKs) lets you mask the values of any headers you don't want persisted raw in request, response, or OTel trace logs. Matching is case-insensitive and applies across all log stores.
+
+[Sensitive Headers Documentation](/api-reference/inference-api/headers#mask-sensitive-headers-in-logs)
+
+### OpenAI-compatible `reasoning_effort` for Bedrock
+
+The `reasoning_effort` parameter (`minimal`, `low`, `medium`, `high`, `none`) now works for Bedrock Claude reasoning models:
+
+- **Claude Opus 4.6 / Sonnet 4.6**: maps to Anthropic's [adaptive thinking](https://platform.claude.com/docs/en/build-with-claude/effort#effort-with-extended-thinking) (`thinking.type = "adaptive"`)
+- **Other Claude reasoning models**: maps to `thinking.budget_tokens` using a ratio of `max_tokens` (10% / 20% / 50% / 80%, minimum 1024 tokens)
+- An explicit `thinking` object in the request takes precedence
+
+[Bedrock `reasoning_effort` Documentation](/integrations/llms/bedrock/aws-bedrock#using-reasoning_effort-parameter)
+
+### Vertex AI: Multi-Layer Custom Pricing Resolution
+
+Custom pricing for Vertex AI now resolves hierarchically through **region → execution mode (standard / batch / priority) → context tier**, replacing the previous flat `pricing_config` lookup. Provider-specific resolvers and a cached `ModelPricingEntry` blob ensure the most specific matching price is used — with bundled defaults applied as a fallback.
+
+This improves cost attribution accuracy for Vertex workloads running across regions, batches, and long-context tiers.
+
+### Vertex AI: Metadata Label Hardening
+
+Follow-ups to the v2.6.0 metadata-to-labels feature:
+
+- Empty metadata values are now skipped (previously produced empty labels)
+- Both keys and values are lowercased and trimmed to Google Cloud's limits (64 chars for key, 64 chars for value) to avoid API rejections
+- Keys are sanitized in addition to values
+
+### Agent Gateway (Preview)
+
+New experimental proxy route `/v1/agent/:agentServerId/*` forwards requests to A2A-registry agent servers with full Portkey authentication, identity hydration, and observability. Part of an ongoing effort to bring agent-protocol workloads under the gateway. Reach out if you'd like to preview this capability.
+
+### Structured Outputs: `/messages` → `/chat/completions` Adapter Fix
+
+Requests to `/messages` with `output_config.format.type = "json_schema"` now correctly map to `response_format.json_schema` with both `name` and `schema` populated when adapted to `/chat/completions`, restoring structured-output behavior for callers using the messages-format adapter.
+
+### Fixes and Improvements
+
+- **Streaming**: AWS event-stream chunk parse failures are now logged with the truncated payload (first 500 bytes) and error details instead of being silently swallowed, making streaming issues on Bedrock and other AWS-backed providers easier to diagnose
+- **Hugging Face**: Default base URL updated from the deprecated `api-inference.huggingface.co` to `router.huggingface.co`
+- **Error messages**: Invalid virtual key errors now surface the specific key that failed validation instead of the raw header value
+- **Self-hosted Docker image**: Removed default Prometheus and Loki environment values from the Dockerfile
+
+</Update>
+
+<Update label="2.6.0" description="2026-04-08">
+
+## v2.6.0
+---
+
+### Vertex AI: Metadata to Labels Mapping
+
+Portkey [metadata](/product/observability/metadata) is now automatically mapped to Vertex AI resource labels across `chat/completions`, `embeddings`, `batches`, and `fine-tuning` endpoints — unlocking Google Cloud–native cost attribution for every Vertex workload.
+
+- Metadata keys are sanitized to comply with Google Cloud label requirements (invalid characters replaced with `_`)
+- Keys are prefixed (default `pk_gateway_`) to avoid collisions with labels passed directly in the request
+- Self-hosted deployments can customize the prefix via the `METADATA_MAP_KEY_PREFIX` environment variable
+
+[Vertex AI Custom Metadata Labels](/integrations/llms/vertex-ai#custom-metadata-labels)
+
+### Custom Host per Custom Model
+
+Custom models in the [Model Catalog](/product/model-catalog/custom-models) can now carry their own `custom_host` in the model configuration. The gateway reads the per-model custom host when routing requests, so different custom models under the same integration can target different upstream URLs.
+
+A custom host passed in the request header still takes priority over the per-model value.
+
+### Anthropic: Data URL Support for File Inputs
+
+Anthropic chat completions now accept base64 data URLs (`data:<media_type>;base64,<data>`) in `file.file_data`. Portkey parses the media type and base64 payload and forwards them to Anthropic's document content type, removing the need for callers to split the data URL themselves.
+
+### Anthropic: `cache_control` Passthrough on Chat Completions
+
+The Anthropic `/chat/completions` route now forwards a top-level `cache_control` request parameter directly to Anthropic (default `ephemeral`), matching the behavior already available on `/messages`.
+
+For message- and tool-level caching, continue to use `cache_control` on individual content blocks. See [Anthropic Prompt Caching](/integrations/llms/anthropic/prompt-caching).
+
+### Anthropic: Strict Structured Outputs
+
+When `response_format` is an object-type JSON schema, Portkey now sets `additionalProperties: false` automatically, aligning behavior with Anthropic's expectations for strict structured outputs.
+
+### MCP Gateway: Upstream Token Refresh and Re-auth
+
+Improved reliability for pooled MCP connections when upstream OAuth tokens expire mid-session:
+
+- Upstream tokens are refreshed silently during active requests; downstream tokens are revoked cleanly when mid-session upstream auth fails
+- Identity headers on pooled connections are refreshed on reuse so the latest token is always forwarded
+- Sessions invalidated by the upstream (e.g., evicted or expired) now trigger pool invalidation and retry
+- MCP logs include two new attributes: `gateway_version` and `mcp.auth.upstream_token_refreshed`
+
+### MCP Gateway: Configurable Request Timeout
+
+New `MCP_REQUEST_TIMEOUT_MS` environment variable configures the timeout applied to every outbound MCP request (`tools/call`, `tools/list`, `prompts/get`, `resources/read`, etc.). When unset, the MCP SDK default of 60 s is used.
+
+### MCP Gateway: Connection Pool Improvements
+
+- `MCP_POOL_*` environment variables (`MCP_POOL_ENABLED`, `MCP_POOL_MAX_IDLE_MS`, `MCP_POOL_MAX_LIFETIME_MS`, `MCP_POOL_CLEANUP_INTERVAL_MS`, `MCP_POOL_MAX_CONNECTIONS`, `MCP_POOL_TOKEN_EXPIRY_BUFFER_MS`) now load from the environment with correct precedence — unset variables fall back to defaults instead of clobbering them with `undefined`
+- Default connection `maxLifetimeMs` lowered from 30 minutes to 10 minutes to reduce memory pressure from long-lived upstream connections
+- Improved cleanup of Web streams and MCP session resources to prevent memory leaks
+
+### Fixes and Improvements
+
+- **Perplexity**: Fixed streaming for `sonar-deep-research` — SSE parsing handles `[DONE]` and non-JSON chunks, structured deltas are emitted correctly, and parse errors propagate instead of being silently swallowed
+- **Pricing sync**: Updated pricing configurations for Anthropic (Claude Haiku 4.5, Claude 4 Sonnet), Google / Vertex AI, Mistral AI, DashScope, DeepInfra, Fireworks AI, Nebius, Novita AI, OpenRouter, Z.ai, and Zhipu
+
+</Update>
 
 <Update label="2.5.1" description="2026-04-01">
 
