@@ -1,12 +1,52 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.6.1]"
+sidebarTitle: "Enterprise Gateway [2.6.2]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="2.6.2" description="2026-04-17">
+
+## v2.6.2
+---
+
+### MCP Gateway: Header Renaming in `forward_headers`
+
+`forward_headers` entries on an MCP server can now be objects with `{ from, to }` to rename a client header before it reaches the upstream — on top of the existing plain-string allowlist and `all-except` modes.
+
+Both the source and target names are validated against the protected-headers blocklist, so protected headers like `x-api-key` or `x-user-claims` cannot be smuggled through a rename.
+
+[MCP Forwarding Headers Documentation](/product/mcp-gateway/authentication/forwarding-headers)
+
+### Azure Entra ID: Federated Authentication
+
+Azure OpenAI and Azure AI Foundry integrations now support a new `entraFederated` authentication mode that exchanges an AWS web identity token for an Entra ID access token — enabling keyless Azure access from workloads running on AWS (for example, EKS with IRSA).
+
+Configure it by setting `azureAuthMode: "entraFederated"` on the Azure integration alongside `clientId` and `tenantId`; no `clientSecret` is required.
+
+[Azure Authentication Modes Documentation](/integrations/llms/azure-openai/authentication)
+
+### Gemini Embedding 2 Preview Support
+
+The `gemini-embedding-2-preview` model is now available on the unified `/v1/embeddings` route for Vertex AI, supporting text, image, video, and audio inputs through a single endpoint.
+
+[Vertex AI Embeddings Documentation](/integrations/llms/vertex-ai/embeddings)
+
+### Configs: Passthrough Target Error Handling
+
+Improved error reporting when [passthrough targets](/product/ai-gateway/configs#passthrough-targets) can't resolve a provider from the incoming request — the gateway now surfaces a clear error after targets are resolved, rather than failing silently further down the pipeline. Passthrough virtual-key extraction was also consolidated into a single helper for consistency across fallback, loadbalance, and conditional modes.
+
+### Fixes and Improvements
+
+- **Gemini / Vertex thinking**: Restored `thinking_budget` forwarding on Vertex and fixed `include_thoughts` so that `thinking.type = "enabled"` with a zero `budget_tokens` correctly disables thinking instead of silently enabling it
+- **Pinecone vector store**: Fixed Pinecone client initialization to use the configured `vector_store_api_key` (previously dropped, causing auth failures)
+- **Pricing sync**: Updated pricing configurations for Anthropic, Azure AI, Azure OpenAI, Bedrock, DeepInfra, OpenAI, OpenRouter, Together AI, Vertex AI, and xAI
+- **Revert**: Removed the multi-layer Vertex AI pricing resolver that briefly landed in v2.6.1 — it will return in a later release
+
+</Update>
 
 <Update label="2.6.1" description="2026-04-14">
 
@@ -34,12 +74,6 @@ The `reasoning_effort` parameter (`minimal`, `low`, `medium`, `high`, `none`) no
 - An explicit `thinking` object in the request takes precedence
 
 [Bedrock `reasoning_effort` Documentation](/integrations/llms/bedrock/aws-bedrock#using-reasoning_effort-parameter)
-
-### Vertex AI: Multi-Layer Custom Pricing Resolution
-
-Custom pricing for Vertex AI now resolves hierarchically through **region → execution mode (standard / batch / priority) → context tier**, replacing the previous flat `pricing_config` lookup. Provider-specific resolvers and a cached `ModelPricingEntry` blob ensure the most specific matching price is used — with bundled defaults applied as a fallback.
-
-This improves cost attribution accuracy for Vertex workloads running across regions, batches, and long-context tiers.
 
 ### Vertex AI: Metadata Label Hardening
 
