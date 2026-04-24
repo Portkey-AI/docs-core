@@ -1,12 +1,119 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.5.1]"
+sidebarTitle: "Enterprise Gateway [2.6.2]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="2.6.2" description="2026-04-17">
+
+## v2.6.2
+---
+
+### MCP Gateway: Header Renaming in `forward_headers`
+
+`forward_headers` entries now accept `{ from, to }` objects to rename a client header before it reaches the upstream. Protected headers remain blocked on both sides.
+
+[MCP Forwarding Headers Documentation](/product/mcp-gateway/authentication/forwarding-headers)
+
+### Azure Entra ID: Federated Authentication
+
+New `entraFederated` auth mode for Azure OpenAI and Azure AI Foundry exchanges an AWS web identity token for an Entra ID access token — keyless Azure access from AWS workloads (EKS/IRSA).
+
+[Azure Authentication Modes Documentation](/integrations/llms/azure-openai/authentication)
+
+### Gemini Embedding 2 Preview Support
+
+`gemini-embedding-2-preview` is now available on the unified `/v1/embeddings` route for Vertex AI with text, image, video, and audio input.
+
+[Vertex AI Embeddings Documentation](/integrations/llms/vertex-ai/embeddings)
+
+### Fixes and Improvements
+
+- **Gemini / Vertex thinking**: Restored `thinking_budget` forwarding on Vertex; `thinking.type = "enabled"` with a zero `budget_tokens` now correctly disables thinking
+- **Pinecone vector store**: Fixed client initialization to use the configured `vector_store_api_key`
+- **Passthrough configs**: Clearer errors when a [passthrough target](/product/ai-gateway/configs#passthrough-targets) can't resolve a provider from the incoming request
+- **Revert**: Removed the multi-layer Vertex AI pricing that caused zero cost attribution in v2.6.1
+
+</Update>
+
+<Update label="2.6.1" description="2026-04-14">
+
+## v2.6.1
+---
+<Warning>
+This release contains a bug which led to zero cost attribution for most requests.
+
+This has been fixed in v2.6.2
+</Warning>
+
+### Anthropic Batch API via `/v1/batches`
+
+Run asynchronous Claude jobs through Portkey's unified `/v1/batches` endpoints.
+
+[Anthropic Batches Documentation](/integrations/llms/anthropic/batches)
+
+### Mask Sensitive Headers in Logs
+
+New `x-portkey-sensitive-headers` header (SDK aliases: `sensitive_headers` / `sensitiveHeaders`) masks matching header values in request, response, and OTel trace logs.
+
+[Sensitive Headers Documentation](/api-reference/inference-api/headers#mask-sensitive-headers-in-logs)
+
+### OpenAI-compatible `reasoning_effort` for Bedrock
+
+`reasoning_effort` (`minimal` / `low` / `medium` / `high` / `none`) now works for Bedrock Claude reasoning models — mapped to adaptive thinking on Claude 4.6, and to `thinking.budget_tokens` on earlier reasoning models.
+
+[Bedrock `reasoning_effort` Documentation](/integrations/llms/bedrock/aws-bedrock#using-reasoning-effort-parameter)
+
+### Agent Gateway (Preview)
+
+New experimental proxy route `/v1/agent/:agentServerId/*` forwards requests to A2A-registry agent servers with Portkey auth and observability. Reach out to preview.
+
+### Fixes and Improvements
+
+- **Vertex AI metadata labels**: Hardening for the v2.6.0 metadata-to-labels feature — empty values are skipped, keys/values are lowercased and trimmed to Google Cloud's 64-char limits, and keys are sanitized
+- **Structured outputs adapter**: `/messages` requests with `output_config.format.type = "json_schema"` now correctly map to `response_format.json_schema` when adapted to `/chat/completions`
+- **Streaming logs**: AWS event-stream chunk parse failures are now logged with the truncated payload and error details instead of being silently swallowed
+- **Hugging Face**: Default base URL updated from `api-inference.huggingface.co` to `router.huggingface.co`
+- **Error messages**: Invalid virtual key errors now surface the specific key that failed validation
+
+</Update>
+
+<Update label="2.6.0" description="2026-04-08">
+
+## v2.6.0
+---
+
+### Vertex AI: Metadata to Labels Mapping
+
+Portkey [metadata](/product/observability/metadata) is now automatically mapped to Vertex AI resource labels across `chat/completions`, `embeddings`, `batches`, and `fine-tuning` — unlocking Google Cloud–native cost attribution. Keys are sanitized and prefixed (default `pk_gateway_`, configurable via `METADATA_MAP_KEY_PREFIX`).
+
+[Vertex AI Custom Metadata Labels](/integrations/llms/vertex-ai#custom-metadata-labels)
+
+### Custom Host per Custom Model
+
+Custom models in the [Model Catalog](/product/model-catalog/custom-models) can now carry their own `custom_host` in the model config, letting different custom models under the same integration route to different upstreams. A header-level `custom_host` still takes priority.
+
+### Anthropic Enhancements
+
+- **Data URL file inputs**: `/chat/completions` accepts base64 data URLs (`data:<media_type>;base64,<data>`) in `file.file_data` and forwards them as Anthropic document content
+- **`cache_control` passthrough**: `/chat/completions` now forwards a top-level `cache_control` parameter to Anthropic, matching `/messages` behavior. For block-level caching, continue using [prompt caching](/integrations/llms/anthropic/prompt-caching)
+- **Strict structured outputs**: Object-type `response_format` JSON schemas automatically get `additionalProperties: false`
+
+### MCP Gateway Reliability
+
+- **Upstream token refresh**: Pooled MCP connections now refresh expired upstream OAuth tokens silently mid-session; upstream-invalidated sessions trigger pool invalidation and retry. New log attributes: `gateway_version`, `mcp.auth.upstream_token_refreshed`
+- **Configurable request timeout**: `MCP_REQUEST_TIMEOUT_MS` sets the outbound timeout for every MCP call (default: SDK's 60 s)
+- **Connection pool**: `MCP_POOL_*` env vars now load with correct precedence; default `maxLifetimeMs` lowered from 30 min → 10 min; improved stream and session cleanup
+
+### Fixes and Improvements
+
+- **Perplexity streaming**: Fixed `sonar-deep-research` — SSE parsing handles `[DONE]` and non-JSON chunks, structured deltas are emitted correctly, and parse errors propagate instead of being silently swallowed
+
+</Update>
 
 <Update label="2.5.1" description="2026-04-01">
 
@@ -102,7 +209,7 @@ Added `image/heic` and `image/heif` to the list of supported image MIME types fo
     - Fixed Google provider's embedding endpoint to correctly map the OpenAI-compatible `dimensions` parameter to Google's `output_dimensionality` parameter
     - Fixed schema conversion for tools
 - **Mistral AI**:
-    - Added `response_format` parameter support for Mistral AI, enabling structured JSON output and strict JSON schema enforcement. Previously, the gateway silently dropped this parameter for Mistral requests.
+    - Added `response_format` parameter support for Mistral AI, enabling structured JSON output and strict JSON schema enforcement.
     - [Mistral AI Documentation](/integrations/llms/mistral-ai)
 - Security dependency updates
 
@@ -958,8 +1065,7 @@ Added new condition keys for fine-grained budget and rate limit policies:
 ---
 
 ### Provider Updates
-- **VertexAI**: Added support for [https://docs.cloud.google.com/vertex-ai/generative-ai/docs/computer-use](Computer Use).
-    - link to documentation: https://portkey.ai/docs/integrations/llms/vertex-ai#computer-use-browser-automation-preview
+- **VertexAI**: Added support for Computer Use. See [Documentation](/integrations/llms/vertex-ai#computer-use-browser-automation-preview).
 - **VertexAI**: Added support for `anthropic-beta`. Please pass `anthropic-beta` or `x-portkey-anthropic-beta` header to enable this feature.
 - **OpenAI**: Added support for `conversation` and `modalities` parameters.
 - **Anthropic**: Add role to `assistant` in chat completion stream response.
@@ -969,7 +1075,7 @@ Added new condition keys for fine-grained budget and rate limit policies:
 
 ### Experimental GenAI Otel Support
 - The semantic convention is defined here: https://github.com/open-telemetry/semantic-conventions/blob/main/model/gen-ai/spans.yaml
-- link to documentation: https://portkey.ai/docs/product/observability/opentelemetry#experimental-features
+- [Documentation](/product/observability/opentelemetry#experimental-features)
 
 ### Robust Cors Support
 - Added support for robust CORS configuration for the Gateway.
@@ -2034,7 +2140,7 @@ We are redacting this release and will be releasing a patch with out Workspace B
 - Extended the unified batches APIs to support VertexAI batching.
 
 ### Provider Updates
-- **Google and VertexAI**: Updated the Grounding implementation to support their new API signatures. [Docs Link](https://portkey.ai/docs/integrations/llms/vertex-ai#grounding-with-google-search)
+- **Google and VertexAI**: Updated the Grounding implementation to support their new API signatures. [Docs Link](/integrations/llms/vertex-ai#grounding-with-google-search)
 - **AWS Bedrock**: Handle edge cases for AWS Bedrock file uploads.
 
 ### Fixes and Enhancements
@@ -2126,7 +2232,7 @@ We are redacting this release and will be releasing a patch with out Workspace B
 
 ### Unified Batches and Files API
 - Added unified batching APIs for OpenAI, AWS Bedrock and Cohere
-- [Docs Link](https://portkey.ai/docs/product/ai-gateway/batches#batches)
+- [Docs Link](/product/ai-gateway/batches#batches)
 
 ### Improved Batch Management for Analytics Data Inserts
 - Improved Clickhouse batch management to prevent log drops.
@@ -2170,7 +2276,7 @@ We are redacting this release and will be releasing a patch with out Workspace B
 
 ### Gemini Grounding Mode Support
 - Added Gemini grounding mode support in OpenAI compatible tools format.
-- [Docs Link](https://portkey.ai/docs/integrations/llms/vertex-ai#grounding-with-google-search)
+- [Docs Link](/integrations/llms/vertex-ai#grounding-with-google-search)
 
 ### Provider Updates
 - **Groq**: Fixed ```finish_reason``` mapping for streaming response.
@@ -2220,7 +2326,7 @@ We are redacting this release and will be releasing a patch with out Workspace B
 ### New Provider - AWS Sagemaker
 - AWS Sagemaker models can now be used through Gateway as passthrough requests.
 - Unified API signature is not yet possible because Sagemaker inherits the request body structure from the underlying model.
-- [Docs Link](https://portkey.ai/docs/integrations/llms/aws-sagemaker)
+- [Docs Link](/integrations/llms/aws-sagemaker)
 </Update>
 
 <Update label="1.9.2" description="2024-11-29">
@@ -2234,7 +2340,7 @@ We are redacting this release and will be releasing a patch with out Workspace B
 ### Prompt Labels
 - Added support for labelled prompt cache invalidation whenever an update happens on control plane side.
 - NOTE: Prompt labels is a control plane change and has no major updates in Gateway apart from cache key invalidation for labelled prompt keys.
-- [Docs Link](https://portkey.ai/docs/product/prompt-library/prompt-templates#prompt-labels)
+- [Docs Link](/product/prompt-engineering-studio/prompt-versioning#prompt-labels)
 
 ### S3 Integration Enhancements
 - Allow sub-paths in bucket name for logs.
@@ -2270,7 +2376,7 @@ We are redacting this release and will be releasing a patch with out Workspace B
 
 ### Realtime API Integration
 - Added Realtime APIs integration for OpenAI and AzureOpenAI.
-- [Docs Link](https://portkey.ai/docs/product/ai-gateway/realtime-api)
+- [Docs Link](/product/ai-gateway/realtime-api)
 
 ### Provider Updates
 - **VertexAI**: Fixed structured outputs integration for VertexAI when using JS SDK. The SDK was adding extra fields in the JSON schema that were incompatible with Vertex's API requirements.
