@@ -1,0 +1,479 @@
+---
+title: Batches
+description: Run asynchronous batch jobs on Anthropic's Claude models through Portkey's unified /v1/batches API
+---
+
+<Note>
+Self-hosted deployments require **Enterprise Gateway v2.6.1+**.
+</Note>
+
+Portkey exposes Anthropic's [Message Batches API](https://docs.anthropic.com/en/docs/build-with-claude/batch-processing) through the unified OpenAI-compatible `/v1/batches` endpoints. All five batch operations — create, retrieve, cancel, list, and get output — are supported, so you can run large, asynchronous Claude jobs at 50% lower cost without leaving the Portkey gateway.
+
+Use batches when you need to run large jobs offline — e.g. nightly evals, bulk summarization, or dataset grading.
+
+## Supported Endpoints
+
+| Gateway Endpoint                         | Anthropic Upstream                                 | Operation        |
+| ---------------------------------------- | -------------------------------------------------- | ---------------- |
+| `POST /v1/batches`                       | `POST /v1/messages/batches`                        | Create a batch   |
+| `GET /v1/batches/{batch_id}`             | `GET /v1/messages/batches/{batch_id}`              | Retrieve a batch |
+| `POST /v1/batches/{batch_id}/cancel`     | `POST /v1/messages/batches/{batch_id}/cancel`      | Cancel a batch   |
+| `GET /v1/batches`                        | `GET /v1/messages/batches`                         | List batches     |
+| `GET /v1/batches/{batch_id}/output`      | Streams from `results_url`                         | Get batch output |
+
+## Request Format
+
+<Note>
+Unlike OpenAI's file-based batches, Anthropic batch creation uses an inline `requests[]` array — there is no `input_file_id`. Each item carries a `custom_id` and a `params` object containing the standard Messages API payload.
+</Note>
+
+```json
+{
+  "requests": [
+    {
+      "custom_id": "req-1",
+      "params": {
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 1024,
+        "messages": [
+          { "role": "user", "content": "Hello" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+## Create a Batch
+
+<Tabs>
+  <Tab title="Python">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@anthropic"
+)
+
+batch = portkey.post(
+    "/batches",
+    requests=[
+        {
+            "custom_id": "req-1",
+            "params": {
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": "Hello"}]
+            }
+        }
+    ]
+)
+
+print(batch)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@anthropic"
+});
+
+const batch = await portkey.post('/batches', {
+    requests: [
+        {
+            custom_id: "req-1",
+            params: {
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 1024,
+                messages: [{ role: "user", content: "Hello" }]
+            }
+        }
+    ]
+});
+
+console.log(batch);
+```
+  </Tab>
+  <Tab title="REST">
+```sh
+curl -X POST https://api.portkey.ai/v1/batches \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @anthropic" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requests": [
+      {
+        "custom_id": "req-1",
+        "params": {
+          "model": "claude-sonnet-4-20250514",
+          "max_tokens": 1024,
+          "messages": [
+            { "role": "user", "content": "Hello" }
+          ]
+        }
+      }
+    ]
+  }'
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@anthropic",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+batch = client.post(
+    "/batches",
+    body={
+        "requests": [
+            {
+                "custom_id": "req-1",
+                "params": {
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 1024,
+                    "messages": [{"role": "user", "content": "Hello"}]
+                }
+            }
+        ]
+    },
+    cast_to=object
+)
+
+print(batch)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```js
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "@anthropic",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+const batch = await client.post('/batches', {
+    body: {
+        requests: [
+            {
+                custom_id: "req-1",
+                params: {
+                    model: "claude-sonnet-4-20250514",
+                    max_tokens: 1024,
+                    messages: [{ role: "user", content: "Hello" }]
+                }
+            }
+        ]
+    }
+});
+
+console.log(batch);
+```
+  </Tab>
+</Tabs>
+
+## Retrieve a Batch
+
+Retrieving a batch returns the OpenAI-compatible Batch object. Once processing completes, the response additionally includes `results_url` pulled from Anthropic so you can stream outputs.
+
+<Tabs>
+  <Tab title="Python">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@anthropic"
+)
+
+batch = portkey.batches.retrieve(batch_id="<batch_id>")
+
+print(batch)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@anthropic"
+});
+
+const batch = await portkey.batches.retrieve("<batch_id>");
+
+console.log(batch);
+```
+  </Tab>
+  <Tab title="REST">
+```sh
+curl https://api.portkey.ai/v1/batches/<batch_id> \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @anthropic"
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@anthropic",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+batch = client.batches.retrieve("<batch_id>")
+
+print(batch)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```js
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "@anthropic",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+const batch = await client.batches.retrieve("<batch_id>");
+
+console.log(batch);
+```
+  </Tab>
+</Tabs>
+
+## List Batches
+
+<Tabs>
+  <Tab title="Python">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@anthropic"
+)
+
+batches = portkey.batches.list()
+
+print(batches)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@anthropic"
+});
+
+const batches = await portkey.batches.list();
+
+console.log(batches);
+```
+  </Tab>
+  <Tab title="REST">
+```sh
+curl https://api.portkey.ai/v1/batches \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @anthropic"
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@anthropic",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+batches = client.batches.list()
+
+print(batches)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```js
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "@anthropic",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+const batches = await client.batches.list();
+
+console.log(batches);
+```
+  </Tab>
+</Tabs>
+
+## Cancel a Batch
+
+<Tabs>
+  <Tab title="Python">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@anthropic"
+)
+
+cancelled = portkey.batches.cancel(batch_id="<batch_id>")
+
+print(cancelled)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@anthropic"
+});
+
+const cancelled = await portkey.batches.cancel("<batch_id>");
+
+console.log(cancelled);
+```
+  </Tab>
+  <Tab title="REST">
+```sh
+curl -X POST https://api.portkey.ai/v1/batches/<batch_id>/cancel \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @anthropic"
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@anthropic",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+cancelled = client.batches.cancel("<batch_id>")
+
+print(cancelled)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```js
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "@anthropic",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+const cancelled = await client.batches.cancel("<batch_id>");
+
+console.log(cancelled);
+```
+  </Tab>
+</Tabs>
+
+## Get Batch Output
+
+<Info>
+Before streaming results, Portkey retrieves the batch metadata and verifies that `processing_status === 'ended'`. It then fetches from Anthropic's `results_url`, falling back to `/messages/batches/{batch_id}/results` if the URL is unavailable. The response body is streamed back as JSONL in Anthropic's native format by default.
+</Info>
+
+<Tabs>
+  <Tab title="REST">
+```sh
+curl https://api.portkey.ai/v1/batches/<batch_id>/output \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @anthropic"
+```
+  </Tab>
+</Tabs>
+
+A typical output line looks like:
+
+```json
+{
+  "custom_id": "req-1",
+  "result": {
+    "type": "succeeded",
+    "message": {
+      "id": "msg_01XYZ...",
+      "type": "message",
+      "role": "assistant",
+      "content": [{ "type": "text", "text": "Hello! How can I help?" }],
+      "model": "claude-sonnet-4-20250514",
+      "stop_reason": "end_turn",
+      "usage": { "input_tokens": 10, "output_tokens": 12 }
+    }
+  }
+}
+```
+
+## Response Format
+
+`createBatch`, `retrieveBatch`, `cancelBatch`, and `listBatches` always return the OpenAI Batch shape so existing OpenAI tooling works unchanged:
+
+- `object: "batch"` and `endpoint: "/v1/batches"` on every batch record.
+- `status` values normalized to OpenAI-compatible strings (`validating`, `in_progress`, `finalizing`, `completed`, `failed`, `cancelling`, `cancelled`, `expired`).
+- Timestamps converted from Anthropic's ISO 8601 format to Unix epoch seconds.
+- Request counts mapped: `succeeded → completed`, `errored → failed`.
+- `retrieveBatch` additionally surfaces `results_url` from the Anthropic response when the batch has finished processing.
+
+`getBatchOutput` is the exception — it streams the raw Anthropic-native JSONL so you get per-request `message` objects with full Claude response fidelity (content blocks, tool use, stop reasons, usage).
+
+## See Also
+
+- [Unified Batch Guide](/product/ai-gateway/batches)
+- [Anthropic integration overview](/integrations/llms/anthropic)
+- [Anthropic Message Batches API reference](https://docs.anthropic.com/en/docs/build-with-claude/batch-processing)

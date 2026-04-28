@@ -1,0 +1,441 @@
+---
+title: Files
+description: Upload and manage files with Anthropic through Portkey
+---
+
+Portkey supports Anthropic's [Files API](https://docs.anthropic.com/en/docs/build-with-claude/files) (beta), enabling you to upload, list, retrieve, and delete files through the gateway. Uploaded files can be referenced in chat completions using `file_id` instead of re-uploading content each request.
+
+<Note>
+The Files API is in beta and requires the `files-api-2025-04-14` beta header. Portkey sets this automatically for file endpoints when using the SDK. For cURL requests, include the `anthropic-beta: files-api-2025-04-14` header.
+</Note>
+
+## Upload a file
+
+<Tabs>
+  <Tab title="Python">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@anthropic"
+)
+
+file = portkey.files.create(
+    purpose="assistants",
+    file=open("document.pdf", "rb")
+)
+
+print(file.id)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai';
+import fs from 'fs';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@anthropic"
+});
+
+const file = await portkey.files.create({
+    purpose: "assistants",
+    file: fs.createReadStream("document.pdf")
+});
+
+console.log(file.id);
+```
+  </Tab>
+  <Tab title="REST">
+```sh
+curl -X POST https://api.portkey.ai/v1/files \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @anthropic" \
+  -H "anthropic-beta: files-api-2025-04-14" \
+  -F 'file=@"document.pdf"'
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@anthropic",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+file = client.files.create(
+    purpose="assistants",
+    file=open("document.pdf", "rb")
+)
+
+print(file.id)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```js
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+import fs from 'fs';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "@anthropic",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+const file = await client.files.create({
+    purpose: "assistants",
+    file: fs.createReadStream("document.pdf")
+});
+
+console.log(file.id);
+```
+  </Tab>
+</Tabs>
+
+## Use uploaded files in chat completions
+
+Once a file is uploaded, reference it by `file_id` in your chat completions requests:
+
+<Tabs>
+  <Tab title="Python">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@anthropic/claude-sonnet-4-5-20250929",
+    max_tokens=1024,
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Please summarize this document."},
+            {"type": "file", "file": {"file_id": "<file_id>", "mime_type": "application/pdf"}}
+        ]
+    }]
+)
+
+print(response.choices[0].message.content)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "@anthropic/claude-sonnet-4-5-20250929",
+    max_tokens: 1024,
+    messages: [{
+        role: "user",
+        content: [
+            { type: "text", text: "Please summarize this document." },
+            { type: "file", file: { file_id: "<file_id>", mime_type: "application/pdf" } }
+        ]
+    }]
+});
+
+console.log(response.choices[0].message.content);
+```
+  </Tab>
+  <Tab title="REST">
+```sh
+curl -X POST https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "anthropic-beta: files-api-2025-04-14" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "@anthropic/claude-sonnet-4-5-20250929",
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Please summarize this document."
+          },
+          {
+            "type": "file",
+            "file": {
+              "file_id": "<file_id>",
+              "mime_type": "application/pdf"
+            }
+          }
+        ]
+      }
+    ]
+  }'
+```
+  </Tab>
+</Tabs>
+
+<Note>
+When using the SDK, the `anthropic-beta` header is set automatically for file endpoints. For chat completions with file references via cURL, include `anthropic-beta: files-api-2025-04-14` in your request headers.
+</Note>
+
+## List files
+
+<Tabs>
+  <Tab title="Python">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@anthropic"
+)
+
+files = portkey.files.list()
+
+print(files)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@anthropic"
+});
+
+const files = await portkey.files.list();
+
+console.log(files);
+```
+  </Tab>
+  <Tab title="REST">
+```sh
+curl https://api.portkey.ai/v1/files \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @anthropic" \
+  -H "anthropic-beta: files-api-2025-04-14"
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@anthropic",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+files = client.files.list()
+
+print(files)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```js
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "@anthropic",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+const files = await client.files.list();
+
+console.log(files);
+```
+  </Tab>
+</Tabs>
+
+## Get file
+
+<Tabs>
+  <Tab title="Python">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@anthropic"
+)
+
+file = portkey.files.retrieve(file_id="<file_id>")
+
+print(file)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@anthropic"
+});
+
+const file = await portkey.files.retrieve("<file_id>");
+
+console.log(file);
+```
+  </Tab>
+  <Tab title="REST">
+```sh
+curl https://api.portkey.ai/v1/files/<file_id> \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @anthropic" \
+  -H "anthropic-beta: files-api-2025-04-14"
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@anthropic",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+file = client.files.retrieve("<file_id>")
+
+print(file)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```js
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "@anthropic",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+const file = await client.files.retrieve("<file_id>");
+
+console.log(file);
+```
+  </Tab>
+</Tabs>
+
+## Delete file
+
+<Tabs>
+  <Tab title="Python">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@anthropic"
+)
+
+response = portkey.files.delete(file_id="<file_id>")
+
+print(response)
+```
+  </Tab>
+  <Tab title="NodeJS">
+```js
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@anthropic"
+});
+
+const response = await portkey.files.delete("<file_id>");
+
+console.log(response);
+```
+  </Tab>
+  <Tab title="REST">
+```sh
+curl -X DELETE https://api.portkey.ai/v1/files/<file_id> \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @anthropic" \
+  -H "anthropic-beta: files-api-2025-04-14"
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+```python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@anthropic",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+response = client.files.delete("<file_id>")
+
+print(response)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+```js
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider: "@anthropic",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+const response = await client.files.delete("<file_id>");
+
+console.log(response);
+```
+  </Tab>
+</Tabs>
+
+## Supported file types
+
+Anthropic's Files API supports the following file types:
+
+| Type | MIME types |
+|------|-----------|
+| PDF | `application/pdf` |
+| Images | `image/jpeg`, `image/png`, `image/gif`, `image/webp` |
+
+## Limitations
+
+- The Files API is only available on **direct Anthropic API** — it is not supported on Bedrock or Vertex AI
+- Files API is currently in **beta** and requires the `files-api-2025-04-14` beta header for cURL requests
+- Refer to [Anthropic's documentation](https://docs.anthropic.com/en/docs/build-with-claude/files) for the latest file size and rate limits

@@ -144,7 +144,8 @@ import anthropic
 # 3. Use it:
 
 client = anthropic.Anthropic(
-    api_key="PORTKEY_API_KEY",
+    api_key="dummy", # we will use portkey's provider slug
+    default_headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"},
     base_url="https://api.portkey.ai"
 )
 
@@ -506,7 +507,8 @@ Portkey supports Anthropic's `/messages` endpoint, allowing you to use either An
 import anthropic
 
 client = anthropic.Anthropic(
-    api_key="YOUR_PORTKEY_API_KEY",
+    api_key="dummy", # we will use portkey's provider slug
+    default_headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"},
     base_url="https://api.portkey.ai"
 )
 
@@ -666,55 +668,69 @@ Set `strict_open_ai_compliance` to `false` (or use the header `x-portkey-strict-
 
 Portkey supports Anthropic's [Files API](https://docs.anthropic.com/en/docs/build-with-claude/files) (beta), enabling you to upload, list, retrieve, and delete files through the gateway. Uploaded files can be referenced in chat completions using `file_id` instead of re-uploading content each request.
 
+<Card title="Files API" icon="file" href="/integrations/llms/anthropic/files">
+  Upload, list, retrieve, and delete files — then use them in chat completions
+</Card>
+
+### Service Tier
+
+When routing Chat Completions requests to Anthropic, Portkey automatically translates OpenAI's `service_tier` parameter to Anthropic's native `speed` parameter:
+
+| `service_tier` | Anthropic `speed` |
+|---|---|
+| `auto` | `fast` |
+| `standard_only` | `standard` |
+| `default` | `standard` |
+| `fast` | `fast` |
+| `standard` | `standard` |
+| unknown value | omitted |
+
 <CodeGroup>
-```python Upload a file
+```python Python icon="python"
 from portkey_ai import Portkey
 
-portkey = Portkey(api_key="PORTKEY_API_KEY")
-
-file = portkey.with_options(provider="@anthropic").files.create(
-    purpose="assistants",
-    file=open("document.pdf", "rb")
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@anthropic"
 )
 
-print(file.id)
+response = portkey.chat.completions.create(
+    model="claude-sonnet-4-5",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello!"}],
+    service_tier="auto"  # maps to speed: "fast" on Anthropic
+)
 ```
 
-```sh cURL - Upload
-curl -X POST https://api.portkey.ai/v1/files \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: anthropic" \
-  -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
-  -F "file=@document.pdf"
+```js JavaScript icon="square-js"
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@anthropic"
+})
+
+const response = await portkey.chat.completions.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "Hello!" }],
+    service_tier: "auto"  // maps to speed: "fast" on Anthropic
+})
 ```
 
-```sh cURL - List files
-curl https://api.portkey.ai/v1/files \
+```sh cURL icon="square-terminal"
+curl -X POST https://api.portkey.ai/v1/chat/completions \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: anthropic" \
-  -H "Authorization: Bearer $ANTHROPIC_API_KEY"
+  -H "x-portkey-provider: @anthropic" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "service_tier": "auto"
+  }'
 ```
 </CodeGroup>
-
-Once uploaded, reference files in chat completions via `file_id`:
-
-```python
-response = portkey.chat.completions.create(
-    model="@anthropic/claude-sonnet-4-5-20250929",
-    max_tokens=1024,
-    messages=[{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "Summarize this document"},
-            {"type": "file", "file": {"file_id": file.id}}
-        ]
-    }]
-)
-```
-
-<Note>
-The Files API is in beta and requires the `files-api-2025-04-14` beta header. Portkey sets this automatically for file endpoints. The Files API is not supported on Bedrock or Vertex AI.
-</Note>
 
 ### Beta Features
 
