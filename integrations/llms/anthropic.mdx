@@ -288,6 +288,90 @@ for await (const chunk of response) {
 ```
 </CodeGroup>
 
+### Catch Overloaded Error on Stream
+
+Anthropic's API can return an `overloaded_error` inside a streaming response with HTTP status 200. The error appears as an SSE event:
+
+```text
+event: error
+data: {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}
+```
+
+By default, the gateway treats this as a successful (status 200) response and streams the error directly to the client, which means retry, fallback, and circuit breaker strategies do not activate (they rely on HTTP status codes).
+
+When **Catch Overloaded Error on Stream** is enabled on an Anthropic integration, the gateway intercepts these errors before they reach the client and converts them into HTTP `529` responses, allowing your retry and fallback strategies to trigger automatically.
+
+<Note>
+This feature is only available for the Anthropic provider. Other providers (e.g., Bedrock) handle overload errors at the HTTP level, where existing retry/fallback already applies. It also only applies to **streaming** requests — non-streaming Anthropic requests already return HTTP 529 directly.
+</Note>
+
+#### How it works
+
+When enabled on an integration, the gateway:
+
+1. Reads the first chunk of the Anthropic streaming response before committing it to the client
+2. Skips any keepalive ping events
+3. If the first meaningful event is an `overloaded_error`, returns an HTTP `529` response instead of the stream
+4. If the first event is normal content, continues streaming as usual with no data loss
+
+If no retry strategy is present and an `overloaded_error` is found, the request fails as a normal request with error `529`.
+
+The `529` response integrates with the gateway's existing error handling and supports all existing config combinations:
+
+- **Retry**: Triggers automatically when retry is configured
+- **Fallback**: Moves to the next target in a fallback strategy
+- **Circuit breaker**: Counts as a failure for circuit breaker thresholds
+
+<Note>
+Performance: There is zero overhead when the setting is disabled. When enabled, only the first event is inspected before the stream is committed.
+</Note>
+
+#### How to enable
+
+<Steps>
+  <Step title="Enable the flag on your Anthropic integration">
+    Go to **Model Catalog → Integrations → Anthropic** and enable the **Catch Overloaded Error on Stream** flag, then create or update the integration.
+  </Step>
+  <Step title="Add 529 to your retry status codes">
+    In your [config](/product/ai-gateway/configs), add `529` to the retry `on_status_codes` (or fallback `on_status_codes`). This supports all existing config combinations.
+  </Step>
+  <Step title="Attach the config to your API key">
+    Attach the updated config to your API key so the new behavior applies to all routed requests.
+  </Step>
+</Steps>
+
+Once enabled, all Anthropic streaming requests routed through the gateway are checked for overloaded errors.
+
+#### Example: Fallback on overload
+
+With a fallback config using two Anthropic integrations (both with **Catch Overloaded Error on Stream** enabled), if the primary returns an overloaded error during streaming, the gateway automatically retries with the backup:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "anthropic", "virtual_key": "anthropic-primary" },
+    { "provider": "anthropic", "virtual_key": "anthropic-backup" }
+  ]
+}
+```
+
+#### Error response
+
+When an overloaded error is detected, the client receives:
+
+```http
+HTTP/1.1 529
+{
+  "error": {
+    "message": "Overloaded",
+    "type": "overloaded_error",
+    "param": null,
+    "code": null
+  }
+}
+```
+
 ## Advanced Features
 
 ### Vision (Multimodal)
