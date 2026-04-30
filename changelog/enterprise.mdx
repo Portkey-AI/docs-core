@@ -1,12 +1,101 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.6.2]"
+sidebarTitle: "Enterprise Gateway [2.7.1]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="2.7.1" description="2026-04-30">
+
+## v2.7.1
+---
+
+### Anthropic: Catch `overloaded_error` on Streaming Responses
+
+Anthropic can return `overloaded_error` as the first chunk of a streaming (`200 OK`) response, which previously slipped past retry/fallback logic. When enabled on an Anthropic integration, the gateway now inspects the first streaming chunk and — if it's an `overloaded_error` — converts the response to HTTP **529**, which is a [retriable status code](/product/ai-gateway/automatic-retries), so your configured retries and fallbacks trigger as expected.
+
+Opt-in via the integration flag `anthropicInspectStreamForOverloadedError: true` (applies to Anthropic integrations only).
+
+</Update>
+
+<Update label="2.7.0" description="2026-04-30">
+
+## v2.7.0
+---
+
+### Vertex AI Rerank
+
+Vertex AI is now supported on Portkey's unified `/v1/rerank` endpoint, backed by Google's Discovery Engine ranking API (`semantic-ranker-default`, `semantic-ranker-fast`, `semantic-ranker-512`).
+
+[Vertex AI Rerank Documentation](/integrations/llms/vertex-ai/rerank)
+
+### Amazon Bedrock Mantle (OpenAI-Compatible Bedrock Endpoint)
+
+New `bedrock-mantle` provider for AWS's OpenAI-compatible Bedrock inference engine (`bedrock-mantle.{region}.api.aws`). Supports `/v1/chat/completions`, `/v1/responses`, and Anthropic-native `/v1/messages` via Portkey's unified API, with `apiKey`, `assumedRole`, and `serviceRole` auth modes.
+
+[Amazon Bedrock Mantle Documentation](/integrations/llms/bedrock-mantle)
+
+### Anthropic `speed` Parameter on `/messages`
+
+`/v1/messages` requests now pass through Anthropic's top-level `speed` parameter (`fast` / `standard`). OpenAI's `service_tier` → Anthropic `speed` mapping continues to work for `/chat/completions`.
+
+[Anthropic `service_tier` → `speed` mapping](/integrations/llms/anthropic#service_tier--anthropic-speed-mapping)
+
+### Centralized `anthropic-beta` Header Filtering
+
+`anthropic-beta` headers are now filtered and remapped per provider (Azure AI, AWS Bedrock, Bedrock Converse, Vertex AI, Databricks). Unsupported beta flags are stripped before being forwarded upstream; provider-renamed betas (e.g., Bedrock's `tool-search-tool-2025-10-19`) are rewritten automatically. Unknown beta values are passed through for forward compatibility.
+
+### Required Metadata Key-Value Pairs: `matchType`
+
+The [Required Metadata Key-Value Pairs](/product/guardrails/list-of-guardrail-checks#access-control-management) guardrail now accepts a `matchType` parameter to control how values are compared:
+
+| `matchType` | Behavior |
+|---|---|
+| `exact` (default) | Metadata value must equal the expected value |
+| `contains` | Metadata value must contain at least one expected value |
+| `containsAll` | Metadata value must contain all expected values |
+| `regex` | Expected values are treated as regex patterns |
+
+### Output Guardrails with `strict_openai_compliance`
+
+Output guardrails (`after_request_hooks`) now execute even when `x-portkey-strict-open-ai-compliance: true`. Hook results are still only appended to the stream in non-strict mode, but the guardrail checks themselves run for every request.
+
+### Google / Vertex Embeddings for Semantic Cache
+
+`SEMANTIC_CACHE_EMBEDDING_PROVIDER` now accepts `google` and `vertex-ai` in addition to `openai`. Embedding requests are routed to the Gemini / Vertex embeddings API to populate the semantic cache.
+
+[Semantic Cache Documentation](/product/ai-gateway/cache-simple-and-semantic#set-up-semantic-caching-self-hosted)
+
+### MCP Integrations: Secret Manager Support
+
+MCP server integrations can now reference centrally-managed secrets via `secret_mappings` in the MCP integration config. The gateway resolves the referenced secret values at connection time before forwarding to upstream MCP servers.
+
+### Secret Mappings: JSON-typed Values
+
+Secret mappings now accept a `value_format` field (`string` | `json`). `json` parses stringified JSON (or passes objects through) into the target field — useful for injecting structured credentials like service-account JSON into provider configs.
+
+### Pricing Adjustments (Integration-level Multipliers)
+
+Integrations can now carry a `pricing_adjustments.multiplier` config. Per-token multipliers (request / response / cached / audio / reasoning, plus `default`) are applied on top of the base pricing during cost calculation — enabling markup / discount pricing per integration without editing the shared pricing catalog.
+
+### Signed Container Images (Cosign / Sigstore)
+
+Published Docker images (release and prerelease) are now signed with [Sigstore Cosign](https://docs.sigstore.dev/cosign/overview) and can be verified with Portkey's public key before deployment.
+
+### Fixes and Improvements
+
+- **Vertex AI (Anthropic on Vertex)**: Fixed `cache_control` sanitization — unsupported block-level cache markers are stripped while preserving valid ones on `/messages` and `/chat/completions`
+- **Vertex AI (Anthropic on Vertex)**: `output_config` is dropped from `/messages` requests (Vertex rejects it); newly-denylisted `anthropic-beta` values are filtered before being forwarded
+- **Anthropic on Azure / Copilot**: `max_tokens: null` now falls back to the provider default instead of being forwarded as `null`; `top_p` is automatically dropped when both `top_p` and `temperature` are provided
+- **DeepSeek**: Fixed `reasoning_effort` transform — now correctly sent as `thinking: { type: "enabled" | "disabled" }`, and the original `reasoning_effort` is also forwarded
+- **Gemini / Vertex**: `finish_reason` is now reported as `tool_calls` (instead of `stop`) when the response contains tool calls
+- **Gemini**: `thought` flag is preserved on inline-image parts when strict OpenAI compliance is disabled
+- **`/messages` adapter**: Thinking blocks without a `signature` are stripped when adapting cross-provider responses (prevents Claude rejecting conversation history from Gemini / OpenAI models)
+
+</Update>
 
 <Update label="2.6.2" description="2026-04-17">
 
