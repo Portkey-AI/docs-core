@@ -3836,16 +3836,150 @@ This is the recommended approach for GKE or Cloud Run deployments as it eliminat
 
 ### Cross-Cloud Workload Identity Federation (AWS to GCP)
 
-For deployments where Portkey runs on **AWS infrastructure** but needs to access Vertex AI on GCP, you can use cross-cloud Workload Identity Federation. This enables AWS-hosted Portkey instances to authenticate with GCP using AWS IAM credentials without managing GCP service account keys.
+For deployments where the Portkey Gateway runs on **AWS infrastructure** (e.g., EKS) but needs to access Vertex AI on GCP, you can use cross-cloud Workload Identity Federation. The Gateway's AWS IAM role authenticates directly with GCP via AWS STS `GetCallerIdentity`, eliminating the need to manage GCP service account keys.
 
-Set the following environment variables on your Gateway:
+<Note>
+Use an **AWS IAM provider** on the Workload Identity Pool — not an OIDC provider.
+</Note>
+
+<Steps>
+
+<Step title="Grant the Gateway IAM role required AWS permissions">
+
+Attach the following policy to the AWS IAM role assumed by the Gateway pod/task. This allows the Gateway to call AWS STS to generate the signed identity token used during federation.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+</Step>
+
+<Step title="Set environment variables">
+
+Define values used across the setup commands.
+
+```sh
+gcp_project_id=<GCP_PROJECT_ID>      # GCP project where Vertex AI is enabled
+pool_name=<POOL_NAME>                # e.g., eks-id-pool
+provider_name=<PROVIDER_NAME>        # e.g., aws-iam-provider
+aws_account_id=<AWS_ACCOUNT_ID>      # Your AWS account ID
+role_name=<AWS_IAM_ROLE>             # AWS IAM role attached to the Gateway
+
+gcloud auth login
+gcloud config set project $gcp_project_id
+```
+
+</Step>
+
+<Step title="Create a Workload Identity Pool and AWS provider">
+
+```sh
+gcloud iam workload-identity-pools create $pool_name \
+  --location="global" \
+  --display-name="EKS Identity Pool"
+
+gcloud iam workload-identity-pools providers create-aws $provider_name \
+  --location="global" \
+  --workload-identity-pool=$pool_name \
+  --account-id=$aws_account_id \
+  --display-name="AWS IAM Provider"
+```
+
+</Step>
+
+<Step title="Map attributes and restrict to the Gateway's IAM role">
+
+```sh
+gcloud iam workload-identity-pools providers update-aws $provider_name \
+  --location="global" \
+  --workload-identity-pool=$pool_name \
+  --attribute-mapping="google.subject=assertion.arn,attribute.aws_role=assertion.arn.extract('assumed-role/{role}/'),attribute.account=assertion.account"
+
+gcloud iam workload-identity-pools providers update-aws $provider_name \
+  --location="global" \
+  --workload-identity-pool=$pool_name \
+  --attribute-condition="attribute.aws_role == '${role_name}'"
+```
+
+</Step>
+
+<Step title="Retrieve the WIF audience">
+
+Save this value — it's used in the Gateway config.
+
+```sh
+WIF_AUDIENCE=$(gcloud iam workload-identity-pools providers describe $provider_name \
+  --location="global" \
+  --workload-identity-pool=$pool_name \
+  --format="value(name)")
+
+echo $WIF_AUDIENCE
+```
+
+</Step>
+
+<Step title="Grant Vertex AI access">
+
+Choose one of the following:
+
+**Option A — Direct access** (federated identity gets `roles/aiplatform.user` directly)
+
+```sh
+gcloud projects add-iam-policy-binding $gcp_project_id \
+  --role="roles/aiplatform.user" \
+  --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $gcp_project_id --format='value(projectNumber)')/locations/global/workloadIdentityPools/$pool_name/attribute.aws_role/${role_name}"
+```
+
+**Option B — Service Account Impersonation** (federated identity impersonates a GSA)
+
+```sh
+service_account=<GSA_NAME>           # e.g., portkey-vertex-sa
+
+gcloud iam service-accounts create $service_account \
+  --display-name="Portkey Vertex AI Service Account"
+
+gcloud projects add-iam-policy-binding $gcp_project_id \
+  --role="roles/aiplatform.user" \
+  --member="serviceAccount:${service_account}@${gcp_project_id}.iam.gserviceaccount.com"
+
+gcloud iam service-accounts add-iam-policy-binding ${service_account}@${gcp_project_id}.iam.gserviceaccount.com \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $gcp_project_id --format='value(projectNumber)')/locations/global/workloadIdentityPools/$pool_name/attribute.aws_role/${role_name}"
+```
+
+</Step>
+
+<Step title="Configure the Gateway">
+
+Update your Gateway `values.yaml` with the WIF settings and redeploy.
+
+```yaml
+environment:
+  data:
+    GCP_AUTH_MODE: workload
+    GCP_WIF_AUDIENCE: //iam.googleapis.com/<WIF_AUDIENCE>
+    # Required only for Service Account Impersonation
+    # GCP_WIF_SERVICE_ACCOUNT_EMAIL: <gsa-email>
+```
+
+</Step>
+
+</Steps>
 
 | Variable | Description |
 |----------|-------------|
-| `GCP_WIF_AUDIENCE` | The full resource name of the Workload Identity Pool Provider (e.g., `//iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID`) |
-| `GCP_WIF_SERVICE_ACCOUNT_EMAIL` | The GCP service account email to impersonate (e.g., `my-sa@my-project.iam.gserviceaccount.com`) |
-
-The Gateway uses AWS STS `GetCallerIdentity` to generate a signed token, which is exchanged for a GCP access token via the Security Token Service.
+| `GCP_AUTH_MODE` | Set to `workload` to enable Workload Identity Federation. |
+| `GCP_WIF_AUDIENCE` | Full resource name of the Workload Identity Pool Provider. |
+| `GCP_WIF_SERVICE_ACCOUNT_EMAIL` | GCP service account to impersonate. Only required for Option B (Service Account Impersonation). |
 
 
 
