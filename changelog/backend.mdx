@@ -1,12 +1,101 @@
 ---
 title: "Backend"
-sidebarTitle: "Backend [1.14.0]"
+sidebarTitle: "Backend [1.15.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="1.15.0" description="2026-05-04">
+
+## v1.15.0
+---
+
+### Auto-Created User API Keys
+- New `user_api_key_auto_create` organization setting (with workspace-level override) that automatically provisions a default workspace-user API key for members on join, invite acceptance, SCIM provisioning, and workspace add
+- Auto-generated keys inherit the workspace's `user_api_key_ttl` and the org/workspace-enforced `user_api_key_rotation_period` (if set)
+
+### API Key Rotation: Organization-Enforced Period
+- Organization owners/admins can now enforce a `rotation_period` on workspace-user API keys via the `user_api_key_rotation_period` setting (with optional per-workspace override)
+- New keys without a rotation policy are auto-assigned the enforced period; explicit rotation periods that differ from the enforced value are rejected at create/update time
+- New `rotation_period_days` column added to `rotation_policies` (preparatory; API surface remains `weekly` / `monthly`)
+- [Documentation](/product/enterprise-offering/org-management/api-key-rotation#organisation-enforced-rotation-period)
+
+### Configurable API Key Prefix (Air-Gapped Only)
+- New `API_KEY_PREFIX` environment variable lets self-hosted deployments prefix all newly-generated Portkey API keys with a custom string
+
+### Usage Limits: Custom Reset Cadence
+- Usage limits policies now support **`periodic_reset_days`** (1–365) for arbitrary day-based reset cadences, in addition to existing `monthly` / `weekly` resets
+- New **`next_usage_reset_at`** field to override the next reset timestamp (normalized to UTC midnight)
+- `periodic_reset` and `periodic_reset_days` are mutually exclusive
+- New `periodic_reset_days`, `next_usage_reset_at`, and `last_reset_at` fields exposed on policy GET/LIST responses
+- [Documentation](/product/enterprise-offering/budget-policies#periodic_reset_days-optional)
+
+### Integration & MCP Enhancements
+- **Pricing Adjustments**: Integrations now accept a `pricing_adjustments.multiplier` config to apply per-token markup/discount multipliers (`request_token`, `response_token`, `cache_*`, `audio`, `reasoning`, etc.) on top of base pricing
+- **Custom Host per Custom Model**: `models[].configurations.custom_host` can now be set per integration model (via `PUT /integrations/:id/integration-models`) — required `configurations` validation enforces a non-empty object with a valid URL
+- **Secret Mappings: JSON values**: `secret_mappings` now accept a `value_format` field (`string` | `json`) — `json` parses stringified JSON into the target field (e.g. service-account credentials)
+- **MCP Integrations**: `secret_mappings` are now supported on MCP integrations and resolved at request time. New `secret_mappings` column added to `mcp_integrations`
+- **Azure: Entra Federated Auth**: New `azure_auth_mode: entraFederated` mode for Azure OpenAI integrations (`azure_entra_tenant_id` + `azure_entra_client_id`, no client secret required)
+- **Bedrock Mantle Provider**: New `bedrock-mantle` provider seeded for AWS's OpenAI-compatible Bedrock inference engine
+- [Bedrock Mantle Documentation](/integrations/llms/bedrock-mantle)
+
+### SSO Subdomain Wildcards
+- Organisation email domains now accept an `allow_subdomains` flag — when enabled on a root domain, users from any subdomain (e.g. `team.example.com`, `eu.example.com`) resolve to the same SSO settings
+- Sub-domains themselves cannot have `allow_subdomains` enabled — only the root domain
+
+### SCIM Enhancements
+- **Workspace Mapping by Group Name**: `POST /v1/scim/workspaces` now accepts `scim_group_name` (in addition to `scim_group_id`) — auto-creates the SCIM group if it doesn't exist yet
+- Workspace mapping requests now go through validation middleware: `workspace_id` and `role` (one of `admin`, `manager`, `member` — case-insensitive) are required, plus exactly one of `scim_group_id` / `scim_group_name`
+- **Group Membership Cleanup**: SCIM group update flows refactored — group membership changes now correctly remove user API keys when users are removed from the org/workspace via SCIM
+- [Documentation](/product/enterprise-offering/org-management/scim/group-management)
+
+### Admin Log Permissions
+- New organization and workspace security settings:
+  - `organisationAdminsViewLogs` — control whether org admins can view request logs
+  - `organisationAdminsViewLogMetadata` — control whether org admins can view log metadata
+- Settings are enabled by default and support workspace-level overrides
+
+### Configs — Passthrough Provider
+- Configs now accept a top-level `passthrough: true` flag, allowing a config to mark requests as passthrough mode (no provider transformation) — exclusive with `targets`/`strategy`/`override_params`/`*_guardrails`
+
+### Guardrails Updates
+- **Required Metadata Key-Value Pairs**: New `matchType` parameter (`exact` (default), `contains`, `containsAll`, `regex`) controls how metadata values are compared
+- **Akto**: Schema renamed to **"Akto Guardrail"**, `apiDomain` is now required (Akto base URL is derived from it), `deny: true` is the new default
+- **Guardrail Pagination**: `GET /guardrails` now supports `current_page` and `page_size` query parameters
+- **Multi-ID Lookup**: `GET /guardrails?ids=...` now accepts comma-separated guardrail IDs
+- [Akto Documentation](/integrations/guardrails/akto)
+
+### Models API
+- `total_count` on `GET /v1/models` now reflects the filtered total (matching the applied query) instead of the unfiltered total
+- `/models` route is now accessible to all workspace roles (previously restricted)
+- Renamed `total` → `total_count` in models endpoint output
+
+### Agent Gateway
+- Granular RBAC scopes added for `organisation_agent_integrations.*`, `workspace_agent_integrations.*`, `agent_servers.*`, `agent_server_skills.*`, `agent_integration_skills.*`, and `agent_server_user_access.*`
+- New **`agents.invoke`** scope for invoking agents (workspace-service / workspace-user keys)
+- New `GET /v1/agent-servers/:id/agent-card` endpoint to fetch the upstream agent card
+
+### Self-Hosting & Deployment
+- **Gateway Registration — Air-Gapped & License-Gated**: Gateway registration is now enabled based on subscription `licenseType` (`HYBRID` / `AIRGAP`) combined with private-deployment flags. Air-gapped deployments can register gateways without external connectivity
+- **OpenShift / pm2**: Dockerfile updated with `pm2-home`, increased read limits, and removed `chown 1001` for OpenShift compatibility
+
+### Security
+- Strip sensitive request headers (e.g. `x-forwarded-*`) from inbound requests before processing
+- AWS role ARN is now returned **unmasked** on integration GET/LIST (was previously masked)
+- Security dependency updates and vulnerability fixes
+
+### Fixes and Improvements
+- Fixed `customHost` validation regression on custom-model integrations
+- Fixed cache invalidation on MCP server connection delete in enterprise deployments
+- Fixed pricing config response per model to include integration-level adjustments
+- Fixed workspace usage-limits validation when invalid values were passed
+- Fixed Terraform workspace update with non-ASCII (Unicode space) characters
+- Fixed user-removal scope check on workspace `removeUsers`
+
+</Update>
 
 <Update label="1.14.0" description="2026-04-12">
 
@@ -27,8 +116,8 @@ Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructu
 - [Documentation](/product/administration/configure-integration-access-permissions)
 
 ### MCP Server User Connections API
-- New **List Connections** API (`GET /v2/mcp-servers/:mcpServerId/connections`) to retrieve user connections for an MCP server with pagination support
-- New **Revoke Connection** API (`DELETE /v2/mcp-servers/:mcpServerId/connections`) to revoke a user's connection to an MCP server
+- New **List Connections** API (`GET /v1/mcp-servers/:mcpServerId/connections`) to retrieve user connections for an MCP server with pagination support
+- New **Revoke Connection** API (`DELETE /v1/mcp-servers/:mcpServerId/connections`) to revoke a user's connection to an MCP server
 - Admins and workspace managers can view and revoke connections for any user; non-admin users can only manage their own connections
 
 ### SCIM Enhancements
