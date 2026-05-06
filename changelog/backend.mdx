@@ -17,21 +17,16 @@ Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructu
 - New `user_api_key_auto_create` organization setting (with workspace-level override) that automatically provisions a default workspace-user API key for members on join, invite acceptance, SCIM provisioning, and workspace add
 - Auto-generated keys inherit the workspace's `user_api_key_ttl` and the org/workspace-enforced `user_api_key_rotation_period` (if set)
 
-### API Key Rotation — Org-Enforced Period
+### API Key Rotation: Organization-Enforced Period
 - Organization owners/admins can now enforce a `rotation_period` on workspace-user API keys via the `user_api_key_rotation_period` setting (with optional per-workspace override)
 - New keys without a rotation policy are auto-assigned the enforced period; explicit rotation periods that differ from the enforced value are rejected at create/update time
 - New `rotation_period_days` column added to `rotation_policies` (preparatory; API surface remains `weekly` / `monthly`)
 - [Documentation](/product/enterprise-offering/org-management/api-key-rotation#organisation-enforced-rotation-period)
 
-### API Key List & Updates
-- `GET /v1/api-keys` now accepts a `status` query parameter (`active`, `exhausted`, `expired`, comma-separated) to filter keys by lifecycle state — defaults to all three
-- API key updates on **expired** keys are now rejected (rotate or recreate the key instead)
-
-### Configurable API Key Prefix
+### Configurable API Key Prefix (Air-Gapped Only)
 - New `API_KEY_PREFIX` environment variable lets self-hosted deployments prefix all newly-generated Portkey API keys with a custom string
-- Key validation accepts both unprefixed (28 chars) and prefixed (`<prefix>` + 28 chars) formats
 
-### Usage Limits — Custom Reset Cadence
+### Usage Limits: Custom Reset Cadence
 - Usage limits policies now support **`periodic_reset_days`** (1–365) for arbitrary day-based reset cadences, in addition to existing `monthly` / `weekly` resets
 - New **`next_usage_reset_at`** field to override the next reset timestamp (normalized to UTC midnight)
 - `periodic_reset` and `periodic_reset_days` are mutually exclusive
@@ -41,21 +36,19 @@ Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructu
 ### Integration & MCP Enhancements
 - **Pricing Adjustments**: Integrations now accept a `pricing_adjustments.multiplier` config to apply per-token markup/discount multipliers (`request_token`, `response_token`, `cache_*`, `audio`, `reasoning`, etc.) on top of base pricing
 - **Custom Host per Custom Model**: `models[].configurations.custom_host` can now be set per integration model (via `PUT /integrations/:id/integration-models`) — required `configurations` validation enforces a non-empty object with a valid URL
-- **Secret Mappings — JSON values**: `secret_mappings` now accept a `value_format` field (`string` | `json`) — `json` parses stringified JSON into the target field (e.g. service-account credentials)
+- **Secret Mappings: JSON values**: `secret_mappings` now accept a `value_format` field (`string` | `json`) — `json` parses stringified JSON into the target field (e.g. service-account credentials)
 - **MCP Integrations**: `secret_mappings` are now supported on MCP integrations and resolved at request time. New `secret_mappings` column added to `mcp_integrations`
-- **Azure — Entra Federated Auth**: New `azure_auth_mode: entraFederated` mode for Azure OpenAI integrations (`azure_entra_tenant_id` + `azure_entra_client_id`, no client secret required)
+- **Azure: Entra Federated Auth**: New `azure_auth_mode: entraFederated` mode for Azure OpenAI integrations (`azure_entra_tenant_id` + `azure_entra_client_id`, no client secret required)
 - **Bedrock Mantle Provider**: New `bedrock-mantle` provider seeded for AWS's OpenAI-compatible Bedrock inference engine
 - [Bedrock Mantle Documentation](/integrations/llms/bedrock-mantle)
 
 ### SSO Subdomain Wildcards
 - Organisation email domains now accept an `allow_subdomains` flag — when enabled on a root domain, users from any subdomain (e.g. `team.example.com`, `eu.example.com`) resolve to the same SSO settings
 - Sub-domains themselves cannot have `allow_subdomains` enabled — only the root domain
-- Domain SSO lookups are now in-memory cached for 60s
 
 ### SCIM Enhancements
 - **Workspace Mapping by Group Name**: `POST /v1/scim/workspaces` now accepts `scim_group_name` (in addition to `scim_group_id`) — auto-creates the SCIM group if it doesn't exist yet
 - Workspace mapping requests now go through validation middleware: `workspace_id` and `role` (one of `admin`, `manager`, `member` — case-insensitive) are required, plus exactly one of `scim_group_id` / `scim_group_name`
-- **Audit Noise Reduction**: SCIM `GET` calls are no longer recorded in audit logs
 - **Group Membership Cleanup**: SCIM group update flows refactored — group membership changes now correctly remove user API keys when users are removed from the org/workspace via SCIM
 - [Documentation](/product/enterprise-offering/org-management/scim/group-management)
 
@@ -87,42 +80,20 @@ Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructu
 
 ### Self-Hosting & Deployment
 - **Gateway Registration — Air-Gapped & License-Gated**: Gateway registration is now enabled based on subscription `licenseType` (`HYBRID` / `AIRGAP`) combined with private-deployment flags. Air-gapped deployments can register gateways without external connectivity
-- **Private-Link Endpoint Resolution**: Deployments with `use_private_link_proxy` now correctly resolve `gateway_base_url` ↔ `private_link_endpoint` and forward `x-portkey-private-link-endpoint` headers
-- **Multi-Org Resync**: New `POST /organisations/resync-multi` admin route (auth via `RESYNC_SERVICE_AUTH_HEADER` / `RESYNC_SERVICE_AUTH_TOKEN`) for bulk subscription/policy resync
-- **Cosign-Signed Images**: Release Docker images are now signed with [Sigstore Cosign](https://docs.sigstore.dev/cosign/overview)
-- **MCP Tokens Storage**: `mcp_server_user_connections.tokens` column upgraded to `MEDIUMTEXT` to support larger OAuth payloads
 - **OpenShift / pm2**: Dockerfile updated with `pm2-home`, increased read limits, and removed `chown 1001` for OpenShift compatibility
 
 ### Security
 - Strip sensitive request headers (e.g. `x-forwarded-*`) from inbound requests before processing
 - AWS role ARN is now returned **unmasked** on integration GET/LIST (was previously masked)
-- Hardened SSO encryption settings handling on the SSO callback path
-- Hardened `reqHydrator` middleware to prevent unhandled exceptions from invalid log exports / api-keys / SCIM payloads
-- Migrated all outbound `fetch` calls to `externalServiceFetch` with abort-controller timeouts
-- Security dependency updates and vulnerability fixes (`package-lock.json`)
-
-### DB Migrations
-- `mcp_integrations.secret_mappings` (JSON column)
-- `integration_models.description` (text column)
-- `integration_models.configurations` and `integrations.pricing_adjustments` (JSON columns)
-- `usage_limits_policies.periodic_reset_days`, `next_usage_reset_at`, `last_reset_at`
-- `rotation_policies.rotation_period_days`
-- `organisation_email_domains.allow_subdomains`
-- `mcp_server_user_connections.tokens` → `MEDIUMTEXT`
-- New tables: `account_deletions`, `account_deletion_logs`, `agent_*` (agent gateway tables)
+- Security dependency updates and vulnerability fixes
 
 ### Fixes and Improvements
-- Fixed user API key removal when users are removed from org / workspace (previously left orphan keys)
 - Fixed `customHost` validation regression on custom-model integrations
 - Fixed cache invalidation on MCP server connection delete in enterprise deployments
 - Fixed pricing config response per model to include integration-level adjustments
-- Fixed expired API-key TTL update flow
 - Fixed workspace usage-limits validation when invalid values were passed
-- Fixed feature-flag guard middleware and Stripe subscription data hardening
-- Fixed `last_updated_by` and missing fields on guardrails list API response
 - Fixed Terraform workspace update with non-ASCII (Unicode space) characters
 - Fixed user-removal scope check on workspace `removeUsers`
-- Fixed `save user sso settings` flow
 
 </Update>
 
