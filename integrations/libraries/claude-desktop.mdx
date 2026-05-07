@@ -1,49 +1,44 @@
 ---
 title: "Claude Desktop"
-description: "Run Claude Desktop through Portkey Gateway for centralized routing, governance, and observability."
+description: "Connect Claude Desktop to Portkey Gateway for enterprise-grade control, observability, and policy enforcement."
 ---
 
-[Claude Desktop](https://claude.ai/download) can be configured to use a **Gateway (Anthropic-compatible)** endpoint for third-party inference. Pointing Claude Desktop to Portkey gives you enterprise-grade control for desktop AI usage across teams.
+Use Claude Desktop with Portkey Gateway to get:
 
-## Why use Portkey with Claude Desktop
-
-- **One gateway, many providers** — Route Claude Desktop traffic to Anthropic, Bedrock, Vertex, and other supported providers through a single endpoint.
-- **Centralized governance** — Enforce [budget limits](/product/model-catalog/budget-limits), [rate limits](/product/model-catalog/rate-limits), and workspace-scoped [API keys](https://app.portkey.ai/api-keys).
-- **Reliability in production** — Configure [fallbacks](/product/ai-gateway/fallbacks), [load balancing](/product/ai-gateway/load-balancing), [retries](/product/ai-gateway/automatic-retries), and [timeouts](/product/ai-gateway/request-timeouts) without changing end-user apps.
-- **Full observability** — Inspect request/response traces, token usage, latency, and spend in [Logs](https://app.portkey.ai/logs) and Analytics.
+- **Enterprise-grade control** for desktop AI usage
+- **Observability** for tokens, cost, and latency in [Logs](https://app.portkey.ai/logs)
+- **Policy enforcement** with budgets, rate limits, and guardrails
+- **Flexible routing** using configs and Gateway extra headers
 
 <Note>
-  This guide focuses on Claude Desktop's **Gateway** mode (Anthropic-compatible API). If you are configuring **Claude Cowork** in third-party inference mode, see the dedicated [Claude Cowork integration](/integrations/libraries/claude-cowork).
+  This guide is for Claude Desktop Gateway (Anthropic-compatible) mode. For Cowork-specific setup, see [Claude Cowork](/integrations/libraries/claude-cowork).
 </Note>
 
-## Architecture (recommended)
+## Deployment options
 
-`Claude Desktop` → `Portkey Gateway (https://api.portkey.ai)` → `Configured provider(s)`
+```mermaid
+flowchart LR
+  A[Claude Desktop Users]
 
-Recommended pattern:
+  A --> B[Option 1: Portkey Control Plane Onboarding]
+  B --> B1[Workspace keys + config-based routing]
+  B --> B2[Built-in org policies, logs, limits]
 
-1. Create provider integrations in Portkey (Anthropic/Bedrock/Vertex/etc.).
-2. Create a Portkey Config that sets your default model + reliability policies.
-3. Create one or more Portkey API keys attached to that config.
-4. Use the API key in Claude Desktop Gateway settings.
-
-This keeps model and policy changes in Portkey, not on each desktop.
+  A --> C[Option 2: Public API + Gateway URL]
+  C --> C1[Claude Desktop points to api.portkey.ai]
+  C --> C2[Gateway Extra Headers for tenant/user metadata]
+  C --> C3[Apply policy by metadata, key, and config]
+```
 
 ## 1) Configure Portkey
 
 <Steps>
-  <Step title="Add provider integration(s)">
-    In [Model Catalog](https://app.portkey.ai/model-catalog), click **Add Provider** and connect your target provider(s).
-
-    Use clear slugs such as:
-
-    - `anthropic-prod`
-    - `bedrock-prod`
-    - `vertex-prod`
+  <Step title="Add your provider">
+    In [Model Catalog](https://app.portkey.ai/model-catalog), add Anthropic/Bedrock/Vertex (or your preferred provider).
   </Step>
 
-  <Step title="Create a base config">
-    In [Configs](https://app.portkey.ai/configs), create a config with a default model route.
+  <Step title="Create a config">
+    In [Configs](https://app.portkey.ai/configs), create a default route:
 
     ```json
     {
@@ -52,122 +47,53 @@ This keeps model and policy changes in Portkey, not on each desktop.
       }
     }
     ```
-
-    Optional (Anthropic prompt caching):
-
-    ```json
-    {
-      "override_params": {
-        "model": "@anthropic-prod/claude-sonnet-4-20250514",
-        "cache_control": {
-          "type": "ephemeral"
-        }
-      }
-    }
-    ```
   </Step>
 
-  <Step title="Attach reliability / governance policies">
-    Add guardrails and runtime controls to the config as needed:
-
-    - Fallback chains (primary → backup model/provider)
-    - Rate limits and budget limits
-    - Request timeout and retry strategy
-
-    This is where Portkey becomes your stable control plane for Claude Desktop traffic.
-  </Step>
-
-  <Step title="Create API key(s)">
+  <Step title="Create API key">
     In [API Keys](https://app.portkey.ai/api-keys), create a key and attach the config.
-
-    For teams, create separate keys per environment/workspace (for example `claude-desktop-dev`, `claude-desktop-prod`) to isolate usage and limits.
   </Step>
 </Steps>
 
-## 2) Configure Claude Desktop (local UI)
-
-Use Claude Desktop's **Developer → Third-Party Inference** flow:
+## 2) Configure Claude Desktop
 
 1. Open **Claude Desktop**.
-2. In the menu bar, go to **Help → Troubleshooting → Enable Developer mode**.
+2. Enable developer mode: **Help → Troubleshooting → Enable Developer mode**.
 3. Open **Developer → Configure third-party inference**.
 4. Select **Gateway (Anthropic-compatible)**.
-5. Enter:
-   - **Gateway base URL:** `https://api.portkey.ai`
-   - **Gateway API key:** `<YOUR_PORTKEY_API_KEY>`
-   - **Gateway auth scheme:** `bearer`
-6. Click **Apply locally**.
-7. Fully quit Claude Desktop and reopen it.
-8. On relaunch, continue with the local/Gateway configuration and send a test request.
+5. Set:
+   - **Gateway base URL**: `https://api.portkey.ai`
+   - **Gateway API key**: your Portkey API key
+   - **Gateway auth scheme**: `bearer`
+6. Click **Apply locally** and restart Claude Desktop.
 
-After restart, verify requests in [Logs](https://app.portkey.ai/logs).
+## 3) Use Gateway Extra Headers (recommended)
+
+Claude Desktop supports **Gateway extra headers**. Use them for tenant routing and metadata-aware policies.
+
+Suggested headers:
+
+- `x-portkey-config: pp-your-config-id` (route to a specific config)
+- `x-portkey-provider: @anthropic-prod` (pin provider slug)
+- `x-portkey-metadata: {"tenant":"acme","user":"alice@acme.com","env":"prod"}` (policy context)
 
 <Note>
-  The exact labels can vary by Claude Desktop version, but the required path is still Developer mode + Third-party inference + Gateway credentials.
+  Keep one stable header set per desktop profile/environment to avoid accidental policy drift.
 </Note>
 
-## 3) Optional: managed rollout (MDM / policy)
+See [Inference Headers](/api-reference/inference-api/headers) and [Enforcing Request Metadata](/product/administration/enforcing-request-metadata).
 
-For org-managed devices, distribute Gateway settings centrally via your device management flow.
+## 4) Validate setup
 
-Use the same values as local setup:
+1. Send a prompt from Claude Desktop.
+2. Confirm request appears in [Logs](https://app.portkey.ai/logs).
+3. Verify model/config/provider routing is correct.
+4. Verify limits/guardrails are enforced for that key/header context.
 
-- Base URL → `https://api.portkey.ai`
-- API key → your scoped Portkey key
-- Auth scheme → `bearer`
+## 5) Troubleshooting
 
-Keep one managed profile per environment/business unit to maintain clean observability and policy boundaries.
-
-## 4) Route by Config instead of per-request headers
-
-Claude Desktop Gateway mode should be treated as a **fixed client configuration**.
-
-For predictable behavior, do routing through Portkey Configs and API key scoping:
-
-- Create one Config per environment/use case (for example `desktop-default`, `desktop-research`, `desktop-prod`).
-- Attach a dedicated API key to each Config.
-- Assign users/devices the correct key for their environment.
-
-This avoids relying on ad-hoc per-request header overrides and keeps policy + routing fully governed in Portkey.
-
-### Optional: metadata-based usage policies (Open WebUI-style pattern)
-
-If you want policy controls similar to Open WebUI metadata workflows, use **key segmentation + enforced metadata expectations**:
-
-- Issue separate keys per team/use case (for example `desktop-eng`, `desktop-support`, `desktop-research`).
-- Map each key to a config with its own model allowlist, limits, and guardrails.
-- Enforce required metadata conventions in your org policy layer (for example environment/team identifiers) using [request metadata controls](/product/administration/enforcing-request-metadata).
-
-Because Claude Desktop Gateway is typically configured as a fixed client, the most reliable pattern is still: **metadata policy by key/workspace boundary**, not per-request overrides from the desktop UI.
-
-## 5) Validate end-to-end
-
-Use this checklist after setup:
-
-1. **Request appears in Logs** with expected API key/workspace.
-2. **Model route matches config** (`@provider-slug/model-id`).
-3. **Limits are enforced** (rate/budget policies visible in dashboard).
-4. **Fallback works** (simulate provider issue and verify backup route).
-5. **Cost analytics** are attributed correctly to your Claude Desktop key(s).
-
-## 6) Troubleshooting
-
-- **No logs in Portkey**
-  - Confirm base URL is exactly `https://api.portkey.ai` (no extra path).
-  - Confirm auth scheme is `bearer`.
-  - Verify the API key is active and attached to a config.
-
-- **401/403 errors**
-  - Regenerate key and retry.
-  - Ensure workspace/org permissions allow that key to use the selected provider/config.
-
-- **Wrong model is being used**
-  - Check config `override_params.model`.
-  - Remove conflicting custom headers (especially `x-portkey-config` / `x-portkey-provider`) and retest.
-
-- **Intermittent failures/latency spikes**
-  - Add fallback routes and automatic retries in config.
-  - Set explicit request timeouts and monitor p95 latency in Logs.
+- **No logs**: verify base URL is exactly `https://api.portkey.ai` and auth scheme is `bearer`.
+- **401/403**: rotate API key and confirm key scope/permissions.
+- **Wrong route/model**: check attached config and Gateway extra headers.
 
 ---
 
