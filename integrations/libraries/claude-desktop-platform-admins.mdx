@@ -1,105 +1,127 @@
 ---
 title: "Claude Desktop for Platform Admins"
-description: "Set up and govern Claude Desktop usage across your organization using Portkey Gateway."
+description: "Roll out Claude Desktop with Portkey across teams with metadata-based governance and clear operational outcomes."
 ---
 
-This guide is for **platform admins** managing Claude Desktop usage across teams.
+This guide is for platform teams responsible for secure, scalable Claude Desktop rollout.
 
-## Admin outcome
+## What success looks like
 
-You will:
+- Teams use Claude Desktop with one governed gateway endpoint
+- Metadata-driven policies enforce limits by tenant/team/environment
+- Admins can audit behavior, costs, and performance in Portkey
 
-- Configure provider + model routing in Portkey
-- Issue scoped keys for teams/workspaces
-- Enforce metadata-based policies with `x-portkey-metadata`
-- Roll out a repeatable setup template for end users
+## 1) Set up provider integrations
 
-## 1) Configure Portkey control plane
+Go to [Integrations](https://app.portkey.ai/integrations) and connect the providers you need.
 
-<Steps>
-  <Step title="Add provider integrations">
-    In [Model Catalog](https://app.portkey.ai/model-catalog), add Anthropic/Bedrock/Vertex as required.
-  </Step>
+Common setup guides:
 
-  <Step title="Create baseline configs">
-    In [Configs](https://app.portkey.ai/configs), create one or more configs by cohort/environment.
+- [Anthropic integration](/integrations/llms/anthropic)
+- [Vertex AI integration](/integrations/llms/vertex-ai)
+- [AWS Bedrock integration](/integrations/llms/bedrock/aws-bedrock)
 
-    ```json
-    {
-      "override_params": {
-        "model": "@anthropic-prod/claude-sonnet-4-20250514"
-      }
-    }
-    ```
-  </Step>
+## 2) Create configs (why this matters)
 
-  <Step title="Define governance">
-    Apply budgets, rate limits, and guardrails per workspace/config.
-  </Step>
+Configs are your policy/routing control point. They let you change model behavior centrally without touching every desktop.
 
-  <Step title="Create scoped API keys">
-    Create keys per team/environment (example: `claude-desktop-eng-prod`, `claude-desktop-support-prod`).
-  </Step>
-</Steps>
+Create configs by team/environment (for example `desktop-eng-prod`, `desktop-support-prod`, `desktop-dev`).
 
-## 2) Metadata-based usage policy (lighthouse pattern)
+Example:
 
-Use Claude Desktop Gateway extra headers with metadata guardrails.
+```json
+{
+  "override_params": {
+    "model": "@anthropic-prod/claude-sonnet-4-20250514"
+  }
+}
+```
 
-<Tabs>
-  <Tab title="Metadata schema to standardize">
+## 3) Define governance (what and how)
 
-Recommended required keys:
+Apply governance at config/workspace level:
 
-- `tenant`
-- `user`
-- `team`
-- `env`
+- **Budget limits** to cap spend by cohort
+- **Rate limits** to protect infrastructure and fair usage
+- **Guardrails** for content/security controls
 
-Example header value:
+Recommended rollout pattern:
+
+1. Start with moderate limits in staging.
+2. Validate user workflows and false positives.
+3. Tighten limits/guardrails in production per team risk profile.
+
+## 4) Create and distribute scoped API keys
+
+Create keys per team/environment (example: `claude-desktop-eng-prod`).
+
+Each key should map to:
+
+- the right config,
+- the right workspace scope,
+- the right budget/rate controls.
+
+Deliver to users with one copy-paste template for Gateway settings.
+
+## 5) Metadata-based usage policy (core lighthouse pattern)
+
+Claude Desktop users set one extra header:
+
+- `x-portkey-metadata`
+
+Example value you can standardize across teams:
 
 ```json
 {"tenant":"acme","user":"alice@acme.com","team":"support","env":"prod"}
 ```
 
+<Tabs>
+  <Tab title="Why metadata matters">
+
+Metadata is the policy context. It enables:
+
+- Per-team limits (`team=support` vs `team=engineering`)
+- Per-environment controls (`env=dev` vs `env=prod`)
+- Clear attribution (`user`, `tenant`) for audits and cost analytics
+
   </Tab>
 
-  <Tab title="Policy mapping examples">
+  <Tab title="Policy examples you can ship">
 
-- `team = support` → allow `claude-sonnet` only + lower RPM limit
-- `env = dev` → lower budget cap + cheaper model default
+- `team = support` → allow only approved Claude model + lower RPM
+- `env = dev` → cheaper model default + lower budget cap
 - `tenant = enterprise-a` → dedicated config + stricter guardrails
 
   </Tab>
 
-  <Tab title="Rollout instruction for users">
+  <Tab title="User rollout template">
 
-Tell users to set one Gateway extra header:
+Tell users to configure:
 
-- Header: `x-portkey-metadata`
-- Value: team-provided JSON template
+- Gateway URL: `https://api.portkey.ai`
+- Auth scheme: `bearer`
+- API key: team-issued key
+- Extra header:
 
-This keeps user setup simple while preserving centralized admin control.
+```json
+x-portkey-metadata: {"tenant":"acme","user":"<email>","team":"support","env":"prod"}
+```
 
   </Tab>
 </Tabs>
 
-See [Enforcing Request Metadata](/product/administration/enforcing-request-metadata).
+## 6) Observe outcomes (fruit of admin work)
 
-## 3) Rollout model
+After rollout, use Portkey to continuously improve:
 
-```mermaid
-flowchart LR
-  A[Platform Admin] --> B[Provider + Config + Policy Setup in Portkey]
-  B --> C[Issue Team-Scoped API Keys]
-  C --> D[Distribute Claude Desktop Setup Template]
-  D --> E[Developers Configure Gateway + x-portkey-metadata]
-  E --> F[Observe + Govern in Portkey Logs]
-```
+- **Logs:** verify routing decisions and policy triggers
+- **Analytics:** compare spend, tokens, and latency by team/tenant/env
+- **Operations:** tune limits and model routing based on real usage patterns
 
-## 4) Validation checklist
+## 7) Validation checklist
 
-- Requests from each team appear in logs with expected metadata.
-- Metadata conditions trigger intended policies.
-- Budgets/rate limits behave as expected per team.
-- Fallback and routing behavior are correct for each config.
+- Requests include expected metadata keys.
+- Metadata conditions trigger the intended policy behavior.
+- Spend and rate limits behave correctly per team.
+- Routing/fallback behavior matches each config.
+- Teams can ship without policy bypasses.
