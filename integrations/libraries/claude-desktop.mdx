@@ -1,6 +1,6 @@
 ---
 title: "Claude Desktop"
-description: "Connect Claude Desktop to Portkey Gateway for enterprise-grade control, observability, and policy enforcement."
+description: "Connect Claude Desktop to Portkey Gateway for enterprise-grade control, observability, and metadata-driven policy enforcement."
 ---
 
 Use Claude Desktop with Portkey Gateway to get:
@@ -8,7 +8,7 @@ Use Claude Desktop with Portkey Gateway to get:
 - **Enterprise-grade control** for desktop AI usage
 - **Observability** for tokens, cost, and latency in [Logs](https://app.portkey.ai/logs)
 - **Policy enforcement** with budgets, rate limits, and guardrails
-- **Flexible routing** using configs and Gateway extra headers
+- **Metadata-driven governance** via Gateway extra headers
 
 <Note>
   This guide is for Claude Desktop Gateway (Anthropic-compatible) mode. For Cowork-specific setup, see [Claude Cowork](/integrations/libraries/claude-cowork).
@@ -22,12 +22,12 @@ flowchart LR
 
   A --> B[Option 1: Portkey Control Plane Onboarding]
   B --> B1[Workspace keys + config-based routing]
-  B --> B2[Built-in org policies, logs, limits]
+  B --> B2[Built-in logs, budgets, and rate limits]
 
   A --> C[Option 2: Public API + Gateway URL]
   C --> C1[Claude Desktop points to api.portkey.ai]
-  C --> C2[Gateway Extra Headers for tenant/user metadata]
-  C --> C3[Apply policy by metadata, key, and config]
+  C --> C2[Gateway Extra Headers add metadata]
+  C --> C3[Metadata guardrail enforces policy]
 ```
 
 ## 1) Configure Portkey
@@ -66,37 +66,65 @@ flowchart LR
    - **Gateway auth scheme**: `bearer`
 6. Click **Apply locally** and restart Claude Desktop.
 
-## 3) Use Gateway Extra Headers (recommended)
+## 3) Gateway extra headers + metadata guardrail (recommended)
 
-Claude Desktop supports **Gateway extra headers**. Use them for tenant routing and metadata-aware policies.
+Use Claude Desktop's **Gateway extra headers** with Portkey metadata policies.
 
-Suggested headers:
+<Tabs>
+  <Tab title="Header to set in Claude Desktop">
 
-- `x-portkey-config: pp-your-config-id` (route to a specific config)
-- `x-portkey-provider: @anthropic-prod` (pin provider slug)
-- `x-portkey-metadata: {"tenant":"acme","user":"alice@acme.com","env":"prod"}` (policy context)
+Add one header in Claude Desktop:
 
-<Note>
-  Keep one stable header set per desktop profile/environment to avoid accidental policy drift.
-</Note>
+- **Header name**: `x-portkey-metadata`
+- **Value**:
 
-See [Inference Headers](/api-reference/inference-api/headers) and [Enforcing Request Metadata](/product/administration/enforcing-request-metadata).
+```json
+{"tenant":"acme","user":"alice@acme.com","team":"support","env":"prod"}
+```
+
+<Warning>
+  Keep metadata compact and stable. Do not include secrets or PII beyond what your policy model requires.
+</Warning>
+
+  </Tab>
+
+  <Tab title="Recommended metadata schema">
+
+Use these fields for highest policy value:
+
+- `tenant`: tenant/account boundary
+- `user`: user identifier for attribution
+- `team`: policy cohort (`support`, `engineering`, `finance`, etc.)
+- `env`: environment (`prod`, `staging`, `dev`)
+
+These fields let you segment usage, enforce different limits, and audit behavior cleanly.
+
+  </Tab>
+
+  <Tab title="How to enforce with metadata policy">
+
+1. Configure a metadata-based usage policy/guardrail in Portkey.
+2. Match on `team`, `env`, or `tenant` values.
+3. Apply policy actions such as:
+   - stricter model allowlists,
+   - lower spend caps for non-prod,
+   - tighter rate limits for high-risk cohorts.
+4. Validate in [Logs](https://app.portkey.ai/logs) by filtering on metadata values.
+
+See [Enforcing Request Metadata](/product/administration/enforcing-request-metadata).
+
+  </Tab>
+</Tabs>
 
 ## 4) Validate setup
 
 1. Send a prompt from Claude Desktop.
 2. Confirm request appears in [Logs](https://app.portkey.ai/logs).
-3. Verify model/config/provider routing is correct.
-4. Verify limits/guardrails are enforced for that key/header context.
+3. Verify metadata is present in the request.
+4. Verify policy/routing outcome for that metadata context.
 
 ## 5) Troubleshooting
 
 - **No logs**: verify base URL is exactly `https://api.portkey.ai` and auth scheme is `bearer`.
 - **401/403**: rotate API key and confirm key scope/permissions.
-- **Wrong route/model**: check attached config and Gateway extra headers.
-
----
-
-import AdvancedFeatures from '/snippets/portkey-advanced-features.mdx';
-
-<AdvancedFeatures />
+- **Metadata policy not triggering**: confirm valid JSON in `x-portkey-metadata` and exact key names used in policy conditions.
