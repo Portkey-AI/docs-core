@@ -1,0 +1,100 @@
+---
+title: "Authentication"
+description: "Authenticate Portkey's Azure OpenAI and Azure AI Foundry integrations using API keys or Entra ID (service principal, managed identity, workload identity, or AWS federated)."
+---
+
+Portkey supports four authentication modes for Azure OpenAI and Azure AI Foundry integrations. Pick the one that matches where the gateway runs and how your Azure tenant is configured.
+
+| Mode | `azureAuthMode` | When to use |
+| --- | --- | --- |
+| API key | `apiKey` | Fastest setup; works anywhere. |
+| Entra ID (service principal) | `entra` | Use an app registration with a client secret. |
+| Managed identity | `managed` | Gateway runs on an Azure VM/AKS/App Service with a system- or user-assigned identity. |
+| Workload identity | `workload` | Gateway runs on AKS with federated service-account tokens. |
+| AWS federated (Entra ID) | `entraFederated` | Gateway runs on AWS (e.g. EKS with IRSA) and needs keyless access to Azure. Requires **Enterprise Gateway v2.6.2+**. |
+
+<Note>
+`managed`, `workload`, and `entraFederated` are only available on self-hosted Enterprise deployments. `entraFederated` requires Node.js runtime.
+</Note>
+
+## API key
+
+The default mode. Provide the Azure resource's API key along with the resource name, deployment, and API version.
+
+```json
+{
+  "azureAuthMode": "apiKey",
+  "resourceName": "my-resource",
+  "apiKey": "<AZURE_API_KEY>"
+}
+```
+
+## Entra ID (service principal)
+
+Exchange a client ID + secret for an Entra access token. Tokens are cached for 15 minutes.
+
+```json
+{
+  "azureAuthMode": "entra",
+  "resourceName": "my-resource",
+  "azureEntraTenantId": "<TENANT_ID>",
+  "azureEntraClientId": "<CLIENT_ID>",
+  "azureEntraClientSecret": "<CLIENT_SECRET>"
+}
+```
+
+Optionally set `azureEntraScope` to override the default scope (`https://cognitiveservices.azure.com/.default`).
+
+## Managed identity
+
+Use the Azure IMDS endpoint to get a token for the identity attached to the host.
+
+```json
+{
+  "azureAuthMode": "managed",
+  "resourceName": "my-resource",
+  "azureManagedClientId": "<USER_ASSIGNED_CLIENT_ID>"
+}
+```
+
+`azureManagedClientId` is only required when the host has multiple user-assigned identities. Omit it to use the system-assigned identity.
+
+## Workload identity (AKS)
+
+Federates an AKS service-account token into an Entra access token. Requires these environment variables on the gateway pod — typically injected automatically by the [Azure Workload Identity mutating webhook](https://azure.github.io/azure-workload-identity/docs/):
+
+| Variable | Purpose |
+| --- | --- |
+| `AZURE_AUTHORITY_HOST` | Entra login host (e.g. `https://login.microsoftonline.com/`). |
+| `AZURE_TENANT_ID` | Azure tenant ID. |
+| `AZURE_CLIENT_ID` | Client ID of the federated app registration. Can be overridden per-integration with `azureWorkloadClientId`. |
+| `AZURE_FEDERATED_TOKEN_FILE` | Path to the projected service-account token. |
+
+```json
+{
+  "azureAuthMode": "workload",
+  "resourceName": "my-resource",
+  "azureWorkloadClientId": "<OPTIONAL_OVERRIDE_CLIENT_ID>"
+}
+```
+
+## AWS federated (Entra ID)
+
+Exchanges an AWS STS web-identity token for an Entra access token — enabling keyless Azure access from workloads running on AWS (e.g. EKS with IRSA, or any host with standard AWS credentials).
+
+The gateway calls `sts:GetWebIdentityToken` with audience `api://AzureADTokenExchange`, then exchanges that token at the Entra token endpoint. On the Azure side, register a federated credential on your app registration with:
+
+- **Issuer**: `https://sts.<region>.amazonaws.com`
+- **Subject**: the AWS principal (role ARN) assumed by the gateway
+- **Audience**: `api://AzureADTokenExchange`
+
+```json
+{
+  "azureAuthMode": "entraFederated",
+  "resourceName": "my-resource",
+  "azureEntraTenantId": "<TENANT_ID>",
+  "azureEntraClientId": "<CLIENT_ID>"
+}
+```
+
+No client secret is required. The gateway picks up AWS credentials from the standard chain (IRSA, `AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE`, instance profile, or static creds).

@@ -1,0 +1,121 @@
+---
+title: "Cache Behavior"
+sidebarTitle: "Cache Behavior"
+description: "How the Gateway cache works: population, TTL, sync, resync, and cache invalidation and refresh."
+---
+
+The Gateway uses a local cache store (Redis or compatible) for two distinct purposes:
+
+1. **Control Plane entity cache:** stores configuration objects (API keys, virtual keys, configs, prompts, guardrails, integrations) fetched from the Control Plane
+2. **LLM response cache:** stores LLM request/response pairs for reuse across identical requests
+
+<Info>
+**Hybrid vs air-gapped:** In a hybrid deployment, the Control Plane is hosted by Portkey. In an air-gapped deployment, the Control Plane runs entirely within your own infrastructure.
+</Info>
+
+---
+
+## TTL: Control Plane Entities
+
+All configuration objects are cached with a **7-day TTL (604,800 seconds)**. The TTL resets each time an item is re-fetched and re-written to cache.
+
+| Object type | TTL |
+|:------------|:----|
+| API keys | 7 days, or until the key's `expires_at` date (whichever comes first) |
+| Virtual keys | 7 days |
+| Configs | 7 days |
+| Prompt templates | 7 days |
+| Prompt partials | 7 days |
+| Guardrails | 7 days |
+| Integrations | 7 days |
+
+Cache entries are **lazy-loaded**: an object is only written to cache the first time it is requested. Objects that have never been requested are not present in cache.
+
+---
+
+## TTL: LLM Response Cache
+
+LLM response caching is opt-in and must be explicitly enabled per request or via a Portkey Config. TTL only applies when caching is active. The [Cache (Simple & Semantic)](/product/ai-gateway/cache-simple-and-semantic) doc covers how to enable caching, set TTL via `max_age`, configure org-level default TTL, and use force refresh.
+
+---
+
+## Sync: Control Plane → Gateway
+
+Every **minute**, the Gateway sends a sync request to the Control Plane carrying a stable `syncIdentifier` (a UUID generated once per Gateway instance and persisted in cache). The Control Plane uses this identifier to return only the objects that have changed since the last successful sync for that Gateway instance.
+
+The response contains the identifiers of changed objects grouped by type: virtual keys, API keys, configs, prompts, prompt partials, guardrails, and integrations.
+
+For each object in the delta, the Gateway **deletes** its cache entry. The updated data is not pushed into the cache at this point. On the next incoming request that needs that object, the Gateway fetches the latest version from the Control Plane and re-populates the cache with a fresh 7-day TTL.
+
+---
+
+## Resync: Gateway → Control Plane
+
+Separately, a **resync** process also runs every **minute**. Its direction is the opposite of sync: it pushes data from the Gateway back to the Control Plane.
+
+The only data pushed back is **usage counters** (token usage and cost usage). Rather than writing to the Control Plane on every request, the Gateway accumulates these counters locally in cache as requests are processed. The resync worker reads the accumulated values and flushes them to the Control Plane in batches. After a successful flush, the local counter keys are deleted from cache.
+
+Usage counters are tracked for:
+- API keys
+- Virtual keys
+- Integration workspaces
+- Usage limit policies
+
+No other cached data (configs, prompts, guardrails, or LLM responses) is ever pushed back to the Control Plane.
+
+---
+
+## Cache Invalidation and Refresh
+
+Invalidation and refresh are two sides of the same lifecycle: an entry is first invalidated (removed from cache), and on the next request for that object, it is refreshed (re-fetched and re-cached).
+
+### Control Plane Entities
+
+| Trigger | What happens |
+|:--------|:-------------|
+| Delta sync (every minute) | The Gateway deletes cache entries for any object the Control Plane reports as changed. The next request for that object fetches the latest version and re-caches it with a fresh 7-day TTL. |
+| TTL expiry (7 days) | The entry is removed automatically. The next request triggers a fresh fetch from the Control Plane. |
+| Memory eviction | The entry is evicted by the cache store. The next request triggers a fresh fetch, same as TTL expiry. |
+
+### LLM Response Cache
+
+| Trigger | What happens |
+|:--------|:-------------|
+| `x-portkey-cache-force-refresh: true` header | The cached response for that request is deleted and replaced with a fresh LLM response. |
+| TTL expiry | The entry is removed. The next matching request results in a cache miss and a live LLM call. |
+| Memory eviction | Same behaviour as TTL expiry. |
+
+See [Cache (Simple & Semantic)](/product/ai-gateway/cache-simple-and-semantic) for full details on force refresh and TTL configuration.
+
+---
+
+## Data-Bound: Memory Capacity Scenarios
+
+The cache store is an in-memory system. When it reaches its configured memory limit, it evicts entries based on the eviction policy set on the cache instance.
+
+Depending on the eviction policy in use:
+
+- **LRU-based policies** evict the least recently used entries first. Recently accessed config objects and LLM responses are retained; idle ones are removed.
+- **Random eviction policies** remove entries without regard to recency, which may evict active objects.
+- **`noeviction`** causes all new write operations to fail once the limit is reached, which prevents new entries from being cached at all.
+
+In each case, an evicted entry behaves the same as an expired one: the next request for that object triggers a fresh fetch from the Control Plane (for config objects) or a live LLM call (for response cache entries).
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Enterprise Architecture" icon="sitemap" href="/self-hosting/hybrid-deployments/architecture">
+    Overview of the Data Plane / Control Plane split and data flow between them
+  </Card>
+  <Card title="Enterprise Components" icon="database" href="/product/enterprise-offering/components">
+    Supported cache backends: Redis, AWS ElastiCache, and more
+  </Card>
+  <Card title="Helm Chart: Cache Store" icon="github" href="https://github.com/Portkey-AI/helm-chart/tree/main/helm/enterprise#cache-store">
+    Full configuration reference for the cache store
+  </Card>
+  <Card title="Data Plane Resiliency" icon="shield" href="https://github.com/Portkey-AI/helm/blob/main/charts/portkey-gateway/docs/Dataplane%20Resiliency.md">
+    Detailed resiliency guide including network flow diagrams, outage scenarios, and Helm configuration
+  </Card>
+</CardGroup>

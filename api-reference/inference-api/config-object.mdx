@@ -467,6 +467,10 @@ The `config` object is used to configure API interactions with various providers
     "custom_host": {
       "type": "string"
     },
+    "passthrough": {
+      "type": "boolean",
+      "optional": true
+    },
     "forward_headers": {
       "type": "array",
       "items": {
@@ -583,6 +587,9 @@ The `config` object is used to configure API interactions with various providers
     },
     {
       "required": ["output_guardrails"]
+    },
+    {
+      "required": ["passthrough"]
     }
   ],
   "additionalProperties": false
@@ -640,6 +647,7 @@ You can find more examples of schemas [below](/api-reference/inference-api/confi
 | `request_timeout` | Request timeout configuration | number | No  | -   | -   |
 | `custom_host` | Route to privately hosted model | string | No  | -   | Used in combination with `provider` \+ `api_key` |
 | `forward_headers` | Forward sensitive headers directly | array of strings | No  | -   | -   |
+| `passthrough` | Defer provider resolution to the incoming request | boolean | No  | -   | When `true`, the target does not require `provider`. See [Passthrough targets](/product/ai-gateway/configs#passthrough-targets) |
 | `override_params` | Pass model name and other hyper parameters | object | No  | "model", "temperature", "frequency\_penalty", "logit\_bias", "logprobs", "top\_logprobs", "max\_tokens", "n", "presence\_penalty", "response\_format", "seed", "stop", "top_p", etc. | Pass everything that's typically part of the payload |
 
 ### Strategy Object Details
@@ -717,6 +725,7 @@ You can find more examples of schemas [below](/api-reference/inference-api/confi
 | [Load Balancing](#load-balancing-with-provider-slugs) | Distribute traffic across providers |
 | [Fallback](#fallback-across-providers) | Automatic failover between providers |
 | [Combined Strategies](#load-balancing-and-fallback-combination) | Nested load balancing with fallback |
+| [Passthrough Target](#passthrough-target) | Defer provider resolution to the request |
 | [Legacy: API Key](#legacy-single-provider-with-api-key) | Direct API key usage |
 | [Legacy: Virtual Key](#legacy-single-provider-with-virtual-key) | Virtual key usage |
 
@@ -831,6 +840,31 @@ Nest strategies for complex routing logic.
   ]
 }
 ```
+
+---
+
+### Passthrough Target
+
+Let the incoming request determine the provider. Useful for defining routing strategies at the config level while the caller decides which provider to use.
+
+```json
+{
+  "strategy": {
+    "mode": "fallback"
+  },
+  "targets": [
+    {
+      "passthrough": true
+    },
+    {
+      "provider": "@anthropic-backup",
+      "override_params": { "model": "claude-sonnet-4-20250514" }
+    }
+  ]
+}
+```
+
+The gateway resolves the provider from the request via the `x-portkey-provider` header or the `model` field (using `@slug/model-name` format).
 
 ---
 

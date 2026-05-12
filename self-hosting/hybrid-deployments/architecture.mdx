@@ -57,12 +57,24 @@ The Control Plane is fully managed by Portkey and provides the administrative la
 <Accordion icon="database" title="Data Sync (Gateway ↔ Control Plane)">
   The AI Gateway periodically synchronizes with the Control Plane:
   
-  - **Frequency**: 30-second heartbeat intervals
+  - **Frequency**: 1-minute heartbeat intervals
   - **Data Retrieved**: Prompt templates, routing configs, integrations, providers, API keys
-  - **Process**: Data is fetched, decrypted locally, and stored in the Gateway cache
+  - **Process**: Deltas (changed items) are fetched, decrypted locally, and the corresponding cache entries are invalidated — they are re-fetched from the Control Plane on next use
   - **Resilience**: Gateway operates independently between syncs using cached configs
   
   **Security Benefit**: Continuous operation even during Control Plane disconnection
+</Accordion>
+
+<Accordion icon="clock" title="Cache Behavior">
+  The Gateway holds all configuration objects — API keys, virtual keys, configs, prompts, guardrails — in a local cache so every request is served without a real-time round-trip to the Control Plane. Key points:
+
+  - **Lazy-loaded**: items enter the cache on first use; their TTL resets to 7 days on every re-population, so actively used objects stay fresh automatically.
+  - **Delta invalidation**: every minute the Gateway fetches a list of changed items from the Control Plane and deletes the corresponding cache entries — they are re-fetched on the next request.
+  - **Eviction policy**: use `volatile-lru` so that idle entries are evicted first under memory pressure, preserving the objects your live traffic depends on.
+
+  <Card title="Cache Behavior" icon="database" href="/self-hosting/cache-behavior">
+    TTL details, delta sync mechanics, eviction policy, and configuration reference.
+  </Card>
 </Accordion>
 
 <Accordion icon="chart-line" title="Analytics Flow (Gateway → Control Plane)">

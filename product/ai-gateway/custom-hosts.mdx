@@ -1,0 +1,195 @@
+---
+title: "Custom hosts"
+description: "Route requests to privately hosted or local models using custom host URLs, and understand Portkey's host validation and security rules."
+---
+
+<Info>
+Custom hosts with private network routing — including the `TRUSTED_CUSTOM_HOSTS` allowlist — applies only to **hybrid and air-gapped enterprise deployments** of the Portkey AI Gateway. On Portkey SaaS, custom host URLs must be publicly reachable; routing to private or internal network IPs is not supported.
+</Info>
+
+The `custom_host` parameter routes Portkey Gateway requests to your own model endpoints — whether running locally, in a private cloud, or on custom infrastructure. Portkey validates all custom host URLs to prevent [SSRF](https://owasp.org/www-community/attacks/Server_Side_Request_Forgery) attacks.
+
+## Setting a custom host
+
+Specify a custom host using one of these methods:
+
+| Method | Parameter |
+|--------|-----------|
+| HTTP header | `x-portkey-custom-host` |
+| Python SDK | `custom_host` |
+| Node.js SDK | `customHost` |
+| Gateway config | `custom_host` (in the target object) |
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="openai",
+    custom_host="https://your-llm-server.com/v1/"
+)
+
+response = portkey.chat.completions.create(
+    model="your-model",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+```javascript Node.js
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "openai",
+    customHost: "https://your-llm-server.com/v1/"
+})
+
+const response = await portkey.chat.completions.create({
+    model: "your-model",
+    messages: [{ role: "user", content: "Hello" }]
+})
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -H "x-portkey-custom-host: https://your-llm-server.com/v1/" \
+  -d '{
+    "model": "your-model",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+</CodeGroup>
+
+Also set `custom_host` in a [Gateway config](/product/ai-gateway/configs) target:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    {
+      "provider": "openai",
+      "custom_host": "https://your-private-llm.com/v1",
+      "forward_headers": ["Authorization"]
+    },
+    {
+      "provider": "openai",
+      "api_key": "sk-xxxxx"
+    }
+  ]
+}
+```
+
+<Note>
+Include the version path (e.g., `/v1`) in the `custom_host` URL. Portkey appends the endpoint path (`/chat/completions`, `/responses`, etc.) automatically.
+</Note>
+
+For a full guide on integrating private LLMs, see [Bring Your Own LLM](/integrations/llms/byollm).
+
+---
+
+## Blocked host patterns
+
+Portkey validates all custom host URLs to prevent requests to internal network resources. The following IP ranges and patterns are **blocked by default**:
+
+### Private IPv4 ranges
+
+| Range | Description |
+|-------|-------------|
+| `10.0.0.0/8` | Private network (Class A) |
+| `172.16.0.0/12` | Private network (Class B) |
+| `192.168.0.0/16` | Private network (Class C) |
+
+### Reserved IPv4 ranges
+
+| Range | Description |
+|-------|-------------|
+| `127.0.0.0/8` | Loopback addresses |
+| `169.254.0.0/16` | Link-local addresses |
+| `100.64.0.0/10` | Carrier-grade NAT (CGNAT) |
+| `0.0.0.0/8` | Non-routable (includes `0.0.0.0`) |
+| `224.0.0.0/4` | Multicast, reserved, and broadcast |
+
+### Cloud metadata endpoints
+
+| Address | Description |
+|---------|-------------|
+| `169.254.169.254` | Cloud provider metadata service (AWS, GCP, Azure) |
+
+### IPv6 local and private ranges
+
+| Range | Description |
+|-------|-------------|
+| `::1` | IPv6 loopback |
+| `::` | IPv6 unspecified |
+| `fc00::/7` | Unique local addresses (`fc*` / `fd*`) |
+| `fe80::/10` | Link-local addresses |
+| `fec0::/10` | Site-local addresses (deprecated) |
+| `fd00:ec2::*` | AWS IMDSv2 IPv6 endpoint |
+
+### IP obfuscation tricks
+
+The following alternate IP representations are also blocked to prevent bypass attempts:
+
+- **Decimal form** -- e.g., `2130706433` (resolves to `127.0.0.1`)
+- **Hexadecimal form** -- e.g., `0x7f000001` (resolves to `127.0.0.1`)
+- **Shortened IPv4** -- e.g., `127.1` (resolves to `127.0.0.1`)
+- **Octal notation** -- e.g., `0177.0.0.1` (resolves to `127.0.0.1`)
+
+---
+
+## Trusted custom hosts (allowlist)
+
+Portkey maintains a trusted hosts allowlist that **overrides** the blocked patterns above. By default, the following hosts are trusted:
+
+| Host | Description |
+|------|-------------|
+| `localhost` | Local development |
+| `127.0.0.1` | IPv4 loopback |
+| `::1` | IPv6 loopback |
+| `host.docker.internal` | Docker host access |
+
+<Note>
+Even though `127.0.0.1` and `::1` fall within blocked ranges, they are allowed through the trusted hosts path. Port validation still applies (must be between 1 and 65535).
+</Note>
+
+### Adding hosts to the allowlist
+
+To route to a private network IP (e.g., `172.31.2.45`), add it to the trusted hosts allowlist using the `TRUSTED_CUSTOM_HOSTS` environment variable.
+
+<Note>
+`TRUSTED_CUSTOM_HOSTS` is available only on [self-hosted](/self-hosting/hybrid-deployments/architecture) hybrid and air-gapped enterprise deployments of the Portkey AI Gateway.
+</Note>
+
+Set the environment variable as a comma-separated list of hosts:
+
+```bash
+TRUSTED_CUSTOM_HOSTS="localhost,127.0.0.1,::1,host.docker.internal,172.31.2.45"
+```
+
+Requests with `custom_host` set to `http://172.31.2.45:8008/v1/` will then pass validation.
+
+<Warning>
+When overriding `TRUSTED_CUSTOM_HOSTS`, include the default values (`localhost`, `127.0.0.1`, `::1`, `host.docker.internal`) along with your additions to preserve the default behavior.
+</Warning>
+
+### Validation rules for trusted hosts
+
+Even for trusted hosts, Portkey enforces:
+
+- **Port range** -- The port must be between `1` and `65535`
+- **Host-only matching** -- Only the hostname or IP is checked against the allowlist, not the full URL
+
+---
+
+## Common scenarios
+
+| Scenario | Default behavior | Action needed |
+|----------|-----------------|---------------|
+| **Local development** (e.g., Ollama on `localhost`) | Allowed -- `localhost` and `127.0.0.1` are trusted by default | None. See the [Ollama integration guide](/integrations/llms/ollama). |
+| **Docker containers** (`host.docker.internal`) | Allowed -- trusted by default | None |
+| **Private network IP** (e.g., `172.31.2.45:8008`) | Blocked -- falls within `172.16.0.0/12` | Add the IP to `TRUSTED_CUSTOM_HOSTS` (hybrid/air-gapped only) |
+| **Cloud metadata** (`169.254.169.254`) | Blocked | Cannot be allowlisted for security reasons |

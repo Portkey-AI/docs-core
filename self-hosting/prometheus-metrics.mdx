@@ -67,11 +67,11 @@ All custom metrics share a common labeling schema enabling multi-dimensional ana
 - `endpoint`: Normalized API endpoint path (e.g., `/v1/chat/completions`, `/v1/completions`)
 - `code`: HTTP response status code (200, 400, 500, etc.)
 - `provider`: LLM provider identifier (openai, anthropic, azure-openai, etc.)
-- `model`: Specific model name (gpt-4, claude-3, etc.)
+- `model`: Specific model name (gpt-4, claude-3, etc.) — **opt-in**, disabled by default to limit cardinality (set `PROMETHEUS_INCLUDE_MODEL_LABEL = true`)
 - `source`: Request origination source or client identifier
 - `stream`: Boolean indicator for streaming responses ("true"/"false")
 - `cacheStatus`: Cache interaction result ("hit", "miss", "disabled", "error")
-- `metadata_*`: Dynamic labels from request metadata (see configuration section)
+- `metadata_*`: Dynamic labels from request metadata — **opt-in**, disabled by default to limit cardinality (set `PROMETHEUS_INCLUDE_METADATA_LABELS = true`)
 
 ### 1. Gateway Request Counter
 
@@ -528,14 +528,41 @@ ENABLE_PROMETHEUS=true
 For production deployments, keeping Prometheus metrics enabled is strongly recommended for observability, debugging, and performance monitoring.
 </Tip>
 
+### Model Label Configuration
+
+By default, the `model` label is **not included** in metrics to prevent high cardinality from the large number of model variants across providers.
+
+**Environment Variable**: `PROMETHEUS_INCLUDE_MODEL_LABEL`
+
+**Default**: `false`
+**Values**: `true` | `false`
+
+```bash
+# Opt-in to include model label (may cause high cardinality)
+PROMETHEUS_INCLUDE_MODEL_LABEL=true
+```
+
+<Warning>
+Enabling `PROMETHEUS_INCLUDE_MODEL_LABEL` can cause **high cardinality** in Prometheus, especially in deployments that route across many different models. Enable with caution and ensure your Prometheus storage is sized accordingly.
+</Warning>
+
 ### Dynamic Metadata Label System
 
 The Portkey Enterprise Gateway supports dynamic metadata labeling through request-specific metadata injection. This powerful feature enables fine-grained observability across custom dimensions specific to your organization's structure and use cases.
 
-**Environment Variable**: `PROMETHEUS_LABELS_METADATA_ALLOWED_KEYS`
+**Metadata labels are disabled by default** to prevent cardinality issues. Enable them with `PROMETHEUS_INCLUDE_METADATA_LABELS`, then restrict which keys are promoted to labels using `PROMETHEUS_LABELS_METADATA_ALLOWED_KEYS`.
 
-**Configuration Format**: Comma-separated list of metadata keys
+| Environment Variable | Default | Description |
+|----------------------|---------|-------------|
+| `PROMETHEUS_INCLUDE_METADATA_LABELS` | `false` | Enable metadata labels in metrics |
+| `PROMETHEUS_LABELS_METADATA_ALLOWED_KEYS` | — | Comma-separated allowlist of metadata keys to expose as labels |
+
+**Configuration**:
 ```bash
+# Step 1: Enable metadata labels
+PROMETHEUS_INCLUDE_METADATA_LABELS=true
+
+# Step 2: Restrict which keys are promoted to labels
 PROMETHEUS_LABELS_METADATA_ALLOWED_KEYS=user_id,organization_id,workspace_id,application_name,cost_center,environment_type
 ```
 
@@ -817,7 +844,7 @@ When deploying metrics collection in production:
 
 **High Cardinality Metrics**:
 - Symptom: Prometheus storage growth, query performance degradation
-- Solution: Review `PROMETHEUS_LABELS_METADATA_ALLOWED_KEYS` configuration and limit high-cardinality labels
+- Solution: Ensure `PROMETHEUS_INCLUDE_MODEL_LABEL` and `PROMETHEUS_INCLUDE_METADATA_LABELS` are not enabled unnecessarily. If metadata labels are needed, restrict scope using `PROMETHEUS_LABELS_METADATA_ALLOWED_KEYS`
 
 **Missing Metrics**:
 - Check that the `/metrics` endpoint is accessible

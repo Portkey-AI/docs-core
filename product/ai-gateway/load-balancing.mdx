@@ -109,24 +109,25 @@ Sticky load balancing ensures that requests with the same identifier are consist
 
 ### Configuration
 
-Add `sticky_session` to your load balancing strategy:
+Add `sticky` to your load balancing strategy:
 
 ```json
 {
   "strategy": {
     "mode": "loadbalance",
-    "sticky_session": {
+    "sticky": {
+      "enabled": true,
       "hash_fields": ["metadata.user_id"],
       "ttl": 3600
     }
   },
   "targets": [
     {
-      "provider": "@openai-virtual-key",
+      "provider": "@openai-prod",
       "weight": 0.5
     },
     {
-      "provider": "@anthropic-virtual-key", 
+      "provider": "@anthropic-prod",
       "weight": 0.5
     }
   ]
@@ -137,6 +138,7 @@ Add `sticky_session` to your load balancing strategy:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
+| `enabled` | boolean | Turns sticky routing on or off. Must be `true` to activate sticky behavior. If omitted or `false`, sticky routing is disabled and normal weighted load balancing is used. |
 | `hash_fields` | array | Fields to use for generating the sticky session identifier. Supports dot notation for nested fields (e.g., `metadata.user_id`, `metadata.session_id`) |
 | `ttl` | number | Time-to-live in seconds for the sticky session. After this period, a new target may be selected. Default: 3600 (1 hour) |
 
@@ -150,6 +152,25 @@ Add `sticky_session` to your load balancing strategy:
 <Note>
 Sticky sessions use a two-tier cache system (in-memory + Redis) for fast lookups and persistence across gateway instances in distributed deployments.
 </Note>
+
+## Combine with Other Strategies
+
+Load balancing is composable with conditional routing and fallbacks — use it as a target inside another strategy, or nest other strategies inside each load-balanced slot.
+
+<CardGroup cols={2}>
+  <Card title="Scale One Model Across Multiple Providers" icon="code-branch" href="/guides/use-cases/combining-routing-strategies#scale-one-model-across-multiple-providers">
+    Use a conditional router to match a model alias, then send that branch to a load balancer across Anthropic, Vertex AI, and Bedrock.
+  </Card>
+  <Card title="Fallback When the Whole Cluster Goes Down" icon="shield" href="/guides/use-cases/combining-routing-strategies#fallback-when-the-whole-cluster-goes-down">
+    Wrap a load balancer cluster in a fallback — individual failures stay within the cluster; only a full outage triggers the cross-model backup.
+  </Card>
+  <Card title="Isolate Failures Between Model Families" icon="layer-group" href="/guides/use-cases/combining-routing-strategies#isolate-failures-between-model-families">
+    Give each load-balanced slot its own independent fallback. An OpenAI outage only affects that slot — the other models route normally.
+  </Card>
+  <Card title="All Patterns Together" icon="diagram-project" href="/guides/use-cases/combining-routing-strategies#the-full-config">
+    See a complete config combining conditional routing, load balancing, and fallbacks across four model families.
+  </Card>
+</CardGroup>
 
 ## Caveats and Considerations
 
