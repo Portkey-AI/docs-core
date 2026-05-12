@@ -119,19 +119,72 @@ environment:
 
 #### Amazon ElastiCache
 
-To enable the gateway to work with an ElastiCache cache, ensure that inbound rule is configured in ElastiCache's Security Group allowing access from EKS cluster on required port.
+To enable the gateway to work with an ElastiCache cache, ensure that an inbound rule is configured in ElastiCache's Security Group allowing access from the EKS cluster on the required port.
 
-```yaml
-## To use Amazon ElastiCache for Redis OSS or Valkey, add the following configuration in the values.yaml file.
-environment:
-  data:
-    CACHE_STORE: aws-elastic-cache
-    REDIS_URL: "redis://<ElastiCache_Endpoint>:<Port>" 
-    REDIS_TLS_ENABLED: "true"                             ## "true"/"false"
-    REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled on Amazon ElastiCache
-    # REDIS_PASSWORD: <Auth Token>                        ## Provide Auth Token if enabled on Amazon ElastiCache
+<Tabs>
+  <Tab title="No Auth">
+    ```yaml
+    environment:
+      data:
+        CACHE_STORE: aws-elastic-cache
+        REDIS_URL: "redis://<ElastiCache_Endpoint>:<Port>" 
+        REDIS_TLS_ENABLED: "false"
+        REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled
+    ```
+  </Tab>
+  <Tab title="Auth Token">
+    ```yaml
+    environment:
+      data:
+        CACHE_STORE: aws-elastic-cache
+        REDIS_URL: "redis://<ElastiCache_Endpoint>:<Port>" 
+        REDIS_TLS_ENABLED: "true"
+        REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled
+        REDIS_PASSWORD: <Auth_Token>                          ## Provide Auth Token configured on ElastiCache
+    ```
+  </Tab>
+  <Tab title="IRSA">
+    ```yaml
+    serviceAccount:
+      create: true
+      automount: true
+      name: <SERVICE_ACCOUNT_NAME>
+      annotations:
+        eks.amazonaws.com/role-arn: <ROLE_ARN>
 
-```
+    environment:
+      data:
+        CACHE_STORE: aws-elastic-cache
+        REDIS_URL: "redis://<ElastiCache_Endpoint>:<Port>" 
+        REDIS_TLS_ENABLED: "true"
+        REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled
+        AWS_REDIS_AUTH_MODE: iam
+        AWS_REDIS_CLUSTER_NAME: <ELASTICACHE_CLUSTER_NAME>    ## Name of the ElastiCache replication group or serverless cache
+        REDIS_USERNAME: <ELASTICACHE_USER_ID>                 ## ElastiCache user ID configured for IAM authentication
+    ```
+    **Note:** The IAM role must have `elasticache:Connect` permission. See [ElastiCache IAM authentication](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/auth-iam.html) for details.
+  </Tab>
+  <Tab title="EKS Pod Identity">
+    ```yaml
+    serviceAccount:
+      create: true
+      automount: true
+      name: <SERVICE_ACCOUNT_NAME>
+
+    environment:
+      data:
+        CACHE_STORE: aws-elastic-cache
+        REDIS_URL: "redis://<ElastiCache_Endpoint>:<Port>" 
+        REDIS_TLS_ENABLED: "true"
+        REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled
+        AWS_REDIS_AUTH_MODE: iam
+        AWS_REDIS_CLUSTER_NAME: <ELASTICACHE_CLUSTER_NAME>    ## Name of the ElastiCache replication group or serverless cache
+        REDIS_USERNAME: <ELASTICACHE_USER_ID>                 ## ElastiCache user ID configured for IAM authentication
+    ```
+    **Note:** The IAM role must have `elasticache:Connect` permission and a Pod Identity association must be created. See [ElastiCache IAM authentication](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/auth-iam.html) and [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html) for details.
+  </Tab>
+</Tabs>
+
 **Note:** If cluster mode is enabled in ElastiCache then use **Configuration Endpoint** otherwise use **Primary Endpoint**.
 For more information on ElastiCache endpoints, refer to the [AWS resources](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Endpoints.html).
 
@@ -457,187 +510,276 @@ To integrate the Control Plane with the Data Plane, contact the Portkey team and
 helm uninstall portkey-ai --namespace $namespace
 ```
 
-## Setting up IAM Permission
 
-To enable the Portkey Gateway to access Amazon S3 for log storage and, optionally, Amazon Bedrock for model invocation, specific permissions are required. 
+## Setting up IAM Permission
 
 Follow the steps below to configure permissions based on your chosen access method.
 
+### Create IAM Role
 
-      <Tabs>
-      <Tab title="IRSA">
-      1. Create an IAM trust policy to provide Gateway access to IAM Role. 
-        ```sh
-      bucket_name=<S3_BUCKET_NAME>                  # Specify the name of S3 bucket which will store logs. Bucket must already be created.
-      role_name=<IAM_ROLE_NAME>                     # Provide a name for the role to be associated with Service Account.
+<Tabs>
+  <Tab title="IRSA">
+  1. Specify the details:
+    ```sh
+    role_name=<IAM_ROLE_NAME>                     # Provide a name for the role to be associated with Service Account
 
-      # Retrieve AWS Account ID
-      aws_account_id=$(aws sts get-caller-identity --query Account --output text)
-            
-      # Retrieve EKS cluster’s OIDC issuer.
-      oidc_issuer=$(aws eks describe-cluster --name $cluster_name --query "cluster.identity.oidc.issuer" --output text | sed -e "s~https://~~")
-      
-      # Check if an IAM OIDC provider is already created for EKS cluster in your account.
-      aws iam list-open-id-connect-providers | grep $oidc_issuer
-      
-      # (Optional) If no output is returned, then create an IAM OIDC provider for your EKS cluster.
-      eksctl utils associate-iam-oidc-provider --cluster $cluster_name --approve
-      
-      # Define a trust policy for IAM role
-      cat >trust-relationship.json <<EOF
-      {
-        "Version": "2012-10-17",
-        "Statement": [
-          {
-            "Effect": "Allow",
-            "Principal": {
-              "Federated": "arn:aws:iam::${aws_account_id}:oidc-provider/${oidc_issuer}"
-            },
-            "Action": "sts:AssumeRoleWithWebIdentity",
-            "Condition": {
-              "StringEquals": {
-                "${oidc_issuer}:aud": "sts.amazonaws.com",
-                "${oidc_issuer}:sub": "system:serviceaccount:${namespace}:${service_account_name}"
-              }
+    # Retrieve AWS Account ID
+    aws_account_id=$(aws sts get-caller-identity --query Account --output text)
+
+    # Retrieve EKS cluster's OIDC issuer
+    oidc_issuer=$(aws eks describe-cluster --name $cluster_name --query "cluster.identity.oidc.issuer" --output text | sed -e "s~https://~~")
+
+    # Check if an IAM OIDC provider is already created for EKS cluster in your account
+    aws iam list-open-id-connect-providers | grep $oidc_issuer
+
+    # (Optional) If no output is returned, create an IAM OIDC provider for your EKS cluster
+    eksctl utils associate-iam-oidc-provider --cluster $cluster_name --approve
+    ```
+
+  2. Create a trust policy and IAM role.
+    ```sh
+    cat >trust-relationship.json <<EOF
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "Federated": "arn:aws:iam::${aws_account_id}:oidc-provider/${oidc_issuer}"
+          },
+          "Action": "sts:AssumeRoleWithWebIdentity",
+          "Condition": {
+            "StringEquals": {
+              "${oidc_issuer}:aud": "sts.amazonaws.com",
+              "${oidc_issuer}:sub": "system:serviceaccount:${namespace}:${service_account_name}"
             }
           }
-        ]
-      }
-      EOF
-      ```
-      2. Create an IAM Role to associate with Gateway's service account.
-    ```sh
-    # Create IAM role to associate with Gateway service account.                 
-    aws iam create-role --role-name $role_name --assume-role-policy-document file://trust-relationship.json 
+        }
+      ]
+    }
+    EOF
+
+    aws iam create-role --role-name $role_name --assume-role-policy-document file://trust-relationship.json
 
     # Fetch ARN of IAM role
     role_arn=$(aws iam get-role --role-name $role_name --query "Role.Arn" --output text)
     echo "$role_arn"
     ```
-    **Note:** Record the IAM role ARN for future reference, as it will be required when configuring the Gateway’s service account in `values.yaml`.
-
-3. Attach an IAM policy to the role to grant access to the S3 log store and, optionally, Amazon Bedrock.
-
-  **Amazon S3**
-    ```sh
-    cat >s3-access-policy.json <<EOF
-    {
-      "Version": "2012-10-17",
-      "Statement": [
-        {
-          "Effect": "Allow",
-          "Action": ["s3:PutObject", "s3:GetObject"],
-          "Resource": ["arn:aws:s3:::${bucket_name}/*"]
-        }
-      ]
-    }
-    EOF
-
-    # Attach policy to the IAM role
-    aws iam put-role-policy --role-name $role_name --policy-name s3-access-policy --policy-document file://s3-access-policy.json
-    ```
-
-  **(Optional) Amazon Bedrock**
-    ```sh
-    cat >bedrock-access-policy.json <<EOF
-    {
-      "Version": "2012-10-17",
-      "Statement": [
-        {
-          "Effect": "Allow",
-          "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-          "Resource": ["*"]
-        }
-      ]
-    }
-    EOF
-
-    # Attach policy to the IAM role
-    aws iam put-role-policy --role-name $role_name --policy-name bedrock-access-policy --policy-document file://bedrock-access-policy.json
-
-    ```
-
-  </Tab> 
-  <Tab title="EKS Pod Identity">
-    1. (Optional) If the EKS Pod Identity Agent is not already installed on your cluster, install it before proceeding. For detailed, step-by-step instructions, refer to the following AWS [documentation](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html).     
-    2. Create an IAM trust policy to provide Gateway access to IAM Role. 
-      ```sh
-      bucket_name=<S3_BUCKET_NAME>           # Specify the name of S3 bucket which will store logs. Bucket must already be created.
-      role_name=<IAM_ROLE_NAME>              # Provide a name for the role to be associated with Service Account.
-      cat >trust-relationship.json <<EOF
-      {
-          "Version": "2012-10-17",		 	 	 
-          "Statement": [
-              {
-                  "Sid": "AllowEksAuthToAssumeRoleForPodIdentity",
-                  "Effect": "Allow",
-                  "Principal": {
-                      "Service": "pods.eks.amazonaws.com"
-                  },
-                  "Action": [
-                      "sts:AssumeRole",
-                      "sts:TagSession"
-                  ]
-              }
-          ]
-      }
-      EOF
-      ```
-    3. Create an IAM Role to associate with Gateway's service account.
-      ```sh
-      aws iam create-role --role-name $role_name --assume-role-policy-document file://trust-relationship.json 
-      ```
-    4. Create a Pod Identity association that allows the Gateway’s service account to assume the specified IAM role using EKS Pod Identity.
-      ```sh
-      # Retrieve AWS Account ID
-      aws_account_id=$(aws sts get-caller-identity --query Account --output text)
-
-      # Create Pod Identity Association
-      aws eks create-pod-identity-association --cluster-name $cluster_name --role-arn "arn:aws:iam::${aws_account_id}:role/${role_name}" --namespace $namespace --service-account $service_account_name
-      ```
-    5. Attach an IAM policy to the role to grant access to the S3 log store and, optionally, Amazon Bedrock.
-
-      **Amazon S3**
-        ```sh
-        cat >s3-access-policy.json <<EOF
-        {
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Effect": "Allow",
-              "Action": ["s3:PutObject", "s3:GetObject"],
-              "Resource": ["arn:aws:s3:::${bucket_name}/*"]
-            }
-          ]
-        }
-        EOF
-
-        # Attach policy to the IAM role
-        aws iam put-role-policy --role-name $role_name --policy-name s3-access-policy --policy-document file://s3-access-policy.json
-        ```
-
-      **(Optional) Amazon Bedrock**
-        ```sh
-        cat >bedrock-access-policy.json <<EOF
-        {
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Effect": "Allow",
-              "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-              "Resource": ["*"]
-            }
-          ]
-        }
-        EOF
-
-        # Attach policy to the IAM role
-        aws iam put-role-policy --role-name $role_name --policy-name bedrock-access-policy --policy-document file://bedrock-access-policy.json
-
-        ```
+    **Note:** Record the IAM role ARN for future reference, as it will be required when configuring the Gateway's service account in `values.yaml`.
   </Tab>
+  <Tab title="EKS Pod Identity">
+  **Prerequisites:** If the EKS Pod Identity Agent is not already installed on your cluster, install it before proceeding. For detailed instructions, refer to the AWS [documentation](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html).
 
+  1. Specify the details:
+    ```sh
+    role_name=<IAM_ROLE_NAME>                     # Provide a name for the role to be associated with Service Account
+    ```
+
+  2. Create a trust policy and IAM role.
+    ```sh
+    cat >trust-relationship.json <<EOF
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "AllowEksAuthToAssumeRoleForPodIdentity",
+          "Effect": "Allow",
+          "Principal": {
+            "Service": "pods.eks.amazonaws.com"
+          },
+          "Action": [
+            "sts:AssumeRole",
+            "sts:TagSession"
+          ]
+        }
+      ]
+    }
+    EOF
+
+    aws iam create-role --role-name $role_name --assume-role-policy-document file://trust-relationship.json
+    ```
+
+  3. Create a Pod Identity association.
+    ```sh
+    aws_account_id=$(aws sts get-caller-identity --query Account --output text)
+
+    aws eks create-pod-identity-association \
+      --cluster-name $cluster_name \
+      --role-arn "arn:aws:iam::${aws_account_id}:role/${role_name}" \
+      --namespace $namespace \
+      --service-account $service_account_name
+    ```
+  </Tab>
 </Tabs>
+
+### Attach Permissions to IAM Role
+
+Once the IAM role is created using either method above, attach the required policies based on the AWS services your gateway needs to access.
+
+#### Amazon S3
+To allow the Portkey Gateway to access Amazon S3 for log storage, attach the following policy to the IAM role.
+
+```sh
+bucket_name=<S3_BUCKET_NAME>                  # Specify the name of S3 bucket which will store logs
+
+cat >s3-access-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": ["arn:aws:s3:::${bucket_name}/*"]
+    }
+  ]
+}
+EOF
+
+aws iam put-role-policy --role-name $role_name --policy-name s3-access-policy --policy-document file://s3-access-policy.json
+```
+
+#### Amazon ElastiCache (Optional)
+To allow the Portkey Gateway to authenticate with Amazon ElastiCache using IAM, attach the following policy to the IAM role.
+
+```sh
+elasticache_cluster_arn=<ELASTICACHE_REPLICATION_GROUP_ARN>   # e.g., arn:aws:elasticache:<region>:<account-id>:replicationgroup:<cluster-name>
+elasticache_user_arn=<ELASTICACHE_USER_ARN>                   # e.g., arn:aws:elasticache:<region>:<account-id>:user:<user-id>
+
+cat >elasticache-access-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["elasticache:Connect"],
+      "Resource": [
+        "${elasticache_cluster_arn}",
+        "${elasticache_user_arn}"
+      ]
+    }
+  ]
+}
+EOF
+
+aws iam put-role-policy --role-name $role_name --policy-name elasticache-access-policy --policy-document file://elasticache-access-policy.json
+```
+
+#### Amazon Bedrock (Optional)
+To allow the Portkey Gateway to invoke Amazon Bedrock models, attach the following policy to the IAM role.
+
+```sh
+cat >bedrock-access-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+      "Resource": ["*"]
+    }
+  ]
+}
+EOF
+
+aws iam put-role-policy --role-name $role_name --policy-name bedrock-access-policy --policy-document file://bedrock-access-policy.json
+```
+
+#### Google Vertex AI via Workload Identity Federation (Optional)
+
+To allow the Portkey Gateway running on AWS EKS to invoke Google Vertex AI models, you can use GCP Workload Identity Federation. This enables the Gateway's AWS IAM role to authenticate directly with Google Cloud without requiring static GCP service account keys.
+
+<Note>
+This section requires the IAM role created in the steps above (via IRSA or EKS Pod Identity). The IAM role ARN will be used as the trusted identity in the GCP Workload Identity Federation pool.
+</Note>
+
+1. Log in to Google Cloud and set the target project.
+    ```sh
+    gcp_project_id=<GCP_PROJECT_ID>                # GCP project where Vertex AI is enabled.
+    pool_name=<POOL_NAME>                          # Name for the Workload Identity Pool (e.g., eks-id-pool).
+    provider_name=<PROVIDER_NAME>                  # Name for the AWS IAM provider (e.g., aws-iam-provider).
+    aws_account_id=<AWS_ACCOUNT_ID>                # Your AWS account ID.
+    role_name=<AWS_IAM_ROLE>                       # Set AWS IAM Role associated with Gateway deployment
+
+    gcloud auth login
+    gcloud config set project $gcp_project_id
+    ```
+
+2. Create a Workload Identity Pool in your GCP project.
+    ```sh
+    gcloud iam workload-identity-pools create $pool_name \
+      --location="global" \
+      --display-name="EKS Identity Pool"
+    ```
+
+3. Add an AWS IAM provider to the Workload Identity Pool.
+    ```sh
+    gcloud iam workload-identity-pools providers create-aws $provider_name \
+      --location="global" \
+      --workload-identity-pool=$pool_name \
+      --account-id=$aws_account_id \
+      --display-name="AWS IAM Provider"
+    ```
+
+4. Configure attribute mapping on the AWS IAM provider.
+    ```sh
+    gcloud iam workload-identity-pools providers update-aws $provider_name \
+      --location="global" \
+      --workload-identity-pool=$pool_name \
+      --attribute-mapping="\
+    google.subject=assertion.arn,\
+    attribute.aws_role=assertion.arn.extract('assumed-role/{role}/'),\
+    attribute.account=assertion.account"
+    ```
+
+5. Restrict access to a specific AWS IAM role by adding an attribute condition.
+    ```sh
+    gcloud iam workload-identity-pools providers update-aws $provider_name \
+      --location="global" \
+      --workload-identity-pool=$pool_name \
+      --attribute-condition="attribute.aws_role == '${role_name}'"
+    ```
+6. Retrieve the full Workload Identity Federation audience. Make a note of this value — it will be required when configuring the Gateway's `values.yaml`.
+    ```sh
+    WIF_AUDIENCE=$(gcloud iam workload-identity-pools providers describe $provider_name \
+      --location="global" \
+      --workload-identity-pool=$pool_name \
+      --format="value(name)")
+    
+    echo $WIF_AUDIENCE
+    ```
+
+7. Grant Vertex AI access using one of the following methods:
+
+    <Tabs>
+      <Tab title="Direct Access">
+        Grant the Vertex AI User role directly to the federated identity.
+        ```sh
+        gcloud projects add-iam-policy-binding $gcp_project_id \
+          --role="roles/aiplatform.user" \
+          --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $gcp_project_id --format='value(projectNumber)')/locations/global/workloadIdentityPools/$pool_name/attribute.aws_role/${role_name}"
+        ```
+      </Tab>
+      <Tab title="Service Account Impersonation">
+        Create a GCP service account and allow the federated identity to impersonate it.
+        ```sh
+        service_account=<GSA_NAME>                          # Name for the Google Service Account (e.g., portkey-vertex-sa).
+
+        # Create the Google Service Account
+        gcloud iam service-accounts create $service_account \
+          --display-name="Portkey Vertex AI Service Account"
+
+        # Grant the service account Vertex AI access
+        gcloud projects add-iam-policy-binding $gcp_project_id \
+          --role="roles/aiplatform.user" \
+          --member="serviceAccount:${service_account}@${gcp_project_id}.iam.gserviceaccount.com"
+
+        # Allow the federated identity to impersonate the service account
+        gcloud iam service-accounts add-iam-policy-binding ${service_account}@${gcp_project_id}.iam.gserviceaccount.com \
+          --role="roles/iam.workloadIdentityUser" \
+          --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $gcp_project_id --format='value(projectNumber)')/locations/global/workloadIdentityPools/$pool_name/attribute.aws_role/${role_name}"
+        ```
+      </Tab>
+    </Tabs>
 
 
 
@@ -719,3 +861,223 @@ service:
     service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "http" 
     service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "8787" 
     service.beta.kubernetes.io/aws-load-balancer-manage-backend-security-group-rules: "true"
+```
+
+**ElastiCache (IAM Auth) with S3 using IRSA and PrivateLink**
+
+The following sample `values.yaml` shows how to configure Amazon ElastiCache with IAM authentication, Amazon S3 for log storage using IRSA, and AWS PrivateLink for outbound connectivity to the Control Plane.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+serviceAccount:
+  create: true
+  automount: true
+  name: gateway-sa
+  annotations:
+    eks.amazonaws.com/role-arn: <IAM_ROLE_ARN>
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANIZATION_ID>
+    PORT: "8787"
+
+    # ElastiCache with IAM Auth
+    CACHE_STORE: aws-elastic-cache
+    REDIS_URL: "redis://<ElastiCache_Endpoint>:<Port>"
+    REDIS_TLS_ENABLED: "true"
+    AWS_REDIS_AUTH_MODE: iam
+    AWS_REDIS_CLUSTER_NAME: <ELASTICACHE_CLUSTER_NAME>
+    REDIS_USERNAME: <ELASTICACHE_USER_ID>
+
+    # Amazon S3 for log storage
+    LOG_STORE: s3_assume
+    LOG_STORE_REGION: <S3_BUCKET_REGION>
+    LOG_STORE_GENERATIONS_BUCKET: <S3_BUCKET_NAME>
+
+    # PrivateLink outbound connectivity to Control Plane
+    ALBUS_BASEPATH: "https://aws-cp.portkey.ai/albus"
+    CONTROL_PLANE_BASEPATH: "https://aws-cp.portkey.ai/api/v1"
+    SOURCE_SYNC_API_BASEPATH: "https://aws-cp.portkey.ai/api/v1/sync"
+    CONFIG_READER_PATH: "https://aws-cp.portkey.ai/api/model-configs"
+
+dataservice:
+  name: "dataservice"
+  enabled: true
+  env:
+    DEBUG_ENABLED: false
+    SERVICE_NAME: "portkeyenterprise-dataservice"
+
+service:
+  type: LoadBalancer
+  port: 80
+  containerPort: 8787
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/v1/health"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "http"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "8787"
+    service.beta.kubernetes.io/aws-load-balancer-manage-backend-security-group-rules: "true"
+```
+
+**ElastiCache (Auth Token) with S3 using EKS Pod Identity**
+
+The following sample `values.yaml` shows how to configure Amazon ElastiCache with auth token, Amazon S3 for log storage using EKS Pod Identity, and an Application Load Balancer.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+serviceAccount:
+  create: true
+  automount: true
+  name: gateway-sa
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANIZATION_ID>
+    PORT: "8787"
+
+    # ElastiCache with Auth Token
+    CACHE_STORE: aws-elastic-cache
+    REDIS_URL: "redis://<ElastiCache_Endpoint>:<Port>"
+    REDIS_TLS_ENABLED: "true"
+    REDIS_PASSWORD: <Auth_Token>
+
+    # Amazon S3 for log storage
+    LOG_STORE: s3_assume
+    LOG_STORE_REGION: <S3_BUCKET_REGION>
+    LOG_STORE_GENERATIONS_BUCKET: <S3_BUCKET_NAME>
+
+dataservice:
+  name: "dataservice"
+  enabled: true
+  env:
+    DEBUG_ENABLED: false
+    SERVICE_NAME: "portkeyenterprise-dataservice"
+
+service:
+  type: ClusterIP
+  port: 8787
+
+ingress:
+  enabled: true
+  ingressClassName: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/load-balancer-name: portkey-gateway
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /v1/health
+    alb.ingress.kubernetes.io/inbound-cidrs: 0.0.0.0/0
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
+```
+
+**AI Gateway + MCP Gateway with ALB and Host-Based Routing**
+
+The following sample `values.yaml` shows how to deploy both AI Gateway and MCP Gateway with host-based routing using an Application Load Balancer, built-in Redis, and IRSA for S3.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+serviceAccount:
+  create: true
+  automount: true
+  name: gateway-sa
+  annotations:
+    eks.amazonaws.com/role-arn: <IAM_ROLE_ARN>
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANIZATION_ID>
+    PORT: "8787"
+    SERVER_MODE: "all"
+    MCP_PORT: "8788"
+    MCP_GATEWAY_BASE_URL: "https://mcp.example.com"
+
+    # Built-in Redis
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+
+    # Amazon S3 for log storage
+    LOG_STORE: s3_assume
+    LOG_STORE_REGION: <S3_BUCKET_REGION>
+    LOG_STORE_GENERATIONS_BUCKET: <S3_BUCKET_NAME>
+
+service:
+  type: ClusterIP
+  port: 8787
+
+ingress:
+  enabled: true
+  hostname: "gateway.example.com"
+  hostBased: true
+  mcpHostname: "mcp.example.com"
+  ingressClassName: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/load-balancer-name: portkey-gateway
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /v1/health
+    alb.ingress.kubernetes.io/inbound-cidrs: 0.0.0.0/0
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
+```
