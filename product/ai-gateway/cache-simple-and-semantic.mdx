@@ -41,19 +41,63 @@ Caching won't work if `x-portkey-debug: "false"` header is included.
 
 ## Simple Cache
 
-Exact match on input prompts. If the same request comes again, Portkey returns the cached response.
+Returns the cached response when the **exact same request** is sent again.
+
+**Hit when all of these match a cached entry:**
+
+- Full request body (`messages` or `prompt`, `model`, `temperature`, `max_tokens`, and every other parameter)
+- `x-portkey-metadata` (if used)
+- `x-portkey-cache-namespace` (if used)
+- The entry is still within `max_age`
+
+**Miss when:**
+
+- The request is sent for the first time
+- Any field in the body changes—even one character in the prompt or a different parameter
+- The cached entry has expired
+- `x-portkey-cache-force-refresh: true` is set on the request
 
 ## Semantic Cache
 
-Matches requests with similar meaning using cosine similarity. [Learn more →](https://portkey.ai/blog/reducing-llm-costs-and-latency-semantic-cache/)
+Matches requests with **similar meaning**, not just identical text. [Learn more →](https://portkey.ai/blog/reducing-llm-costs-and-latency-semantic-cache/)
 
 <Info>
-Semantic cache is a superset—it handles simple cache hits too.
+Semantic cache is a superset of simple cache. Portkey checks for an exact match first and only runs semantic search on a miss.
 </Info>
 
 <Note>
 Semantic cache works with requests under 8,191 tokens and ≤4 messages.
 </Note>
+
+**Hit when all of these are true (after a simple-cache miss):**
+
+- User text has **similar meaning** to a cached request — cosine similarity above the threshold (default `0.95`)
+- `model`, `temperature`, `max_tokens`, and any other body parameter **match exactly**
+- `x-portkey-metadata` matches exactly (if used)
+- The chat has at least one non-system message — the **first message (usually `system`) is ignored** during matching, so changing it does not affect cache hits
+
+**Example — same model, different wording → semantic hit:**
+
+```json
+// First request (cached)
+{
+  "model": "gpt-4o",
+  "messages": [{ "role": "user", "content": "Who is the US president?" }]
+}
+
+// Second request — SEMANTIC HIT
+{
+  "model": "gpt-4o",
+  "messages": [{ "role": "user", "content": "Tell me who is the president of the US." }]
+}
+```
+
+**Miss when:**
+
+- The text is too different (similarity below the threshold)
+- `model`, `temperature`, or any other parameter differs — **even if the text is identical**
+- `x-portkey-metadata` values don't match
+- The chat has only a `system` message — at least one user message is required
 
 ### Set up semantic caching (self-hosted)
 
@@ -119,19 +163,6 @@ To enable semantic caching on a self-hosted Portkey gateway, configure the embed
   - The LLM model used for generating responses must be OpenAI-compatible.
   - Each request must include at least one `user` message along with system messages. Requests with only system messages are dropped.
 </Warning>
-
-### Message matching behavior
-
-Semantic cache requires **at least two messages**. The first message (typically `system`) is ignored for matching:
-
-```json
-[
-  { "role": "system", "content": "You are a helpful assistant" },
-  { "role": "user", "content": "Who is the president of the US?" }
-]
-```
-
-Only the `user` message is used for matching. Change the system message without affecting cache hits.
 
 ## Cache TTL
 
