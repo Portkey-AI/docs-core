@@ -164,6 +164,43 @@ See the [Default Configs documentation](/product/administration/enforce-default-
 If you specify a config in a request (via headers or SDK parameters), it will override the default config for that specific request. The default config only applies when no config is specified in the request itself.
 </Note>
 
+## Default and drop params
+
+Each config target can shape the request body before it reaches the upstream provider with three parameter fields:
+
+| Field | Behavior |
+|---|---|
+| `default_params` | Injects parameters into the request body **only when not already present**. Unlike `override_params`, this respects values set by the client. |
+| `override_params` | Always overwrites the matching field on the request body. |
+| `drop_params` | Removes parameters from the final request body using dot-notation paths. Supports nested keys and array indices (e.g., `tools.0.function.name`). |
+
+Execution order: `default_params` → `override_params` → `drop_params`. All three fields inherit through nested target configs the same way `override_params` does — values defined on a parent target apply to its children unless overridden.
+
+### Example
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    {
+      "provider": "@openai-prod",
+      "default_params": { "temperature": 0.7, "max_tokens": 1024 },
+      "override_params": { "model": "gpt-4o" },
+      "drop_params": ["logprobs", "tools.0.function.strict"]
+    },
+    {
+      "provider": "@anthropic-backup",
+      "override_params": { "model": "claude-sonnet-4-20250514" }
+    }
+  ]
+}
+```
+
+In this example:
+- If the client does not send `temperature` or `max_tokens`, the gateway injects the defaults; if the client does send them, the client's values win.
+- `model` is always rewritten to `gpt-4o` regardless of what the client sends.
+- `logprobs` and the nested `tools[0].function.strict` field are stripped before the request is forwarded.
+
 ## Passthrough targets
 
 Passthrough targets allow config targets to defer provider resolution to the incoming request, instead of specifying a fixed provider in the config itself. This is useful when you want to define routing strategies (conditional, fallback, loadbalance) at the config level but let the caller decide which provider to use at request time.
