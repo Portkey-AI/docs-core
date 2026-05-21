@@ -1,114 +1,49 @@
 ---
 title: "Gateway to Other APIs"
-description: "Forward requests to provider paths outside unified routes (rerank, video, listen, and more) through https://api.portkey.ai/v1/.... Same auth, configs, retries, logging, and analytics as first-class gateway traffic."
+description: Route any provider endpoint through Portkey to get logging, monitoring, and reliability features.
 icon: "chart-network"
 ---
 
 <Note>
-Available on all Portkey [plans](https://portkey.ai/pricing).
+Available on all Portkey plans.
 </Note>
 
-Prefer **[unified routes](/product/ai-gateway/universal-api)** for chat, images, embeddings, messages, responses, and audio—they stay consistent across 250+ models.
+Portkey has built-in support for common endpoints like `/chat/completions`, `/embeddings`, and `/images/generations`. For every other provider endpoint—Cohere's `/rerank`, Deepgram's `/listen`, image or video APIs, custom REST paths—use this feature to route the request through Portkey and get full logging and analytics.
 
-Create an API key from [**API Keys**](https://app.portkey.ai/api-keys) when onboarding.
-
-## Quick start
+Append the provider's path to `https://api.portkey.ai/v1/`:
 
 ```sh
-curl https://api.portkey.ai/v1/<provider-path> \
+curl https://api.portkey.ai/v1/<provider-endpoint> \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: openai" \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-provider: <provider-slug>" \
+  -H "Authorization: Bearer $PROVIDER_API_KEY" \
   -d '{ ... }'
 ```
 
-Replace `<provider-path>` with the suffix the provider expects (`rerank`, `videos`, `listen`, etc.). On a **self-hosted** gateway, use that deployment’s host; keep the `/v1/<provider-path>` pattern.
-
-## Unified routes vs proxy
-
-Dedicated routes register **before** the catch-all. They use unified handlers—not the proxy.
-
-| Path | Handler |
-|------|---------|
-| `POST /v1/chat/completions` | [Chat completions](/product/ai-gateway/chat-completions) |
-| `POST /v1/images/generations` | Unified image handler |
-| `POST /v1/embeddings` | Unified embeddings handler |
-| `POST /v1/messages` | [Messages API](/product/ai-gateway/messages-api) |
-| `POST /v1/responses` | [Responses API](/product/ai-gateway/responses-api) |
-| `POST /v1/audio/...` | Unified audio handler |
-| `/v1/files`, `/v1/batches`, … | Dedicated handlers |
-| **Anything else under `/v1/*`** | **Proxy handler** |
-
-### Pick a URL
-
-| Goal | URL |
-|------|-----|
-| Chat (configs, fallbacks, retries) | `POST https://api.portkey.ai/v1/chat/completions` (unified) |
-| Image generation | `POST https://api.portkey.ai/v1/images/generations` (unified) |
-| Provider path **without** a unified route | `POST https://api.portkey.ai/v1/<that-path>` (proxy) |
-| Force proxy on a path that would hit a unified route | `POST https://api.portkey.ai/v1/proxy/<that-path>` — see [Legacy `/v1/proxy`](#legacy-v1proxy-prefix) |
-
-<Warning>
-`POST https://api.portkey.ai/v1/chat/completions` does **not** use the proxy. A dedicated chat handler runs first.
-</Warning>
-
-## How the proxy works
-
-For paths that reach the proxy:
-
-1. Send **method**, **path**, **query string**, and **body** (JSON, multipart, or binary) to the gateway.
-2. Portkey applies **auth**, **config**, **credentials**, **routing**, **retries**, **caching**, **guardrails**, and the rest of the gateway pipeline.
-3. The request is sent to the **provider base URL** (or `x-portkey-custom-host`) with the **remaining path** the provider expects.
-4. The response is essentially the **provider response** (pass-through), plus standard Portkey response headers.
-
-[Fallback](/product/ai-gateway/fallbacks), [load balancing](/product/ai-gateway/load-balancing), and [conditional routing](/product/ai-gateway/conditional-routing) use the same config engine as every other gateway call.
-
 ## Supported HTTP methods
 
-| Method | Supported |
-|--------|-----------|
-| `POST` | Yes |
-| `GET` | Yes (realtime path excluded on Workers) |
-| `PUT` | Yes |
-| `DELETE` | Yes |
-| `PATCH` | No — not registered on the `/v1/*` catch-all |
+<CardGroup cols={4}>
+  <Card title="POST" color="#4CAF50" />
+  <Card title="GET" color="#2196F3" />
+  <Card title="PUT" color="#FF9800" />
+  <Card title="DELETE" color="#F44336" />
+</CardGroup>
 
-## Required and optional headers
+Available in cURL, the Python SDK (`.post()`, `.get()`, `.put()`, `.delete()`), and the Node.js SDK.
 
-### Required
+## 1. Authenticate
 
-| Header | Purpose |
-|--------|---------|
-| `x-portkey-api-key` | Portkey API key |
-| `x-portkey-provider` *or* `x-portkey-config` | Routing: provider slug, Model Catalog `@slug`, or full config JSON |
-| `Authorization` | Provider secret when credentials are not supplied only via Model Catalog |
-| `Content-Type` | Match the provider (`application/json` for JSON bodies) |
-
-### Optional
-
-| Header | Purpose |
-|--------|---------|
-| `x-portkey-metadata` | JSON tags for [analytics](/product/observability/metadata) and [conditional routing](/product/ai-gateway/conditional-routing) |
-| `x-portkey-custom-host` | Override provider base URL — [Custom hosts](/product/ai-gateway/custom-hosts) |
-| `x-portkey-forward-headers` | Comma-separated client header names to forward upstream |
-
-<Warning>
-`x-portkey-*` headers are consumed by the gateway and **not** forwarded as arbitrary upstream passthrough. Store secrets in `Authorization` (or the header the provider expects), or in [Model Catalog](https://app.portkey.ai/model-catalog).
-</Warning>
-
-Full header list: [Inference API headers](/api-reference/inference-api/headers).
-
-## Authenticate
+Pick one of three options:
 
 <AccordionGroup>
-<Accordion title="Model Catalog (recommended)">
-Add credentials in [Model Catalog](https://app.portkey.ai/model-catalog). Use `x-portkey-provider: @<slug>` and omit `Authorization` when the catalog supplies auth.
+<Accordion title="Option 1. Add the provider to Model Catalog (recommended)">
+
+Store credentials in [Model Catalog](https://app.portkey.ai/model-catalog) and reference them with `@<slug>`. No `Authorization` header needed.
 
 <CodeGroup>
 ```sh cURL
 curl https://api.portkey.ai/v1/rerank \
-  -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
   -H "x-portkey-provider: @cohere-prod"
 ```
@@ -118,32 +53,31 @@ from portkey_ai import Portkey
 
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
-    provider="@cohere-prod",
+    provider="@cohere-prod"
 )
 ```
 
 ```javascript JavaScript
-import Portkey from "portkey-ai";
+import Portkey from "portkey-ai"
 
 const portkey = new Portkey({
-  apiKey: "PORTKEY_API_KEY",
-  provider: "@cohere-prod",
-});
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@cohere-prod"
+})
 ```
 </CodeGroup>
 
-<Note>
-Model Catalog centralizes keys, [budget and rate limits](/product/model-catalog/integrations#3-budget-%26-rate-limits), and rotation.
-</Note>
+Model Catalog centralizes credentials, budget limits, rate limits, and key rotation.
+
 </Accordion>
 
-<Accordion title="Direct provider auth">
-Use a supported provider slug and pass the provider secret on each request.
+<Accordion title="Option 2. Pass provider credentials directly">
+
+Use a supported provider slug and send the provider's secret on each request.
 
 <CodeGroup>
 ```sh cURL
 curl https://api.portkey.ai/v1/rerank \
-  -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
   -H "x-portkey-provider: cohere" \
   -H "Authorization: Bearer $COHERE_API_KEY"
@@ -155,32 +89,33 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
     provider="cohere",
-    Authorization="Bearer COHERE_API_KEY",
+    Authorization="Bearer COHERE_API_KEY"
 )
 ```
 
 ```javascript JavaScript
-import Portkey from "portkey-ai";
+import Portkey from "portkey-ai"
 
 const portkey = new Portkey({
-  apiKey: "PORTKEY_API_KEY",
-  provider: "cohere",
-  Authorization: "Bearer COHERE_API_KEY",
-});
+    apiKey: "PORTKEY_API_KEY",
+    provider: "cohere",
+    Authorization: "Bearer COHERE_API_KEY"
+})
 ```
 </CodeGroup>
+
 </Accordion>
 
-<Accordion title="Custom hosted endpoint">
-Choose a compatible `x-portkey-provider` (`openai`, `cohere`, etc.). Set the URL with `x-portkey-custom-host` (header) or `custom_host` / `customHost` in the SDK.
+<Accordion title="Option 3. Route to a self-hosted endpoint">
+
+Pick a compatible provider type (`openai`, `cohere`, etc.) and pass the host URL.
 
 <CodeGroup>
 ```sh cURL
 curl https://api.portkey.ai/v1/rerank \
-  -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
   -H "x-portkey-provider: cohere" \
-  -H "x-portkey-custom-host: https://your-public-host.example.com/v1" \
+  -H "x-portkey-custom-host: https://your-host.example.com/v1" \
   -H "Authorization: Bearer $COHERE_API_KEY"
 ```
 
@@ -190,34 +125,31 @@ from portkey_ai import Portkey
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
     provider="cohere",
-    custom_host="https://your-public-host.example.com/v1",
-    Authorization="Bearer COHERE_API_KEY",
+    custom_host="https://your-host.example.com/v1",
+    Authorization="Bearer COHERE_API_KEY"
 )
 ```
 
 ```javascript JavaScript
-import Portkey from "portkey-ai";
+import Portkey from "portkey-ai"
 
 const portkey = new Portkey({
-  apiKey: "PORTKEY_API_KEY",
-  provider: "cohere",
-  customHost: "https://your-public-host.example.com/v1",
-  Authorization: "Bearer COHERE_API_KEY",
-});
+    apiKey: "PORTKEY_API_KEY",
+    provider: "cohere",
+    customHost: "https://your-host.example.com/v1",
+    Authorization: "Bearer COHERE_API_KEY"
+})
 ```
 </CodeGroup>
 
-<Info>
-On Portkey **SaaS**, custom hosts must be **publicly reachable**. Private IPs apply only to **self-hosted / hybrid enterprise** setups. See [Custom hosts](/product/ai-gateway/custom-hosts).
-</Info>
 </Accordion>
 </AccordionGroup>
 
-Base URL for all proxy paths: `https://api.portkey.ai/v1` plus the provider suffix (e.g. `https://api.portkey.ai/v1/rerank`).
+## 2. Make requests
 
-## Examples
+Append the provider endpoint to `https://api.portkey.ai/v1/`. The request body is whatever the provider expects—Portkey forwards it unchanged.
 
-### POST `/rerank` (Model Catalog)
+### POST
 
 <CodeGroup>
 ```sh cURL
@@ -229,7 +161,7 @@ curl https://api.portkey.ai/v1/rerank \
     "model": "rerank-english-v2.0",
     "query": "What is machine learning?",
     "documents": [
-      "Machine learning is a branch of AI focused on building systems that learn from data.",
+      "Machine learning is a branch of AI focused on systems that learn from data.",
       "Data science involves analyzing and interpreting complex data sets."
     ]
   }'
@@ -240,7 +172,7 @@ from portkey_ai import Portkey
 
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
-    provider="@cohere-prod",
+    provider="@cohere-prod"
 )
 
 response = portkey.post(
@@ -248,216 +180,98 @@ response = portkey.post(
     model="rerank-english-v2.0",
     query="What is machine learning?",
     documents=[
-        "Machine learning is a branch of AI focused on building systems that learn from data.",
-        "Data science involves analyzing and interpreting complex data sets.",
-    ],
+        "Machine learning is a branch of AI focused on systems that learn from data.",
+        "Data science involves analyzing and interpreting complex data sets."
+    ]
 )
-print(response)
 ```
 
 ```javascript JavaScript
-import Portkey from "portkey-ai";
+import Portkey from "portkey-ai"
 
 const portkey = new Portkey({
-  apiKey: "PORTKEY_API_KEY",
-  provider: "@cohere-prod",
-});
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@cohere-prod"
+})
 
 const response = await portkey.post("/rerank", {
-  model: "rerank-english-v2.0",
-  query: "What is machine learning?",
-  documents: [
-    "Machine learning is a branch of AI focused on building systems that learn from data.",
-    "Data science involves analyzing and interpreting complex data sets.",
-  ],
-});
-
-console.log(response);
-```
-</CodeGroup>
-
-### POST `/videos` (direct provider auth)
-
-Replace the body with the payload the provider’s video API expects.
-
-<CodeGroup>
-```sh cURL
-curl https://api.portkey.ai/v1/videos \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: openai" \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -d '{
-    "model": "sora-1",
-    "prompt": "A red balloon floating over a city skyline at sunset"
-  }'
-```
-
-```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="openai",
-    Authorization="Bearer OPENAI_API_KEY",
-)
-
-response = portkey.post(
-    "/videos",
-    model="sora-1",
-    prompt="A red balloon floating over a city skyline at sunset",
-)
-print(response)
-```
-
-```javascript JavaScript
-import Portkey from "portkey-ai";
-
-const portkey = new Portkey({
-  apiKey: "PORTKEY_API_KEY",
-  provider: "openai",
-  Authorization: "Bearer OPENAI_API_KEY",
-});
-
-const response = await portkey.post("/videos", {
-  model: "sora-1",
-  prompt: "A red balloon floating over a city skyline at sunset",
-});
-
-console.log(response);
+    model: "rerank-english-v2.0",
+    query: "What is machine learning?",
+    documents: [
+        "Machine learning is a branch of AI focused on systems that learn from data.",
+        "Data science involves analyzing and interpreting complex data sets."
+    ]
+})
 ```
 </CodeGroup>
 
 ### GET, PUT, DELETE
 
-The SDK exposes `.get()`, `.post()`, `.put()`, and `.delete()` for proxy paths.
-
 <CodeGroup>
 ```sh cURL
+# GET
 curl https://api.portkey.ai/v1/collections \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @provider-prod"
+  -H "x-portkey-provider: @cohere-prod"
 
+# PUT
 curl -X PUT https://api.portkey.ai/v1/collections/my-collection \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @provider-prod" \
+  -H "x-portkey-provider: @cohere-prod" \
   -d '{"metadata": {"description": "Updated description"}}'
 
+# DELETE
 curl -X DELETE https://api.portkey.ai/v1/collections/my-collection \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @provider-prod"
+  -H "x-portkey-provider: @cohere-prod"
 ```
 
 ```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@provider-prod",
-)
-
 portkey.get("/collections")
 
 portkey.put(
     "/collections/my-collection",
-    metadata={"description": "Updated description"},
+    metadata={"description": "Updated description"}
 )
 
 portkey.delete("/collections/my-collection")
 ```
 
 ```javascript JavaScript
-import Portkey from "portkey-ai";
-
-const portkey = new Portkey({
-  apiKey: "PORTKEY_API_KEY",
-  provider: "@provider-prod",
-});
-
-await portkey.get("/collections");
+await portkey.get("/collections")
 
 await portkey.put("/collections/my-collection", {
-  metadata: { description: "Updated description" },
-});
+    metadata: { description: "Updated description" }
+})
 
-await portkey.delete("/collections/my-collection");
+await portkey.delete("/collections/my-collection")
 ```
 </CodeGroup>
 
-### Custom host (full `POST /rerank`)
+## Configs work as usual
 
-<CodeGroup>
-```sh cURL
-curl https://api.portkey.ai/v1/rerank \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: cohere" \
-  -H "x-portkey-custom-host: https://your-public-host.example.com/v1" \
-  -H "Authorization: Bearer $COHERE_API_KEY" \
-  -d '{"model":"rerank-english-v2.0","query":"What is machine learning?","documents":["Document one.","Document two."]}'
-```
-
-```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="cohere",
-    custom_host="https://your-public-host.example.com/v1",
-    Authorization="Bearer COHERE_API_KEY",
-)
-
-response = portkey.post(
-    "/rerank",
-    model="rerank-english-v2.0",
-    query="What is machine learning?",
-    documents=["Document one.", "Document two."],
-)
-print(response)
-```
-
-```javascript JavaScript
-import Portkey from "portkey-ai";
-
-const portkey = new Portkey({
-  apiKey: "PORTKEY_API_KEY",
-  provider: "cohere",
-  customHost: "https://your-public-host.example.com/v1",
-  Authorization: "Bearer COHERE_API_KEY",
-});
-
-const response = await portkey.post("/rerank", {
-  model: "rerank-english-v2.0",
-  query: "What is machine learning?",
-  documents: ["Document one.", "Document two."],
-});
-
-console.log(response);
-```
-</CodeGroup>
-
-### Fallback with `x-portkey-config`
-
-Same JSON shape as [Configs](/product/ai-gateway/configs): strategies, targets, retries, hooks.
+Pass an `x-portkey-config` header (or a saved config ID) to apply **fallback**, **loadbalance**, or **conditional** routing—exactly like on `/chat/completions`.
 
 ```sh
 curl https://api.portkey.ai/v1/rerank \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-config: {\"strategy\":{\"mode\":\"fallback\"},\"targets\":[{\"provider\":\"@cohere-prod\"},{\"provider\":\"@cohere-backup\"}]}" \
-  -d '{"model":"rerank-english-v2.0","query":"...","documents":["..."]}'
+  -H 'x-portkey-config: {
+    "strategy": { "mode": "fallback" },
+    "targets": [
+      { "provider": "@cohere-prod" },
+      { "provider": "@cohere-backup" }
+    ]
+  }' \
+  -d '{ "model": "rerank-english-v2.0", "query": "...", "documents": ["..."] }'
 ```
 
-Minify JSON for the header (e.g. `jq -c . config.json`) or set the header in application code.
+Retries, caching, and guardrails apply the same way.
 
-<Warning>
-Root-level **`options`** in `x-portkey-config` is rejected. Use the current config shape (`strategy`, `targets`, per-target fields).
-</Warning>
+## Force the proxy on a built-in route
 
-## Legacy `/v1/proxy` prefix
-
-Prefix with **`/v1/proxy`** so the gateway strips that segment and forwards the remainder—forcing **proxy** semantics on a path that would otherwise hit a **unified** handler (raw passthrough on `chat/completions`, for example).
+Portkey handles `/chat/completions`, `/embeddings`, and other built-in routes with dedicated logic. To bypass that and send the request through untouched, prefix the path with `/v1/proxy/`:
 
 ```sh
 curl https://api.portkey.ai/v1/proxy/chat/completions \
@@ -468,140 +282,16 @@ curl https://api.portkey.ai/v1/proxy/chat/completions \
   -d '{"model":"gpt-4.1-mini","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-For new work, prefer a **unified** route or a **distinct** proxy path. Use `/v1/proxy/...` only when passthrough on a unified path is required.
+Use this only when raw passthrough is required.
 
-## Advanced examples
+## Pricing and analytics
 
-<AccordionGroup>
-<Accordion title="Cohere rerank (extended parameters)">
+- **Token counts** in the response come straight from the provider.
+- **Cost tracking** works when Portkey knows the model's pricing. Common provider + model combinations are recognized automatically.
+- For **custom models** or unusual endpoints, add the pricing in your Portkey dashboard so cost numbers stay accurate.
 
-```python
-from portkey_ai import Portkey
+## Notes
 
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@COHERE_VIRTUAL_KEY",
-)
-
-response = portkey.post(
-    "/rerank",
-    return_documents=False,
-    max_chunks_per_doc=10,
-    model="rerank-english-v2.0",
-    query="What is the capital of the United States?",
-    documents=[
-        "Carson City is the capital city of the American state of Nevada.",
-        "Washington, D.C. is the capital of the United States.",
-        "Capital punishment has existed in the United States since before its founding.",
-    ],
-)
-```
-</Accordion>
-
-<Accordion title="AWS Bedrock rerank">
-
-<Note>
-For Bedrock, pass the full ARN with the model name in the `model` field.
-</Note>
-
-<CodeGroup>
-```sh cURL
-curl https://api.portkey.ai/v1/rerank \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @BEDROCK_PROVIDER_SLUG" \
-  -d '{
-    "model": "arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0",
-    "query": "What is the capital of the United States?",
-    "top_n": 3,
-    "documents": [
-      "Carson City is the capital city of the American state of Nevada.",
-      "The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean. Its capital is Saipan.",
-      "Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district.",
-      "Capitalization or capitalisation in English grammar is the use of a capital letter at the start of a word. English usage varies from capitalization in other languages.",
-      "Capital punishment has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states."
-    ]
-  }'
-```
-
-```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@BEDROCK_PROVIDER_SLUG",
-)
-
-response = portkey.post(
-    "/rerank",
-    model="arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0",
-    query="What is the capital of the United States?",
-    top_n=3,
-    documents=[
-        "Carson City is the capital city of the American state of Nevada.",
-        "The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean. Its capital is Saipan.",
-        "Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district.",
-        "Capitalization or capitalisation in English grammar is the use of a capital letter at the start of a word. English usage varies from capitalization in other languages.",
-        "Capital punishment has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states.",
-    ],
-)
-```
-
-```javascript JavaScript
-import Portkey from "portkey-ai";
-
-const portkey = new Portkey({
-  apiKey: "PORTKEY_API_KEY",
-  provider: "@BEDROCK_PROVIDER_SLUG",
-});
-
-const response = await portkey.post("/rerank", {
-  model: "arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0",
-  query: "What is the capital of the United States?",
-  top_n: 3,
-  documents: [
-    "Carson City is the capital city of the American state of Nevada.",
-    "The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean. Its capital is Saipan.",
-    "Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district.",
-    "Capitalization or capitalisation in English grammar is the use of a capital letter at the start of a word. English usage varies from capitalization in other languages.",
-    "Capital punishment has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states.",
-  ],
-});
-```
-</CodeGroup>
-</Accordion>
-</AccordionGroup>
-
-## Tokens, pricing, and analytics
-
-- **Token / usage fields** in the body come from the **provider**, same as calling them without Portkey.
-- **Portkey billing and analytics** run on proxy traffic. Pricing accuracy depends on endpoint and model recognition; unusual paths may need **[cost / pricing configuration](/product/observability/cost-management)**—validate in the dashboard or contact support if numbers look off.
-- Proxy requests appear in **logs** like any other gateway call.
-
-## Limitations and gotchas
-
-- Response bodies are **pass-through** from the provider—no Portkey JSON reshape on proxy routes.
-- **`PATCH`** is not supported on the proxy catch-all.
-- **Streaming, multipart, and binary** use different internal paths—validate with the exact content type and provider before production.
-- **End-to-end success** still requires gateway support for that provider (auth, signing, allowed paths) and a real provider API behind the path.
-- SDKs typed for one provider’s contract can break when the **upstream** changes—same as calling that provider directly.
-
-## Checklist
-
-- Prefer a **[unified route](/product/ai-gateway/universal-api)** when one exists.
-- Send **`x-portkey-api-key`**.
-- Send **`x-portkey-provider`** or **`x-portkey-config`**.
-- Keep provider secrets in **`Authorization`** or Model Catalog—not in `x-portkey-*` headers as fake “secrets.”
-- Match the **provider’s** request body.
-- For passthrough on a unified path, use **`/v1/proxy/...`**.
-
-## Related
-
-- [Universal API](/product/ai-gateway/universal-api)
-- [Configs](/product/ai-gateway/configs)
-- [Custom hosts](/product/ai-gateway/custom-hosts)
-- [Inference API headers](/api-reference/inference-api/headers)
-
-## Support
-
-Join the [Developer Forum](https://portkey.wiki/community) for help and discussions.
+- Request and response bodies are forwarded **unchanged**. Match the provider's format—not OpenAI's.
+- Every request appears in your Portkey dashboard with full logs and latency.
+- `PATCH` is not supported.
