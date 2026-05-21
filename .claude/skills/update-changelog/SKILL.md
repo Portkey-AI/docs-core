@@ -151,6 +151,8 @@ Notes on style:
 - **Always link.** Every section should end with `[Documentation](/path)` — a specific page if one exists, the nearest umbrella page otherwise. Don't write a section without a link
 - Don't link to docs you haven't verified — use `find` / `Read` to confirm the path
 - Group provider-specific bullets under `### Provider Updates`; one-off provider features can have their own `###` heading
+- **Security dependency bumps**: don't name the package or CVE. Use the generic line `- Updated dependencies to patch security vulnerabilities.` Reserve named entries for actual functional fixes
+- **Don't include refactor-only / internal-only PRs** even when their titles sound functional (e.g., "plugin id case-insensitive lookup" can refer to internal map keys, not user behavior). When in doubt, skip — don't write something that misrepresents the change
 
 ### 6. Update the `sidebarTitle`
 
