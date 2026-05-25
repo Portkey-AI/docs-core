@@ -1,0 +1,143 @@
+---
+title: "Cato Networks"
+description: "Cato Networks AI security guardrail for inspecting prompts and responses, with support for block, monitor, and anonymize actions."
+---
+
+[Cato Networks](https://www.catonetworks.com/) provides an AI security platform that inspects LLM prompts and responses for policy violations. Cato can block requests, monitor activity, or transparently anonymize sensitive content before it reaches the model or the user.
+
+<Card title="Get Started with Cato Networks" href="https://www.catonetworks.com/"/>
+
+## Using Cato Networks with Portkey
+
+### 1. Add Cato Credentials to Portkey
+
+* Navigate to the `Integrations` page under `Sidebar`
+* Click on the edit button for the Cato Networks integration
+* Add your Cato `API Key`. Optionally override the `API Base URL` based on your CMA region (defaults to `https://api.aisec.catonetworks.com`).
+
+### 2. Add Cato's Guardrail Check
+
+* Navigate to the `Guardrails` page and click the `Create` button
+* Search for **Cato Networks Guardrail** and click `Add`
+* Configure your guardrail settings
+* Set any `actions` you want on your check, and create the Guardrail!
+
+<Note>
+    Guardrail Actions allow you to orchestrate your guardrails logic. You can learn them [here](/product/guardrails#there-are-6-types-of-guardrail-actions)
+</Note>
+
+| Check Name | Description | Parameters | Supported Hooks |
+|------------|-------------|------------|-----------------|
+| Cato Networks Guardrail | Sends prompts and responses to Cato Networks for inspection. Cato returns a required action (`monitor`, `anonymize`, or `block`). Anonymized content is substituted back into the request or response transparently. | `Application Name`, `Timeout` | `beforeRequestHook`, `afterRequestHook` |
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `appName` | string | — | Application name forwarded to Cato (as `x-cato-gateway-key-alias`) for identification and policy enforcement. |
+| `timeout` | number | `5000` | Request timeout in milliseconds for the Cato analyze API. |
+
+### Cato Action Types
+
+Cato's analyze endpoint returns one of the following actions, which Portkey translates into a guardrail verdict:
+
+| Cato Action | Portkey Behavior |
+|-------------|------------------|
+| `monitor_action` | Allow the request/response. Telemetry is recorded on the Cato side. |
+| `anonymize_action` | Allow the request/response, but transparently replace sensitive spans with Cato's redacted text before forwarding to the model (on `beforeRequestHook`) or returning to the caller (on `afterRequestHook`). |
+| `block_action` | Fail the guardrail verdict. Combined with a `deny` action on your guardrail, this blocks the request. |
+
+### Optional Request Headers
+
+The following request headers, if present, are forwarded to Cato to enrich session and user context:
+
+| Header | Purpose |
+|--------|---------|
+| `x-cato-session-id` | Associates the call with a Cato session. |
+
+### 3. Add Guardrail ID to a Config and Make Your Request
+
+* When you save a Guardrail, you'll get an associated Guardrail ID - add this ID to the `input_guardrails` or `output_guardrails` params in your Portkey Config
+* Create these Configs in Portkey UI, save them, and get an associated Config ID to attach to your requests. [More here](/product/ai-gateway/configs).
+
+Here's an example config:
+
+```json
+{
+  "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
+  "output_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"]
+}
+```
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***" // Supports a string config id or a config object
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***" # Supports a string config id or a config object
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+
+```js
+const openai = new OpenAI({
+  apiKey: 'OPENAI_API_KEY',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    config: "CONFIG_ID"
+  })
+});
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```py
+client = OpenAI(
+    api_key="OPENAI_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY",
+        config="CONFIG_ID"
+    )
+)
+```
+  </Tab>
+<Tab title="cURL">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [{
+        "role": "user",
+        "content": "Hello!"
+      }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+For more, refer to the [Config documentation](/product/ai-gateway/configs).
+
+Your requests are now guarded by Cato Networks and you can see the verdict and any action taken directly in Portkey logs.
+
+## Get Support
+
+If you face any issues with the Cato Networks integration, just ping the Portkey team on the [community forum](https://discord.gg/portkey-llms-in-prod-1143393887742861333).
