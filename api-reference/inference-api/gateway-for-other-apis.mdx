@@ -1,27 +1,19 @@
 ---
 title: "Gateway to Other APIs"
-description: Route any provider endpoint through Portkey to get logging, monitoring, and reliability features.
+description: Access any custom provider endpoint through Portkey API
 icon: "chart-network"
 ---
-
 <Note>
-Available on all Portkey plans.
+This feature is available on all Portkey plans.
 </Note>
 
-Portkey has built-in support for common endpoints like `/chat/completions`, `/embeddings`, and `/images/generations`. For every other provider endpoint—Cohere's `/rerank`, Deepgram's `/listen`, image or video APIs, custom REST paths—use this feature to route the request through Portkey and get full logging and analytics.
+Portkey API has first-class support for monitoring and routing your requests to 10+ provider endpoints, like `/chat/completions`, `/audio`, `/embeddings`, etc. We also make these endpoints work across 250+ different LLMs.
 
-Append the provider's path to `https://api.portkey.ai/v1/`:
+**However**, there are still many endpoints like Cohere's `/rerank` or Deepgram's `/listen` that are uncommon or have niche use cases.
 
-```sh
-curl https://api.portkey.ai/v1/<provider-endpoint> \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: <provider-slug>" \
-  -H "Authorization: Bearer $PROVIDER_API_KEY" \
-  -d '{ ... }'
-```
+With the **Gateway to Other APIs** feature, you can route to any custom provider endpoint using Portkey (including the ones hosted on your private setups) and get **complete logging & monitoring** for all your requests.
 
-## Supported HTTP methods
+## Supported HTTP Methods
 
 <CardGroup cols={4}>
   <Card title="POST" color="#4CAF50" />
@@ -30,224 +22,315 @@ curl https://api.portkey.ai/v1/<provider-endpoint> \
   <Card title="DELETE" color="#F44336" />
 </CardGroup>
 
-Available in cURL, the Python SDK (`.post()`, `.get()`, `.put()`, `.delete()`), and the Node.js SDK.
+Both the REST API and Portkey SDKs (Python, NodeJS) support all of these HTTP methods.
 
-## 1. Authenticate
+# How to Integrate
 
-Pick one of three options:
+1. Get your Portkey API key
+2. Add your provider details to Portkey
+3. Make your request using Portkey's API or SDK
+
+
+## 1. Get Portkey API Key
+Create or log in to your Portkey account. Grab your account's API key from the ["API Keys" page](https://app.portkey.ai/api-keys).
+
+## 2. Add Provider Details
+
+Choose one of these authentication methods:
 
 <AccordionGroup>
-<Accordion title="Option 1. Add the provider to Model Catalog (recommended)">
-
-Store credentials in [Model Catalog](https://app.portkey.ai/model-catalog) and reference them with `@<slug>`. No `Authorization` header needed.
+<Accordion title="Option 1. Add an AI Provider (Recommended)">
+Add your provider credentials to [Model Catalog](https://app.portkey.ai/model-catalog) and use the AI Provider slug to authenticate your requests.
 
 <CodeGroup>
+
 ```sh cURL
 curl https://api.portkey.ai/v1/rerank \
+  -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @cohere-prod"
+  -H "x-portkey-provider: @cohere-prod" \
 ```
 
-```python Python
+```py Python
 from portkey_ai import Portkey
 
 portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@cohere-prod"
+  api_key = "PORTKEY_API_KEY",
+  provider = "@cohere-prod"
 )
 ```
 
-```javascript JavaScript
-import Portkey from "portkey-ai"
+```ts JavaScript
+import Portkey from 'portkey-ai';
 
 const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",
-    provider: "@cohere-prod"
-})
+  apiKey: 'PORTKEY_API_KEY',
+  provider: '@cohere-prod'
+});
 ```
 </CodeGroup>
-
-Model Catalog centralizes credentials, budget limits, rate limits, and key rotation.
-
+<Note>
+Model Catalog lets you:
+- Manage all provider credentials in one place
+- Set budget limits & rate limits per provider
+- Rotate between different provider keys
+</Note>
 </Accordion>
 
-<Accordion title="Option 2. Pass provider credentials directly">
-
-Use a supported provider slug and send the provider's secret on each request.
+<Accordion title="Option 2. Direct Provider Auth">
+Set the provider name from one of Portkey's 40+ supported providers list and use your provider credentials directly with each request.
 
 <CodeGroup>
 ```sh cURL
 curl https://api.portkey.ai/v1/rerank \
+  -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
   -H "x-portkey-provider: cohere" \
-  -H "Authorization: Bearer $COHERE_API_KEY"
+  -H "Authorization: Bearer $COHERE_API_KEY" \
 ```
-
-```python Python
+```py Python
 from portkey_ai import Portkey
 
 portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="cohere",
-    Authorization="Bearer COHERE_API_KEY"
+  api_key = "PORTKEY_API_KEY",
+  provider = "cohere",
+  Authorization = "Bearer COHERE_API_KEY"
 )
 ```
-
-```javascript JavaScript
-import Portkey from "portkey-ai"
+```ts JavaScript
+import Portkey from 'portkey-ai';
 
 const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",
-    provider: "cohere",
-    Authorization: "Bearer COHERE_API_KEY"
-})
+  apiKey: 'PORTKEY_API_KEY',
+  provider: "cohere",
+  Authorization: "Bearer COHERE_API_KEY"
+});
 ```
 </CodeGroup>
-
 </Accordion>
+<Accordion title="Option 3. Custom Hosted Endpoint">
 
-<Accordion title="Option 3. Route to a self-hosted endpoint">
-
-Pick a compatible provider type (`openai`, `cohere`, etc.) and pass the host URL.
+Route to your privately hosted model endpoints.
+- Choose a compatible provider type (e.g., `openai`, `cohere`)
+- Provide your endpoint URL with `customHost`
+- Include `Authentication` if needed
 
 <CodeGroup>
+
 ```sh cURL
 curl https://api.portkey.ai/v1/rerank \
+  -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
   -H "x-portkey-provider: cohere" \
-  -H "x-portkey-custom-host: https://your-host.example.com/v1" \
-  -H "Authorization: Bearer $COHERE_API_KEY"
+  -H "x-portkey-custom-host: https://182.145.24.5:8080/v1" \
+  -H "Authorization: Bearer $COHERE_API_KEY" \
 ```
 
-```python Python
+```py Python
 from portkey_ai import Portkey
 
 portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="cohere",
-    custom_host="https://your-host.example.com/v1",
-    Authorization="Bearer COHERE_API_KEY"
+  api_key = "PORTKEY_API_KEY",
+  provider = "cohere",
+  custom_host = "https://182.145.24.5:8080/v1",
+  Authorization = "Bearer COHERE_API_KEY"
 )
 ```
 
-```javascript JavaScript
-import Portkey from "portkey-ai"
+```ts JavaScript
+import Portkey from 'portkey-ai';
 
 const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",
-    provider: "cohere",
-    customHost: "https://your-host.example.com/v1",
-    Authorization: "Bearer COHERE_API_KEY"
-})
+  apiKey: 'PORTKEY_API_KEY',
+  provider: "cohere",
+  customHost: "https://182.145.24.5:8080/v1",
+  Authorization: "Bearer COHERE_API_KEY"
+});
 ```
 </CodeGroup>
-
 </Accordion>
 </AccordionGroup>
 
-## 2. Make requests
+## 3. Make Requests
 
-Append the provider endpoint to `https://api.portkey.ai/v1/`. The request body is whatever the provider expects—Portkey forwards it unchanged.
-
-### POST
+<Tabs>
+<Tab title="cURL">
+Construct your request URL:
+1. Portkey Gateway base URL remains same: `https://api.portkey.ai/v1`
+2. Append your custom endpoint at the end of the URL: `https://api.portkey.ai/v1/{provider-endpoint}`
 
 <CodeGroup>
-```sh cURL
-curl https://api.portkey.ai/v1/rerank \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @cohere-prod" \
-  -d '{
-    "model": "rerank-english-v2.0",
-    "query": "What is machine learning?",
-    "documents": [
-      "Machine learning is a branch of AI focused on systems that learn from data.",
-      "Data science involves analyzing and interpreting complex data sets."
-    ]
-  }'
+```bash POST
+curl --request POST \
+     --url https://api.portkey.ai/v1/rerank \
+     --header 'Content-Type: application/json' \
+     --header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+     --header 'x-portkey-provider: @cohere-prod' \
+     --data '{
+       "model": "rerank-english-v2.0",
+       "query": "What is machine learning?",
+       "documents": [
+         "Machine learning is a branch of AI focused on building systems that learn from data.",
+         "Data science involves analyzing and interpreting complex data sets."
+       ]
+     }'
 ```
 
-```python Python
+```bash GET
+curl --request GET \
+     --url https://api.portkey.ai/v1/collections \
+     --header 'Content-Type: application/json' \
+     --header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+     --header 'x-portkey-provider: @provider-prod'
+```
+
+```bash PUT
+curl --request PUT \
+     --url https://api.portkey.ai/v1/collections/my-collection \
+     --header 'Content-Type: application/json' \
+     --header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+     --header 'x-portkey-provider: @provider-prod' \
+     --data '{
+       "metadata": {
+         "description": "Updated collection description"
+       }
+     }'
+```
+
+```bash DELETE
+curl --request DELETE \
+     --url https://api.portkey.ai/v1/collections/my-collection \
+     --header 'Content-Type: application/json' \
+     --header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+     --header 'x-portkey-provider: @provider-prod'
+```
+</CodeGroup>
+</Tab>
+
+<Tab title="Python SDK">
+The SDK fully supports all HTTP methods: `POST`, `GET`, `PUT`, and `DELETE`.
+
+<CodeGroup>
+```python POST
 from portkey_ai import Portkey
 
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
-    provider="@cohere-prod"
+    provider="@PROVIDER"
 )
 
 response = portkey.post(
-    "/rerank",
+    '/rerank',
     model="rerank-english-v2.0",
     query="What is machine learning?",
     documents=[
-        "Machine learning is a branch of AI focused on systems that learn from data.",
+        "Machine learning is a branch of AI focused on building systems that learn from data.",
         "Data science involves analyzing and interpreting complex data sets."
     ]
 )
 ```
 
-```javascript JavaScript
-import Portkey from "portkey-ai"
+```python GET
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@PROVIDER"
+)
+
+response = portkey.get('/collections')
+```
+
+```python PUT
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@PROVIDER"
+)
+
+response = portkey.put(
+    '/collections/my-collection',
+    metadata={
+        "description": "Updated collection description"
+    }
+)
+```
+
+```python DELETE
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@PROVIDER"
+)
+
+response = portkey.delete('/collections/my-collection')
+```
+</CodeGroup>
+</Tab>
+
+<Tab title="NodeJS SDK">
+The SDK fully supports all HTTP methods: `POST`, `GET`, `PUT`, and `DELETE`.
+
+<CodeGroup>
+```javascript POST
+import Portkey from 'portkey-ai';
 
 const portkey = new Portkey({
     apiKey: "PORTKEY_API_KEY",
     provider: "@cohere-prod"
-})
+});
 
-const response = await portkey.post("/rerank", {
+const response = await portkey.post('/rerank', {
     model: "rerank-english-v2.0",
     query: "What is machine learning?",
     documents: [
-        "Machine learning is a branch of AI focused on systems that learn from data.",
+        "Machine learning is a branch of AI focused on building systems that learn from data.",
         "Data science involves analyzing and interpreting complex data sets."
     ]
-})
+});
+```
+
+```javascript GET
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@cohere-prod"
+});
+
+const response = await portkey.get('/collections');
+```
+
+```javascript PUT
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@cohere-prod"
+});
+
+const response = await portkey.put('/collections/my-collection', {
+    metadata: {
+        description: "Updated collection description"
+    }
+});
+```
+
+```javascript DELETE
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@cohere-prod"
+});
+
+const response = await portkey.delete('/collections/my-collection');
 ```
 </CodeGroup>
-
-### GET, PUT, DELETE
-
-<CodeGroup>
-```sh cURL
-# GET
-curl https://api.portkey.ai/v1/collections \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @cohere-prod"
-
-# PUT
-curl -X PUT https://api.portkey.ai/v1/collections/my-collection \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @cohere-prod" \
-  -d '{"metadata": {"description": "Updated description"}}'
-
-# DELETE
-curl -X DELETE https://api.portkey.ai/v1/collections/my-collection \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @cohere-prod"
-```
-
-```python Python
-portkey.get("/collections")
-
-portkey.put(
-    "/collections/my-collection",
-    metadata={"description": "Updated description"}
-)
-
-portkey.delete("/collections/my-collection")
-```
-
-```javascript JavaScript
-await portkey.get("/collections")
-
-await portkey.put("/collections/my-collection", {
-    metadata: { description: "Updated description" }
-})
-
-await portkey.delete("/collections/my-collection")
-```
-</CodeGroup>
+</Tab>
+</Tabs>
 
 ## Configs work as usual
 
@@ -290,8 +373,118 @@ Use this only when raw passthrough is required.
 - **Cost tracking** works when Portkey knows the model's pricing. Common provider + model combinations are recognized automatically.
 - For **custom models** or unusual endpoints, add the pricing in your Portkey dashboard so cost numbers stay accurate.
 
-## Notes
+## End-to-end Example
 
-- Request and response bodies are forwarded **unchanged**. Match the provider's format—not OpenAI's.
-- Every request appears in your Portkey dashboard with full logs and latency.
-- `PATCH` is not supported.
+<Accordion title="Cohere Rerank Integration">
+
+A complete example showing document reranking with Cohere:
+
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@COHERE_VIRTUAL_KEY"
+)
+
+response = portkey.post(
+    '/rerank',
+    return_documents=False,
+    max_chunks_per_doc=10,
+    model="rerank-english-v2.0",
+    query="What is the capital of the United States?",
+    documents=[
+        "Carson City is the capital city of the American state of Nevada.",
+        "Washington, D.C. is the capital of the United States.",
+        "Capital punishment has existed in the United States since before its founding."
+    ]
+)
+```
+</Accordion>
+
+<Accordion title="AWS Bedrock Rerank Integration">
+
+A complete example showing document reranking with Cohere models on AWS Bedrock:
+
+<Note>
+For Bedrock providers, pass the complete ARN along with the model name in the `model` field to make a successful request.
+</Note>
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/rerank' \
+--header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+--header 'x-portkey-provider: @BEDROCK_PROVIDER_SLUG' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0",
+    "query": "What is the capital of the United States?",
+    "top_n": 3,
+    "documents": [
+        "Carson City is the capital city of the American state of Nevada.",
+        "The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean. Its capital is Saipan.",
+        "Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district.",
+        "Capitalization or capitalisation in English grammar is the use of a capital letter at the start of a word. English usage varies from capitalization in other languages.",
+        "Capital punishment has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states."
+    ]
+}'
+```
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@BEDROCK_PROVIDER_SLUG"
+)
+
+response = portkey.post(
+    '/rerank',
+    model="arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0",
+    query="What is the capital of the United States?",
+    top_n=3,
+    documents=[
+        "Carson City is the capital city of the American state of Nevada.",
+        "The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean. Its capital is Saipan.",
+        "Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district.",
+        "Capitalization or capitalisation in English grammar is the use of a capital letter at the start of a word. English usage varies from capitalization in other languages.",
+        "Capital punishment has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states."
+    ]
+)
+```
+
+```javascript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@BEDROCK_PROVIDER_SLUG"
+});
+
+const response = await portkey.post('/rerank', {
+    model: "arn:aws:bedrock:us-east-1::foundation-model/cohere.rerank-v3-5:0",
+    query: "What is the capital of the United States?",
+    top_n: 3,
+    documents: [
+        "Carson City is the capital city of the American state of Nevada.",
+        "The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean. Its capital is Saipan.",
+        "Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district.",
+        "Capitalization or capitalisation in English grammar is the use of a capital letter at the start of a word. English usage varies from capitalization in other languages.",
+        "Capital punishment has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states."
+    ]
+});
+```
+</CodeGroup>
+</Accordion>
+
+# Caveats & Considerations
+
+- Response objects are returned exactly as received from the provider, without Portkey transformations
+- REST API supports all HTTP methods: `POST`, `GET`, `PUT`, and `DELETE`
+- SDK supports all HTTP methods: `POST`, `GET`, `PUT`, and `DELETE`
+- There are no limitations on which provider endpoints can be proxied
+- All requests are logged and monitored through your Portkey dashboard
+
+# Support
+
+Need help? Join our [Developer Forum](https://portkey.wiki/community) for support and discussions.
