@@ -145,11 +145,13 @@ Use the Portkey instance to send requests to Anthropic. You can also override th
 
 ## Using the /messages Route with Bedrock Models
 
-Access Bedrock's Claude models through Anthropic's native`/messages` endpoint using Portkey's SDK or Anthropic's SDK.
+Access Bedrock's Claude models through Anthropic's native `/messages` endpoint using Portkey's SDK or Anthropic's SDK.
 
 <Note>
 This route only works with Claude models on Bedrock. For other models, use the standard OpenAI compliant endpoint.
 </Note>
+
+Pass `service_tier` with Bedrock Claude models to use Bedrock service tiers. See [Bedrock Service Tiers](#bedrock-service-tiers).
 
 <Tabs>
     <Tab title="cURL">
@@ -845,6 +847,68 @@ If you require the model to [respond with certain fields](https://docs.aws.amazo
 ```json
 "additionalModelResponseFieldPaths": [ "/stop_sequence" ]
 ```
+
+## Bedrock Service Tiers
+
+[Amazon Bedrock service tiers](https://docs.aws.amazon.com/bedrock/latest/userguide/service-tiers-inference.html) let you choose how Bedrock handles inference capacity for a request. Availability depends on your model, AWS Region, account access, and AWS quotas.
+
+Pass `service_tier` in the request body. Portkey forwards the required Bedrock service tier format for both Chat Completions and Claude `/messages` requests.
+
+### Supported Values
+
+| Value | Notes |
+| ----- | ----- |
+| `default` | Uses the default Bedrock service tier. |
+| `priority` | Uses priority capacity when it is available for your model and account. |
+| `flex` | Uses the Bedrock flex tier when the model supports it. |
+| `reserved` | Uses reserved capacity when available. |
+| `auto`, `scale`, `standard_only` | Compatibility values from OpenAI or Anthropic clients. Portkey maps these to Bedrock's `default` tier. |
+
+<Note>
+AWS determines which tiers are available for each model, Region, and account. If a tier is not enabled for your AWS environment, Bedrock may reject the request.
+</Note>
+
+### Response Fields
+
+| Route | Field | Notes |
+| ----- | ----- | ----- |
+| Chat Completions | `service_tier` | Returns Bedrock's tier value when Bedrock includes it in the response, such as `default`, `flex`, `priority`, or `reserved`. |
+| `/messages` | `usage.service_tier` | Returns `standard` or `priority`, following Anthropic's response shape. Portkey maps Bedrock `default` and `flex` to `standard`, and `priority` and `reserved` to `priority`. |
+
+The examples below use `priority`. Replace it with any tier supported for your model and AWS account.
+
+<CodeGroup>
+```js NodeJS SDK
+const chatCompletion = await portkey.chat.completions.create({
+    messages: [{ role: "user", content: "Say this is a test" }],
+    model: "moonshot.kimi-k2-thinking",
+    max_tokens: 250,
+    service_tier: "priority"
+})
+```
+
+```python Python SDK
+completion = portkey.chat.completions.create(
+    messages=[{ "role": "user", "content": "Say this is a test" }],
+    model="moonshot.kimi-k2-thinking",
+    max_tokens=250,
+    service_tier="priority"
+)
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @your-bedrock-provider" \
+  -d '{
+    "model": "moonshot.kimi-k2-thinking",
+    "max_tokens": 250,
+    "messages": [{"role": "user", "content": "Say this is a test"}],
+    "service_tier": "priority"
+  }'
+```
+</CodeGroup>
 
 ## Managing AWS Bedrock Prompts
 
