@@ -172,9 +172,20 @@ Each config target can shape the request body before it reaches the upstream pro
 |---|---|
 | `default_params` | Injects parameters into the request body **only when not already present**. Unlike `override_params`, this respects values set by the client. |
 | `override_params` | Always overwrites the matching field on the request body. |
-| `drop_params` | Removes parameters from the final request body using dot-notation paths. Supports nested keys and array indices (e.g., `tools.0.function.name`). |
+| `drop_params` | Removes fields from the final request body using bracket-notation paths (see below). |
 
 Execution order: `default_params` → `override_params` → `drop_params`. All three fields inherit through nested target configs the same way `override_params` does — values defined on a parent target apply to its children unless overridden.
+
+### `drop_params` paths
+
+Each entry in `drop_params` is a path into the request body. The gateway deletes the matching property before forwarding the request. Paths that do not exist on the request are silently ignored.
+
+| Path style | Example | What it removes |
+| --- | --- | --- |
+| Top-level key | `"logprobs"`, `"metadata"` | A field on the root object |
+| Nested object | `"response_format.json_schema"` | A field at any depth (dot-separated segments) |
+| Array index | `"tools[0].function.strict"`, `"messages[2]"` | One element in an array and anything nested under it |
+| Wildcard array | `"tools[*].function.strict"`, `"messages[*].content[*].cache_control.scope"` | The same nested field on **every** array element (and nested arrays when using multiple `[*]`) |
 
 ### Example
 
@@ -186,7 +197,7 @@ Execution order: `default_params` → `override_params` → `drop_params`. All t
       "provider": "@openai-prod",
       "default_params": { "temperature": 0.7, "max_tokens": 1024 },
       "override_params": { "model": "gpt-4o" },
-      "drop_params": ["logprobs", "tools.0.function.strict"]
+      "drop_params": ["logprobs", "tools[0].function.strict", "tools[*].function.name"]
     },
     {
       "provider": "@anthropic-backup",
@@ -199,7 +210,9 @@ Execution order: `default_params` → `override_params` → `drop_params`. All t
 In this example:
 - If the client does not send `temperature` or `max_tokens`, the gateway injects the defaults; if the client does send them, the client's values win.
 - `model` is always rewritten to `gpt-4o` regardless of what the client sends.
-- `logprobs` and the nested `tools[0].function.strict` field are stripped before the request is forwarded.
+- `logprobs` is removed from the root body.
+- `tools[0].function.strict` is removed only from the first tool entry.
+- `function.name` is removed from **every** tool entry via the `tools[*]` wildcard.
 
 ## Passthrough targets
 
