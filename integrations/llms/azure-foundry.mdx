@@ -412,6 +412,141 @@ Access Anthropic models on Azure AI Foundry through Anthropic's native `/message
   </Tab>
 </Tabs>
 
+## Using the Responses API with Azure AI Foundry
+
+Portkey supports the [Responses API](/product/ai-gateway/responses-api) on Azure AI Foundry in **two modes**. Pick the one that matches your Azure deployment.
+
+| Mode | Default? | How it works | When to use |
+| --- | --- | --- | --- |
+| **Gateway Transformation** | Yes | Portkey converts Responses → Chat Completions → Responses around your Azure deployment | Any model deployed on Azure AI Foundry (DeepSeek, Cohere, Llama, Mistral, etc.) |
+| **Direct (Proxy)** | Opt-in via header | Portkey forwards your Responses payload as-is to Azure's native `/responses` endpoint | Azure deployments that natively support `/responses` (e.g. Azure AI Agents) |
+
+In both modes, Portkey logging, tracing, guardrails, caching, retries, and fallbacks continue to work.
+
+### Mode 1 - Gateway Transformation (Default)
+
+This is the default behaviour and requires no extra configuration. Portkey accepts the request at `/v1/responses`, adapts the payload to Chat Completions, calls Azure AI Foundry's `/chat/completions` endpoint, and translates the response back to the Responses API format before returning it to you.
+
+Because the call is made over Chat Completions on Azure's side, **every model on your Azure AI Foundry provider works** — even ones that don't natively expose a Responses endpoint.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@AZURE_FOUNDRY_PROVIDER"
+)
+
+response = portkey.responses.create(
+    model="DeepSeek-V3-0324",  # Any model on your Azure AI Foundry provider
+    input="Explain the difference between AKS and ACI in one paragraph."
+)
+
+print(response.output_text)
+```
+
+```js JavaScript
+import Portkey from "portkey-ai";
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "@AZURE_FOUNDRY_PROVIDER",
+});
+
+const response = await portkey.responses.create({
+  model: "DeepSeek-V3-0324",
+  input: "Explain the difference between AKS and ACI in one paragraph.",
+});
+
+console.log(response.output_text);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @AZURE_FOUNDRY_PROVIDER" \
+  -d '{
+    "model": "DeepSeek-V3-0324",
+    "input": "Explain the difference between AKS and ACI in one paragraph."
+  }'
+```
+</CodeGroup>
+
+<Note>
+Features that rely on Azure storing response state — `previous_response_id`, `store`, retrieve/delete on `/v1/responses/:id`, and built-in tools like `web_search` — are **not** available in this mode. Use multi-turn `input` arrays to carry conversation history. See [Open Responses → Native-Only Features](/product/ai-gateway/responses-api#native-only-features).
+</Note>
+
+### Mode 2 - Direct Responses (Proxy)
+
+When your Azure AI Foundry deployment exposes a native `/responses` endpoint (for example, **Azure AI Agents**), set the `x-portkey-provider-responses-proxy` header to `true`. Portkey will skip the Chat Completions transformation and forward the request body **exactly as-is** to Azure's native Responses endpoint.
+
+This is required to use Azure-specific parameters such as `agent_reference`, which targets a deployed Azure AI Agent.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@AZURE_FOUNDRY_PROVIDER",
+    # Forwards the request directly to Azure's native /responses endpoint
+    provider_responses_proxy=True,
+)
+
+response = portkey.responses.create(
+    model="gpt-4.1",  # Your Azure deployment name
+    input="Summarise the latest Q3 sales numbers for the EMEA region.",
+    agent_reference="asst_abc123",  # Azure AI Agent reference
+)
+
+print(response.output_text)
+```
+
+```js JavaScript
+import Portkey from "portkey-ai";
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "@AZURE_FOUNDRY_PROVIDER",
+  providerResponsesProxy: true,
+});
+
+const response = await portkey.responses.create({
+  model: "gpt-4.1",
+  input: "Summarise the latest Q3 sales numbers for the EMEA region.",
+  agent_reference: "asst_abc123",
+});
+
+console.log(response.output_text);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @AZURE_FOUNDRY_PROVIDER" \
+  -H "x-portkey-provider-responses-proxy: true" \
+  -d '{
+    "model": "gpt-4.1",
+    "input": "Summarise the latest Q3 sales numbers for the EMEA region.",
+    "agent_reference": "asst_abc123"
+  }'
+```
+</CodeGroup>
+
+<Note>
+Direct mode forwards the payload verbatim. Your Azure deployment must accept the Responses API schema — if it doesn't, requests will fail. Use Gateway Transformation (Mode 1) for everything else.
+</Note>
+
+### Choosing the right mode
+
+- Use **Gateway Transformation** for general-purpose Responses API calls against any Azure-deployed model.
+- Use **Direct (Proxy)** when calling **Azure AI Agents** or any Azure deployment that exposes the native Responses endpoint and you need Azure-specific parameters (`agent_reference`, server-side response storage, etc.).
+
+For a deep dive into the Responses API itself — streaming, tool calling, reasoning, vision, structured output — see the [Open Responses](/product/ai-gateway/responses-api) guide.
+
 ## Sample Request
 
 Once you've created your provider, you can start making requests to Azure AI Foundry models through Portkey.
