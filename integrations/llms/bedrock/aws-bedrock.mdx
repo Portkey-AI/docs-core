@@ -232,6 +232,137 @@ For more info, check out this guide:
 
 [Vision](/product/ai-gateway/multimodal-capabilities/vision)
 
+### Using S3 URIs in Chat Completions
+
+Portkey supports S3 URIs directly in the `image_url` field for chat completions. This allows you to reference files stored in S3 without needing to convert them to base64.
+
+<Note>
+When using S3 URIs, the `mime_type` parameter is **required**. The gateway cannot infer the MIME type from an S3 URI, so you must specify it explicitly.
+</Note>
+
+<Tabs>
+    <Tab title="Python SDK">
+        ```python
+        from portkey_ai import Portkey
+
+        portkey = Portkey(
+            api_key="PORTKEY_API_KEY",
+            provider="@PROVIDER"
+        )
+
+        response = portkey.chat.completions.create(
+            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "What's in this image?"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "s3://your-bucket/path/to/image.png",
+                                "mime_type": "image/png",  # Required for S3 URIs
+                                "bucketOwner": "123456789012"  # Optional: AWS account ID of the bucket owner
+                            }
+                        }
+                    ]
+                }
+            ]
+        )
+        ```
+    </Tab>
+    <Tab title="NodeJS SDK">
+        ```javascript
+        import Portkey from 'portkey-ai';
+
+        const portkey = new Portkey({
+            apiKey: "PORTKEY_API_KEY",
+            provider: "@PROVIDER"
+        });
+
+        const response = await portkey.chat.completions.create({
+            model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            max_tokens: 1024,
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "text",
+                            text: "What's in this image?"
+                        },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: "s3://your-bucket/path/to/image.png",
+                                mime_type: "image/png",  // Required for S3 URIs
+                                bucketOwner: "123456789012"  // Optional: AWS account ID of the bucket owner
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+        ```
+    </Tab>
+    <Tab title="cURL">
+        ```sh
+        curl "https://api.portkey.ai/v1/chat/completions" \
+          -H "Content-Type: application/json" \
+          -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+          -H "x-portkey-provider: @your-bedrock-provider-slug" \
+          -d '{
+            "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "max_tokens": 1024,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "What is in this image?"
+                  },
+                  {
+                    "type": "image_url",
+                    "image_url": {
+                      "url": "s3://your-bucket/path/to/image.png",
+                      "mime_type": "image/png",
+                      "bucketOwner": "123456789012"
+                    }
+                  }
+                ]
+              }
+            ]
+          }'
+        ```
+    </Tab>
+</Tabs>
+
+#### S3 URI Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `url` | string | Yes | The S3 URI (e.g., `s3://bucket-name/path/to/file.png`) |
+| `mime_type` | string | Yes | The MIME type of the file (see supported formats below) |
+| `bucketOwner` | string | No | The AWS account ID of the bucket owner. Required for cross-account S3 access. |
+
+#### Supported Image Formats for S3 URIs
+
+| Format | MIME Type |
+|--------|-----------|
+| PNG | `image/png` |
+| JPEG | `image/jpeg` |
+| GIF | `image/gif` |
+| WebP | `image/webp` |
+
+<Note>
+Ensure your Bedrock IAM role has the necessary S3 permissions (`s3:GetObject`) to access the referenced objects.
+</Note>
+
 ## Extended Thinking (Reasoning Models) (Beta)
 
 <Note>
