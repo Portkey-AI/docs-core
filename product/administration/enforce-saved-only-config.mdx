@@ -14,7 +14,7 @@ Portkey lets administrators define **saved** resources — providers, integratio
 
 When the setting is enabled, the Gateway inspects every inference request and rejects any attempt to **select a provider, endpoint, or config inline**. Callers can no longer bring their own provider name, base URL, or ad-hoc config object in the request — they must reference a saved entity created and governed by an administrator.
 
-This guarantees that every request flows through resources your team has reviewed, so callers cannot bypass governance, allowlists, budget controls, or audit attribution by passing their own configuration at request time.
+This keeps every request on resources your team has set up, so the governance, allowlists, budget controls, and audit attribution attached to those resources apply consistently — without relying on configuration supplied at request time.
 
 <Info>
   This setting sits alongside the other security settings you manage for API keys, providers, and workspaces. It is available on both **SaaS** and **self-hosted** deployments.
@@ -36,8 +36,8 @@ Because the check runs at a single point before routing, blocked requests never 
 
 How this setting is initialized depends on when your organization was created:
 
-- **Organizations created on or after June 19, 2026** have saved-only mode **enabled (blocked) by default**. Inline provider configuration is rejected out of the box, so these organizations are secure by default.
-- **Organizations created before June 19, 2026** have saved-only mode **disabled by default** to preserve backward compatibility. Nothing changes for existing traffic until an administrator turns it on.
+- **Organizations created on or after June 19, 2026** have saved-only mode **enabled (blocked) by default**. Inline provider configuration is rejected out of the box, and administrators can turn it off if they want to allow inline configuration.
+- **Organizations created before June 19, 2026** have saved-only mode **disabled by default** to preserve backward compatibility. Existing traffic is unaffected until an administrator turns it on.
 
 New workspaces inherit their organization's setting at the time of creation.
 
@@ -67,7 +67,7 @@ Self-hosted deployments can additionally enforce saved-only mode across the enti
 BLOCK_INLINE_CONFIG=true
 ```
 
-The organization setting and the Gateway environment variable **combine to make policy stricter** — if *either* one enables saved-only mode, it is enforced. Neither can loosen the other. This lets platform teams guarantee a security baseline at the infrastructure layer that individual organizations cannot weaken.
+The organization setting and the Gateway environment variable **combine to make policy stricter** — if *either* one enables saved-only mode, it is enforced. Neither can loosen the other. This lets platform teams set a baseline at the infrastructure layer that applies across organizations.
 
 <Note>
   The environment variable applies to self-hosted Gateways only and is ignored on Portkey's managed SaaS.
@@ -87,20 +87,18 @@ When saved-only mode is enabled, the following inline inputs are rejected. Each 
 
 A few notes on why each is included:
 
-- **Inline custom host** and **inline provider URL** are blocked because they let a caller point the Gateway at an arbitrary endpoint, which sidesteps the curated provider and its governance (the same risk surface as server-side request forgery).
-- **Inline forward headers** are blocked because forwarded headers are layered on top of a saved provider's authentication headers downstream — an arbitrary list could override the curated credentials. Forwarding is still allowed when an administrator has configured it on the saved provider itself.
+- **Inline custom host** and **inline provider URL** are blocked because they point the Gateway at an endpoint defined at request time rather than the one on the curated provider.
+- **Inline forward headers** are blocked because forwarded headers are layered on top of a saved provider's authentication headers downstream, so an inline list could override the curated credentials. Forwarding is still allowed when an administrator has configured it on the saved provider itself.
 
 ## What Stays Allowed
 
-Saved-only mode is designed to be transparent to well-behaved callers. The following continue to work:
+Saved-only mode is designed to be transparent to callers that already reference saved resources. The following continue to work:
 
 - **Saved configs** referenced by slug — e.g. `x-portkey-config: pc-...`
 - **Saved providers / integrations** referenced by slug — e.g. `x-portkey-provider: @my-provider`
 - **Saved model references** in the request body — e.g. `"model": "@my-provider/model-name"`
 - **Forward headers configured by an administrator** on a saved provider (as opposed to passed inline on the request)
 - **Credentials passed directly** via the `Authorization` header — credentials alone cannot select a provider
-
-If your applications already reference saved providers and configs by slug, enabling saved-only mode requires no changes to your request code.
 
 ## Error Responses
 
@@ -132,17 +130,17 @@ The Gateway checks for violations in order and returns the **first** one it find
 
 ## Use Cases
 
-### Preventing Governance Bypass
+### Centralized Provider Governance
 
-Without saved-only mode, a caller could pass an inline config or a custom host that points to an unapproved provider — escaping budget limits, guardrails, and model allowlists. Enabling the setting closes this gap and guarantees every request runs through admin-curated resources.
+Saved-only mode keeps every request on admin-curated resources, so the budget limits, guardrails, and model allowlists attached to your saved providers and configs consistently apply across all callers.
 
-### Securing Multi-Tenant and Shared Gateways
+### Shared and Multi-Tenant Gateways
 
-When many teams or applications share a Gateway, saved-only mode ensures no single caller can repoint the Gateway at an arbitrary endpoint or override another team's curated credentials.
+When many teams or applications share a Gateway, saved-only mode keeps each request scoped to the resources an administrator has set up, rather than endpoints or headers supplied at request time.
 
-### Reliable Audit Attribution
+### Clear Audit Attribution
 
-Because every request must reference a named, saved resource, logs and analytics attribute usage to known providers and configs rather than to opaque inline payloads.
+Because every request references a named, saved resource, logs and analytics attribute usage to known providers and configs rather than to inline payloads.
 
 ## Related
 
