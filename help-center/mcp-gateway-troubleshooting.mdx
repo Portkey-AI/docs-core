@@ -1,0 +1,217 @@
+---
+title: "MCP Gateway: Common issues and resolutions"
+description: "Fix the most common MCP Gateway problems—connection, authentication, OAuth, scopes, and configuration—with step-by-step resolutions."
+---
+
+Most MCP Gateway issues come down to **authentication** with the upstream MCP server. This guide is organized by symptom: find the error you're seeing, confirm the cause, and apply the fix.
+
+<Info>
+MCP Gateway authenticates in two places: your client → Portkey (using your API key or OAuth), and Portkey → the MCP server (using OAuth, client credentials, or headers). Most "authorization failed" messages come from the second step, even when your client only shows a generic error.
+</Info>
+
+## Find your issue
+
+<CardGroup cols={2}>
+  <Card title="Can't connect / access denied" icon="lock" href="#can-t-connect-or-access-denied">
+    401 / 403 / 404, "Unable to verify user access"
+  </Card>
+  <Card title="OAuth won't complete" icon="key" href="#oauth-with-the-mcp-server-fails">
+    DCR errors, wrong scope, redirect issues
+  </Card>
+  <Card title="Changes not taking effect" icon="arrows-rotate" href="#configuration-changes-aren-t-taking-effect">
+    Updated config still shows old behavior
+  </Card>
+  <Card title="Self-hosted setup" icon="server" href="#self-hosted-and-hybrid-gateways">
+    Gateway URL, redirect URI, base URL
+  </Card>
+</CardGroup>
+
+---
+
+## Quick triage by status code
+
+| Status | What it means | First thing to check |
+|--------|---------------|----------------------|
+| `401` | Missing/expired token, or the MCP server needs you to sign in | Re-authenticate; if prompted, complete the server's sign-in |
+| `403` | You're authenticated but not allowed | Wrong workspace/server in the URL, or you don't have access to that server |
+| `404` | Server not found | The slug in your URL is wrong, or the server isn't registered in this workspace |
+| `500` "Unable to verify user access" | The gateway couldn't confirm your access | See [API key type](#can-t-connect-or-access-denied) below |
+
+---
+
+## Can't connect or access denied
+
+### Check your API key type and permissions
+
+Your Portkey API key must have the **`mcp.invoke`** permission. Create or edit it under **Settings → API Keys**.
+
+There are two key types, and they behave differently with MCP servers:
+
+| MCP server auth type | Works with Service key | Works with User key |
+|----------------------|------------------------|---------------------|
+| None / Custom Headers / Client Credentials | Yes | Yes |
+| **OAuth 2.1 (per-user)** | Not for per-user sign-in | Yes |
+
+<Note>
+**Per-user OAuth needs a user identity.** Servers configured with **OAuth 2.1** give each user their own connection to the upstream service (your GitHub vs. a teammate's GitHub). Connect with a credential that identifies a user (a User API key or an OAuth/IdP login). A shared service key can be used for servers that use **None**, **Custom Headers**, or **Client Credentials**, where everyone shares the same upstream access.
+</Note>
+
+### Check the gateway URL
+
+The URL pattern is `https://mcp.portkey.ai/{slug}/mcp`, where `{slug}` is the slug from the MCP Registry—**not** a UUID. You can copy the exact URL from the server's page in the Registry.
+
+A `403`/`404` usually means the slug is wrong, the server isn't provisioned to your workspace, or your key belongs to a different workspace.
+
+---
+
+## OAuth with the MCP server fails
+
+### "Incompatible auth server: does not support dynamic client registration"
+
+Some services (for example Snowflake, or servers fronted by an enterprise identity provider like Okta or Entra) don't support automatic OAuth client registration. Portkey's default flow tries to register itself and the service rejects it.
+
+**Fix:** create an OAuth client (client ID + secret) with the service or its identity provider, then add it in the integration's **Advanced Configuration** so Portkey uses your pre-registered client:
+
+```json
+{
+  "oauth_metadata": {
+    "issuer": "https://<your-idp>/...",
+    "client_id": "YOUR_CLIENT_ID",
+    "client_secret": "YOUR_CLIENT_SECRET",
+    "redirect_uri": "https://mcp.portkey.ai/oauth/upstream-callback",
+    "authorization_endpoint": "https://<your-idp>/.../authorize",
+    "token_endpoint": "https://<your-idp>/.../token",
+    "scope": "<the exact scope you need>"
+  }
+}
+```
+
+For a full walkthrough, see the [Snowflake MCP server guide](/integrations/mcp-servers/snowflake-mcp-server). For field reference, see [OAuth Client Metadata](/product/mcp-gateway/authentication/oauth-client-metadata).
+
+### "invalid_scope" or the wrong scope appears during sign-in
+
+You set a scope in `oauth_metadata.scope`, but sign-in fails with `invalid_scope` (or the identity provider shows a different scope than you expected).
+
+**Fix:**
+1. Make sure the scope you need is set in `oauth_metadata.scope`.
+2. Confirm that exact scope **exists at your identity provider** and is **allowed for your OAuth app / policy**. If it isn't defined or allowed, the provider drops or rejects it.
+3. Verify by watching the browser during sign-in—the authorization URL's `scope=` value should match what you configured.
+
+### The redirect/callback doesn't work
+
+The OAuth callback URL is fixed and must match in your OAuth app exactly:
+
+```
+https://mcp.portkey.ai/oauth/upstream-callback
+```
+
+If you create an OAuth app with the service (GitHub, Slack, your IdP, etc.), set its redirect/callback URL to the value above. For self-hosted gateways, use your own gateway host instead of `mcp.portkey.ai` (see [Self-hosted and hybrid gateways](#self-hosted-and-hybrid-gateways)).
+
+### "Protected resource … does not match expected …"
+
+The server URL you registered doesn't match the address the server advertises—usually because the path is missing.
+
+**Fix:** register the URL **including the path the server expects**, which is almost always `…/mcp`. You can confirm the expected value:
+
+```bash
+curl https://<your-mcp-server>/.well-known/oauth-protected-resource
+```
+
+Register the `resource` value it returns.
+
+### "Select the correct organisation" (or similar)
+
+Some services (for example Notion) ask you to choose a workspace or organization during sign-in. Picking the wrong one—or none—leads to a confusing error.
+
+**Fix:** complete the sign-in and select the correct organization. If you already authorized the wrong one, disconnect/clear the connection for that server and sign in again.
+
+---
+
+## Configuration changes aren't taking effect
+
+You updated an MCP server's configuration (URL, auth, scopes), but the gateway still behaves as if nothing changed—or a server that failed once keeps failing even after you fixed it.
+
+**Why:** server configuration and connections are cached for a short time, and an existing (stale) connection can linger.
+
+**Fix:**
+1. Wait a short while for the change to propagate, then retry.
+2. Disconnect and reconnect the server from your client, and re-run the sign-in so a fresh connection is created.
+3. If it still uses the old behavior, confirm you edited the integration in the **same workspace/organization** your client is connecting through.
+
+<Tip>
+Creating the server again under a brand-new slug always picks up the latest config—useful as a quick confirmation that the issue was a stale connection. Prefer reconnecting first; a new slug also changes your client URL.
+</Tip>
+
+---
+
+## Frequent reconnects / "tokens expire too quickly"
+
+Users have to re-authorize a connected server far more often than expected.
+
+**What to know:** access tokens are short-lived (about 1 hour) and refresh tokens are long-lived (about 30 days); the gateway refreshes them automatically, so you shouldn't need to reconnect often.
+
+**Fix:**
+1. Make sure you're on the latest gateway version (especially for self-hosted deployments).
+2. If reconnects continue, [contact support](#still-stuck) with the server slug and timestamps so the team can review the token refresh logs.
+
+---
+
+## OAuth discovery returns a 404
+
+Your client can't start sign-in because OAuth discovery points it at an unreachable address.
+
+**Fix:** confirm discovery is reachable:
+
+```bash
+curl https://<your-gateway-host>/.well-known/oauth-authorization-server
+curl https://<your-mcp-server>/.well-known/oauth-protected-resource
+```
+
+For self-hosted gateways, make sure the gateway's public base URL is configured correctly (see below)—it's used to build discovery and redirect URLs.
+
+---
+
+## Self-hosted and hybrid gateways
+
+If you run the gateway yourself (instead of `mcp.portkey.ai`):
+
+1. **Use your own gateway host** in the client URL: `https://<your-gateway-host>/{slug}/mcp`.
+2. **Set the OAuth callback** in any upstream OAuth app to `https://<your-gateway-host>/oauth/upstream-callback`.
+3. **Set `MCP_GATEWAY_BASE_URL`** to your public gateway URL (for example `https://<your-gateway-host>`). The gateway uses this to construct callback and discovery URLs—if it's wrong, OAuth and discovery fail.
+4. Make sure your ingress forwards the `Host` header so the server advertises its public URL (not an internal address).
+
+---
+
+## Enterprise: `external_auth_config` returns 403
+
+`external_auth_config` (where the gateway brokers your own identity provider directly) is available on **self-hosted/enterprise** deployments only and is blocked on managed SaaS.
+
+**Fix:** on SaaS, use `oauth_metadata` with a pre-registered OAuth client instead. See [External OAuth](/product/mcp-gateway/authentication/external-oauth).
+
+---
+
+## Still stuck?
+
+Contact **support@portkey.ai** with:
+
+- Your workspace ID
+- The MCP server slug
+- The full error message (and `request_id` if shown)
+- The MCP client you're using (Claude Desktop, Cursor, etc.)
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/product/mcp-gateway/authentication">
+    How the two authentication layers work.
+  </Card>
+  <Card title="OAuth Client Metadata" icon="id-card" href="/product/mcp-gateway/authentication/oauth-client-metadata">
+    All `oauth_metadata` fields and pre-registered clients.
+  </Card>
+  <Card title="MCP server guides" icon="plug" href="/integrations/mcp-servers/snowflake-mcp-server">
+    Per-service setup guides (Snowflake, GitHub, Slack, and more).
+  </Card>
+  <Card title="Observability" icon="chart-mixed" href="/product/mcp-gateway/observability">
+    Inspect tool calls, auth, and errors per request.
+  </Card>
+</CardGroup>

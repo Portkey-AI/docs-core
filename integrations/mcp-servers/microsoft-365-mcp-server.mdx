@@ -1,0 +1,117 @@
+---
+title: "Microsoft 365 MCP server"
+description: "Connect a Microsoft 365 MCP server (Outlook mail, calendar, Teams, OneDrive) through Portkey MCP Gateway with centralized auth, access control, and observability."
+---
+
+A Microsoft 365 MCP server (for example [`@softeria/ms-365-mcp-server`](https://github.com/softeria/ms-365-mcp-server)) exposes Microsoft Graph—mail, calendar, Teams, OneDrive—as MCP tools. Portkey MCP Gateway adds centralized authentication, per-user access control, and observability.
+
+<Note>
+This integration example is an opensource MS365 server from softeria and not the official microsoft MS365 MCP server.
+</Note>
+
+## When should you use this server
+
+- Summarize, search, and draft Outlook mail or calendar events from agents
+- Read and post Teams messages with human-in-the-loop review
+- Work with OneDrive/SharePoint content during agent workflows
+
+## Key features
+
+- Per-user Microsoft sign-in (actions attributed to individual users)
+- Works with the hosted/self-hosted MS365 MCP server in `--org-mode`
+- Centralized governance via Portkey access control and observability
+
+## Authentication
+
+- **Method:** OAuth 2.1.
+- **Recommended:** let the MS365 MCP server handle Microsoft sign-in itself and **leave Portkey Advanced Configuration empty**. The server manages the Microsoft sign-in flow, and Portkey stores and refreshes the resulting tokens per user.
+
+## Endpoint
+
+Your MS365 MCP server's MCP endpoint, e.g.:
+
+```
+https://<your-ms365-mcp-host>/mcp
+```
+
+<Note>
+Register the URL **with the `/mcp` suffix** so it matches the server's advertised protected-resource metadata. Registering the bare host produces: `Protected resource <url>/mcp does not match expected <url>`.
+</Note>
+
+---
+
+## Connect via Portkey MCP Gateway
+
+The MS365 MCP server acts as its own OAuth authorization server and handles the Microsoft sign-in flow for each user.
+
+#### Step 1: Run / obtain the MS365 MCP server
+
+Run with org-mode and dynamic registration enabled, fronted by HTTPS:
+
+```bash
+npx -y @softeria/ms-365-mcp-server@latest \
+  --http 0.0.0.0:3000 --org-mode --enable-dynamic-registration
+```
+
+Set its Azure app credentials (`MS365_MCP_CLIENT_ID`, `MS365_MCP_TENANT_ID`, `MS365_MCP_CLIENT_SECRET`) per the server's docs. Ensure ingress forwards the `Host` header so its discovery advertises the public URL.
+
+#### Step 2: Register the integration in Portkey
+
+1. **MCP Registry** → **Add MCP Integration**.
+2. Set:
+
+| Field | Value |
+|-------|-------|
+| **Name** | Microsoft 365 |
+| **Slug** | `microsoft-365` |
+| **Server URL** | `https://<your-ms365-mcp-host>/mcp` |
+| **Auth Type** | OAuth 2.1 |
+
+3. **Leave Advanced Configuration empty.**
+4. Configure workspace access and save.
+
+#### Step 3: Verify discovery
+
+```bash
+curl https://<your-ms365-mcp-host>/.well-known/oauth-protected-resource
+```
+
+The `resource` field must be the **public** `…/mcp` URL (not an internal cluster URL). If it shows an internal URL, fix ingress to forward the `Host` header.
+
+#### Step 4: Connect from an agent
+
+```json Claude Desktop / Cursor
+{
+  "mcpServers": {
+    "microsoft-365": {
+      "url": "https://mcp.portkey.ai/microsoft-365/mcp"
+    }
+  }
+}
+```
+
+On first tool use, the client opens Microsoft sign-in. Portkey stores and refreshes tokens per user.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `Protected resource <url>/mcp does not match expected <url>` | Registered URL is missing the path the server advertises | Register the URL **with `/mcp`** (matching the server's protected-resource metadata) |
+| Discovery returns an internal cluster URL | Ingress not forwarding `Host` header | Configure ingress so the MS365 server sees the public host |
+| Browser tab closes after sign-in, then the next attempt fails | Stale connection from the earlier attempt | Disconnect/reconnect the server and sign in again |
+
+For broader gateway issues, see [MCP Gateway: Common issues and resolutions](/help-center/mcp-gateway-troubleshooting).
+
+---
+
+## Tools provided
+
+<Note>
+Tools depend on the MS365 MCP server build and the Graph scopes you consent to (mail, calendar, Teams, OneDrive/SharePoint, contacts). Use the client's tool inspector or `tools/list` on the gateway URL as the source of truth.
+</Note>
+
+<Note>
+For self-hosted gateways, replace `mcp.portkey.ai` with your gateway host.
+</Note>

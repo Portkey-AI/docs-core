@@ -1,0 +1,190 @@
+---
+title: "Snowflake MCP server"
+description: "Connect Snowflake's managed MCP server through Portkey MCP Gateway to query data, run Cortex Search/Analyst, and execute SQL—with centralized auth, access control, and observability."
+---
+
+
+Snowflake's managed MCP server exposes Cortex Search, Cortex Analyst, and SQL execution as MCP tools. Portkey MCP Gateway adds centralized authentication, per-user access control, and observability on top of the Snowflake endpoint.
+
+## When should you use this server
+
+- Ask natural-language questions over governed Snowflake data via Cortex Analyst
+- Run semantic/Cortex Search over indexed documents and support content
+- Execute parameterized SQL from agents under guardrails and access control
+
+## Key features
+
+- Managed, cloud-hosted endpoint—no self-hosted binary to run
+- Role-scoped access: every request runs under a specific Snowflake role
+- OAuth 2.1 with an external identity provider (per-user attribution)
+
+## Authentication
+
+- **Method:** OAuth 2.1 with **manual OAuth metadata** (pre-registered client).
+- **Why:** Snowflake's OAuth server **does not support Dynamic Client Registration (DCR / RFC 7591)**. Portkey's default OAuth flow auto-registers a client against the upstream server, which Snowflake rejects with:
+
+  ```
+  Incompatible auth server: does not support dynamic client registration
+  ```
+
+- **The supported pattern:** front Snowflake with an IdP it trusts (this guide uses **Okta** via Snowflake **External OAuth**), pre-register a confidential OAuth client there, and give Portkey those credentials in `oauth_metadata`. Portkey then skips DCR and uses the pre-registered client for the upstream token exchange.
+
+<Note>
+With this pattern, **Okta** (not Snowflake) is the OAuth authorization server. Snowflake validates the resulting JWT and maps its `scp` claim to a Snowflake role.
+</Note>
+
+## Endpoint
+
+A Snowflake managed MCP server URL looks like:
+
+```
+https://<account>.<region>.snowflakecomputing.com/api/v2/databases/<db>/schemas/<schema>/mcp-servers/<server>
+```
+
+---
+
+## Connect via Portkey MCP Gateway
+
+The setup has three parts: **Snowflake** (trust the IdP, map roles), **Okta** (issue tokens with the role scope), and **Portkey** (register the server with `oauth_metadata`).
+
+<Warning>
+The token **scope** selects the Snowflake role. It must be `session:role:<role>`—defined in Okta, listed in the Okta access-policy rule, and mapped to a Snowflake role the user has been granted. Getting this scope right is the most common point of failure.
+</Warning>
+
+### Step 1: Snowflake — role, user, and External OAuth integration
+
+Run as `ACCOUNTADMIN` in a Snowsight worksheet.
+
+```sql
+USE ROLE ACCOUNTADMIN;
+
+-- Role the MCP server runs under
+CREATE ROLE IF NOT EXISTS MCP_ROLE;
+GRANT USAGE ON DATABASE my_db                          TO ROLE MCP_ROLE;
+GRANT USAGE ON SCHEMA   my_db.data                     TO ROLE MCP_ROLE;
+GRANT USAGE ON MCP SERVER my_db.data.my_mcp_server     TO ROLE MCP_ROLE;
+
+-- The Snowflake user the federated identity maps to.
+-- LOGIN_NAME must equal the claim Snowflake reads out of the token (see USER_MAPPING_CLAIM below).
+CREATE USER IF NOT EXISTS okta_user
+  LOGIN_NAME   = 'user@your-okta-domain'
+  DEFAULT_ROLE = MCP_ROLE
+  TYPE         = PERSON;
+GRANT ROLE MCP_ROLE TO USER okta_user;
+
+-- Tell Snowflake to trust Okta-issued tokens (run after Step 2 — you need Okta's issuer + JWKS URL).
+CREATE OR REPLACE SECURITY INTEGRATION OKTA_MCP
+  TYPE = EXTERNAL_OAUTH
+  ENABLED = TRUE
+  EXTERNAL_OAUTH_TYPE = OKTA
+  EXTERNAL_OAUTH_ISSUER                           = 'https://<okta-domain>/oauth2/<auth-server-id>'
+  EXTERNAL_OAUTH_JWS_KEYS_URL                     = 'https://<okta-domain>/oauth2/<auth-server-id>/v1/keys'
+  EXTERNAL_OAUTH_AUDIENCE_LIST                    = ('https://<account>.<region>.snowflakecomputing.com')
+  EXTERNAL_OAUTH_TOKEN_USER_MAPPING_CLAIM         = 'sub'
+  EXTERNAL_OAUTH_SNOWFLAKE_USER_MAPPING_ATTRIBUTE = 'login_name'
+  EXTERNAL_OAUTH_SCOPE_MAPPING_ATTRIBUTE          = 'scp'
+  EXTERNAL_OAUTH_ANY_ROLE_MODE                    = 'ENABLE';
+```
+
+| Field | What it does |
+|-------|--------------|
+| `EXTERNAL_OAUTH_ISSUER` | Must match the token's `iss` claim exactly (no trailing-slash mismatch) |
+| `EXTERNAL_OAUTH_AUDIENCE_LIST` | Must include the Snowflake account URL and match the Okta auth server's Audience |
+| `EXTERNAL_OAUTH_TOKEN_USER_MAPPING_CLAIM` | Token claim identifying the user (`sub`); must equal a user's `LOGIN_NAME` |
+| `EXTERNAL_OAUTH_SCOPE_MAPPING_ATTRIBUTE` | **Role selector**—`scp`. This is why the token's `scp` must carry `session:role:<role>` |
+
+### Step 2: Okta — authorization server, scope, and confidential app
+
+1. **Security → API → Authorization Servers → Add**. Set **Audience** to the Snowflake account URL (`https://<account>.<region>.snowflakecomputing.com`). Note the **Issuer URI**—feed it into Step 1 and Step 3.
+2. **Scopes → Add Scope**: create `session:role:<role>` (literal, colons and all; lowercase as Snowflake expects). Check **Include in public metadata**.
+3. **Access Policies → Add Policy + Rule**: grant type `Authorization Code` (+ `Refresh Token`), and list the `session:role:<role>` scope and the allowed users.
+4. **Applications → Create App Integration → OIDC → Web Application** (gives a `client_secret`). Set the **Sign-in redirect URI** to:
+
+   ```
+   https://mcp.portkey.ai/oauth/upstream-callback
+   ```
+
+5. Copy the **Client ID**, **Client Secret**, and from `<issuer>/.well-known/oauth-authorization-server` the **authorization_endpoint** and **token_endpoint**.
+
+<Warning>
+If the `session:role:<role>` scope isn't listed in the Okta access-policy **rule**, Okta silently won't issue it → the token has no role → Snowflake rejects the request.
+</Warning>
+
+### Step 3: Register the integration in Portkey
+
+1. In Portkey, go to **MCP Registry** → **Add MCP Integration**.
+2. Set:
+
+| Field | Value |
+|-------|-------|
+| **Name** | Snowflake |
+| **Slug** | `snowflake` |
+| **Server URL** | `https://<account>.<region>.snowflakecomputing.com/api/v2/databases/<db>/schemas/<schema>/mcp-servers/<server>` |
+| **Auth Type** | OAuth 2.1 |
+
+3. Expand **Advanced Configuration** and paste (replace placeholders):
+
+```json
+{
+  "oauth_metadata": {
+    "issuer": "https://<okta-domain>/oauth2/<auth-server-id>",
+    "client_id": "YOUR_OKTA_CLIENT_ID",
+    "client_secret": "YOUR_OKTA_CLIENT_SECRET",
+    "redirect_uri": "https://mcp.portkey.ai/oauth/upstream-callback",
+    "authorization_endpoint": "https://<okta-domain>/oauth2/<auth-server-id>/v1/authorize",
+    "token_endpoint": "https://<okta-domain>/oauth2/<auth-server-id>/v1/token",
+    "scope": "session:role:<role>"
+  }
+}
+```
+
+<Note>
+Use `oauth_metadata` (upstream auth), **not** `external_auth_config`. With `client_id` and `client_secret` present, Portkey skips DCR and uses your pre-registered Okta client. See [OAuth Client Metadata](/product/mcp-gateway/authentication/oauth-client-metadata).
+</Note>
+
+4. Configure workspace access as needed, then save.
+
+### Step 4: Connect from an agent
+
+Gateway URL pattern: `https://mcp.portkey.ai/{slug}/mcp`.
+
+```json Claude Desktop / Cursor
+{
+  "mcpServers": {
+    "snowflake": {
+      "url": "https://mcp.portkey.ai/snowflake/mcp"
+    }
+  }
+}
+```
+
+On first tool use, the client opens the Okta authorization screen. After consent, Portkey exchanges the code, calls Snowflake with the resulting JWT, and stores/refreshes tokens per user.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `Incompatible auth server: does not support dynamic client registration` | `oauth_metadata` missing or incomplete → Portkey fell back to DCR against Snowflake | Confirm the field is `oauth_metadata` with **both** `client_id` and `client_secret`, saved on the control plane you actually use |
+| Okta authorize URL shows `scope=session:role:all` | Snowflake's advertised `scopes_supported` overrode the configured scope | Ensure `oauth_metadata.scope` is set; confirm your deploy target has the scope-passthrough fix (SaaS and self-hosted deploy independently) |
+| `One or more scopes are not configured` | Scope doesn't exist in Okta, isn't in the access-policy rule, or doesn't map to a granted role | Re-check Step 2.2 (scope exists), 2.3 (scope in rule), Step 1 (role granted), and `EXTERNAL_OAUTH_SCOPE_MAPPING_ATTRIBUTE='scp'` |
+| Snowflake returns `401` to a direct-token test | `aud`/`iss` mismatch or `sub` doesn't map to a `LOGIN_NAME` | Compare the token's `aud`/`iss`/`sub` (jwt.io) to the SECURITY INTEGRATION fields and the user's `LOGIN_NAME` |
+
+For broader gateway issues, see [MCP Gateway: Common issues and resolutions](/help-center/mcp-gateway-troubleshooting).
+
+---
+
+## Tools provided
+
+<Note>
+Tools depend on what the Snowflake MCP server exposes (Cortex Search services, Cortex Analyst semantic views, and SQL execution). Use the client's tool inspector or `tools/list` on the gateway URL as the source of truth.
+</Note>
+
+- **Cortex Analyst** — natural-language questions answered against a configured semantic view/model.
+- **Cortex Search** — semantic search over an indexed service (documents, tickets, etc.).
+- **SQL execution** — run SQL under the mapped Snowflake role.
+
+<Note>
+For self-hosted gateways, replace `mcp.portkey.ai` with your gateway host (and use that host in the Okta redirect URI and `redirect_uri`).
+</Note>
