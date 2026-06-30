@@ -5,14 +5,283 @@ description: Portkey's AI gateway has MCP server support that many foundational 
 
 [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) is an open protocol that standardizes how applications provide tools and context to LLMs. The MCP tool in the Responses API allows developers to give the model access to tools hosted on **Remote MCP servers**. These are MCP servers maintained by developers and organizations across the internet that expose these tools to MCP clients, like the Responses API.
 
+## Two Ways to Use Remote MCP
+
+There are two ways to connect remote MCP servers through Portkey:
+
+1. **Portkey Gateway execution** — Prefix the MCP server with `@portkey-mcp` in the [Responses API](#responses-api) or [Messages API](#messages-api), and send the following header `x-portkey-beta: server-side-mcp-2026-06-01`. Portkey fetches and executes tools on your behalf.
+2. **Provider execution** — Pass a `server_url` directly in the [OpenAI](#openai) or [Anthropic](#anthropic) sections below. The upstream provider connects to and executes MCP tools on their servers.
+
+| | **Portkey Gateway (`@portkey-mcp`)** | **Provider Execution (`server_url`)** |
+| --- | --- | --- |
+| **Where tools run** | Securely within your own VPC | On provider servers (OpenAI, Anthropic, etc.) |
+| **Data exposure** | MCP credentials stay in your environment | Tokens may be exposed to provider training data and audit pipelines |
+| **User attribution** | Actions attributed via your service/user API key | No per-user attribution |
+| **Audit & logging** | MCP executions logged and available for audit | No execution logging or security controls |
+
 <Info>
 **Using a Private MCP Server?** If your MCP server is behind a firewall, on localhost, or not publicly accessible, the model provider won't be able to reach it. Check out our guide on [Using Private MCP Servers](/guides/use-cases/private-mcp-servers) to learn how to handle tool fetching and invocations on the client side.
 </Info>
 
-Portkey Supports using MCP server via the Response API. Calling a remote MCP server with the Responses API is straightforward. For example, here's how you can use the [DeepWiki](https://deepwiki.com/) MCP server to ask questions about nearly any public GitHub repository.
+## Responses API
+When using upstream inference providers like bedrock, vertex-ai that do not support executing MCP tools remotely, you can pass the prefix `@portkey-mcp` to the mcp tool server_label to execute the tool securely on the gateway and receive the response back from the gateway.
+
+<Note>
+Fields in the MCP tool object like `server_description`, `server_url`, `require_approval` are not supported when using the `@portkey-mcp` prefix; they are ignored if passed.
+</Note>
+
+<CodeGroup>
+```bash cURL
+curl --location 'https://api.portkey.ai/v1/responses' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-provider: @your-provider-slug' \
+--header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+--header 'x-portkey-beta: server-side-mcp-2026-06-01' \
+--data-raw '{
+    "model": "gpt-5.5",
+    "tools": [
+        {
+            "type": "mcp",
+            "server_label": "@portkey-mcp/your-mcp-server-label",
+            "allowed_tools": ["tool_name_1", "tool_name_2"] // Optional, default is all tools
+        }
+    ],
+    "input": "what is portkey gateway"
+}'
+```
+
+```javascript OpenAI Node SDK
+import OpenAI from "openai";
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const client = new OpenAI({
+  apiKey: "PORTKEY_API_KEY",
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "@your-provider-slug",
+    portkeyBeta: "server-side-mcp-2026-06-01",
+  })
+});
+
+const resp = await client.responses.create({
+  model: "gpt-5.5",
+  tools: [
+    {
+      type: "mcp",
+      server_label: "@portkey-mcp/your-mcp-server-label",
+      allowed_tools: ["tool_name_1", "tool_name_2"], // Optional, default is all tools
+    },
+  ],
+  input: "what is portkey gateway",
+});
+
+console.log(resp.output_text);
+```
+
+```python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+  api_key="PORTKEY_API_KEY",
+  base_url=PORTKEY_GATEWAY_URL,
+  default_headers=createHeaders(
+    provider="@your-provider-slug",
+    portkeyBeta="server-side-mcp-2026-06-01",
+  )
+)
+
+resp = client.responses.create(
+  model="gpt-5.5",
+  tools=[
+    {
+      "type": "mcp",
+      "server_label": "@portkey-mcp/your-mcp-server-label",
+      "allowed_tools": ["tool_name_1", "tool_name_2"],  # Optional, default is all tools
+    },
+  ],
+  input="what is portkey gateway",
+)
+
+print(resp.output_text)
+```
+
+```typescript Portkey Node SDK
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "@your-provider-slug",
+  portkeyBeta: "server-side-mcp-2026-06-01"
+});
+
+const resp = await portkey.responses.create({
+  model: "gpt-5.5",
+  tools: [
+    {
+      type: "mcp",
+      server_label: "@portkey-mcp/your-mcp-server-label",
+      allowed_tools: ["tool_name_1", "tool_name_2"], // Optional, default is all tools
+    },
+  ],
+  input: "what is portkey gateway",
+});
+
+console.log(resp.output_text);
+```
+
+```python Portkey Python SDK
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY",
+  provider="@your-provider-slug",
+  portkey_beta="server-side-mcp-2026-06-01"
+)
+
+resp = portkey.responses.create(
+  model="gpt-5.5",
+  tools=[
+    {
+      "type": "mcp",
+      "server_label": "@portkey-mcp/your-mcp-server-label",
+      "allowed_tools": ["tool_name_1", "tool_name_2"],  # Optional, default is all tools
+    },
+  ],
+  input="what is portkey gateway",
+)
+
+print(resp.output_text)
+```
+</CodeGroup>
 
 
-## OpenAI Responses API Remote MCP Support
+## Messages API
+When using upstream inference providers like bedrock, vertex-ai that do not support executing MCP tools remotely, you can pass the prefix `@portkey-mcp` to the mcp tool mcp_server_name to execute the tool securely on the gateway and receive the response back from the gateway.
+
+<CodeGroup>
+```bash cURL
+curl --location 'https://api.portkey.ai/v1/messages' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+--header 'x-portkey-beta: server-side-mcp-2026-06-01' \
+--data-raw '{
+    "messages": [
+        {
+            "role": "user",
+            "content": "what is Portkey-AI gateway repository?"
+        }
+    ],
+    "model": "@anthropic/claude-haiku-4-5",
+    "max_tokens": 10000,
+    "mcp_servers": [
+        {
+            "type": "url",
+            "url": "https://mcp.portkey.ai/server-name/mcp", // not required when using @portkey-mcp
+            "name": "@portkey-mcp/deepwiki"
+        }
+    ],
+    "tools": {
+        "type": "mcp_toolset",
+        "mcp_server_name": "@portkey-mcp/deepwiki",
+        "default_config": {
+            "enabled": true
+        },
+        "configs": {
+            "specific_tool_name": {
+                "enabled": true
+            }
+        }
+    },
+    "stream": false
+}'
+```
+
+```javascript Anthropic JS SDK
+import Anthropic from '@anthropic-ai/sdk'
+
+const client = new Anthropic({
+  apiKey: "PORTKEY_API_KEY",
+  baseURL: "https://api.portkey.ai",
+  defaultHeaders: {
+    "x-portkey-beta": "server-side-mcp-2026-06-01"
+  }
+})
+
+const message = await client.messages.create({
+  model: "@anthropic/claude-haiku-4-5",
+  max_tokens: 10000,
+  messages: [{
+    role: "user",
+    content: "what is Portkey-AI gateway repository?"
+  }],
+  mcp_servers: [{
+    type: "url",
+    name: "@portkey-mcp/deepwiki",
+    // url not required when using @portkey-mcp
+  }],
+  tools: {
+    type: "mcp_toolset",
+    mcp_server_name: "@portkey-mcp/deepwiki",
+    default_config: {
+      enabled: true
+    },
+    configs: {
+      specific_tool_name: {
+        enabled: true
+      }
+    }
+  },
+  stream: false
+})
+
+console.log(message.content)
+```
+
+```python Anthropic Python SDK
+import anthropic
+
+client = anthropic.Anthropic(
+  api_key="dummy",
+  default_headers={
+    "x-portkey-api-key": "PORTKEY_API_KEY",
+    "x-portkey-beta": "server-side-mcp-2026-06-01"
+  },
+  base_url="https://api.portkey.ai"
+)
+
+message = client.messages.create(
+  model="@anthropic/claude-haiku-4-5",
+  max_tokens=10000,
+  messages=[{
+    "role": "user",
+    "content": "what is Portkey-AI gateway repository?"
+  }],
+  mcp_servers=[{
+    "type": "url",
+    "name": "@portkey-mcp/deepwiki",
+    # url not required when using @portkey-mcp
+  }],
+  tools={
+    "type": "mcp_toolset",
+    "mcp_server_name": "@portkey-mcp/deepwiki",
+    "default_config": {
+      "enabled": True
+    },
+    "configs": {
+      "specific_tool_name": {
+        "enabled": True
+      }
+    }
+  },
+  stream=False
+)
+
+print(message.content)
+```
+</CodeGroup>
+
+## OpenAI
 
 A Responses API request to OpenAI with MCP tools enabled.
 
@@ -323,19 +592,7 @@ If you have MCP servers registered on Portkey's [MCP Gateway](/product/mcp-gatew
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-## Anthropic's Messages API MCP connector
+## Anthropic
 
 Claude's Model Context Protocol (MCP) connector feature enables you to connect to remote MCP servers directly from the Messages API without a separate MCP client.
 
@@ -539,31 +796,3 @@ Once you've obtained an access token using either OAuth flow above, you can use 
 ```
 
 For detailed explanations of the OAuth flow, refer to the [Authorization section](https://modelcontextprotocol.io/docs/concepts/authentication) in the MCP specification.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
