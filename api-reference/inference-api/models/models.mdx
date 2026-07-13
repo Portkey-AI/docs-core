@@ -5,7 +5,7 @@ openapi: get /models
 
 ## Endpoint Behavior
 
-The `GET /v1/models` endpoint behaves differently depending on whether your request carries provider routing signals (headers or config). Understanding this is important when you're deciding which model list your application should consume.
+The `GET /v1/models` endpoint behaves differently depending on whether your request carries a provider routing signal. Understanding this is important when deciding which model list your application should consume.
 
 ### Two response modes
 
@@ -14,7 +14,7 @@ The `GET /v1/models` endpoint behaves differently depending on whether your requ
     Returns the models configured in your Portkey **Model Catalog** — the ones your workspace can actually route to, including any custom models you've added.
   </Card>
   <Card title="Provider-backed" icon="cloud">
-    Proxies the request to the upstream provider's own `/v1/models` endpoint (e.g. OpenAI, Anthropic, Bedrock) and returns their live model list.
+    Proxies the request to the upstream provider's own `/v1/models` endpoint (e.g. OpenAI, Anthropic, Bedrock) and returns their live model list, normalized to the OpenAI models list format.
   </Card>
 </CardGroup>
 
@@ -22,9 +22,8 @@ The `GET /v1/models` endpoint behaves differently depending on whether your requ
 
 Portkey inspects your request for any of the following **provider signals**:
 
-- `x-portkey-provider` header
-- `x-portkey-virtual-key` header
-- `x-portkey-config` with `provider`, `virtual_key`, or `targets` set
+- `x-portkey-provider` header (e.g. `@openai-prod`)
+- `x-portkey-config` with `provider` or `targets` set
 
 | Provider signal present? | `fetch_integrated_models` set? | Response |
 | :-- | :-- | :-- |
@@ -44,7 +43,7 @@ When you send a provider signal (e.g. `x-portkey-provider: @openai-prod`), Portk
 
 ### Response format
 
-By default, Portkey normalizes the provider's response into the standard **OpenAI models list format** — the same shape as `openai.com/v1/models`:
+Portkey always normalizes the provider's response into the standard **OpenAI models list format** — the same shape as `openai.com/v1/models`. The `strict_open_ai_compliance` header/param is **not respected** on this endpoint; every supported provider returns the OpenAI-spec response by default.
 
 ```json
 {
@@ -61,15 +60,12 @@ By default, Portkey normalizes the provider's response into the standard **OpenA
 }
 ```
 
-To receive the **raw provider response** without normalization, set `strict_open_ai_compliance` to `false`. See [Strict OpenAI Compliance](/product/ai-gateway/strict-open-ai-compliance) for details.
-
 <CodeGroup>
 
 ```sh cURL
 curl https://api.portkey.ai/v1/models \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @anthropic-prod" \
-  -H "x-portkey-strict-open-ai-compliance: false"
+  -H "x-portkey-provider: @anthropic-prod"
 ```
 
 ```py Python
@@ -77,8 +73,7 @@ from portkey_ai import Portkey
 
 portkey = Portkey(
     api_key="PORTKEY_API_KEY",
-    provider="@anthropic-prod",
-    strict_open_ai_compliance=False
+    provider="@anthropic-prod"
 )
 
 models = portkey.models.list()
@@ -89,8 +84,7 @@ import Portkey from 'portkey-ai';
 
 const portkey = new Portkey({
   apiKey: 'PORTKEY_API_KEY',
-  provider: '@anthropic-prod',
-  strictOpenAiCompliance: false
+  provider: '@anthropic-prod'
 });
 
 const models = await portkey.models.list();
@@ -109,23 +103,21 @@ Native `listModels` support (with OpenAI-format normalization) is available for:
 - Google Vertex AI
 - AWS Bedrock
 
-For providers without a native `listModels` transform, the raw provider response is returned as-is.
-
 ---
 
 ## Integrated Mode Override
 
-Even when a provider signal is present, you can force Portkey to return your **integrated (model catalog) models** — the ones set up in your workspace — by using one of the following:
+Even when a provider signal is present, you can force Portkey to return your **integrated (Model Catalog) models** — the ones set up in your workspace — by using one of the following:
 
 <ResponseField name="x-portkey-fetch-integrated-models" type="boolean">
-  Header. Set to `true` to return integrated models even when a provider/virtual-key/config is passed on the request.
+  Header. Set to `true` to return integrated models even when a provider or config is passed on the request.
 </ResponseField>
 
 <ResponseField name="fetch_integrated_models" type="boolean">
   Config field. Set to `true` on your Portkey config to achieve the same effect.
 </ResponseField>
 
-When active, Portkey filters the integrated model list to only the provider slugs referenced in your routing config (including virtual keys and `@provider/model` overrides). If any leaf in the config uses `passthrough: true`, all integrated models are returned unfiltered.
+When active, Portkey filters the integrated model list to only the provider slugs referenced in your routing config (including `@provider/model` overrides). If any leaf in the config uses `passthrough: true`, all integrated models are returned unfiltered.
 
 <CodeGroup>
 
@@ -140,8 +132,8 @@ curl https://api.portkey.ai/v1/models \
 {
   "fetch_integrated_models": true,
   "targets": [
-    { "virtual_key": "openai-prod" },
-    { "virtual_key": "anthropic-prod" }
+    { "provider": "@openai-prod" },
+    { "provider": "@anthropic-prod" }
   ]
 }
 ```
@@ -160,4 +152,3 @@ Use this when your application logic depends on your workspace's curated model l
 | :-- | :-- |
 | Show the full list of models the provider currently offers | Provider-backed (default with a provider signal) |
 | Show only the models available in your Portkey workspace | Send no provider signal, **or** set `x-portkey-fetch-integrated-models: true` |
-| Get the untouched provider payload (extra fields, provider-specific metadata) | Provider-backed + `strict_open_ai_compliance: false` |
