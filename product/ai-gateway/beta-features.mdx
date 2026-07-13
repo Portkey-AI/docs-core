@@ -1,0 +1,125 @@
+---
+title: "Beta Features"
+description: "Opt into early-access Portkey gateway capabilities using the x-portkey-beta header."
+---
+
+Portkey ships certain new gateway capabilities as **opt-in beta features** before they are promoted to stable APIs. To activate a beta feature, include the `x-portkey-beta` header (or the equivalent SDK parameter) in your request with the feature's version string.
+
+```
+x-portkey-beta: <feature-version-string>
+```
+
+To enable **multiple beta features** at once, pass a comma-separated list:
+
+```
+x-portkey-beta: feature-one-2026-01-01, feature-two-2026-06-01
+```
+
+Once a feature is promoted to stable, the header becomes a no-op and can be safely removed.
+
+---
+
+## Currently Available Beta Features
+
+### Server-Side MCP Execution
+
+**Header value:** `server-side-mcp-2026-06-01`
+
+Enables Portkey to fetch and execute MCP tools on your behalf — directly inside the gateway — rather than delegating execution to the upstream provider. This is required whenever you use the `@portkey-mcp` prefix in the Responses API or Messages API.
+
+**When to use it**
+
+- You are routing through a provider that does **not** natively support remote MCP tool execution (e.g. AWS Bedrock, Google Vertex AI).
+- You want MCP credentials and tool invocations to stay within **your own VPC** and never touch provider infrastructure.
+- You need per-user attribution, audit logs, and full observability over every MCP tool call.
+
+**How to send the header**
+
+<CodeGroup>
+```bash cURL
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-beta: server-side-mcp-2026-06-01" \
+  -d '{
+    "model": "@your-provider-slug/your-model",
+    "tools": [
+      {
+        "type": "mcp",
+        "server_label": "@portkey-mcp/your-mcp-server-label"
+      }
+    ],
+    "input": "your prompt here"
+  }'
+```
+
+```javascript OpenAI Node SDK
+import OpenAI from "openai";
+import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai";
+
+const client = new OpenAI({
+  apiKey: "PORTKEY_API_KEY",
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "@your-provider-slug",
+    portkeyBeta: "server-side-mcp-2026-06-01",
+  }),
+});
+```
+
+```python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+client = OpenAI(
+  api_key="PORTKEY_API_KEY",
+  base_url=PORTKEY_GATEWAY_URL,
+  default_headers=createHeaders(
+    provider="@your-provider-slug",
+    portkey_beta="server-side-mcp-2026-06-01",
+  )
+)
+```
+
+```typescript Portkey Node SDK
+import Portkey from "portkey-ai";
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "@your-provider-slug",
+  portkeyBeta: "server-side-mcp-2026-06-01",
+});
+```
+
+```python Portkey Python SDK
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY",
+  provider="@your-provider-slug",
+  portkey_beta="server-side-mcp-2026-06-01",
+)
+```
+</CodeGroup>
+
+See the full [Remote MCP guide](/product/ai-gateway/remote-mcp) for complete request examples, authentication options, and a comparison of Portkey-side vs provider-side MCP execution.
+
+---
+
+## SDK Parameter Reference
+
+The `x-portkey-beta` HTTP header maps to the following SDK parameters:
+
+| SDK | Parameter name |
+| --- | --- |
+| Portkey Node SDK | `portkeyBeta` |
+| Portkey Python SDK | `portkey_beta` |
+| OpenAI Node SDK (via `createHeaders`) | `portkeyBeta` |
+| OpenAI Python SDK (via `createHeaders`) | `portkey_beta` |
+| cURL / raw HTTP | `x-portkey-beta` header |
+
+---
+
+<Info>
+Beta features may change before they are promoted to stable. Breaking changes within the same beta version string will not be made, but the stable API may look different. Check the [changelog](/changelog) for updates.
+</Info>

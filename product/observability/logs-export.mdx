@@ -93,6 +93,345 @@ With your exported logs data, you can:
 
 You can analyze your API usage patterns, monitor performance, optimize costs, and make data-driven decisions for your business or team.
 
+## Exporting logs via API
+
+You can programmatically export logs using the Log Export API. This follows an asynchronous workflow:
+
+1. **Create an export job** — Define your export parameters
+2. **Start the export** — Begin processing the export
+3. **Poll for status** — Check until the job completes
+4. **Download the file** — Retrieve the JSONL file via signed URL
+
+### Prerequisites
+
+- API key with `logs.export` scope enabled
+- For completion logs, the `completion` scope may also be required
+
+### Step 1: Create a log export
+
+Create an export job by specifying the time range and fields you want to export.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+export = client.logs.exports.create(
+    filters={
+        "created_at": {
+            "gte": "2024-01-01T00:00:00Z",
+            "lte": "2024-01-31T23:59:59Z"
+        }
+    },
+    requested_data=[
+        "id",
+        "trace_id",
+        "created_at",
+        "request",
+        "response",
+        "ai_provider",
+        "ai_model",
+        "request_tokens",
+        "response_tokens",
+        "total_tokens",
+        "cost",
+        "response_time",
+        "status_code"
+    ],
+    workspace_id="YOUR_WORKSPACE_ID"  # Optional
+)
+
+export_id = export.id
+print(f"Export created with ID: {export_id}")
+```
+
+```typescript Node.js
+import Portkey from "portkey-ai";
+
+const client = new Portkey({ apiKey: "YOUR_PORTKEY_API_KEY" });
+
+const exportJob = await client.logs.exports.create({
+  filters: {
+    created_at: {
+      gte: "2024-01-01T00:00:00Z",
+      lte: "2024-01-31T23:59:59Z",
+    },
+  },
+  requested_data: [
+    "id",
+    "trace_id",
+    "created_at",
+    "request",
+    "response",
+    "ai_provider",
+    "ai_model",
+    "request_tokens",
+    "response_tokens",
+    "total_tokens",
+    "cost",
+    "response_time",
+    "status_code",
+  ],
+  workspace_id: "YOUR_WORKSPACE_ID", // Optional
+});
+
+const exportId = exportJob.id;
+console.log(`Export created with ID: ${exportId}`);
+```
+
+```bash cURL
+curl -X POST "https://api.portkey.ai/v1/logs/exports" \
+  -H "x-portkey-api-key: YOUR_PORTKEY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filters": {
+      "created_at": {
+        "gte": "2024-01-01T00:00:00Z",
+        "lte": "2024-01-31T23:59:59Z"
+      }
+    },
+    "requested_data": [
+      "id",
+      "trace_id",
+      "created_at",
+      "request",
+      "response",
+      "ai_provider",
+      "ai_model",
+      "request_tokens",
+      "response_tokens",
+      "total_tokens",
+      "cost",
+      "response_time",
+      "status_code"
+    ]
+  }'
+```
+</CodeGroup>
+
+### Step 2: Start the export
+
+Once the export job is created, start processing it.
+
+<CodeGroup>
+```python Python
+client.logs.exports.start(export_id)
+print("Export job started")
+```
+
+```typescript Node.js
+await client.logs.exports.start(exportId);
+console.log("Export job started");
+```
+
+```bash cURL
+curl -X POST "https://api.portkey.ai/v1/logs/exports/{export_id}/start" \
+  -H "x-portkey-api-key: YOUR_PORTKEY_API_KEY"
+```
+</CodeGroup>
+
+### Step 3: Poll for completion
+
+Check the export status until it returns `success`.
+
+<CodeGroup>
+```python Python
+import time
+
+while True:
+    status = client.logs.exports.retrieve(export_id)
+    print(f"Status: {status.status}")
+    
+    if status.status == "success":
+        print("Export completed!")
+        break
+    elif status.status == "failure":
+        print(f"Export failed: {status.error}")
+        break
+    
+    time.sleep(5)  # Wait 5 seconds before polling again
+```
+
+```typescript Node.js
+const pollForCompletion = async (exportId: string) => {
+  while (true) {
+    const status = await client.logs.exports.retrieve(exportId);
+    console.log(`Status: ${status.status}`);
+
+    if (status.status === "success") {
+      console.log("Export completed!");
+      break;
+    } else if (status.status === "failure") {
+      console.log(`Export failed: ${status.error}`);
+      break;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds
+  }
+};
+
+await pollForCompletion(exportId);
+```
+
+```bash cURL
+curl "https://api.portkey.ai/v1/logs/exports/{export_id}" \
+  -H "x-portkey-api-key: YOUR_PORTKEY_API_KEY"
+```
+</CodeGroup>
+
+### Step 4: Download the export
+
+Once the export is complete, retrieve the signed download URL.
+
+<CodeGroup>
+```python Python
+download_response = client.logs.exports.download(export_id)
+download_url = download_response.url
+
+print(f"Download URL: {download_url}")
+
+# Download the file
+import requests
+
+response = requests.get(download_url)
+with open("logs_export.jsonl", "wb") as f:
+    f.write(response.content)
+
+print("Logs exported to logs_export.jsonl")
+```
+
+```typescript Node.js
+const downloadResponse = await client.logs.exports.download(exportId);
+const downloadUrl = downloadResponse.url;
+
+console.log(`Download URL: ${downloadUrl}`);
+
+// Download the file using fetch
+const fileResponse = await fetch(downloadUrl);
+const fileContent = await fileResponse.text();
+
+// Save to file (Node.js)
+import fs from "fs";
+fs.writeFileSync("logs_export.jsonl", fileContent);
+
+console.log("Logs exported to logs_export.jsonl");
+```
+
+```bash cURL
+# Get the download URL
+curl "https://api.portkey.ai/v1/logs/exports/{export_id}/download" \
+  -H "x-portkey-api-key: YOUR_PORTKEY_API_KEY"
+
+# Then download using the returned URL
+curl -o logs_export.jsonl "{signed_download_url}"
+```
+</CodeGroup>
+
+### Complete example
+
+Here's a complete script that creates, starts, monitors, and downloads a log export:
+
+<CodeGroup>
+```python Python
+import time
+import requests
+from portkey_ai import Portkey
+
+client = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+# Step 1: Create export
+export = client.logs.exports.create(
+    filters={
+        "created_at": {
+            "gte": "2024-01-01T00:00:00Z",
+            "lte": "2024-01-31T23:59:59Z"
+        }
+    },
+    requested_data=["id", "created_at", "ai_model", "total_tokens", "cost"]
+)
+export_id = export.id
+print(f"Created export: {export_id}")
+
+# Step 2: Start export
+client.logs.exports.start(export_id)
+print("Export started")
+
+# Step 3: Poll until complete
+while True:
+    status = client.logs.exports.retrieve(export_id)
+    if status.status == "success":
+        break
+    elif status.status == "failure":
+        raise Exception(f"Export failed: {status.error}")
+    time.sleep(5)
+
+# Step 4: Download
+download_url = client.logs.exports.download(export_id).url
+response = requests.get(download_url)
+with open("logs_export.jsonl", "wb") as f:
+    f.write(response.content)
+
+print("Export complete! File saved to logs_export.jsonl")
+```
+
+```typescript Node.js
+import Portkey from "portkey-ai";
+import fs from "fs";
+
+const client = new Portkey({ apiKey: "YOUR_PORTKEY_API_KEY" });
+
+async function exportLogs() {
+  // Step 1: Create export
+  const exportJob = await client.logs.exports.create({
+    filters: {
+      created_at: {
+        gte: "2024-01-01T00:00:00Z",
+        lte: "2024-01-31T23:59:59Z",
+      },
+    },
+    requested_data: ["id", "created_at", "ai_model", "total_tokens", "cost"],
+  });
+  const exportId = exportJob.id;
+  console.log(`Created export: ${exportId}`);
+
+  // Step 2: Start export
+  await client.logs.exports.start(exportId);
+  console.log("Export started");
+
+  // Step 3: Poll until complete
+  while (true) {
+    const status = await client.logs.exports.retrieve(exportId);
+    if (status.status === "success") break;
+    if (status.status === "failure") throw new Error(`Export failed: ${status.error}`);
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+
+  // Step 4: Download
+  const downloadUrl = (await client.logs.exports.download(exportId)).url;
+  const response = await fetch(downloadUrl);
+  const content = await response.text();
+  fs.writeFileSync("logs_export.jsonl", content);
+
+  console.log("Export complete! File saved to logs_export.jsonl");
+}
+
+exportLogs();
+```
+</CodeGroup>
+
+### API reference
+
+For detailed API specifications, see the [Log Exports API reference](/api-reference/admin-api/data-plane/logs/log-exports-beta/create-a-log-export).
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/logs/exports` | Create a new export job |
+| `POST /v1/logs/exports/{id}/start` | Start processing an export |
+| `GET /v1/logs/exports/{id}` | Retrieve export status |
+| `GET /v1/logs/exports/{id}/download` | Get signed download URL |
+| `GET /v1/logs/{id}` | Fetch a single log entry |
+
 ## Support
 
 If you have any questions or need assistance with the logs export feature, reach out to the Portkey team at [support@portkey.ai](mailto:support@portkey.ai) or join our [Discord community](https://portkey.ai/community).

@@ -187,7 +187,7 @@ This route only works with Claude models on Bedrock. For other models, use the s
         client = anthropic.Anthropic(
             api_key="dummy", # we will use portkey's provider slug
             default_headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"},
-            base_url="https://api.portkey.ai/v1"
+            base_url="https://api.portkey.ai"
         )
         message = client.messages.create(
             model="@your-provider-slug/your-model-name",
@@ -232,6 +232,137 @@ For more info, check out this guide:
 
 [Vision](/product/ai-gateway/multimodal-capabilities/vision)
 
+### Using S3 URIs in Chat Completions
+
+Portkey supports S3 URIs directly in the `image_url` field for chat completions. This allows you to reference files stored in S3 without needing to convert them to base64.
+
+<Note>
+When using S3 URIs, the `mime_type` parameter is **required**. The gateway cannot infer the MIME type from an S3 URI, so you must specify it explicitly.
+</Note>
+
+<Tabs>
+    <Tab title="Python SDK">
+        ```python
+        from portkey_ai import Portkey
+
+        portkey = Portkey(
+            api_key="PORTKEY_API_KEY",
+            provider="@PROVIDER"
+        )
+
+        response = portkey.chat.completions.create(
+            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "What's in this image?"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "s3://your-bucket/path/to/image.png",
+                                "mime_type": "image/png",  # Required for S3 URIs
+                                "bucketOwner": "123456789012"  # Optional: AWS account ID of the bucket owner
+                            }
+                        }
+                    ]
+                }
+            ]
+        )
+        ```
+    </Tab>
+    <Tab title="NodeJS SDK">
+        ```javascript
+        import Portkey from 'portkey-ai';
+
+        const portkey = new Portkey({
+            apiKey: "PORTKEY_API_KEY",
+            provider: "@PROVIDER"
+        });
+
+        const response = await portkey.chat.completions.create({
+            model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            max_tokens: 1024,
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "text",
+                            text: "What's in this image?"
+                        },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: "s3://your-bucket/path/to/image.png",
+                                mime_type: "image/png",  // Required for S3 URIs
+                                bucketOwner: "123456789012"  // Optional: AWS account ID of the bucket owner
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+        ```
+    </Tab>
+    <Tab title="cURL">
+        ```sh
+        curl "https://api.portkey.ai/v1/chat/completions" \
+          -H "Content-Type: application/json" \
+          -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+          -H "x-portkey-provider: @your-bedrock-provider-slug" \
+          -d '{
+            "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "max_tokens": 1024,
+            "messages": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "What is in this image?"
+                  },
+                  {
+                    "type": "image_url",
+                    "image_url": {
+                      "url": "s3://your-bucket/path/to/image.png",
+                      "mime_type": "image/png",
+                      "bucketOwner": "123456789012"
+                    }
+                  }
+                ]
+              }
+            ]
+          }'
+        ```
+    </Tab>
+</Tabs>
+
+#### S3 URI Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `url` | string | Yes | The S3 URI (e.g., `s3://bucket-name/path/to/file.png`) |
+| `mime_type` | string | Yes | The MIME type of the file (see supported formats below) |
+| `bucketOwner` | string | No | The AWS account ID of the bucket owner. Required for cross-account S3 access. |
+
+#### Supported Image Formats for S3 URIs
+
+| Format | MIME Type |
+|--------|-----------|
+| PNG | `image/png` |
+| JPEG | `image/jpeg` |
+| GIF | `image/gif` |
+| WebP | `image/webp` |
+
+<Note>
+Ensure your Bedrock IAM role has the necessary S3 permissions (`s3:GetObject`) to access the referenced objects.
+</Note>
+
 ## Extended Thinking (Reasoning Models) (Beta)
 
 <Note>
@@ -242,6 +373,24 @@ Models like `us.anthropic.claude-3-7-sonnet-20250219-v1:0` support [extended thi
 This is similar to openai thinking, but you get the model's reasoning as it processes the request as well.
 
 Note that you will have to set [`strict_open_ai_compliance=False`](/product/ai-gateway/strict-open-ai-compliance) in the headers to use this feature.
+
+### Using `reasoning_effort` parameter
+
+You can also use the OpenAI-compatible `reasoning_effort` parameter as a drop-in alternative to `thinking.budget_tokens`:
+
+```python
+response = portkey.chat.completions.create(
+  model="us.anthropic.claude-sonnet-4-6-20250929-v1:0",
+  max_tokens=3000,
+  reasoning_effort="medium",  # Options: "none", "minimal", "low", "medium", "high"
+  messages=[{"role": "user", "content": "Explain quantum computing"}]
+)
+```
+
+- **Claude Opus 4.6 / Sonnet 4.6**: `reasoning_effort` enables [adaptive thinking](https://platform.claude.com/docs/en/build-with-claude/effort#effort-with-extended-thinking) (`thinking.type = "adaptive"`) — Claude decides the thinking budget automatically.
+- **Other Claude reasoning models**: `reasoning_effort` is converted to `thinking.budget_tokens` as a ratio of `max_tokens` (minimal 10%, low 20%, medium 50%, high 80%), with a minimum of 1024 tokens. `max_tokens` must be greater than 1024.
+- `reasoning_effort: "none"` disables extended thinking.
+- An explicit `thinking` object in the request always takes precedence over `reasoning_effort`.
 
 ### Single turn conversation
 <CodeGroup>

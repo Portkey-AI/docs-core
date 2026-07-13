@@ -3,7 +3,7 @@ title: Bring Your Own Auth
 description: Use your own identity provider for gateway authentication.
 ---
 
-External OAuth enables using your existing identity provider (Okta, Auth0, Azure AD, Cognito) instead of Portkey's built-in authentication. Users authenticate with corporate credentials—no Portkey accounts needed.
+External OAuth enables using your existing identity provider (Okta, Auth0, Azure AD, Descope, Cognito) instead of Portkey's built-in authentication. Users authenticate with corporate credentials—no Portkey accounts needed.
 
 ## When to Use
 
@@ -21,14 +21,15 @@ Common scenarios:
 ## How It Works
 
 ```
-1. User authenticates with your IdP
-2. IdP issues a JWT (or opaque token)
-3. User includes token in MCP requests to Portkey
-4. Portkey validates token against your IdP
-5. Request proceeds with user identity attached
+1. The request authenticates to the Portkey gateway
+   (Portkey API key, or a JWT carrying Portkey org claims)
+2. User authenticates with your IdP and obtains a token (JWT or opaque)
+3. User includes that token in the MCP request to Portkey
+4. Portkey validates the token against your IdP (JWKS or introspection)
+5. Request proceeds with the user identity attached
 ```
 
-Portkey never handles user credentials. Your IdP remains the source of truth for identity.
+Step 1 establishes your organization context; the `jwt_validation` in step 4 is a per-server check layered on top of it. Portkey never handles user credentials—your IdP remains the source of truth for identity.
 
 ---
 
@@ -64,19 +65,29 @@ For opaque tokens requiring real-time validation, or for immediate revocation.
 {
   "jwt_validation": {
     "introspectEndpoint": "https://your-idp.com/oauth/introspect",
-    "introspectCacheMaxAge": 300
+    "introspectContentType": "application/x-www-form-urlencoded",
+    "introspectClientId": "<client-id>",
+    "introspectClientSecret": "<client-secret>",
+    "headerKey": "X-Auth-Token",
+    "introspectCacheMaxAge": 0
   }
 }
 ```
 
 **How it works:**
-- Portkey calls your IdP's introspection endpoint
-- Response is cached for the configured duration (default: no caching)
-- With `introspectCacheMaxAge: 300`, results are cached for 5 minutes
+- The request authenticates to the gateway first (Portkey API key or org-claim JWT); introspection runs **after** that step.
+- Portkey reads the end-user's opaque token from the header named by `headerKey` (default: `Authorization`). Use a dedicated header such as `X-Auth-Token` so it doesn't collide with the gateway credential.
+- Portkey POSTs to your `introspectEndpoint` per [RFC 7662](https://datatracker.ietf.org/doc/html/rfc7662): the token in the request body as `token=…`, and—when `introspectClientId`/`introspectClientSecret` are set—an `Authorization: Basic base64(client_id:client_secret)` header to identify Portkey to your endpoint.
+- Your endpoint must return `{ "active": true, ... }`. Include a `sub` claim so the user is attributed correctly in logs and analytics.
+- Responses are cached for `introspectCacheMaxAge` seconds (default: `0`, no caching).
 
 **Caching tradeoff:**
-- No cache: Every request calls introspection endpoint (slower, but immediate revocation)
-- With cache: Better performance, but revocation takes up to cache TTL to take effect
+- `0` (no cache): Every request calls the introspection endpoint (slower, but immediate revocation)
+- `> 0`: Better performance, but revocation takes up to the cache TTL to take effect
+
+<Note>
+Token introspection validates the **end-user's** token; it does **not** authenticate the gateway. You still need a Portkey API key or an org-claim JWT on the request (see the callout at the top of this page). An opaque token on its own is not sufficient.
+</Note>
 
 See [JWT Validation](/product/mcp-gateway/authentication/jwt) for full configuration options.
 
@@ -84,7 +95,7 @@ See [JWT Validation](/product/mcp-gateway/authentication/jwt) for full configura
 
 ## Client Configuration
 
-Agents include the IdP token instead of a Portkey API key:
+Every request needs a **gateway credential** (a Portkey API key or an org-claim JWT) so Portkey can resolve your organization. When you use token introspection, the **end-user token** goes in a separate header—the one you set as `headerKey`:
 
 ```json
 {
@@ -92,23 +103,27 @@ Agents include the IdP token instead of a Portkey API key:
     "linear": {
       "url": "https://mcp.portkey.ai/linear/mcp",
       "headers": {
-        "Authorization": "Bearer eyJhbGciOiJSUzI1NiIs..."
+        "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+        "X-Auth-Token": "opaque-or-idp-token..."
       }
     }
   }
 }
 ```
 
+If your IdP issues **JWTs that already carry Portkey org claims** (`portkey_oid` / `organisation_id`, `portkey_workspace` / `workspace_slug`), you can pass that JWT in `x-portkey-api-key` and it serves as the gateway credential on its own—see [Organization JWT Authentication](/product/enterprise-offering/org-management/jwt). In that case no separate Portkey API key is required.
+
 Or in code:
 
 <Tabs>
   <Tab title="Python">
 ```python
-# Get token from your IdP (example using OIDC)
+# Get the end-user token from your IdP (example using OIDC)
 token = get_idp_token()  # Your IdP client
 
 headers = {
-    "Authorization": f"Bearer {token}",
+    "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",  # gateway credential
+    "X-Auth-Token": token,                         # end-user token (introspected)
 }
 
 async with streamablehttp_client(
@@ -120,13 +135,14 @@ async with streamablehttp_client(
   </Tab>
   <Tab title="TypeScript">
 ```typescript
-// Get token from your IdP
+// Get the end-user token from your IdP
 const token = await getIdpToken();  // Your IdP client
 
 const client = new MCPClient({
   url: "https://mcp.portkey.ai/linear/mcp",
   headers: {
-    Authorization: `Bearer ${token}`,
+    "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",  // gateway credential
+    "X-Auth-Token": token,                         // end-user token (introspected)
   },
 });
 ```
@@ -192,6 +208,27 @@ See [Identity Forwarding](/product/mcp-gateway/authentication/identity-forwardin
 ---
 
 ## IdP-Specific Examples
+
+### Descope
+
+1. Create a project in the [Descope Console](https://app.descope.com)
+2. Note your Project ID (found in **[Project Settings](https://app.descope.com/settings/project)**)
+3. Enable DCR, under DCR Settings under Inbound Applications
+
+```json
+{
+  "jwt_validation": {
+    "jwksUri": "https://api.descope.com/{project-id}/.well-known/jwks.json",
+    "algorithms": ["RS256"],
+    "claimValues": {
+      "iss": {
+        "values": "https://api.descope.com/v1/apps/{project-id}",
+        "matchType": "exact"
+      }
+    }
+  }
+}
+```
 
 ### Okta
 
@@ -326,6 +363,10 @@ Configure the IdP to issue short-lived access tokens (15-60 minutes). This limit
 ---
 
 ## Troubleshooting
+
+### 401 Unauthorized when sending only an end-user token
+
+If you send only an opaque (or IdP) token with no Portkey API key and no org-claim JWT, the gateway can't resolve your organization, so it rejects the request *before* introspection runs (your introspection endpoint is never called, and the client may fall into a browser OAuth prompt). Add a gateway credential—`x-portkey-api-key` or an org-claim JWT—and pass the end-user token in the `headerKey` header.
 
 ### "Invalid issuer" Error
 

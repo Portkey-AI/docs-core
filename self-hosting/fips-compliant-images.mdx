@@ -1,0 +1,53 @@
+---
+title: "FIPS-Compliant Images"
+description: "FIPS 140-3 compliant container images for the Portkey Enterprise Gateway and Data Service"
+---
+
+<Info>
+  FIPS-compliant images are available on the **Enterprise** plan. Contact your
+  Portkey representative or [support@portkey.ai](mailto:support@portkey.ai) to
+  receive access to the FIPS image registry.
+</Info>
+
+Portkey publishes FIPS-compliant container image variants for the **Enterprise Gateway** and the **Data Service** for customers operating under FIPS 140-3 / FedRAMP requirements. The FIPS images are functionally identical to the standard images, with the following differences:
+
+- The container runs Node.js with the OpenSSL FIPS provider enabled.
+- Cryptographic primitives used internally (e.g. SHA-256 for AWS request signing) are routed through FIPS-validated providers — the Data Service uses [`@smithy/hash-node`](https://www.npmjs.com/package/@smithy/hash-node) instead of the default JS hashing path.
+- The base image and dependencies are pinned to FIPS-validated versions.
+
+## Components with FIPS images
+
+| Component                 | First available in              | Notes                                            |
+| ------------------------- | ------------------------------- | ------------------------------------------------ |
+| Data Service              | [v1.7.1](/changelog/data-service#v1-7-1) | Separate FIPS Dockerfile; FIPS-validated SHA-256 used for AWS signing |
+| Enterprise Gateway        | Available on request            | FIPS image variant published alongside the standard release |
+
+## Deploying via Helm
+
+The standard Portkey Helm chart accepts the FIPS image references through the existing `*Image.repository` / `*Image.tag` values — point them at the FIPS image registry provided by Portkey:
+
+```yaml
+images:
+  gatewayImage:
+    repository: "<FIPS_REGISTRY>/gateway-enterprise"
+    tag: "<FIPS_TAG>"
+  dataserviceImage:
+    repository: "<FIPS_REGISTRY>/data-service"
+    tag: "<FIPS_TAG>"
+```
+
+No other chart values need to change. Existing `LOG_STORE`, virtual-key, config, and observability settings continue to apply.
+
+## Verifying FIPS mode
+
+After deploying, you can confirm FIPS mode is active by checking the OpenSSL providers loaded inside the container:
+
+```sh
+kubectl exec -n portkey deploy/portkey-gateway -- node -e "console.log(crypto.getFips())"
+```
+
+A return value of `1` indicates FIPS is enabled.
+
+## Support
+
+For access to the FIPS image registry, validation reports, or compliance documentation, reach out to the Portkey team at [support@portkey.ai](mailto:support@portkey.ai).

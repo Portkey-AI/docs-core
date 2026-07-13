@@ -1,0 +1,395 @@
+---
+title: "Request Parameters Check"
+description: "Allow or block tools, top-level request keys, and specific parameter values on inbound LLM requests."
+---
+
+The **Request Parameters Check** is a BASIC deterministic guardrail that inspects the incoming request body and enforces allow/block rules on:
+
+- **Tools** declared in the request (`tools[].type`, `tools[].function.name`, `tools[].name`)
+- **Top-level request parameter keys** (e.g. `stream`, `temperature`, `tools`, `logprobs`)
+- **Values** for specific top-level parameters (e.g. `model=gpt-4o`, `stream=true`)
+
+If any rule is violated, the guardrail returns a failure verdict with a structured explanation of what was blocked and why. The gateway then denies or flags the request based on the action configured on your Guardrail.
+
+This guardrail runs on **input only** (`beforeRequestHook`).
+
+## Using Request Parameters Check in Portkey
+
+### 1. Add the Request Parameters Check
+
+* Navigate to the `Guardrails` page and click the `Create` button
+* Search for "Request Parameters Check" in the BASIC category and click `Add`
+* Configure the check (all fields are optional - leave a list empty to skip that constraint):
+
+  **Tools**
+  * **Allowed Types** - strict allow list of tool `type` values (e.g. `function`, `web_search_preview`, `web_search`, `file_search`, `code_interpreter`, `computer_use`, `mcp`)
+  * **Blocked Types** - tool `type` values to reject
+  * **Allowed Function Names** - strict allow list for `tool.function.name` / `tool.name`
+  * **Blocked Function Names** - function names to reject
+
+  **Params**
+  * **Allowed Keys** - strict allow list of top-level keys in the request body
+  * **Blocked Keys** - top-level keys to reject
+  * **Values** - per-parameter rules. For each parameter (e.g. `model`, `stream`, `temperature`) you can set `allowedValues` and/or `blockedValues`. Values must be primitives (string, number, or boolean).
+
+* Set any `actions` you want on your check, and create the Guardrail!
+
+<Note>
+Guardrail Actions let you orchestrate your guardrail's behaviour (deny, feedback, etc.). Learn more about them [here](/product/guardrails#there-are-6-types-of-guardrail-actions).
+</Note>
+
+| Check Name | Description | Parameters | Supported Hooks |
+| :--- | :--- | :--- | :--- |
+| Request Parameters Check | Allow/block tools, top-level request keys, and specific parameter values | `tools` (object), `params` (object) | `beforeRequestHook` |
+
+### 2. Add Guardrail ID to a Config and Make Your Request
+
+* When you save the Guardrail, you'll get an associated Guardrail ID - add this ID to the `input_guardrails` param in your Portkey Config
+* Create the Config in the Portkey UI, save it, and attach its Config ID to your requests. [More here](/product/ai-gateway/configs).
+
+Example config:
+
+```json
+{
+  "input_guardrails": ["guardrails-id-xxx"]
+}
+```
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***"
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***"
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+
+```js
+const openai = new OpenAI({
+  apiKey: 'OPENAI_API_KEY',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    config: "CONFIG_ID"
+  })
+});
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```py
+client = OpenAI(
+    api_key="OPENAI_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY",
+        config="CONFIG_ID"
+    )
+)
+```
+  </Tab>
+  <Tab title="cURL">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [{ "role": "user", "content": "Hello!" }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+Your requests are now guarded by the Request Parameters Check, and you can see the verdict and any action taken directly in your Portkey logs.
+
+---
+
+## Configuration reference
+
+The guardrail accepts the following parameter shape. Every field is optional; an empty config is a no-op. Values in `<...>` are placeholders describing the expected type, not literal strings.
+
+```json
+{
+  "tools": {
+    "blockedTypes":         ["<string>"],
+    "allowedTypes":         ["<string>"],
+    "blockedFunctionNames": ["<string>"],
+    "allowedFunctionNames": ["<string>"]
+  },
+  "params": {
+    "blockedKeys":          ["<string>"],
+    "allowedKeys":          ["<string>"],
+    "values": {
+      "<paramName>": {
+        "blockedValues":    ["<string | number | boolean>"],
+        "allowedValues":    ["<string | number | boolean>"]
+      }
+    }
+  }
+}
+```
+
+A concrete example:
+
+```json
+{
+  "params": {
+    "values": {
+      "model":      { "allowedValues": ["gpt-4o", "gpt-4o-mini"] },
+      "stream":     { "blockedValues": [true] },
+      "max_tokens": { "allowedValues": [256, 512, 1024, 2048] }
+    }
+  }
+}
+```
+
+The name of a tool is resolved as `tool.function?.name || tool.name || tool.type`, so both OpenAI-style (`{ type: 'function', function: { name: 'getWeather' } }`) and Responses-API-style (`{ type: 'web_search_preview' }`) tools work consistently.
+
+### Allow vs. block behaviour
+
+| List | Behaviour |
+| :--- | :--- |
+| `blocked*` | Deny list. Matching items are flagged. |
+| `allowed*` | Strict allow list. If the list is non-empty, items **not** in it are flagged. If empty or omitted, there is no allow-list constraint on that axis (it does not mean "block everything"). |
+
+Tools and params are evaluated independently, and a single item can be flagged for multiple reasons (e.g. `type_blocked` and `name_not_allowed`).
+
+### Scope
+
+* Only **top-level** keys of the request JSON are inspected for params - nested objects and arrays are not walked.
+* Only entries in the request's `tools` array are inspected for tool rules.
+* Value comparisons use strict equality and are intended for primitives (`string`, `number`, `boolean`).
+
+<Note>
+If the same entry appears in both a blocked and an allowed list (e.g. in `blockedTypes` and `allowedTypes`), the guardrail returns a configuration conflict error. Remove the duplicate from either list.
+</Note>
+
+---
+
+## Common recipes
+
+### Allow only function calling, block web/code/computer tools
+
+Your security policy forbids auto-browsing, file uploads, code interpreter, and computer-use agents.
+
+```json
+{
+  "tools": { "allowedTypes": ["function"] }
+}
+```
+
+### Block specific sensitive functions
+
+Your agents expose many tools but some (shell execution, DB writes, payments) must be off-limits for this consumer / virtual key.
+
+```json
+{
+  "tools": {
+    "blockedFunctionNames": ["executeShell", "dropTable", "chargeCard", "deleteUser"]
+  }
+}
+```
+
+### Allow list a fixed toolset for a regulated workflow
+
+Only a small, audited set of functions is permitted.
+
+```json
+{
+  "tools": {
+    "allowedTypes": ["function"],
+    "allowedFunctionNames": ["lookupCustomer", "createTicket", "sendKYCReminder"]
+  }
+}
+```
+
+### Force non-streaming responses
+
+Your proxy, logging, or guardrail pipeline cannot handle SSE, so `stream: true` must never reach the provider.
+
+```json
+{
+  "params": {
+    "values": {
+      "stream": { "blockedValues": [true] }
+    }
+  }
+}
+```
+
+### Block Anthropic fast-mode (`speed: "fast"`)
+
+Anthropic's fast-mode beta exposes a top-level `speed` parameter (e.g. `"speed": "fast"` alongside the `anthropic-beta: fast-mode-…` header). Block the value to stop it from reaching the provider while still allowing standard requests through:
+
+```json
+{
+  "params": {
+    "values": {
+      "speed": { "blockedValues": ["fast"] }
+    }
+  }
+}
+```
+
+To reject the key entirely - useful if you don't want callers touching that knob at all - use `blockedKeys` instead:
+
+```json
+{
+  "params": {
+    "blockedKeys": ["speed"]
+  }
+}
+```
+
+The same pattern works for any other provider-specific primitive field, such as `thinking`, `safety_identifier`, `service_tier`, etc.
+
+### Pin the model to an approved list
+
+Only approved, contracted models are allowed on this key.
+
+```json
+{
+  "params": {
+    "values": {
+      "model": {
+        "allowedValues": ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022"]
+      }
+    }
+  }
+}
+```
+
+### Enforce safety settings
+
+Prevent callers from loosening safety, sampling, or privacy knobs.
+
+```json
+{
+  "params": {
+    "values": {
+      "temperature":         { "allowedValues": [0, 0.2, 0.5, 0.7] },
+      "top_p":               { "allowedValues": [1] },
+      "store":               { "blockedValues": [true] },
+      "logprobs":            { "blockedValues": [true] },
+      "parallel_tool_calls": { "blockedValues": [true] }
+    }
+  }
+}
+```
+
+### Strict parameter allow list (zero-trust body)
+
+Callers can only send a minimal, audited set of fields - anything extra is rejected until explicitly approved.
+
+```json
+{
+  "params": {
+    "allowedKeys": ["model", "messages", "temperature", "max_tokens", "user"]
+  }
+}
+```
+
+### Block dangerous parameter keys
+
+Disable experimental or high-risk fields without enumerating everything you *do* allow.
+
+```json
+{
+  "params": {
+    "blockedKeys": ["logit_bias", "seed", "tool_choice", "tools", "functions"]
+  }
+}
+```
+
+### Cap output length via an allowed-tier list
+
+`blockedValues` and `allowedValues` operate on exact primitives, so true numeric ranges must be modeled as an enumeration.
+
+```json
+{
+  "params": {
+    "values": {
+      "max_tokens": { "allowedValues": [256, 512, 1024, 2048] }
+    }
+  }
+}
+```
+
+<Note>
+For arbitrary numeric ranges (e.g. `max_tokens <= 2048`), pair this guardrail with a custom plugin or upstream validation. Range comparisons are not supported natively.
+</Note>
+
+### Combining tool and param rules
+
+Tools and params are evaluated independently in the same verdict.
+
+```json
+{
+  "tools": {
+    "allowedTypes": ["function"],
+    "blockedFunctionNames": ["executeShell"]
+  },
+  "params": {
+    "blockedKeys": ["logit_bias"],
+    "values": {
+      "model":  { "allowedValues": ["gpt-4o", "gpt-4o-mini"] },
+      "stream": { "blockedValues": [true] }
+    }
+  }
+}
+```
+
+---
+
+## Verdict payload
+
+When the guardrail denies a request, the failure payload in `hook_results` contains:
+
+* `blockedToolsFound` - tools that violated a rule, each with `type`, `name`, and one or more `reasons`
+* `blockedParamsFound` - params that violated a rule, each with `param`, `value` (if any), and one or more `reasons`
+* `explanation` - a human-readable summary, e.g. `Blocked tools: "executeShell" (function name is blocked). Blocked params: "stream"=true (value is blocked)`
+
+### Reason codes
+
+| Category | Code | Meaning |
+| :--- | :--- | :--- |
+| Tool | `type_blocked` | `tool.type` is in `tools.blockedTypes` |
+| Tool | `name_blocked` | `tool.function.name` / `tool.name` is in `tools.blockedFunctionNames` |
+| Tool | `type_not_allowed` | `tools.allowedTypes` is set and `tool.type` is not in it |
+| Tool | `name_not_allowed` | `tools.allowedFunctionNames` is set and the name is not in it |
+| Param | `key_blocked` | Top-level key is in `params.blockedKeys` |
+| Param | `key_not_allowed` | `params.allowedKeys` is set and the key is not in it |
+| Param | `value_blocked` | Value is in `params.values[key].blockedValues` |
+| Param | `value_not_allowed` | `params.values[key].allowedValues` is set and the value is not in it |
+
+### Decision matrix
+
+| `blocked*` present | `allowed*` present | Result |
+| :--- | :--- | :--- |
+| No  | No  | No constraint on this axis |
+| Yes | No  | Everything passes except blocked entries |
+| No  | Yes | Only entries in the allow list pass |
+| Yes | Yes | Entries must be in the allow list **and** not in the block list |
+
+---
+
+## Get Support
+
+If you face any issues with the Request Parameters Check guardrail, join the [Portkey community forum](https://discord.gg/portkey-llms-in-prod-1143393887742861333) for assistance.

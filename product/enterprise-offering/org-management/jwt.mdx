@@ -7,10 +7,12 @@ description: Configure JWT-based authentication for your organization in Portkey
   This feature is available only on the [Enterprise Plan](/product/enterprise-offering) of Portkey.
 </Info>
 
-Portkey supports JWT-based authentication in addition to API Key authentication. Clients can authenticate API requests using a JWT token, which is validated against a configured JWKS (JSON Web Key Set).
+Portkey supports JWT-based authentication in addition to API key authentication. Clients send a JWT in `x-portkey-api-key` or `Authorization: Bearer`; the token is validated against JWKS configured on the organisation.
+
+**Portkey Cloud** validates JWTs on the control plane. **[Hybrid](/self-hosting/hybrid-deployments/architecture) and [air-gapped](/self-hosting/airgapped/model-pricing) deployments** can optionally enable **gateway-local JWT authentication** so the AI Gateway validates tokens locally instead of delegating every request to the control plane.
 
 <Card href="/product/guardrails/list-of-guardrail-checks#basic-%E2%80%94-deterministic-guardrails" title="Validate JWT Token (Guardrail)">
-    Validate your JWT Token before making a LLM request using Portkey.
+    Optionally validate JWTs inside a config's hook pipeline using the JWT guardrail plugin. This is separate from gateway-local JWT auth, which replaces API key validation at the gateway.
 </Card>
 
 ## Configuring JWT Authentication
@@ -57,8 +59,12 @@ Your JWT payload must contain the following claims:
 | `scope` / `scopes`                   | Permissions granted by the token.                |
 | `exp`                                | Expiration time (as a UNIX timestamp, in seconds). |
 
-- `exp` is mandatory. Tokens without `exp` or with expired `exp` are rejected.
+- `exp` is mandatory. Tokens without `exp` or with expired `exp` are rejected. A small amount of clock skew is tolerated.
 - `iat` and/or `nbf` are recommended but optional.
+
+<Note>
+On Portkey Cloud, `portkey_oid` and `portkey_workspace` are required. In [gateway-local JWT auth](#gateway-local-jwt-authentication), org and workspace can be resolved from deployment configuration when you use a standard IdP token - see [Integration modes](#integration-modes).
+</Note>
 
 ### Optional Claims
 
@@ -183,19 +189,23 @@ If you prefer Python for signing, you can generate the RSA key pair using your p
 
 ## Authentication Process
 
-1. The client sends an HTTP request with the JWT in the `x-portkey-api-key` header:
+1. The client sends the JWT in `x-portkey-api-key` or `Authorization: Bearer`:
 
    ```http
    x-portkey-api-key: <JWT_TOKEN>
    ```
 
-2. The server validates the JWT:
-   - Verifies the signature using the JWKS.
-   - Checks if the token is expired.
-   - Ensures the required claims are present.
+   If `x-portkey-api-key` is absent, `Authorization` is used.
 
-3. If valid, the request is authenticated, and user details are extracted for authorization and logging.
-4. If invalid, the request is rejected with an HTTP **401 Unauthorized** response.
+2. The gateway or control plane validates the JWT:
+   - Verifies the signature using the organisation JWKS.
+   - Checks token expiry.
+   - Ensures required claims are present.
+
+3. If valid, the request is authenticated and user details are extracted for authorization and logging.
+4. If invalid, the request is rejected. Common responses include **401 Unauthorized** (invalid or expired token), **403 Forbidden** (scope or workspace not allowed), **412** (usage limit exceeded), and **429** (rate limit exceeded).
+
+On hybrid and air-gapped gateways with `JWT_ENABLED=ON`, validation runs locally on the gateway. Otherwise, JWT-shaped tokens are validated by the control plane.
 
 ## Authorization & Scopes
 
@@ -320,7 +330,7 @@ Scopes can also be prefixed with `portkey.` (e.g., `portkey.completions.write`).
 
 ## Embedding Default Configs in JWT
 
-You can embed a default [config](/product/ai-gateway/configs) directly in the JWT payload using the `defaults` claim. This works the same way as [attaching default configs to API keys](/product/administration/enforce-default-config), but lets you control it per-token — useful when different users or services need different routing rules.
+You can embed a default [config](/product/ai-gateway/configs) directly in the JWT payload using the `defaults` claim. This works the same way as [attaching default configs to API keys](/product/administration/enforce-default-config), but lets you control it per-token - useful when different users or services need different routing rules.
 
 The `defaults` object supports the following fields:
 
@@ -332,7 +342,7 @@ The `defaults` object supports the following fields:
 When a JWT with a `defaults.config_id` is used, Portkey validates that the config belongs to the same organization before applying it. If the config is not found or doesn't belong to the org, the default is ignored.
 
 <Note>
-  This follows the same precedence rules as API key default configs — if a user explicitly passes a config ID in their request headers, it will override the JWT default unless config override is disabled at the workspace level.
+  This follows the same precedence rules as API key default configs - if a user explicitly passes a config ID in their request headers, it will override the JWT default unless config override is disabled at the workspace level.
 </Note>
 
 ### Example JWT Payload with Defaults
@@ -510,7 +520,7 @@ main();
 
 - **Wrong algorithm**: Only `RS256` is accepted; `HS256` or others will fail.
 - **Missing or mismatched `kid`**: Your JWT header must include a `kid` that matches a key in the JWKS.
-- **Incorrect header usage**: Send the raw JWT in `x-portkey-api-key` without a `Bearer ` prefix.
+- **Incorrect header usage**: Send the raw JWT in `x-portkey-api-key`, or use `Authorization: Bearer <JWT>`. Do not prefix the token with `Bearer` in `x-portkey-api-key`.
 - **Expired or missing `exp`**: The `exp` claim is required and must be in the future. Allow for small clock skew.
 - **Private vs Public key mix-up**: Your JWKS must contain only the public key parameters. The private key is used only for signing; never paste it into the JWKS JSON.
 - **Wrong org/workspace identifiers**: `portkey_oid` (or `organisation_id`) and `portkey_workspace` (or `workspace_slug`) must correspond to valid identifiers in your Portkey tenant.
@@ -526,10 +536,269 @@ main();
   ```
 </Info>
 
+## Gateway-Local JWT Authentication
+
+<Info>
+Gateway-local JWT authentication is available only on **[hybrid](/self-hosting/hybrid-deployments/architecture)** and **air-gapped** deployments.
+
+It requires gateway **2.5.0** or higher (Backend **v1.13.0** or higher for air-gapped) with `JWT_ENABLED=ON`.
+</Info>
+
+When enabled, your AI Gateway validates JWTs locally instead of sending every request to the control plane for authentication. This reduces latency and keeps authentication working even when the control plane is temporarily unreachable.
+
+If `JWT_ENABLED` is not `ON`, JWT-shaped tokens are validated by the control plane instead.
+
+### How it works
+
+1. The client sends a JWT in `x-portkey-api-key` or `Authorization: Bearer`.
+2. The gateway determines the organisation and workspace for the request.
+3. The gateway verifies the token signature against your configured JWKS.
+4. The gateway applies the same authorization, usage limits, rate limits, and policies as it would for a regular API key.
+
+### Integration modes
+
+Choose the mode that matches how much control you have over your JWT issuer.
+
+#### Mode A - You control the JWT issuer
+
+You can add Portkey-specific claims to your tokens (`portkey_oid`, `portkey_workspace`, `usage_limits`, `rate_limits`, `defaults`, and others) and use the full JWT feature set described in this guide.
+
+#### Mode B - Standard IdP token
+
+Use this when tokens come from Okta, Auth0, Entra, Cognito, or another IdP whose token schema you cannot change. Portkey handles org, workspace, and budget configuration on the server side. If your IdP cannot include Portkey scopes in tokens, set `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway instead.
+
+| What you need | How to configure it |
+| ------------- | ------------------- |
+| Organisation | Set `ORGANISATIONS_TO_SYNC` to a **single org UUID** when the token does not include `portkey_oid` or `organisation_id`. |
+| Workspace | Map users to workspaces with deployment settings, restrict the deployment to specific workspaces, or set an org-level default workspace. See [Workspace resolution](#workspace-resolution). |
+| Scopes | Register gateway scopes (e.g. `completions.write`) in your IdP, or set `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway when IdP scope changes are not possible. Both `completions.write` and `portkey.completions.write` are accepted. |
+| Usage and rate limits | Configure limits on the workspace, or use workspace policies keyed off request metadata. |
+| User attribution in logs | The gateway uses `email_id`, `sub`, or `uid` from the token for per-user logging and metrics. |
+| JWKS | Point your org's JWKS URL to your IdP's discovery endpoint (e.g. `https://<tenant>/.well-known/jwks.json`) in **Admin Settings** → **Organisation** → **Authentication**. |
+
+### Enable gateway-local JWT
+
+#### Gateway environment variables
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `JWT_ENABLED` | **Yes** | Set to `ON` to enable gateway-local JWT auth. Any other value uses control plane validation. |
+| `ORGANISATIONS_TO_SYNC` | **Yes** | Comma-separated org UUIDs to sync from the control plane. Also restricts which orgs this gateway accepts. |
+| `PORTKEY_CLIENT_AUTH` | **Yes** | Service auth token for the gateway to sync org, workspace, and deployment settings from the control plane. |
+| `JWT_LOCAL_AUTH_DEFAULT_SCOPES` | No | Comma-separated gateway scopes to apply when the IdP token does not include `scope` or `scopes`. Use this when you cannot add Portkey scopes to tokens in your IdP. |
+
+Example:
+
+```sh
+JWT_LOCAL_AUTH_DEFAULT_SCOPES=completions.write,mcp.invoke
+```
+
+These variables are also documented in the [hybrid deployment guides](/self-hosting/hybrid-deployments/architecture).
+
+#### Organisation JWKS
+
+Configure JWKS under **Admin Settings** → **Organisation** → **Authentication**:
+
+- **JWKS URL** (recommended) - your IdP's public key endpoint, or
+- **JWKS JSON** - a static public key set
+
+Authentication fails if JWKS is not configured for the organisation.
+
+#### Required JWT claims (gateway-local)
+
+| Claim | Required | Notes |
+| ----- | -------- | ----- |
+| `scope` or `scopes` | Conditional | At least one valid scope, unless `JWT_LOCAL_AUTH_DEFAULT_SCOPES` is set on the gateway. |
+| `portkey_oid` or `organisation_id` | Conditional | Required when `ORGANISATIONS_TO_SYNC` lists more than one org. With a single-org gateway (Mode B), the env var supplies the org. |
+| `sub` | Conditional | Required when your deployment restricts which user IDs may authenticate. |
+
+#### Recommended optional claims
+
+| Claim | Purpose | Mode B (locked IdP) |
+| ----- | ------- | ------------------- |
+| `exp` | Token expiry | Usually already present on IdP tokens |
+| `email_id`, `sub`, or `uid` | User identity for logging | `sub` is used automatically |
+| `portkey_workspace` or `workspace_slug` | Target workspace | Resolve via deployment settings or org default workspace |
+| `usage_limits`, `rate_limits` | Per-token limits | Configure on the workspace or via policies instead |
+| `defaults` | Default config and metadata | Set default config on the workspace instead |
+
+#### Example token payloads
+
+**Mode A - full Portkey-aware token:**
+
+```json
+{
+  "portkey_oid": "4f8d2c3b-1a9e-4b7c-8d2f-6a1b3c4d5e6f",
+  "portkey_workspace": "engineering-workspace-slug",
+  "sub": "user-42",
+  "email_id": "alice@company.com",
+  "scope": "completions.write mcp.invoke",
+  "exp": 1735689600,
+  "usage_limits": [
+    {
+      "id": "ul-1",
+      "type": "cost",
+      "credit_limit": 50,
+      "status": "active"
+    }
+  ]
+}
+```
+
+**Mode B - minimal IdP token:**
+
+```json
+{
+  "iss": "https://idp.example.com",
+  "aud": "portkey-gateway",
+  "sub": "user-42",
+  "exp": 1735689600
+}
+```
+
+If the token omits `scope` / `scopes`, set `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway (e.g. `completions.write,mcp.invoke`).
+
+In Mode B, the gateway resolves the org from `ORGANISATIONS_TO_SYNC` and the workspace from your deployment configuration.
+
+#### Gateway scopes
+
+Scopes can be provided as a space-separated string (`scope`) or an array (`scopes`) in the token, or via `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway. A `portkey.` prefix is optional.
+
+| Scope | Used for |
+| ----- | -------- |
+| `completions.read` | Read completions |
+| `completions.write` | Chat completions, embeddings, and most AI routes |
+| `logs.read` | Read logs |
+| `logs.write` | Write logs |
+| `logs.export` | Export logs |
+| `prompts.render` | Render prompts |
+| `virtual_keys.list` | List virtual keys |
+| `mcp.invoke` | MCP invocation |
+| `agents.invoke` | Agent invocation |
+| `guardrails.invoke` | Guardrail invocation |
+| `feedbacks.read` | Read feedbacks |
+| `feedbacks.write` | Write feedbacks |
+
+Each API route requires a matching scope. For example, chat completions requires `completions.write`.
+
+### Organisation resolution
+
+The gateway determines which organisation a token belongs to using this priority order:
+
+1. `portkey_oid` claim in the token
+2. `organisation_id` claim in the token
+3. `ORGANISATIONS_TO_SYNC` - only when exactly **one** org UUID is configured
+
+If `ORGANISATIONS_TO_SYNC` is set, the resolved org must be in that list.
+
+| Scenario | Result |
+| -------- | ------ |
+| Both `portkey_oid` and `organisation_id` are present | `portkey_oid` is used |
+| No org in token, and exactly one org in `ORGANISATIONS_TO_SYNC` | That org is used |
+| No org in token, and multiple orgs in `ORGANISATIONS_TO_SYNC` | Request rejected (**401**) |
+| Token org is not in `ORGANISATIONS_TO_SYNC` | Request rejected (**403**) |
+| Organisation not found | Request rejected (**401**) |
+| JWKS not configured for the org | Request rejected (**403**) |
+
+After the org is determined, the gateway verifies the token signature against that org's JWKS.
+
+### Workspace resolution
+
+Workspace is determined after the token is verified, using token claims first and then deployment settings.
+
+**From the token:**
+
+1. `portkey_workspace`
+2. `workspace_slug`
+
+**From deployment settings** (when the token has no workspace claim):
+
+| Setting | Effect |
+| ------- | ------ |
+| User allowlist | Restrict authentication to specific user IDs (`sub` values) |
+| User-to-workspace mapping | Map each user ID to a workspace slug |
+| Workspace allowlist | When enabled, only listed workspaces are allowed; the first listed workspace is used as the default |
+| Org default workspace | Used when no workspace is resolved from the token or deployment settings |
+
+<Note>
+Contact your Portkey account team to configure deployment-level JWT settings such as user allowlists, user-to-workspace mappings, and workspace allowlists.
+</Note>
+
+### Usage limits, rate limits, and policies
+
+JWT-authenticated requests are subject to the same limit and policy checks as API key requests. Limits can come from three places:
+
+| Source | Description |
+| ------ | ----------- |
+| **Token claims** | `usage_limits` and `rate_limits` embedded in the JWT (Mode A) |
+| **Workspace settings** | Limits configured on the resolved workspace |
+| **Workspace policies** | Conditional budget policies based on request context |
+
+Each unique JWT is tracked separately for token-level limits. Workspace limits and policies apply on top of any token-level limits - all must pass before the request proceeds.
+
+**Guidance by mode:**
+
+- **Mode A:** Put per-user or per-session budgets in the JWT `usage_limits` claim. Use workspace limits and policies for shared team budgets.
+- **Mode B:** Configure all budgets and rate limits on the workspace or as workspace policies. For per-user splits within a shared workspace, use policies keyed off user metadata. For hard per-user isolation, map each user to a dedicated workspace.
+
+### Authentication flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Gateway
+    participant ControlPlane as Control Plane
+    participant IdP as Your IdP (JWKS)
+
+    Client->>Gateway: API request with JWT
+    alt JWT_ENABLED = ON
+        Gateway->>Gateway: Resolve org and verify token
+        Gateway->>IdP: Fetch public keys (if using JWKS URL)
+        Gateway->>ControlPlane: Load org, deployment, and workspace settings
+        Gateway->>Gateway: Check scopes, limits, and policies
+    else JWT_ENABLED ≠ ON
+        Gateway->>ControlPlane: Validate JWT via control plane
+    end
+    Gateway->>Client: Process request or return error
+```
+
+### Troubleshooting gateway-local JWT
+
+| Symptom | Likely cause | What to check |
+| ------- | ------------ | ------------- |
+| Organisation not found | Token missing org claim on a multi-org gateway | Add `portkey_oid` to the token, or set a single org in `ORGANISATIONS_TO_SYNC` |
+| Org not allowed | Org ID not in sync list | Add the org to `ORGANISATIONS_TO_SYNC` or fix the token claim |
+| JWKS not configured | No public keys set for the org | Configure JWKS URL or JSON under **Admin Settings** → **Organisation** → **Authentication** |
+| JWT verification failed | Bad signature, expired token, or wrong keys | Verify IdP signing config, `exp`, and JWKS |
+| No valid scopes | Missing scopes in token and no gateway defaults | Add scopes to the token, or set `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway |
+| User not allowed | User ID restricted by deployment settings | Update deployment allowlist or token `sub` |
+| Workspace forbidden | Workspace not allowed for this deployment | Use an allowed workspace or update deployment settings |
+
+### Quick setup checklist
+
+**Both modes:**
+
+- Set `JWT_ENABLED=ON`, `PORTKEY_CLIENT_AUTH`, and `ORGANISATIONS_TO_SYNC` on the gateway
+- Configure JWKS for your org in the Portkey admin UI
+- Ensure the gateway cache is enabled (required for hybrid and air-gapped deployments)
+
+**Mode A:**
+
+- Issue JWTs with required scopes and optionally `portkey_oid`, `portkey_workspace`, `usage_limits`, `rate_limits`, and `defaults`
+
+**Mode B:**
+
+- Set `ORGANISATIONS_TO_SYNC` to a **single** org UUID
+- Configure scopes in your IdP, or set `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway if IdP scope changes are not possible
+- Set up workspace resolution (user mapping, workspace allowlist, or org default workspace)
+- Configure workspace-level usage limits, rate limits, and policies in Portkey
+
 ## Caching & Token Revocation
 
-- JWTs are cached until they expire to reduce validation overhead.
-- If you rotate keys:
-  - Publish the new public key in JWKS with a new `kid`.
-  - Start issuing tokens signed by the new private key (with the new `kid`).
-  - Old tokens will remain valid until their `exp` is reached.
+Validated JWTs are cached until they expire to reduce validation overhead. On gateway-local auth, org and workspace settings are also cached locally and refreshed during control plane sync.
+
+If you rotate signing keys:
+
+- Publish the new public key in JWKS with a new `kid`.
+- Start issuing tokens signed by the new private key (with the new `kid`).
+- Old tokens remain valid until their `exp` is reached.

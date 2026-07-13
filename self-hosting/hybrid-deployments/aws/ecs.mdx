@@ -1,0 +1,998 @@
+---
+title: "ECS"
+description: This enterprise-focused document provides comprehensive instructions for deploying the Portkey software on Amazon Elastic Container Service (ECS), tailored to meet the needs of large-scale, mission-critical applications. It includes specific recommendations for component sizing, high availability, and integration with monitoring systems.
+---
+
+## Components and Sizing Recommendations
+
+| Component                               | Options                                                                   | Sizing Recommendations                                                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------                    |
+| AI Gateway                              | Deploy in your ECS cluster using Terraform.                               | Use Amazon ECS tasks with at least 1 vCPU (1024 CPU units) and 2 GiB of memory per task. For high availability, run tasks across multiple Availability Zones with auto-scaling enabled. |
+| Logs Store (optional)                   | Amazon S3 or S3-compatible Storage                                        | Each log document is \~10kb in size (uncompressed)                                                                                                                  |
+| Cache (Prompts, Configs & Providers)    | Built-in Redis or Amazon ElastiCache for Redis OSS or Valkey              | Deployed within the same VPC as the Portkey Gateway.                                                                                                                |
+
+## Prerequisites
+
+Ensure the following tools and resources are installed and available:
+
+* [AWS Account](https://aws.amazon.com/) with permissions to create ECS, EC2, VPC, ELB, IAM, S3, Secrets Manager, and CloudWatch resources.
+* [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with credentials.
+* [Terraform](https://developer.hashicorp.com/terraform/install) v1.13 or later.
+
+## Create a Portkey Account
+- Go to the [Portkey](https://app.portkey.ai) website.  
+- Sign up for a Portkey account.  
+- Once logged in, locate and save your `Organisation ID` for future reference. It can be found in the browser URL:
+  `https://app.portkey.ai/organisation/<organisation_id>/`
+- Contact the Portkey AI team and provide your Organisation ID and the email address used during signup.
+- The Portkey team will share the following information with you:
+    - Docker credentials for the Gateway images (username and password).
+    - License: Client Auth Key.
+
+## Setup Project Environment
+
+### 1. Prepare AWS Secrets
+
+Create the required secrets in AWS Secrets Manager. You can either use the [CloudFormation template](https://github.com/Portkey-AI/portkey-gateway-infrastructure/blob/main/cloudformation/secrets.yaml) provided in the [portkey-gateway-infrastructure](https://github.com/Portkey-AI/portkey-gateway-infrastructure) repository, or create them manually using the AWS CLI.
+
+**Option A: Using CloudFormation**
+
+1. Go to the [AWS CloudFormation Console](https://console.aws.amazon.com/cloudformation) and create a stack.
+2. Upload `cloudformation/secrets.yaml` from the [portkey-gateway-infrastructure](https://github.com/Portkey-AI/portkey-gateway-infrastructure) repository.
+3. Provide the following parameters:
+    - **Project Name** — e.g., `portkey-gateway`
+    - **Environment** — e.g., `dev`
+    - **Docker Username / Password** — provided by Portkey
+    - **Portkey Client Auth** — provided by Portkey
+    - **Organisations** — your Portkey Organisation ID(s), comma-separated if multiple
+4. After the stack completes, note the following outputs for use in the Terraform configuration:
+    - `DockerCredentialsSecretArn`
+    - `ClientOrgSecretNameArn`
+
+**Option B: Using AWS CLI**
+
+```sh
+project_name=portkey-gateway                           # Provide a name for the project
+environment=dev                                        # Provide the environment name
+aws_region=us-east-1                                   # Provide the AWS region
+
+# Store Docker credentials shared by Portkey
+aws secretsmanager create-secret \
+  --name ${project_name}/${environment}/docker-credentials \
+  --region ${aws_region} \
+  --secret-string '{"username":"<docker-username>","password":"<docker-password>"}'
+
+# Store Portkey client auth and organisation ID
+aws secretsmanager create-secret \
+  --name ${project_name}/${environment}/client-org \
+  --region ${aws_region} \
+  --secret-string '{"PORTKEY_CLIENT_AUTH":"<client-auth>","ORGANISATIONS_TO_SYNC":"<organisation-id>"}'
+```
+
+Note the ARNs returned for both secrets — they will be used in the Terraform configuration.
+
+### 2. Create Terraform Configuration Files
+
+Create a new directory for your deployment:
+
+```sh
+mkdir portkey-gateway-deployment
+cd portkey-gateway-deployment
+```
+
+(Optional) Create an S3 bucket to store the Terraform state remotely:
+
+```sh
+aws s3api create-bucket \
+  --bucket portkey-tfstate-<account-id> \
+  --region us-east-1
+
+aws s3api put-bucket-versioning \
+  --bucket portkey-tfstate-<account-id> \
+  --versioning-configuration Status=Enabled
+```
+
+Create a `backend.config` file:
+
+```hcl
+bucket = "portkey-tfstate-<account-id>"
+key    = "portkey-gateway/dev.tfstate"
+region = "us-east-1"
+```
+
+### 3. Create Module Configuration
+
+Create a `main.tf` file:
+
+```hcl
+terraform {
+  required_version = ">= 1.13"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+
+  backend "s3" {
+    use_lockfile = true
+  }
+}
+
+provider "aws" {
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      Environment = "dev"
+      ManagedBy   = "Terraform"
+      Project     = "portkey-gateway"
+    }
+  }
+}
+
+module "portkey_gateway" {
+  source = "github.com/Portkey-AI/portkey-gateway-infrastructure//terraform/ecs?ref=v2.0.0"      # Change module version as per requirement
+
+  # Project Configuration
+  project_name = "portkey-gateway"
+  environment  = "dev"
+  aws_region   = "us-east-1"
+
+  # Docker Credentials (Secrets Manager ARN)
+  docker_cred_secret_arn = "<DockerCredentialsSecretArn>"
+
+  # Network Configuration
+  create_new_vpc     = true
+  vpc_cidr           = "10.0.0.0/16"
+  num_az             = 2
+  single_nat_gateway = true
+
+  # ECS Cluster Configuration
+  create_cluster   = true
+  instance_type    = "t4g.medium"
+  min_asg_size     = 1
+  max_asg_size     = 2
+  desired_asg_size = 1
+
+  # Server Mode Configuration
+  server_mode = "gateway"                                                   # Set to "all" to deploy both AI Gateway and MCP Gateway
+
+  # Gateway Configuration
+  gateway_config = {
+    desired_task_count = 1
+    cpu                = 1024
+    memory             = 2048
+    gateway_port       = 8787
+    mcp_port           = 8788
+  }
+
+  # Redis Configuration (built-in)
+  redis_configuration = {
+    redis_type = "redis"
+    cpu        = 256
+    memory     = 512
+    endpoint   = ""
+    tls        = false
+    mode       = "standalone"
+  }
+
+  # Object Storage (S3 Log Store)
+  object_storage = {
+    log_store_bucket = "<your-logs-bucket>"
+    bucket_region    = "us-east-1"
+  }
+
+  # Load Balancer Configuration
+  create_lb        = true
+  internal_lb      = true                                                   # Set to false to create an internet-facing Load Balancer
+  lb_type          = "network"                                              # "network" for NLB, "application" for ALB
+  allowed_lb_cidrs = ["<X.X.X.X/Y>"]                                        # CIDR ranges allowed to reach the LB (e.g., the VPC CIDR for an internal LB)
+
+  # Environment Variables
+  environment_variables = {
+    gateway = {
+      SERVICE_NAME    = "gateway"
+      ANALYTICS_STORE = "control_plane"
+      LOG_STORE       = "s3_assume"
+    }
+  }
+
+  # Secrets (Secrets Manager ARNs)
+  secrets = {
+    gateway = {
+      PORTKEY_CLIENT_AUTH   = "<ClientOrgSecretNameArn>"
+      ORGANISATIONS_TO_SYNC = "<ClientOrgSecretNameArn>"
+    }
+  }
+}
+
+output "load_balancer_dns_name" {
+  value = module.portkey_gateway.load_balancer_dns_name
+}
+
+output "vpc_id" {
+  value = module.portkey_gateway.vpc_id
+}
+```
+
+### 4. Deploy the Gateway
+
+```sh
+terraform init -backend-config=backend.config
+terraform plan
+terraform apply
+```
+
+**Note:** Values in the `secrets` block must be **AWS Secrets Manager ARNs**, not raw secret values. The ECS task definition references the secret ARN directly and AWS injects the secret value at runtime.
+
+## Advanced Configuration
+
+### MCP Gateway (Optional)
+
+By default, only the AI Gateway is enabled. To enable the MCP Gateway, update your module configuration:
+
+**MCP Only:**
+
+```hcl
+server_mode          = "mcp"
+mcp_gateway_base_url = "https://mcp.example.com"             # MCP external domain clients use to reach MCP
+
+gateway_config = {
+  desired_task_count = 1
+  cpu                = 256
+  memory             = 1024
+  gateway_port       = 8787
+  mcp_port           = 8788
+}
+```
+
+**Gateway + MCP (single service, ALB required):**
+
+```hcl
+server_mode          = "all"
+mcp_gateway_base_url = "https://mcp.example.com"
+
+create_lb        = true
+lb_type          = "application"
+allowed_lb_cidrs = ["<X.X.X.X/Y>"]                                          # CIDR ranges allowed to reach the ALB
+
+alb_routing_configuration = {
+  enable_host_based_routing = true
+  gateway_host              = "gateway.example.com"
+  mcp_host                  = "mcp.example.com"
+}
+
+gateway_config = {
+  desired_task_count = 2
+  cpu                = 1024
+  memory             = 2048
+  gateway_port       = 8787
+  mcp_port           = 8788
+}
+```
+
+**Notes:**
+- `mcp_gateway_base_url` is **required** when `server_mode` is `"mcp"` or `"all"`. It must be the MCP external domain (with `https://` or `http://` prefix) that clients use to reach the MCP service.
+- When `server_mode = "all"`, an Application Load Balancer is required (`lb_type = "application"`) and you must configure host-based routing via `alb_routing_configuration` (`gateway_host` and `mcp_host`).
+- For the initial deployment, you can set `mcp_gateway_base_url` to a placeholder, then update it after the Load Balancer is provisioned and DNS is mapped.
+
+**Server Modes**
+1. `"gateway"`: Deploys only the AI Gateway. This is the default configuration.
+2. `"mcp"`: Deploys only the MCP Gateway. Requires `mcp_gateway_base_url`.
+3. `"all"`: Deploys both the AI Gateway and MCP Gateway. Requires `mcp_gateway_base_url` and an ALB with host-based routing.
+
+### Auto-Scaling Configuration
+
+Control how ECS tasks scale based on CPU and memory utilisation:
+
+```hcl
+gateway_autoscaling = {
+  enable_autoscaling        = true
+  autoscaling_min_capacity  = 3
+  autoscaling_max_capacity  = 20
+  target_cpu_utilization    = 70
+  target_memory_utilization = 80
+  scale_in_cooldown         = 120
+  scale_out_cooldown        = 60
+}
+```
+
+### Deployment Strategies
+
+ECS supports multiple deployment strategies via `gateway_deployment_configuration`:
+
+**Blue/Green Deployment:**
+
+```hcl
+gateway_deployment_configuration = {
+  enable_blue_green = true
+}
+```
+
+**Canary Deployment:**
+
+```hcl
+gateway_deployment_configuration = {
+  enable_blue_green = false
+  canary_configuration = {
+    canary_bake_time_in_minutes = 5
+    canary_percent              = 10
+  }
+}
+```
+
+### Network Configuration with VPC
+
+Deploy the Gateway within a VPC.
+
+**Create a new VPC:**
+
+```hcl
+create_new_vpc     = true
+vpc_cidr           = "10.0.0.0/16"
+num_az             = 2
+single_nat_gateway = true
+```
+
+**Use an existing VPC and subnets:**
+
+```hcl
+create_new_vpc     = false
+vpc_id             = "vpc-xxxxxxxxxxxxxxxxx"
+public_subnet_ids  = ["subnet-xxxxxxxx", "subnet-yyyyyyyy"]
+private_subnet_ids = ["subnet-aaaaaaaa", "subnet-bbbbbbbb"]
+```
+
+### Load Balancer Ingress
+
+The module can provision either an Application Load Balancer (ALB) or a Network Load Balancer (NLB) in front of the Gateway tasks. Pick based on what you need:
+
+| Requirement                                                   | Use         |
+| ------------------------------------------------------------- | ----------- |
+| Host-based routing (required when `server_mode = "all"`)      | ALB         |
+| HTTP/HTTPS-aware routing, WAF, ALB access logs                | ALB         |
+| Layer-4 pass-through, AWS PrivateLink (Inbound Control Plane) | NLB         |
+| Lowest-latency, simple TCP forwarding                         | NLB         |
+
+#### Application Load Balancer (ALB)
+
+Deploy a public ALB with TLS termination:
+
+```hcl
+create_lb           = true
+internal_lb         = false                                                 # true for an internal ALB
+lb_type             = "application"
+tls_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx"
+allowed_lb_cidrs    = ["<X.X.X.X/Y>"]
+```
+
+**Host-based Routing (required when `server_mode = "all"`):**
+
+```hcl
+alb_routing_configuration = {
+  enable_host_based_routing = true
+  gateway_host              = "gateway.example.com"
+  mcp_host                  = "mcp.example.com"
+}
+```
+
+Configure DNS:
+
+```
+gateway.example.com  A/CNAME  <alb-dns-name>
+mcp.example.com      A/CNAME  <alb-dns-name>
+```
+
+**Enable ALB Access Logs:**
+
+```hcl
+enable_lb_access_logs = true
+lb_access_logs_bucket = "portkey-alb-access-logs"
+```
+
+#### Network Load Balancer (NLB)
+
+
+```hcl
+create_lb        = true
+internal_lb      = true                                                     # false for an internet-facing NLB
+lb_type          = "network"
+allowed_lb_cidrs = ["<X.X.X.X/Y>"]                                          # CIDR ranges allowed to reach the NLB (e.g., the VPC CIDR for an internal NLB)
+```
+
+**Note:** NLB does not support host-based routing, so it cannot be used when `server_mode = "all"`.
+
+### Amazon ElastiCache for Redis
+
+Use an existing Amazon ElastiCache cluster instead of the built-in Redis container:
+
+```hcl
+redis_configuration = {
+  redis_type = "aws-elastic-cache"
+  cpu        = 256                                                            # Ignored for ElastiCache
+  memory     = 512                                                            # Ignored for ElastiCache
+  endpoint   = "master.portkey-redis.xxxxx.use1.cache.amazonaws.com:6379"     # Primary or Configuration endpoint
+  tls        = true                                                           # Match the cluster's transit encryption setting
+  mode       = "standalone"                                                   # or "cluster" for cluster-mode-enabled
+}
+```
+
+If ElastiCache AUTH is enabled, store the AUTH token in AWS Secrets Manager (as JSON with a `REDIS_PASSWORD` key) and reference the secret ARN. Both the Gateway and Data Service connect to Redis, so the secret must be passed to **both** blocks if the Data Service is enabled:
+
+```hcl
+secrets = {
+  gateway = {
+    PORTKEY_CLIENT_AUTH   = "<ClientOrgSecretNameArn>"
+    ORGANISATIONS_TO_SYNC = "<ClientOrgSecretNameArn>"
+    REDIS_PASSWORD        = "<RedisAuthSecretArn>"
+  }
+  data-service = {
+    PORTKEY_CLIENT_AUTH   = "<ClientOrgSecretNameArn>"
+    ORGANISATIONS_TO_SYNC = "<ClientOrgSecretNameArn>"
+    REDIS_PASSWORD        = "<RedisAuthSecretArn>"
+  }
+}
+```
+
+**Note:** ElastiCache's security groups must allow **inbound TCP 6379** (or your configured port) from the Gateway and Data Service task security groups.
+
+### Object Storage (S3 Log Store)
+
+Specify the S3 bucket for storing LLM access logs:
+
+```hcl
+object_storage = {
+  log_store_bucket   = "portkey-prod-logs"
+  log_exports_bucket = "portkey-prod-exports"          # Optional, used by Data Service for log exports
+  bucket_region      = "us-east-1"
+}
+```
+
+The module attaches an IAM policy to the Gateway task role granting `s3:PutObject` and `s3:GetObject` permissions on the configured buckets.
+
+### Data Service (Optional)
+
+The Data Service is responsible for batch processing, fine-tuning, and log exports. Enable it via:
+
+```hcl
+dataservice_config = {
+  enable_dataservice = true
+  desired_task_count = 2
+  cpu                = 512
+  memory             = 1024
+}
+
+environment_variables = {
+  data-service = {
+    SERVICE_NAME      = "data-service"
+    ANALYTICS_STORE   = "control_plane"
+    LOG_STORE         = "s3_assume"
+    HYBRID_DEPLOYMENT = "ON"
+  }
+}
+
+secrets = {
+  data-service = {
+    PORTKEY_CLIENT_AUTH   = "<ClientOrgSecretNameArn>"
+    ORGANISATIONS_TO_SYNC = "<ClientOrgSecretNameArn>"
+  }
+}
+```
+
+### Amazon Bedrock (Optional)
+
+To allow the Gateway to invoke Amazon Bedrock models, attach an IAM policy with the required `bedrock:InvokeModel` (and related) permissions to the Gateway ECS task role via `gateway_task_role_policy_arns`:
+
+```hcl
+gateway_task_role_policy_arns = {
+  bedrock = "<IAM_POLICY_ARN>"
+}
+```
+
+The module supports both **same-account** and **cross-account** Bedrock access (via `sts:AssumeRole`). For the full IAM policy documents, trust policy templates, and step-by-step setup for both modes, refer to following guide: [Bedrock Access Configuration](https://github.com/Portkey-AI/portkey-gateway-infrastructure/blob/main/terraform/ecs/docs/Bedrock.md).
+
+## Integrating Gateway with Control Plane
+
+**Outbound Connectivity (Data Plane to Control Plane)**
+
+Portkey supports the following methods for integrating the Data Plane with the Control Plane for outbound connectivity:
+- AWS PrivateLink
+- Over the Internet
+
+### AWS PrivateLink (Outbound)
+
+Establishes a secure, private connection between the Data Plane and the Portkey Control Plane within the AWS network.
+
+**Steps to establish AWS PrivateLink connectivity:** 
+
+1. Contact Portkey and provide your AWS account ARN so it can be whitelisted in Portkey's Control Plane.
+2. Once you receive confirmation from Portkey that your AWS account is whitelisted, go to the [VPC Console](https://console.aws.amazon.com/vpc/).
+3. Select the AWS Region where the Portkey Gateway is deployed.
+4. Navigate to the **Endpoints** section in the VPC console.
+5. Click on **Create endpoint** and enter the required details.
+6. Select the `PrivateLink Ready partner services` category and, under **Service settings**, provide the following details.
+    - For **Service name**, enter `com.amazonaws.vpce.us-east-1.vpce-svc-0c2c1c323d9f56d95`
+    - (Optional) If the Gateway is deployed in a region other than `us-east-1`, select `Enable Cross Region endpoint`, choose the `us-east-1` region, and click the **Verify service** button.
+7. Under **Network settings**:
+    - Select the VPC and subnets (at least two in different AZs for high availability) where the endpoint should be created. Ideally, this should be the same VPC where the Gateway is deployed.
+    - Select the security group to associate with the endpoint. The security group must allow inbound connections on port 443 from the Gateway tasks.
+8. After all details are filled in, click on **Create endpoint**.
+9. Wait for the Status to change to `Available`.
+10. Once the status changes to `Available`, click on **Actions** > **Modify private DNS name** > select **Enable for this endpoint**.
+11. Update the `main.tf` to point the Gateway to the private Control Plane endpoint:
+
+    ```hcl
+    environment_variables = {
+      gateway = {
+        SERVICE_NAME              = "gateway"
+        ANALYTICS_STORE           = "control_plane"
+        LOG_STORE                 = "s3_assume"
+        ALBUS_BASEPATH            = "https://aws-cp.portkey.ai/albus"
+        CONTROL_PLANE_BASEPATH    = "https://aws-cp.portkey.ai/api/v1"
+        SOURCE_SYNC_API_BASEPATH  = "https://aws-cp.portkey.ai/api/v1/sync"
+        CONFIG_READER_PATH        = "https://aws-cp.portkey.ai/api/model-configs"
+      }
+    }
+    ```
+
+12. Re-deploy the Gateway:
+
+    ```sh
+    terraform apply
+    ```
+
+### Over the Internet
+
+Ensure the Gateway has access to the following endpoints over the internet:
+- `https://api.portkey.ai`
+- `https://albus.portkey.ai`
+
+No additional configuration is needed if your VPC allows outbound internet access via a NAT Gateway.
+
+### Inbound Connectivity (Control Plane to Data Plane)
+
+- AWS PrivateLink
+- IP Whitelisting 
+
+#### AWS PrivateLink (Inbound)
+
+Establishes a secure, private connection between the Control Plane and the Data Plane within the AWS network.
+
+**Steps to establish AWS PrivateLink connectivity:** 
+
+AWS VPC Endpoint Services only support **Network Load Balancers (NLB)** or Gateway Load Balancers — they cannot be created directly against an ALB. Pick one of the two paths below depending on what the module provisions for you.
+
+<Tabs>
+  <Tab title="Terraform-provisioned NLB">
+    If your deployment uses `lb_type = "network"`, the module already provisions an NLB that can be associated with the Endpoint Service directly. Ensure the Gateway is exposed via that NLB:
+
+    ```hcl
+    create_lb        = true
+    internal_lb      = true                                                 # false for internet-facing NLB
+    lb_type          = "network"
+    allowed_lb_cidrs = ["<X.X.X.X/Y>"]                                      # CIDR ranges allowed to reach the NLB
+    ```
+  </Tab>
+  <Tab title="Existing ALB (NLB-in-front)">
+    If your deployment already uses an Application Load Balancer (e.g., because `server_mode = "all"` requires host-based routing), the module's ALB cannot be the target of a VPC Endpoint Service. You'll need to provision an NLB **outside this terraform** that uses the existing ALB as a target, and then create the Endpoint Service against that NLB.
+
+    High-level steps:
+
+    1. Keep the module-provisioned ALB in place (`lb_type = "application"`).
+    2. Outside this Terraform module, create a Network Load Balancer in the same VPC.
+    3. Create a target group of type `alb` and register the existing ALB as the target.
+    4. Add a listener on the NLB that forwards to that target group on the port the ALB listens on (e.g., 443).
+    5. Use this NLB as the load balancer for the Endpoint Service in the next step.
+
+    See the AWS guide on [using an ALB as a target for an NLB](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/application-load-balancer-target.html) for the full procedure.
+  </Tab>
+</Tabs>
+
+**Create the Endpoint Service**
+
+- Navigate to the [AWS VPC Console](https://console.aws.amazon.com/vpcconsole/home#CreateVpcEndpointServiceConfiguration).
+- In the top-right corner of the AWS Console, select the region where the Portkey Gateway is deployed.
+- Provide the following details:
+    - Name of the endpoint service
+    - Select the Network Load Balancer to associate with the endpoint (the module-provisioned NLB, or the NLB you created in front of the ALB)
+    - Choose the regions in which the endpoint service will be available
+    - Select whether acceptance is required for incoming connections
+    - Choose whether to enable a Private DNS name — if enabled, provide the Private DNS Name
+    - Select **IPv4** under Supported IP address types
+- Click **Create**.
+
+**(Optional) Verify ownership of the Private DNS name**
+
+This step is required only if you are using a Private DNS Name.
+
+Open the created Endpoint Service > click on **Actions** > select **Verify domain ownership for private DNS name** > create the recommended record in your DNS server > click **Verify**.
+
+**Authorize Portkey's Control Plane to initiate connection requests**
+
+- Open the Endpoint Service > click on **Actions** > select **Allow principals**, and enter the Control Plane's ARN (`arn:aws:iam::299329113195:root`).
+- Reach out to the Portkey team and share the following details:
+    - **Service name**
+    - **DNS names**
+    - **Private DNS name**
+    - **Region** selected while creating the Endpoint Service
+    - Port number on which the Load Balancer is listening for connections
+- Wait for the Portkey team to initiate a connection request from the Control Plane's AWS account to your Gateway's AWS account. Navigate to the **Endpoint connections** section, and once the request appears, approve it.
+
+#### IP Whitelisting
+
+Allows the Control Plane to access the Data Plane over the internet by restricting inbound traffic to specific IP addresses of the Control Plane. This method requires the Data Plane to have a publicly accessible endpoint.
+
+To whitelist, add an inbound rule to the Load Balancer's security group allowing connections from the Portkey Control Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on the listener port. Alternatively, set `allowed_lb_cidrs` in the module configuration:
+
+```hcl
+allowed_lb_cidrs = ["54.81.226.149/32", "34.200.113.35/32", "44.221.117.129/32"]
+```
+
+To integrate the Control Plane with the Data Plane, contact the Portkey team and provide the **Public Endpoint** of the Data Plane.
+
+## Verifying Gateway Integration with the Control Plane
+
+- Send a test request to the Gateway using `curl`:
+
+  ```sh
+  # Replace <GATEWAY_ENDPOINT> with the Load Balancer DNS or your custom hostname
+  OPENAI_API_KEY=<OPENAI_API_KEY>
+  PORTKEY_API_KEY=<PORTKEY_API_KEY>
+
+  curl 'http://<GATEWAY_ENDPOINT>/v1/chat/completions' \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -H "x-portkey-provider: openai" \
+    -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+    -d '{
+      "model": "gpt-4o-mini",
+      "messages": [{"role": "user", "content": "What is a fractal?"}]
+    }'
+  ```
+
+- Go to the [Portkey website](https://app.portkey.ai/) -> **Logs**.
+- Verify that the test request appears in the logs and that you can view its full details by selecting the log entry.
+
+## Uninstalling Portkey Gateway
+
+```sh
+terraform destroy
+```
+
+## Example Configurations
+
+### Minimal Development Deployment
+
+This example shows a basic deployment with built-in Redis, a new VPC, and no load balancer:
+
+```hcl
+module "portkey_gateway" {
+  source = "github.com/Portkey-AI/portkey-gateway-infrastructure//terraform/ecs?ref=v2.0.0"
+
+  project_name = "portkey-gateway"
+  environment  = "dev"
+  aws_region   = "us-east-1"
+
+  docker_cred_secret_arn = "<DockerCredentialsSecretArn>"
+
+  environment_variables = {
+    gateway = {
+      SERVICE_NAME    = "gateway"
+      ANALYTICS_STORE = "control_plane"
+      LOG_STORE       = "s3_assume"
+    }
+  }
+
+  secrets = {
+    gateway = {
+      PORTKEY_CLIENT_AUTH   = "<ClientOrgSecretNameArn>"
+      ORGANISATIONS_TO_SYNC = "<ClientOrgSecretNameArn>"
+    }
+  }
+
+  create_new_vpc     = true
+  vpc_cidr           = "10.0.0.0/16"
+  num_az             = 2
+  single_nat_gateway = true
+
+  create_cluster   = true
+  instance_type    = "t4g.medium"
+  desired_asg_size = 1
+  min_asg_size     = 1
+  max_asg_size     = 2
+
+  server_mode = "gateway"
+
+  gateway_config = {
+    desired_task_count = 1
+    cpu                = 256
+    memory             = 1024
+    gateway_port       = 8787
+    mcp_port           = 8788
+  }
+
+  redis_configuration = {
+    redis_type = "redis"
+    cpu        = 256
+    memory     = 512
+    endpoint   = ""
+    tls        = false
+    mode       = "standalone"
+  }
+
+  object_storage = {
+    log_store_bucket = "<dev-logs-bucket>"
+    bucket_region    = "us-east-1"
+  }
+
+  create_lb        = true
+  internal_lb      = true
+  lb_type          = "network"
+  allowed_lb_cidrs = ["<X.X.X.X/Y>"]
+}
+```
+
+### Production Deployment with ALB, ElastiCache, and Data Service
+
+This example shows a production-grade deployment with a public ALB, Amazon ElastiCache, the Data Service enabled, and auto-scaling:
+
+```hcl
+module "portkey_gateway" {
+  source = "github.com/Portkey-AI/portkey-gateway-infrastructure//terraform/ecs?ref=v2.0.0"
+
+  project_name = "portkey-gateway"
+  environment  = "prod"
+  aws_region   = "us-east-1"
+
+  docker_cred_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:portkey-gateway/prod/docker-credentials"
+
+  environment_variables = {
+    gateway = {
+      SERVICE_NAME    = "gateway"
+      ANALYTICS_STORE = "control_plane"
+      LOG_STORE       = "s3_assume"
+    }
+    data-service = {
+      SERVICE_NAME      = "data-service"
+      ANALYTICS_STORE   = "control_plane"
+      LOG_STORE         = "s3_assume"
+      HYBRID_DEPLOYMENT = "ON"
+    }
+  }
+
+  secrets = {
+    gateway = {
+      PORTKEY_CLIENT_AUTH   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:portkey-gateway/prod/client-org"
+      ORGANISATIONS_TO_SYNC = "arn:aws:secretsmanager:us-east-1:123456789012:secret:portkey-gateway/prod/client-org"
+      REDIS_PASSWORD        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:portkey-gateway/prod/redis-auth"
+    }
+    data-service = {
+      PORTKEY_CLIENT_AUTH   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:portkey-gateway/prod/client-org"
+      ORGANISATIONS_TO_SYNC = "arn:aws:secretsmanager:us-east-1:123456789012:secret:portkey-gateway/prod/client-org"
+      REDIS_PASSWORD        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:portkey-gateway/prod/redis-auth"
+    }
+  }
+
+  # Network
+  create_new_vpc     = true
+  vpc_cidr           = "10.0.0.0/16"
+  num_az             = 3
+  single_nat_gateway = false
+
+  # ECS Cluster
+  create_cluster   = true
+  instance_type    = "t4g.large"
+  min_asg_size     = 2
+  max_asg_size     = 10
+  desired_asg_size = 3
+
+  server_mode = "gateway"
+
+  gateway_config = {
+    desired_task_count = 3
+    cpu                = 1024
+    memory             = 2048
+    gateway_port       = 8787
+    mcp_port           = 8788
+  }
+
+  gateway_autoscaling = {
+    enable_autoscaling        = true
+    autoscaling_min_capacity  = 3
+    autoscaling_max_capacity  = 20
+    target_cpu_utilization    = 70
+    target_memory_utilization = 80
+    scale_in_cooldown         = 120
+    scale_out_cooldown        = 60
+  }
+
+  gateway_deployment_configuration = {
+    enable_blue_green = true
+  }
+
+  # Data Service
+  dataservice_config = {
+    enable_dataservice = true
+    desired_task_count = 2
+    cpu                = 512
+    memory             = 1024
+  }
+
+  # Amazon ElastiCache
+  redis_configuration = {
+    redis_type = "aws-elastic-cache"
+    cpu        = 256
+    memory     = 512
+    endpoint   = "prod-redis.xxxxx.cache.amazonaws.com:6379"
+    tls        = true
+    mode       = "cluster"
+  }
+
+  # S3 Log Store
+  object_storage = {
+    log_store_bucket   = "portkey-prod-logs"
+    log_exports_bucket = "portkey-prod-exports"
+    bucket_region      = "us-east-1"
+  }
+
+  # Public ALB with TLS
+  create_lb           = true
+  internal_lb         = false
+  lb_type             = "application"
+  tls_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx"
+  allowed_lb_cidrs    = ["<X.X.X.X/Y>"]
+
+  enable_lb_access_logs = true
+  lb_access_logs_bucket = "portkey-alb-access-logs"
+}
+```
+
+### Gateway + MCP Deployment
+
+This example shows how to deploy both the AI Gateway and the MCP Gateway behind an Application Load Balancer with host-based routing:
+
+```hcl
+module "portkey_gateway" {
+  source = "github.com/Portkey-AI/portkey-gateway-infrastructure//terraform/ecs?ref=v2.0.0"
+
+  project_name = "portkey-gateway"
+  environment  = "prod"
+  aws_region   = "us-east-1"
+
+  docker_cred_secret_arn = "<DockerCredentialsSecretArn>"
+
+  environment_variables = {
+    gateway = {
+      SERVICE_NAME    = "gateway"
+      ANALYTICS_STORE = "control_plane"
+      LOG_STORE       = "s3_assume"
+    }
+  }
+
+  secrets = {
+    gateway = {
+      PORTKEY_CLIENT_AUTH   = "<ClientOrgSecretNameArn>"
+      ORGANISATIONS_TO_SYNC = "<ClientOrgSecretNameArn>"
+    }
+  }
+
+  create_new_vpc     = true
+  vpc_cidr           = "10.0.0.0/16"
+  num_az             = 2
+  single_nat_gateway = true
+
+  create_cluster   = true
+  instance_type    = "t4g.large"
+  min_asg_size     = 2
+  max_asg_size     = 6
+  desired_asg_size = 2
+
+  # Deploy both Gateway and MCP
+  server_mode          = "all"
+  mcp_gateway_base_url = "https://mcp.example.com"
+
+  gateway_config = {
+    desired_task_count = 2
+    cpu                = 1024
+    memory             = 2048
+    gateway_port       = 8787
+    mcp_port           = 8788
+  }
+
+  redis_configuration = {
+    redis_type = "redis"
+    cpu        = 256
+    memory     = 512
+    endpoint   = ""
+    tls        = false
+    mode       = "standalone"
+  }
+
+  object_storage = {
+    log_store_bucket = "portkey-logs"
+    bucket_region    = "us-east-1"
+  }
+
+  # ALB with host-based routing
+  create_lb           = true
+  internal_lb         = false
+  lb_type             = "application"
+  tls_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx"
+  allowed_lb_cidrs    = ["<X.X.X.X/Y>"]
+
+  alb_routing_configuration = {
+    enable_host_based_routing = true
+    gateway_host              = "gateway.example.com"
+    mcp_host                  = "mcp.example.com"
+  }
+}
+```
+
+## Multi-Environment Setup
+
+To manage `dev`, `staging`, and `prod` from a single codebase, organise your project as follows:
+
+```
+my-infrastructure/
+├── dev/
+│   ├── main.tf
+│   ├── backend.config
+│   └── terraform.tfvars
+├── staging/
+│   ├── main.tf
+│   ├── backend.config
+│   └── terraform.tfvars
+└── prod/
+    ├── main.tf
+    ├── backend.config
+    └── terraform.tfvars
+```
+
+Each environment has its own remote state and variable values:
+
+```hcl
+# dev/backend.config
+bucket = "portkey-tfstate-<account-id>"
+key    = "portkey-gateway/dev.tfstate"
+region = "us-east-1"
+
+# prod/backend.config
+bucket = "portkey-tfstate-<account-id>"
+key    = "portkey-gateway/prod.tfstate"
+region = "us-east-1"
+```
+
+Deploy each environment independently:
+
+```sh
+# Dev
+cd dev
+terraform init -backend-config=backend.config
+terraform apply -var-file=terraform.tfvars
+
+# Prod
+cd ../prod
+terraform init -backend-config=backend.config
+terraform apply -var-file=terraform.tfvars
+```
+
+## Version Pinning and Upgrades
+
+Always pin the module to a specific version in production:
+
+```hcl
+# Recommended - pinned to v2.0.0
+source = "github.com/Portkey-AI/portkey-gateway-infrastructure//terraform/ecs?ref=v2.0.0"
+```
+
+To upgrade, review the [release notes](https://github.com/Portkey-AI/portkey-gateway-infrastructure/releases), test the new version in a non-production environment first, then promote to production:
+
+```sh
+terraform init -upgrade
+terraform plan       # Review changes carefully
+terraform apply
+```
+
+To roll back, revert the `ref` to the previous version and re-run `terraform init -upgrade && terraform apply`.

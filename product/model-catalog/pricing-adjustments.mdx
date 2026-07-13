@@ -1,0 +1,147 @@
+---
+title: 'Adding Pricing Adjustments'
+description: 'Learn how to apply discount or markup multipliers to a Portkey Integration so cost tracking reflects your effective rate with a provider.'
+---
+
+Pricing Adjustments let you apply a discount or markup to an Integration, so cost tracking reflects your effective rate with that provider. A multiplier of `1` leaves pricing unchanged. `0.8` applies a 20% discount. `1.2` applies a 20% markup.
+
+<Info>
+Requires:
+- Gateway version **2.7.0** or higher
+- Backend version **1.15.0** or higher (for air-gapped deployments)
+- Frontend version **1.8.1** or higher (for air-gapped deployments).
+</Info>
+
+This is especially useful for:
+- **Negotiated Discounts**: Reflect enterprise contracts or committed-use rates from a provider on the corresponding Integration.
+- **Internal Cost Showback**: Apply a markup so the cost reported to internal teams or workspaces includes your platform overhead.
+- **Custom Per-Integration Rates**: Maintain different effective pricing across multiple Integrations of the same provider (e.g. a discounted production Integration alongside a standard-rate sandbox).
+
+## Adding Pricing Adjustments to an Integration
+
+You can configure Pricing Adjustments directly from your Portkey dashboard, in the **Basic Integration Details** step.
+
+<Frame>
+<img src="/images/product/model-catalog/pricing-adjustments.png" alt="Pricing Adjustments section in the Add Integration form" />
+</Frame>
+
+1. Navigate to the relevant [**Integration**](https://app.portkey.ai/integrations) in your Portkey account, and create a new Integration or open an existing one.
+2. On the **Integration Details** step, toggle **Pricing Adjustments** on.
+3. Choose a **Multiplier** mode:
+    - **Default**: Quick form for the most common token types.
+    - **Custom**: JSON editor for the full multiplier shape, including reasoning, audio, image, and additional units.
+4. Enter your multipliers. Empty fields inherit from `Default`.
+5. Save the Integration.
+
+<Tip>
+For a discount, convert the percentage to a multiplier with:
+
+`multiplier = 1 - (discount% / 100)`
+
+Example: a 10% discount on `Default` and a 15% discount on `Request Tokens`:
+
+- `Default` → `1 - (10 / 100) = 0.90`
+- `Request Tokens` → `1 - (15 / 100) = 0.85`
+
+`Request Tokens` use `0.85`; `Response Tokens`, `Cache Read Tokens`, and `Cache Write Tokens` inherit `0.90` from `Default`.
+</Tip>
+
+### Configuration Fields
+
+Default mode exposes the five most common multipliers:
+
+<CardGroup>
+    <Card title="Default">
+        Multiplier applied to every token type unless a more specific multiplier is set below. A flat 20% discount across the Integration is just `0.8` here.
+    </Card>
+    <Card title="Request Tokens">
+        Multiplier applied to input/request token cost.
+    </Card>
+    <Card title="Response Tokens">
+        Multiplier applied to output/response token cost.
+    </Card>
+    <Card title="Cache Read Tokens">
+        Multiplier applied to cache-read input token cost.
+    </Card>
+    <Card title="Cache Write Tokens">
+        Multiplier applied to cache-write input token cost.
+    </Card>
+</CardGroup>
+
+For other token types — reasoning, audio/image/text variants, image generation, or per-unit charges like `web_search` — switch to **Custom** mode and provide a JSON object with the keys you want to adjust:
+
+```json
+{
+  "multiplier": {
+    "default": 0.8,
+    "request_token": 0.7,
+    "response_token": 0.9,
+    "reasoning_token": 0.5,
+    "image": { "default": 0.9 },
+    "additional_units": { "web_search": 0.7 }
+  }
+}
+```
+
+The multiplier keys mirror the pricing keys in [Portkey Models](/product/model-catalog/portkey-models) — the open-source pricing database backing Portkey's cost tracking. Any key present in a model's `pay_as_you_go` (or in `additional_units`) can be adjusted here.
+
+<Accordion title="Full multiplier reference">
+
+| Field | Applies to |
+|-------|------------|
+| `default` | Every token type unless a more specific multiplier is set |
+| `request_token` / `response_token` | Standard input and output tokens |
+| `cache_read_input_token` / `cache_write_input_token` | Prompt cache reads and writes |
+| `reasoning_token` | Reasoning/thinking tokens |
+| `request_audio_token` / `response_audio_token` / `cache_read_audio_input_token` | Audio modality tokens |
+| `request_text_token` / `response_text_token` / `cache_*_text_input_token` | Text-modality breakdowns where the provider reports them separately |
+| `request_image_token` / `response_image_token` / `cache_*_image_input_token` | Image-modality breakdowns |
+| `prediction_accepted_token` / `prediction_rejected_token` | Predicted-output tokens |
+| `image.default` | Per-image generation pricing across all qualities and sizes |
+| `additional_units.<key>` | Per-unit charges such as `web_search`, `file_search`, `input_image`, `input_video_standard`. See [Additional Units Reference](/product/model-catalog/portkey-models#additional-units-reference). |
+
+</Accordion>
+
+## Setting Pricing Adjustments via the API
+
+You can also configure Pricing Adjustments programmatically through the [Integrations API](/api-reference/admin-api/control-plane/integrations/create-integration). Pass `pricing_adjustments` when creating or updating an Integration. Send `null` to clear all adjustments.
+
+<Tabs>
+<Tab title="cURL">
+```bash
+curl -X PUT https://api.portkey.ai/v2/integrations/{integrationId} \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: YOUR_PORTKEY_API_KEY" \
+  -d '{
+    "pricing_adjustments": {
+      "multiplier": {
+        "default": 0.8,
+        "cache_read_input_token": 0.9,
+        "cache_write_input_token": 0.9
+      }
+    }
+  }'
+```
+</Tab>
+<Tab title="Python">
+```python
+import requests
+
+requests.put(
+    "https://api.portkey.ai/v2/integrations/{integrationId}",
+    headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"},
+    json={
+        "pricing_adjustments": {
+            "multiplier": {
+                "default": 0.8,
+                "cache_read_input_token": 0.9,
+                "cache_write_input_token": 0.9,
+            }
+        }
+    },
+)
+```
+</Tab>
+</Tabs>
+
+Once saved, Portkey applies the multipliers to the base pricing for every subsequent request through this Integration, and the adjusted cost flows into logs, analytics, and budget tracking.

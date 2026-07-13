@@ -1,0 +1,524 @@
+---
+title: "Claude Platform on AWS"
+description: "Integrate Claude models via Claude Platform on AWS with Portkey's AI Gateway"
+---
+
+[Claude Platform on AWS](https://platform.claude.com/docs/en/build-with-claude/claude-platform-on-aws) is Anthropic's managed Claude offering delivered through AWS. It uses the same Anthropic Messages API with AWS SigV4 authentication and billing through AWS Marketplace.
+
+Portkey provider slug: `claude-platform-aws`
+
+<CardGroup cols={3}>
+  <Card title="All Claude Models" icon="circle-check" color="#10b981">
+    Opus, Sonnet, and Haiku with plain model IDs
+  </Card>
+  <Card title="Full API Parity" icon="circle-check" color="#10b981">
+    Messages, batches, files, token counting
+  </Card>
+  <Card title="AWS Auth" icon="circle-check" color="#10b981">
+    Access Key, Assumed Role, and Service Role
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
+
+# 1. Install: pip install portkey-ai
+# 2. Add @claude-platform-aws provider in Model Catalog
+# 3. Use it:
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@claude-platform-aws-provider/claude-sonnet-4-6",
+    messages=[{"role": "user", "content": "What is Portkey's AI Gateway?"}],
+    max_tokens=250
+)
+
+print(response.choices[0].message.content)
+```
+
+```js Javascript icon="square-js"
+import Portkey from 'portkey-ai'
+
+// 1. Install: npm install portkey-ai
+// 2. Add @claude-platform-aws provider in Model Catalog
+// 3. Use it:
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+})
+
+const response = await portkey.chat.completions.create({
+    model: "@claude-platform-aws-provider/claude-sonnet-4-6",
+    messages: [{ role: "user", content: "What is Portkey's AI Gateway?" }],
+    max_tokens: 250
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```python OpenAI Py icon="python"
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+# 1. Install: pip install openai portkey-ai
+# 2. Add @claude-platform-aws provider in Model Catalog
+# 3. Use it:
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL
+)
+
+response = client.chat.completions.create(
+    model="@claude-platform-aws-provider/claude-sonnet-4-6",
+    messages=[{"role": "user", "content": "What is Portkey's AI Gateway?"}],
+    max_tokens=250
+)
+
+print(response.choices[0].message.content)
+```
+
+```js OpenAI JS icon="square-js"
+import OpenAI from "openai"
+import { PORTKEY_GATEWAY_URL } from "portkey-ai"
+
+// 1. Install: npm install openai portkey-ai
+// 2. Add @claude-platform-aws provider in Model Catalog
+// 3. Use it:
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL
+})
+
+const response = await client.chat.completions.create({
+    model: "@claude-platform-aws-provider/claude-sonnet-4-6",
+    messages: [{ role: "user", content: "What is Portkey's AI Gateway?" }],
+    max_tokens: 250
+})
+
+console.log(response.choices[0].message.content)
+```
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@claude-platform-aws-provider/claude-sonnet-4-6",
+    "messages": [
+      { "role": "user", "content": "What is Portkey's AI Gateway?" }
+    ],
+    "max_tokens": 250
+  }'
+```
+
+```python Anthropic Py
+import anthropic
+
+# 1. Install: pip install anthropic portkey-ai
+# 2. Add @claude-platform-aws provider in Model Catalog
+# 3. Use it:
+
+client = anthropic.Anthropic(
+    api_key="dummy",
+    default_headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"},
+    base_url="https://api.portkey.ai"
+)
+
+message = client.messages.create(
+    model="@claude-platform-aws-provider/claude-sonnet-4-6",
+    max_tokens=250,
+    messages=[{"role": "user", "content": "What is Portkey's AI Gateway?"}]
+)
+
+print(message.content)
+```
+
+```typescript Anthropic TS
+import Anthropic from '@anthropic-ai/sdk'
+
+// 1. Install: npm install @anthropic-ai/sdk portkey-ai
+// 2. Add @claude-platform-aws provider in Model Catalog
+// 3. Use it:
+
+const anthropic = new Anthropic({
+    apiKey: "YOUR_PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai"
+})
+
+const msg = await anthropic.messages.create({
+    model: "@claude-platform-aws-provider/claude-sonnet-4-6",
+    max_tokens: 250,
+    messages: [{ role: "user", content: "What is Portkey's AI Gateway?" }]
+})
+
+console.log(msg)
+```
+</CodeGroup>
+
+- **`max_tokens` is required** -- always specify this parameter
+- **Model IDs** are identical to the first-party Anthropic API (e.g., `claude-sonnet-4-6`, `claude-opus-4-7`)
+
+## Prerequisites
+
+<Warning>
+Enable outbound web identity federation on your AWS account before making any requests:
+
+```bash
+aws iam enable-outbound-web-identity-federation
+```
+
+Without this, all requests fail with `"Outbound web identity federation is disabled for your account"`.
+</Warning>
+
+## Add Provider in Model Catalog
+
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Select **Claude Platform on AWS**
+3. Choose an authentication mode and enter credentials
+
+| Auth Mode | Required Fields |
+|---|---|
+| **AWS Access Key** | `awsAccessKeyId`, `awsSecretAccessKey`, `awsRegion` |
+| **Assumed Role** | `awsRoleArn`, `awsExternalId` (optional), `awsRegion` |
+| **Service Role** (EKS/IRSA) | `awsRegion` |
+
+All auth modes accept an optional **Anthropic Workspace ID** (`anthropicAwsWorkspaceId`). Set this to scope requests to a specific workspace (format: `wrkspc_01AbCdEf23GhIj`).
+
+`awsRegion` determines the endpoint: `aws-external-anthropic.{region}.api.aws`
+
+<Card title="Setup Assumed Role →" href="/integrations/llms/claude-platform-aws/setup-assumed-role">
+  Step-by-step IAM role and trust policy configuration for assumed role auth
+</Card>
+
+## IAM Policy
+
+Claude Platform on AWS uses the `aws-external-anthropic` IAM namespace. Create a permission policy with the actions your workload needs:
+
+<CodeGroup>
+```json Inference Only
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "aws-external-anthropic:CreateInference",
+      "aws-external-anthropic:CountTokens"
+    ],
+    "Resource": "arn:aws:aws-external-anthropic:us-west-2:123456789012:workspace/wrkspc_01AbCdEf23GhIj"
+  }]
+}
+```
+
+```json Inference + Batch + Files
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "aws-external-anthropic:CreateInference",
+      "aws-external-anthropic:CountTokens",
+      "aws-external-anthropic:CreateBatchInference",
+      "aws-external-anthropic:GetBatchInference",
+      "aws-external-anthropic:ListBatchInferences",
+      "aws-external-anthropic:CancelBatchInference",
+      "aws-external-anthropic:DeleteBatchInference",
+      "aws-external-anthropic:CreateFile",
+      "aws-external-anthropic:GetFile",
+      "aws-external-anthropic:ListFiles",
+      "aws-external-anthropic:DeleteFile"
+    ],
+    "Resource": "arn:aws:aws-external-anthropic:us-west-2:123456789012:workspace/wrkspc_01AbCdEf23GhIj"
+  }]
+}
+```
+</CodeGroup>
+
+AWS also provides managed policies for common use cases:
+
+| Managed Policy | Scope |
+|---|---|
+| `AnthropicFullAccess` | All `aws-external-anthropic:*` actions |
+| `AnthropicInferenceAccess` | Inference + read-only + batch |
+| `AnthropicReadOnlyAccess` | `Get*`, `List*`, `CallWithBearerToken` |
+
+## Basic Usage
+
+### Chat Completions
+
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@claude-platform-aws-provider/claude-sonnet-4-6",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Explain quantum computing in simple terms."}
+    ],
+    max_tokens=500
+)
+
+print(response.choices[0].message.content)
+```
+
+```js Javascript icon="square-js"
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY"
+})
+
+const response = await portkey.chat.completions.create({
+    model: "@claude-platform-aws-provider/claude-sonnet-4-6",
+    messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "Explain quantum computing in simple terms." }
+    ],
+    max_tokens: 500
+})
+
+console.log(response.choices[0].message.content)
+```
+</CodeGroup>
+
+### Streaming
+
+<CodeGroup>
+```python Python icon="python"
+response = portkey.chat.completions.create(
+    model="@claude-platform-aws-provider/claude-sonnet-4-6",
+    messages=[{"role": "user", "content": "Tell me a story"}],
+    max_tokens=500,
+    stream=True
+)
+
+for chunk in response:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+```
+
+```js Javascript icon="square-js"
+const response = await portkey.chat.completions.create({
+    model: "@claude-platform-aws-provider/claude-sonnet-4-6",
+    messages: [{ role: "user", content: "Tell me a story" }],
+    max_tokens: 500,
+    stream: true
+})
+
+for await (const chunk of response) {
+    if (chunk.choices[0].delta.content) {
+        process.stdout.write(chunk.choices[0].delta.content)
+    }
+}
+```
+</CodeGroup>
+
+## Using the /messages Route
+
+Use Anthropic's native `/messages` endpoint through Portkey with full gateway features.
+
+### Using Anthropic's Native SDK
+
+<CodeGroup>
+```python Anthropic Py
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key="dummy",
+    default_headers={"x-portkey-api-key": "YOUR_PORTKEY_API_KEY"},
+    base_url="https://api.portkey.ai"
+)
+
+message = client.messages.create(
+    model="@claude-platform-aws-provider/claude-sonnet-4-6",
+    max_tokens=250,
+    messages=[{"role": "user", "content": "Hello, Claude"}]
+)
+
+print(message.content)
+```
+
+```typescript Anthropic TS
+import Anthropic from '@anthropic-ai/sdk'
+
+const anthropic = new Anthropic({
+    apiKey: "YOUR_PORTKEY_API_KEY",
+    baseURL: "https://api.portkey.ai"
+})
+
+const msg = await anthropic.messages.create({
+    model: "@claude-platform-aws-provider/claude-sonnet-4-6",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: "Hello, Claude" }]
+})
+
+console.log(msg)
+```
+</CodeGroup>
+
+### Using cURL
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: claude-platform-aws" \
+  -d '{
+    "model": "@claude-platform-aws-provider/claude-sonnet-4-6",
+    "max_tokens": 1024,
+    "messages": [
+      { "role": "user", "content": "Hello, Claude" }
+    ]
+  }'
+```
+
+<Note>
+All Portkey features (caching, observability, configs) work with the `/messages` route. Add `x-portkey-config`, `x-portkey-provider`, and other Portkey headers as needed.
+</Note>
+
+## Extended Thinking
+
+Models like `claude-opus-4-7` and `claude-sonnet-4-6` support [extended thinking](https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking). Set `strict_open_ai_compliance=False` to use this feature:
+
+<CodeGroup>
+```python Python icon="python"
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    strict_open_ai_compliance=False
+)
+
+response = portkey.chat.completions.create(
+    model="@claude-platform-aws-provider/claude-opus-4-7",
+    max_tokens=16000,
+    thinking={"type": "enabled", "budget_tokens": 10000},
+    messages=[{
+        "role": "user",
+        "content": "Solve this step by step: If a train travels 120km in 2 hours, and another travels 200km in 3 hours, which is faster and by how much?"
+    }]
+)
+
+print(response)
+```
+
+```js Javascript icon="square-js"
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    strictOpenAiCompliance: false
+})
+
+const response = await portkey.chat.completions.create({
+    model: "@claude-platform-aws-provider/claude-opus-4-7",
+    max_tokens: 16000,
+    thinking: { type: "enabled", budget_tokens: 10000 },
+    messages: [{
+        role: "user",
+        content: "Solve this step by step: If a train travels 120km in 2 hours, and another travels 200km in 3 hours, which is faster and by how much?"
+    }]
+})
+
+console.log(response)
+```
+</CodeGroup>
+
+<Note>
+The thinking response is returned in `response.choices[0].delta.content_blocks`, not `response.choices[0].message.content`.
+</Note>
+
+## Supported Models
+
+| Model | Model ID |
+|---|---|
+| Claude Opus 4.7 | `claude-opus-4-7` |
+| Claude Opus 4.6 | `claude-opus-4-6` |
+| Claude Sonnet 4.6 | `claude-sonnet-4-6` |
+| Claude Opus 4.5 | `claude-opus-4-5` |
+| Claude Sonnet 4.5 | `claude-sonnet-4-5` |
+| Claude Haiku 4.5 | `claude-haiku-4-5` |
+
+Model IDs are identical to the first-party Anthropic API -- no Bedrock-style `anthropic.claude-*` prefixes.
+
+Dated aliases (e.g., `claude-sonnet-4-5-20250929`, `claude-opus-4-5-20251101`) are also supported.
+
+## Key Differences from First-Party Anthropic
+
+| Aspect | First-Party Anthropic | Claude Platform on AWS |
+|---|---|---|
+| Base URL | `api.anthropic.com` | `aws-external-anthropic.{region}.api.aws` |
+| Authentication | API key (`x-api-key`) | AWS SigV4 or AWS-managed API key |
+| Billing | Anthropic directly | AWS Marketplace |
+| Required headers | `anthropic-version`, `x-api-key` | `anthropic-version`, `anthropic-workspace-id` + SigV4 |
+| Rate limits | Automatic tier advancement | Contact Anthropic representative |
+| Console access | Direct login | Federated through AWS IAM |
+| OAuth | Supported | Not supported |
+| OpenAI-compatible endpoints | Available | Not available |
+| Webhooks | Available | Not available |
+
+<Note>
+Portkey handles all authentication and header translation automatically. From the Portkey SDK, the experience is identical to using first-party Anthropic -- just use a different provider slug.
+</Note>
+
+## Making Requests Without Model Catalog
+
+Pass AWS credentials directly via headers:
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: claude-platform-aws" \
+  -H "x-portkey-aws-access-key-id: $AWS_ACCESS_KEY_ID" \
+  -H "x-portkey-aws-secret-access-key: $AWS_SECRET_ACCESS_KEY" \
+  -H "x-portkey-aws-region: us-west-2" \
+  -H "x-portkey-anthropic-aws-workspace-id: wrkspc_01AbCdEf23GhIj" \
+  -d '{
+    "model": "claude-sonnet-4-6",
+    "messages": [{ "role": "user", "content": "Hello" }],
+    "max_tokens": 250
+  }'
+```
+
+| Header | Description |
+|---|---|
+| `x-portkey-aws-access-key-id` | AWS access key ID |
+| `x-portkey-aws-secret-access-key` | AWS secret access key |
+| `x-portkey-aws-session-token` | AWS session token (for STS) |
+| `x-portkey-aws-region` | AWS region (e.g., `us-west-2`) |
+| `x-portkey-anthropic-aws-workspace-id` | Anthropic workspace ID (optional) |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Files API" icon="file" href="/integrations/llms/claude-platform-aws/files">
+    Upload, list, retrieve, and delete files
+  </Card>
+  <Card title="Batch Processing" icon="layer-group" href="/integrations/llms/claude-platform-aws/batches">
+    Run large async jobs at 50% lower cost
+  </Card>
+  <Card title="Assumed Role Setup" icon="shield-halved" href="/integrations/llms/claude-platform-aws/setup-assumed-role">
+    Step-by-step IAM role and trust policy setup
+  </Card>
+  <Card title="Anthropic Integration" icon="link" href="/integrations/llms/anthropic">
+    Shared features: prompt caching, structured outputs, vision
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="Gateway Configs" icon="gear" href="/product/ai-gateway/configs">
+    Add gateway configs to your requests
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability/traces">
+    Trace and monitor your requests
+  </Card>
+</CardGroup>

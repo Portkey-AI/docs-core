@@ -1,0 +1,192 @@
+---
+title: "Guardrails for Batches"
+description: "Secure batch inference with Portkey Guardrails"
+---
+
+<Note>
+Gateway >= `2.9.0`
+Data Service >= `1.8.0`
+</Note>
+
+Imagine usecases where you want to redact PII, remove some requests and redact responses when making a bulk batch inference call to providers like OpenAI, Azure OpenAI, Bedrock, Vertex AI, etc.
+
+Portkey supports running [guardrails](/product/guardrails) on [provider batch requests](/api-reference/inference-api/batch/create-batch). You pass guardrails through a [config](/product/ai-gateway/configs),
+and Portkey applies them asynchronously — pre-processing inputs before sending to the provider, and post-processing outputs after the provider completes.
+
+```mermaid
+flowchart LR
+    A(["📄 Upload JSONL\n(input file)"])
+    B(["⚙️ Create Config\nwith guardrails"])
+    C(["🚀 Create Batch\n(file ID + config)"])
+
+    subgraph portkey["Portkey"]
+        direction TB
+        D["🛡️ Input Guardrails\n(filter / transform requests)"]
+        E[("pk_file_* v2\n(processed input)")]
+        D --> E
+    end
+
+    subgraph provider["Upstream Provider"]
+        F["🤖 LLM Inference\n(batch processing)"]
+    end
+
+    subgraph postprocess["Portkey"]
+        direction TB
+        G["🛡️ Output Guardrails\n(filter / transform responses)"]
+        H[("pk_file_* final\n(output file)")]
+        G --> H
+    end
+
+    I(["⬇️ Download\noutput file"])
+
+    A --> C
+    B --> C
+    C --> D
+    E --> F
+    F --> G
+    H --> I
+
+    style portkey fill:#f0f4ff,stroke:#346df1,color:#1a1a1a
+    style provider fill:#f5f5f5,stroke:#888,color:#1a1a1a
+    style postprocess fill:#f0f4ff,stroke:#346df1,color:#1a1a1a
+```
+
+## How It Works
+
+<Steps>
+
+<Step title="Upload a batch input file">
+
+Upload a JSONL file in OpenAI chat completions format to Portkey.
+
+```sh
+curl --location 'https://api.portkey.ai/v1/files' \
+  --header 'x-portkey-api-key: {{PORTKEY_API_KEY}}' \
+  --header 'x-portkey-provider: portkey' \
+  --form 'file=@"/path/to/batch_requests.jsonl"' \
+  --form 'purpose="batch"'
+```
+
+Each line in the file should be a valid chat completions request. [Download an example JSONL file](https://github.com/Portkey-AI/docs-core/blob/main/files/chat_completions_101_requests.jsonl).
+
+The response returns a Portkey file ID (`pk_file_*`):
+
+```json
+{
+  "object": "file",
+  "id": "pk_file_1db86eb1-22b5-4440-8810-e45ddd1e5aca",
+  "purpose": "batch",
+  "filename": "d2d44065-0f52-4780-a216-eb0122a25d78/pk_file_1db86eb1-22b5-4440-8810-e45ddd1e5aca.jsonl",
+  "bytes": 26204,
+  "created_at": 1777975975402,
+  "status": "processed",
+  "status_details": null
+}
+```
+
+</Step>
+
+<Step title="Create a config with guardrails">
+
+Guardrails are the **only** supported way to pass guardrail checks to a provider batch request. Define them in a [Portkey config](/product/ai-gateway/configs) [here](https://app.portkey.ai/configs):
+
+```json
+{
+  "retry": {
+    "attempts": 3
+  },
+  "input_guardrails": ["pg-sync-g-0663db"],
+  "output_guardrails": ["pg-mutato-9760bc"]
+}
+```
+
+Save this config in the Portkey dashboard and note the config ID (e.g., `pc-sync-g-1009a3`).
+
+</Step>
+
+<Step title="Create a provider batch">
+
+Reference your uploaded file ID and config when creating the batch:
+
+```sh
+curl --location 'https://api.portkey.ai/v1/batches' \
+  --header 'x-portkey-api-key: {{PORTKEY_API_KEY}}' \
+  --header 'x-portkey-provider: portkey' \
+  --header 'Content-Type: application/json' \
+  --data '{
+      "input_file_id": "pk_file_1db86eb1-22b5-4440-8810-e45ddd1e5aca",
+      "endpoint": "/v1/chat/completions",
+      "completion_window": "24h",
+      "model": "gpt-3.5-turbo",
+      "portkey_options": {
+          "x-portkey-config": "pc-sync-g-1009a3",
+          "x-portkey-virtual-key": "openai-virtual-key"
+      }
+  }'
+```
+
+The response contains a Portkey batch ID (`pk_batch_*`) and the initial guardrail results in `hook_results`:
+
+```json
+{
+  "id": "pk_batch_cd7f0e97-37b6-48cb-abd7-1bb699300585",
+  "object": "batch",
+  "status": "validating",
+  "input_file_id": "pk_file_1db86eb1-22b5-4440-8810-e45ddd1e5aca",
+  "hook_results": {
+    "before_request_hooks": [],
+    "after_request_hooks": [
+      {
+        "verdict": true,
+        "id": "portkey-dataservice",
+        "type": "guardrail",
+        "deny": false
+      }
+    ]
+  }
+}
+```
+
+</Step>
+
+<Step title="Poll for batch status">
+
+Poll the batch to track progress. Once input guardrails are applied, the `input_file_id` is replaced with a new processed file. Use `include_provider_details=true` to see full upstream details:
+
+```sh
+curl --location 'https://api.portkey.ai/v1/batches/pk_batch_cd7f0e97-37b6-48cb-abd7-1bb699300585?include_provider_details=true' \
+  --header 'x-portkey-api-key: {{PORTKEY_API_KEY}}'
+```
+
+If your config includes `output_guardrails`, the batch enters an intermediate `processing_post_request_guardrails` state after the upstream provider finishes. Once complete, `output_file_id` reflects the final guardrail-processed output file.
+
+</Step>
+
+<Step title="Download the output file">
+
+Once the batch status is `completed`, retrieve the output using the Portkey-exclusive file content endpoint:
+
+```sh
+curl --location 'https://api.portkey.ai/v1/files/{{OUTPUT_FILE_ID}}/content' \
+  --header 'x-portkey-api-key: {{PORTKEY_API_KEY}}' \
+  --header 'x-portkey-provider: portkey'
+```
+
+</Step>
+
+</Steps>
+
+## Batch Lifecycle with Guardrails
+
+| State                                | Description                                              |
+| :----------------------------------- | :------------------------------------------------------- |
+| `validating`                         | Batch created; input guardrails being evaluated          |
+| `in_progress`                        | Input guardrails passed; provider is processing requests |
+| `processing_post_request_guardrails` | Provider finished; output guardrails being evaluated     |
+| `completed`                          | All guardrails applied; output file ready                |
+
+<Note>
+  The `input_file_id` in the batch response is updated after input guardrails
+  process the file — the new ID points to the transformed input sent to the
+  upstream provider.
+</Note>
