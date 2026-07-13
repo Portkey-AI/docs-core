@@ -1,0 +1,164 @@
+---
+title: "Enforcing Saved-Only Resources"
+sidebarTitle: "Enforcing Saved-Only Resources"
+description: "Lock the Gateway to admin-curated providers, configs, and integrations by rejecting inline provider configuration at request time."
+---
+
+<Warning>
+  Hybrid enterprise customers require **Gateway version `2.11.0` or later** to enforce saved-only mode. On earlier versions the setting has no effect and inline configuration is not blocked.
+</Warning>
+
+## Overview
+
+Portkey lets administrators define **saved** resources (providers, integrations, and configs) that callers reference by slug. **Saved-only mode** (the **Block Inline Configs** data-plane security setting) enforces that callers can *only* use these admin-curated resources.
+
+When the setting is enabled, the Gateway inspects every inference request and rejects any attempt to **select a provider, endpoint, or config inline**. Callers can no longer bring their own provider name, base URL, or ad-hoc config object in the request. Instead, they must reference a saved entity created and governed by an administrator.
+
+This keeps every request on resources your team has set up, so the governance, allowlists, budget controls, and audit attribution attached to those resources apply consistently, without relying on configuration supplied at request time.
+
+<Info>
+  This setting sits alongside the other security settings you manage for API keys, providers, and workspaces. It is available on both **SaaS** and **self-hosted** deployments.
+</Info>
+
+## How It Works
+
+Saved-only mode is a **data-plane** control: it is enforced by the Portkey Gateway on every request, independently of which API key or workspace the request belongs to.
+
+When a request arrives, the Gateway resolves whether saved-only mode is active for the caller's organization (and workspace). If it is, the Gateway runs a single check at the very start of request processing, **before** the request is forwarded to any provider:
+
+1. The request is scanned for any signal that selects a provider, endpoint, or config **inline** (rather than by slug).
+2. If such a signal is found, the request is **rejected immediately with an HTTP `400`** and a specific, machine-readable error code identifying exactly what was blocked.
+3. If the request only references **saved** entities (a config slug, a saved provider, a saved model), it proceeds normally.
+
+Because the check runs at a single point before routing, blocked requests never reach an upstream provider, and every rejection is emitted from one consistent place, making the errors easy to detect, log, and alert on.
+
+## Default Behavior and Rollout
+
+How this setting is initialized depends on when your organization was created:
+
+- **Organizations created on or after June 19, 2026** have saved-only mode **enabled (blocked) by default**. Inline provider configuration is rejected out of the box, and administrators can turn it off if they want to allow inline configuration.
+- **Organizations created before June 19, 2026** have saved-only mode **disabled by default** to preserve backward compatibility. Existing traffic is unaffected until an administrator turns it on.
+
+New workspaces inherit their organization's setting at the time of creation.
+
+<Info>
+  Existing organizations can adopt saved-only mode at any time by enabling it from the **Admin Settings** panel (see below). No code changes are required on the caller side as long as requests already reference saved resources.
+</Info>
+
+## Enabling Saved-Only Mode
+
+### From the Dashboard (SaaS and self-hosted)
+
+Administrators can enable the setting per organization:
+
+1. Navigate to **Admin Settings** in the Portkey dashboard.
+2. Open the **Security** tab.
+3. Locate the **Data Plane Security Settings** section.
+4. Toggle on **Block Inline Configs**.
+
+The change applies to all subsequent requests for the organization. Existing workspaces are kept in sync with the organization setting.
+
+### Via Environment Variable (self-hosted only)
+
+Self-hosted deployments can additionally enforce saved-only mode across the entire Gateway, regardless of the per-organization setting:
+
+```sh
+# Force saved-only mode on every request through this Gateway
+BLOCK_INLINE_CONFIG=true
+```
+
+The organization setting and the Gateway environment variable **combine to make policy stricter**: if *either* one enables saved-only mode, it is enforced. Neither can loosen the other. This lets platform teams set a baseline at the infrastructure layer that applies across organizations.
+
+<Note>
+  The environment variable applies to self-hosted Gateways only and is ignored on Portkey's managed SaaS.
+</Note>
+
+## What Gets Blocked
+
+When saved-only mode is enabled, the following inline inputs are rejected. Each one returns an HTTP `400` with its own error code so you can pinpoint exactly what was blocked.
+
+| Blocked input | What the caller tried to do | Error code |
+|:--------------|:----------------------------|:-----------|
+| **Inline config JSON** | Passed a raw config object instead of referencing a saved config by its `pc-...` slug | `inline_config_blocked` |
+| **Raw provider name** | Named a provider directly (e.g. `openai`) instead of a saved provider slug (`@my-provider`) | `inline_provider_blocked` |
+| **Inline custom host** | Supplied a custom base URL for the upstream provider at request time | `inline_custom_host_blocked` |
+| **Inline provider URL** | Overrode a provider-specific endpoint at request time (e.g. a Hugging Face base URL, Azure Foundry URL, or Databricks workspace) | `inline_provider_url_blocked` |
+| **Inline forward headers** | Asked the Gateway to forward arbitrary request headers to the upstream provider | `inline_forward_headers_blocked` |
+
+A few notes on why each is included:
+
+- **Inline custom host** and **inline provider URL** are blocked because they point the Gateway at an endpoint defined at request time rather than the one on the curated provider.
+- **Inline forward headers** are blocked because forwarded headers are layered on top of a saved provider's authentication headers downstream, so an inline list could override the curated credentials. Forwarding is still allowed when an administrator has configured it on the saved provider itself.
+
+## What Stays Allowed
+
+Saved-only mode is designed to be transparent to callers that already reference saved resources. The following continue to work:
+
+- **Saved configs** referenced by slug, e.g. `x-portkey-config: pc-...`
+- **Saved providers / integrations** referenced by slug, e.g. `x-portkey-provider: @my-provider`
+- **Saved model references** in the request body, e.g. `"model": "@my-provider/model-name"`
+- **Forward headers configured by an administrator** on a saved provider (as opposed to passed inline on the request)
+- **Credentials passed directly** via the `Authorization` header (credentials alone cannot select a provider)
+
+## Error Responses
+
+When a request is blocked, the Gateway returns an HTTP `400` with a structured body. The `error.code` field identifies the violation, and `error.field` names the specific input that triggered it.
+
+```json
+{
+  "status": "failure",
+  "error": {
+    "code": "inline_provider_blocked",
+    "message": "Inline provider names are not allowed when saved-only mode is enabled. Use a saved integration via '@slug' instead.",
+    "field": "x-portkey-provider"
+  },
+  "message": "Inline provider names are not allowed when saved-only mode is enabled. Use a saved integration via '@slug' instead."
+}
+```
+
+Each error code maps to one blocked input:
+
+| Error code | Meaning | How to fix |
+|:-----------|:--------|:-----------|
+| `inline_config_blocked` | A raw config object was passed inline | Save the config and reference it by its `pc-...` slug |
+| `inline_provider_blocked` | A provider was named directly | Reference a saved provider via `@slug` |
+| `inline_custom_host_blocked` | A custom host was supplied inline | Configure the custom host on a saved provider |
+| `inline_provider_url_blocked` | A provider-specific URL was supplied inline | Configure the endpoint on a saved provider |
+| `inline_forward_headers_blocked` | Header forwarding was requested inline | Configure `forward_headers` on a saved provider |
+
+The Gateway checks for violations in order and returns the **first** one it finds, so a request with multiple inline inputs surfaces one error code at a time.
+
+## Use Cases
+
+### Centralized Provider Governance
+
+Saved-only mode keeps every request on admin-curated resources, so the budget limits, guardrails, and model allowlists attached to your saved providers and configs consistently apply across all callers.
+
+### Shared and Multi-Tenant Gateways
+
+When many teams or applications share a Gateway, saved-only mode keeps each request scoped to the resources an administrator has set up, rather than endpoints or headers supplied at request time.
+
+### Clear Audit Attribution
+
+Because every request references a named, saved resource, logs and analytics attribute usage to known providers and configs rather than to inline payloads.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Enforce Default Configs" icon="lock" href="/product/administration/enforce-default-config">
+    Attach default configs to API keys for org-wide governance.
+  </Card>
+  <Card title="Configs" icon="gear" href="/product/ai-gateway/configs">
+    Save and reference Gateway configs by slug.
+  </Card>
+  <Card title="Model Catalog" icon="layer-group" href="/product/model-catalog">
+    Create saved providers and integrations.
+  </Card>
+  <Card title="Gateway Headers" icon="list" href="/api-reference/inference-api/headers">
+    Full reference for the `x-portkey-*` request headers.
+  </Card>
+</CardGroup>
+
+## Support
+
+For questions about saved-only mode or other data-plane security settings, contact [Portkey support](mailto:support@portkey.ai) or reach out on [Discord](https://portkey.sh/reddit-discord).

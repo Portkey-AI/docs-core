@@ -1,0 +1,155 @@
+---
+title: "April"
+---
+
+In April, **Palo Alto Networks announced its intent to acquire Portkey** to secure the rise of AI agents—establishing the AI Gateway as a mission-critical control plane for autonomous workloads, with Portkey planned as the AI Gateway for Prisma AIRS. 
+
+April also puts **Agent Gateway** front and center: you get CRUD APIs for agent integrations and agent servers, skills, workspace- and user-level access, and RBAC—so agent connectivity is governed with the same discipline as models and keys.
+
+We’ve also rolled out upgrades across the gateway, guardrails, permissions, provider ecosystem, and deployment paths—giving teams more control and clearer enterprise workflows.
+
+## Summary
+
+| Area | Key highlights |
+| :----------- | :------------- |
+| **Agent Gateway** | • CRUD APIs for agent integrations and agent servers <br /> • Skills <br /> • Workspace- and user-level access <br /> • RBAC |
+| **Platform** | • API key rotation (scheduled, manual, usage reset) <br /> • Organization session policy (`max_session_ttl`) |
+| **Gateway** | • Local JWT validation <br /> • `HEADERS_TO_METADATA` <br /> • Weekly windows (**rpw**) and endpoint-scoped limits <br /> • Passthrough targets <br /> • Sticky routing (`strategy.sticky`) <br /> • Forward-headers mapping <br /> • `allow_subdomain` |
+| **Guardrails** | • Streaming output checks <br /> • Required metadata key-value pairs <br /> • Lasso v3 <br /> • Model Rules and request-params checks <br /> • Guardrail and org-admin log permissions <br /> • Semantic cache setup <br /> • Partner guardrails |
+| **Models and providers** | • Anthropic Files API and batch <br /> • `service_tier` speed mapping <br /> • Rerank <br /> • Gemini embeddings (incl. 2-preview) <br /> • HEIC/HEIF multimodal <br /> • Mistral `response_format` |
+| **Integrations** | • Claude Cowork, Hermes, Pi <br /> • Slack MCP <br /> • Retool <br /> • Conductor <br /> • MCP Skills Registry naming <br /> • Metadata patterns for common use cases |
+| **Deployment** | • Self-hosted image and provisioning updates (GCP, AWS, Azure) <br /> • Azure Container Apps refresh |
+
+## Agent Gateway
+
+The control plane now includes **Agent Gateway**: manage **agent integrations** and **agent servers** through CRUD APIs, attach **skills**, and enforce **workspace-** and **user-level** access with **RBAC**—without treating agents as a side channel next to your LLM keys.
+
+Learn more: [Agent Gateway](https://portkey.ai/docs/product/agent-gateway)
+
+
+## Platform & control plane
+
+### API key rotation and usage reset
+
+You can **rotate Portkey API keys on a schedule or on demand**: set **automatic** rotation (weekly or monthly), call the **manual rotate** endpoint when you need an immediate roll, and **reset usage** alongside rotation so spend and limit counters line up with the key that is actually in use. 
+
+### Organization session management
+
+Organizations can enforce **session management** at the org level (for example **`max_session_ttl`**) so idle sessions expire on a policy you control.
+
+### Gateway-local JWT authentication
+
+The gateway can validate JWTs **locally** without a control-plane round trip, further lowering auth latency for self-hosted deployments. Set **`JWT_ENABLED=ON`**. 
+
+### Headers-to-metadata injection
+
+**`HEADERS_TO_METADATA`** copies selected inbound headers into request metadata so traces and analytics pick up caller identity, trace IDs, or environment tags—**without** clients sending `x-portkey-metadata` everywhere.
+
+### Weekly and endpoint-scoped rate limits
+
+Rate and budget policies can use **weekly** windows (**`rpw`**) so caps line up with how teams review spend week over week—not only minute-by-hour aggregates.
+
+You can also scope limits by **endpoint type** (for example chat completions vs embeddings), so one global rule is not doing all the work.
+
+Learn more: [Budget & rate limit policies](/product/enterprise-offering/budget-policies)
+
+### Configs: passthrough, sticky sessions, forward headers, and subdomains
+
+**Configs:** pick up routing controls like passthrough targets, sticky sessions, header forwarding, and subdomain rules, so you can steer traffic in one place instead of juggling a separate JSON-only workflow.
+
+- **Passthrough targets:** send the request down a direct path to the upstream you name, when you do not want the gateway to rewrite that hop.
+- **Sticky sessions:** (`strategy.sticky`) pin related traffic to the same target so follow-up calls stay on one backend or model instance.
+- **Forward headers:** (`forward_headers`) copy or rename inbound headers on the way out—useful for provider-specific headers, tracing IDs, or tenant markers.
+- **Allow subdomain:** (`allow_subdomain`) lets routing respect subdomain variants of your gateway host when hostname or tenant routing depends on it.
+
+You can set the same options in the Portkey dashboard and in config JSON, so what you configure in the UI matches what you ship in code.
+
+## Guardrails
+
+### Output guardrails for streaming responses
+
+**Your output guardrails can run on streamed answers, too.** End users still see the usual token-by-token stream. When the assistant message finishes, Portkey runs your checks once and **adds a single final chunk on the same stream** with the outcome, so you learn pass/fail without opening another request.
+
+Learn more: [Guardrails](/product/guardrails)
+
+### Required metadata key–value pairs
+
+**Require specific metadata on every LLM request**—for example a tenant or workspace label, so routing, observability, and downstream rules always see the context they expect. Requests that omit or mismatch those key–value pairs are rejected before Portkey forwards traffic to the model.
+
+Learn more: [Guardrails](/product/guardrails)
+
+### Lasso Security: v3 API
+
+**Lasso in Portkey now runs on the v3 Classify API**, so each check returns **structured findings** you can act on—what was flagged, how serious it is, and the recommended response (for example **block**, **auto-mask**, or **warn**) instead of digging through opaque responses.
+
+- Tie detections to **sessions and users** with **`sessionId`** and **`userId`** so security and platform teams can follow a conversation or actor across calls.
+- Use **one integration** across **chat completions**, **Anthropic-style `/messages`**, **completions**, and **embeddings** without splitting configs by endpoint type.
+- If you host Lasso yourself, set optional **`apiEndpoint`** so Portkey calls your deployment.
+
+Learn more: [Lasso Security](/integrations/guardrails/lasso)
+
+### Model Rules and request-params check
+
+**Model Rules** let you **tie “who may call which model” to request metadata**. You get predictable allow/deny behavior instead of ad hoc checks in every client.
+
+**Request parameters check** lets you **govern tools and parameters before traffic leaves Portkey**—for example block risky tools, cap token limits, or require safe defaults.
+
+Learn more: [Guardrail checks](/product/guardrails/list-of-guardrail-checks)
+
+### Guardrail access and org-admin logs
+
+**Fine-grained permissions** now separate **who can define guardrails** from **who can run them**, and clarify **who can open full request logs at the org level**. That gives you **least privilege** and cleaner handoffs for security & compliance.
+
+Learn more: [Access control](/product/enterprise-offering/access-control-management) · [Logs access in workspaces](/product/administration/configure-logs-access-permissions-in-workspace)
+
+### Partner guardrails
+
+**Partner guardrails** adds a step-by-step pattern in Portkey for building guardrails as a partner integration, consistent with how built-in guardrails work.
+
+### Semantic caching setup
+
+**Semantic cache setup is now guided in the Portkey app**—you get a clearer step-by-step path, in-product checks to confirm the policy behaves as expected, and less reliance on hand-tuned config alone before you roll the same settings out broadly.
+
+Learn more: [Semantic caching](/product/ai-gateway/cache-simple-and-semantic)
+
+## Models and providers
+
+**Anthropic Files API and batch:** You can now run Anthropic **Files API** and **batch** workloads through Portkey alongside chat. Send **`service_tier`** so Portkey maps your call to the right **speed / priority** tier for predictable latency handling.
+
+**Rerank:** You can now call **rerank** on the same Portkey path as chat and embeddings—shared keys, routing, budgets, and observability.
+
+**Gemini embeddings:** You can now route **Gemini embedding** models through Portkey—including 2-preview–class model IDs—with the same OpenAI-compatible embedding request shapes you use elsewhere.
+
+**HEIC / HEIF multimodal:** You can now send **`image/heic`** and **`image/heif`** in multimodal requests, and the **Inline Image URLs** guardrail can fetch and inline those formats like other images.
+
+**Mistral structured outputs:** You can now pass **`response_format`** for structured JSON (including strict schema) to Mistral and have it honored through the gateway—Portkey no longer drops the field on the path to Mistral.
+
+## Integrations
+
+**Claude Cowork, Hermes Agent, Pi:** You can now connect these agents through dedicated Portkey flows with the same auth, routing, and governance as your other managed workloads.
+
+**Slack MCP:** You can now add **Slack as an MCP server** from Portkey and govern it like any other MCP connection.
+
+**MCP Skills Registry:** Portkey now surfaces **Skills Registry** instead of **Agent Skills** everywhere skills are named or discovered.
+
+**Metadata patterns:** New guidance covers common tagging and routing patterns with request metadata.
+
+
+## Resources
+
+- **Blog:** [Who owns Claude Code at your company? A platform team's guide to managing coding agents at scale
+](https://portkey.ai/blog/platfrom-guide-to-coding-agents/)
+- **Blog:** [GitHub Copilot best practices for teams](https://portkey.ai/blog/github-copilot-best-practices/)
+- **Blog:** [Cursor best practices for enterprise teams](https://portkey.ai/blog/cursor-best-practices-for-enterprise-teams/)
+- **Blog:** [Moving Fast Has a Security Bill and It Just Came Due](https://portkey.ai/blog/moving-fast-has-a-security-bill-and-it-just-came-due-2/)
+
+## Support
+
+<CardGroup cols={2}>
+<Card title="Need Help?" icon="bug" href="https://github.com/Portkey-AI/gateway/issues">
+Open an issue on GitHub
+</Card>
+<Card title="Join Us" icon="discord" href="https://portkey.wiki/community">
+Get support in our Discord
+</Card>
+</CardGroup>

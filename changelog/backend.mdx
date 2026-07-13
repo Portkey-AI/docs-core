@@ -1,12 +1,480 @@
 ---
 title: "Backend"
-sidebarTitle: "Backend [1.12.0]"
+sidebarTitle: "Backend [1.19.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://portkey.sh/demo-21" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="1.19.0" description="2026-07-01">
+
+## v1.19.0
+---
+
+### New Provider — Databricks
+- **Databricks** added to the Model Catalog (`databricks`) with model and pricing configs, plus supporting DB migrations
+- [Databricks Documentation](/integrations/llms/databricks)
+
+### Workspace Security Settings
+- Workspace `security_settings` changes are now rejected for sections that haven't been enabled for override, keeping non-overridden sections aligned with the organisation
+- Org-level workspace security settings sync down via migration
+- [Administration Documentation](/product/administration/enforce-default-config)
+
+### Usage Limit Policies
+- Usage-limits policy `last_reset_at` handling fixed
+- API key details now return the next usage-reset timestamp for usage limits
+- [Budget & Usage Policies Documentation](/product/enterprise-offering/budget-policies)
+
+### Log Exports
+- Log-export routes now record user-id attribution. When called with a **User API Key**, the export APIs return only the exports attributed to that user
+- Exports run through the internal data-service on supported deployments
+- [Log Exports Documentation](/product/observability/logs-export)
+
+### Security
+- Updated dependencies to patch security vulnerabilities
+
+</Update>
+
+<Update label="1.18.0" description="2026-06-23">
+
+## v1.18.0
+---
+
+### Saved-Only Mode — Block Inline Configs
+- New **`block_inline_config`** data-plane security setting (org-level, with a `data_plane_security_settings` workspace override). When enabled, the Gateway accepts only admin-curated saved resources and rejects requests that select a provider, endpoint, or config inline
+- Enabled by default for organisations created on or after **June 19, 2026**; self-hosted Gateways can force it everywhere with `BLOCK_INLINE_CONFIG=true`
+- [Saved-Only Resources Documentation](/product/administration/enforce-saved-only-config)
+
+<Note>Requires Gateway **2.11.0** or higher to take effect; on earlier versions inline configuration is not blocked.</Note>
+
+### New Provider — MiniMax
+- **MiniMax** added to the Model Catalog (`minimax`), with model and pricing configs
+- [LLM Integrations](/integrations/llms)
+
+### SCIM — Multi-Workspace Group Provisioning
+- A single SCIM group can now map to **multiple workspaces** (1:N), provisioning members into every mapped workspace with one consistent role. Creating a mapping whose role differs from the group's existing mappings is rejected
+- `GET /v1/scim/workspaces` now returns paginated results with `page`, `page_size`, and `total_count`
+- `GET /v1/scim/groups` (Control Plane) now supports `search` and pagination so large groups directories stay navigable; the previous `include_mapped_groups` filter has been removed since a group can now be mapped to many workspaces
+- [SCIM Group Management Documentation](/product/enterprise-offering/org-management/scim/group-management)
+
+### Unified `/models` Endpoint
+- New config flag **`fetch_integrated_models`** and the **`x-portkey-models-endpoint`** request header let callers fetch the integrated catalog model list through the Gateway
+- [Model Catalog Documentation](/product/model-catalog/integrations)
+
+### JWT Scopes
+- New **`agents.invoke`** data-plane scope can be granted in JWT token scopes
+- [JWT Documentation](/product/enterprise-offering/org-management/jwt)
+
+### Org & Workspace Settings
+- Enabling a non-security workspace override now syncs the current org-level settings down to workspaces, keeping workspace defaults consistent with the organisation
+- [Administration Documentation](/product/administration/enforce-default-config)
+
+### Usage Limit Policies
+- `GET` usage-limits policy list responses now include **`periodic_reset`**
+- Next usage-reset timestamps are auto-updated as reset windows roll over
+- [Budget & Usage Policies Documentation](/product/enterprise-offering/budget-policies)
+
+### Security
+- Hardened SSRF checks. For air-gapped deployments, set `TRUSTED_CUSTOM_HOSTS` as an environment variable to allow internal hosts.
+- Updated dependencies to patch security vulnerabilities
+- [Trusted Custom Hosts Documentation](/product/ai-gateway/custom-hosts#trusted-custom-hosts-allowlist)
+
+### Fixes and Improvements
+- **AWS**: Fixed EKS pod-identity authentication.
+- **Config**: Fixed config creation with Organisation admin API Key
+- **API**: `GET` workspace endpoint accepts `name_format=plain` to return the workspace name with leading emoji stripped (default `display` keeps the icon prefix).
+
+</Update>
+
+<Update label="1.17.0" description="2026-05-26">
+
+## v1.17.0
+---
+
+### Guardrails Updates
+- **New: Cato Networks Guardrail** — Partner guardrail (`cato.analyze`) sends prompts/responses to Cato for inspection; supports monitor, anonymize, or block actions with optional `userEmail`, `keyAlias`, and `timeout`
+- New **`guardrails.invoke`** scope for workspace-service and workspace-user API keys
+- [Cato Documentation](/integrations/guardrails/cato)
+
+### Integrations
+- **Anthropic**: Integrations now accept `anthropic_inspect_stream_for_overloaded_error` in provider configuration (maps to gateway overloaded-stream handling)
+- [Anthropic Documentation](/integrations/llms/anthropic#catch-overloaded-error-on-stream)
+
+### Prompt Library — Sharing
+- Prompt and partial sharing consolidated under workspace-scoped APIs (`POST/PUT/DELETE /v2/prompts/:id/share`, `/fork`, `/unshare`, and partial equivalents)
+- List endpoints support `type=shared` and `show_prompt_share` query parameters
+- Deprecated organisation-level prompt/partial routes removed
+- [Sharing Documentation](/product/prompt-engineering-studio/prompt-sharing)
+
+### Configs API
+- Config create/update schema now validates `default_params` and `drop_params` on targets (in addition to `override_params`)
+- [Documentation](/product/ai-gateway/configs#default-and-drop-params)
+
+### API Key Management
+- New org-only setting **`default_workspace_user_api_key_auto_create`** — controls auto-provisioning of workspace-user API keys when users join the default workspace (separate from per-workspace `user_api_key_auto_create`)
+- **`user_api_key_rotation_period`** enforcement now accepts **days only** (integer 1–365); existing `weekly`/`monthly` values migrated to `7`/`30` (input still accepts `weekly`/`monthly` and normalizes to days)
+- When rotation is org/workspace-enforced, **`next_rotation_at`** on API key update can no longer be manually overridden
+- JWT/API key details (`GET` key details) now include the API key **`name`**
+- [Rotation Documentation](/product/enterprise-offering/org-management/api-key-rotation#organisation-enforced-rotation-period)
+- [Default Config Documentation](/product/administration/enforce-default-config#workspace-default-config-for-user-api-keys)
+
+### DB Migrations
+- Prompt library share tables (`prompt_shares`, partial shares)
+- `guardrails.invoke` API scope seed
+- Cato and Claude Platform (AWS) integration/provider seeds
+- Normalise `user_api_key_rotation_period` from `weekly`/`monthly` to day integers
+
+### Fixes and Improvements
+- Fixed usage-limits policy exhaustion handling on enterprise deployments
+- Fixed workspace update when identified by slug 
+- SAML org callback ignores organisation ID in private deployments
+- Re-activated users in SCIM/invite provisioning now receive workspace-user API keys when eligible
+- Hardened custom-host validation across additional routes; SQL injection guards for files/batches/finetunes
+- Security dependency updates
+
+</Update>
+
+<Update label="1.16.2" description="2026-05-19">
+
+## v1.16.2
+---
+
+### Guardrails Updates
+- **New: Lakera Guard** — Partner guardrail calling Lakera Guard `/v2/guard` for prompt injection, policy violations, and PII detection. Configurable `projectID`, `endInclusive`, and `timeout`
+- [Lakera Documentation](/integrations/guardrails/lakera)
+
+### New Providers & Plugins
+- **fal.ai** provider added to Model Catalog (`fal-ai`) for OpenAI-compatible inference across LLM, image, video, and audio models
+- **BytePlus** provider integration validation now supports `byteplus_region` in the integrations API (Model Catalog)
+- [BytePlus Documentation](/integrations/llms/byteplus)
+
+### Workspace Defaults — User API Key Config
+- Workspaces can set `defaults.user_api_key_config` (config ID or slug) via `PUT /v2/workspaces/:id` — applied to auto-created workspace-user API keys and as the fallback when creating user API keys without an explicit `defaults.config_id`
+- `GET /v2/workspaces/:id` returns `defaults.user_api_key_config` as the config slug when set
+- Deleting a config that is a workspace's `user_api_key_config` default is blocked until the default is cleared
+- [Documentation](/product/administration/enforce-default-config#workspace-default-config-for-user-api-keys)
+
+### Security & SSRF Hardening
+- `isValidCustomHost` validation extended across organisation settings, deployments, providers, virtual keys, MCP integrations, integration-model `custom_host`, and SAML ACS URLs — blocks private/reserved IPs, metadata endpoints, non-HTTP(S) schemes, URL fragments, and other unsafe targets
+
+### SSO / Authentication
+- **PKCE**: Hardened OIDC PKCE flows
+- **JWT user attribution**: JWT-authenticated requests now correctly resolve user email and enforce workspace membership for user-scoped attribution
+
+### API Key Management
+- `GET /v2/api-keys` supports an `ids` query parameter (comma-separated UUIDs) for batch lookup — used by audit-log actor resolution
+
+### Fixes and Improvements
+- Fixed usage-limits policy exhaustion marking on hosted deployments (enterprise cache path)
+
+</Update>
+
+<Update label="1.16.1" description="2026-05-14">
+
+## v1.16.1
+---
+
+### Agent Gateway
+- **`POST /v2/agent-integrations/fetch-agent-card`** now validates the upstream endpoint with SSRF-hardened custom-host checks (blocks private/reserved IPs, cloud metadata hosts, non-HTTP(S) schemes, URLs with `#` fragments, and other unsafe targets)
+- Agent card responses must be valid JSON objects containing `url` and `name`; responses over **1 MB** are rejected
+- Discovery tries only `/.well-known/agent-card.json` and `/.well-known/agent.json` — no longer falls back to fetching the raw base endpoint
+
+### Provider Batches (Guardrails Pipeline)
+- New `internal_output_file_id` column on `batches`; `PUT /v2/batches/:id` accepts `internal_output_file_id` for the guardrails-on-batches processing pipeline
+- `GET /v2/configs` now accepts data-service token authentication for service-to-service config reads
+
+### Hosted Deployments
+- Log export start/cancel/download calls to the data service now include unified-gateway service auth headers on hosted (non-private) deployments
+
+### Fixes and Improvements
+- Fixed ClickHouse analytics time-series queries
+
+</Update>
+
+<Update label="1.16.0" description="2026-05-13">
+
+## v1.16.0
+---
+
+### Guardrails Updates
+- **New: Tavily Online Search Guardrail** — Adds relevant Tavily web search results to the prompt before inference, so the model can answer with current online information. Configurable search depth, topic, time range, domain include/exclude, and more
+- **F5 Guardrails: Credential Override** — F5 Guardrails check now accepts an optional `credentials` object (`apiKey`, `calypsoUrl`) that overrides the organisation-level integration credentials per workspace
+- **Prompt Security: Configurable Policy** — `Protect Prompt` / `Protect Response` checks renamed to **"Prompt Security Prompt"** / **"Prompt Security Response"** and now accept `policy` (per-detector JSON), `redact`, `monitorOnly`, `user`, and `userGroups` parameters
+- [Tavily Documentation](/integrations/guardrails/tavily)
+- [F5 Guardrails Documentation](/integrations/guardrails/f5-guardrails)
+- [Prompt Security Documentation](/integrations/guardrails/prompt-security)
+
+### Azure Integrations
+- **Azure Workload Identity**: New `workload` auth mode formally supported on the integrations API for both Azure OpenAI and Azure AI Foundry. Schema requires `azure_workload_client_id` and `azure_workload_tenant_id`
+- **Azure AI Foundry — Entra Federated**: The `entraFederated` auth mode (AWS → Entra federation) is now available on Azure AI Foundry integrations in addition to Azure OpenAI
+- [Azure Authentication Documentation](/integrations/llms/azure-openai/authentication)
+
+### Usage Limit Policies — `requests` Type
+- New **`requests`** usage-limits policy type, alongside existing `cost` and `tokens`. Caps the number of matching requests per reset window
+- Includes DB migration (`usage_limits_policies.type` enum extended to `cost` / `tokens` / `requests`)
+- [Documentation](/product/enterprise-offering/budget-policies#policy-types)
+
+### Policy Conditions — Updatable
+- `PUT /v2/policies/usage-limits/:id` and `PUT /v2/policies/rate-limits/:id` now accept `conditions` in the request body. Conditions are validated against the policy type and persisted on the policy
+- [Documentation](/product/enterprise-offering/budget-policies#conditions)
+
+### API Key Rotation — Configurable Cadence in Days
+- `user_api_key_rotation_period` organisation/workspace setting now accepts an integer between `1` and `365` in addition to `weekly` / `monthly`
+- Rotation policies on API keys now accept `rotation_period_days` (1–365); mutually exclusive with `rotation_period`
+- Enforcement: explicit rotation policies that don't match the enforced cadence (named period or days) are rejected at create/update time
+- [Documentation](/product/enterprise-offering/org-management/api-key-rotation#organisation-enforced-rotation-period)
+
+### Self-Hosting & Networking
+- **`NO_PROXY` support**: Outbound LLM, OIDC, and Mailgun calls now honour the `NO_PROXY` environment variable in conjunction with `HTTPS_PROXY` / `HTTP_PROXY`
+- **`REQUEST_TIMEOUT`**: Configures the outbound fetch timeout in milliseconds (applies to LLM and OIDC traffic). Defaults preserved
+- **OIDC fetch**: `Issuer` and `OidcClient` are now configured with the same HTTP agent (proxy/timeout) as the rest of the backend
+- **Header sanitization**: Strict-mode validation for analytics `order_by` clauses and ClickHouse queries; better guards around enterprise logs/analytics routes
+
+### MCP Gateway
+- **Dynamic Client Registration (DCR)**: `POST /oauth/register` now performs strict validation on `redirect_uris` (length, scheme, allow-list); `redirect_uri` is also re-checked on `/oauth/authorize` and `/oauth/postAuthorizeConsent`
+- **MCP Metadata Sync Caching**: MCP server metadata sync now uses a short-lived cache to absorb bursts of metadata updates from upstream agents and reduce DB load
+- Removed legacy control-plane OAuth provider used for upstream MCP server auth (now handled directly by the gateway)
+- Removed the `@modelcontextprotocol/sdk` package dependency from the backend (gateway-only)
+
+### SCIM
+- `DELETE /v1/scim/workspaces/...` now returns `{ "success": true }` instead of an empty body for clearer client semantics
+
+### Auth & Sessions
+- `GET /v1/auth/self` now requires a session/JWT and rejects requests authenticated only with an API key
+- Reduced log noise for expired JWT tokens (no longer logged as errors)
+- Deprecated legacy OIDC and Firebase custom-token endpoints removed: `/users/firebase-custom-token`, `/utils/oidc-client-id`, the older OIDC/Okta authentication middlewares, and the deprecated v2 cache wrapper / first-generation done-flag route
+
+### Model Catalog
+- **Model & pricing config sync**: Updated model and pricing configs for Anthropic, Azure AI, Bedrock, Bedrock Mantle, DeepInfra, Google, OpenRouter, Together AI, and Vertex AI
+
+### Security
+- Hardened authorisation error responses and OAuth error paths to avoid leaking unintended details
+- Stricter `redirect_uri` validation on OAuth DCR endpoints
+- Multiple dependency updates and `npm audit` fixes
+
+### Fixes and Improvements
+- Fixed exception handling in prompt playground / prompt completion proxies so upstream fetch failures return clean errors and strip lingering headers
+- Fixed cache invalidation regressions on API-key reset flows and bulk-fetch of API-key versions
+- Fixed log-export `requested_data` JSON serialisation
+- Fixed knex raw queries for collections, labels, prompts, and tools (safer query builders, stricter validators, org-id guards)
+- Fixed `getModelGroupedData` analytics order-by reference and added stricter ClickHouse order-by validation
+- Fixed empty/normalised `workspaceId` handling in collections list controller
+- Fixed `user_api_key_rotation_period = null` edge case during rotation policy evaluation
+
+</Update>
+
+<Update label="1.15.0" description="2026-05-04">
+
+## v1.15.0
+---
+
+### Auto-Created User API Keys
+- New `user_api_key_auto_create` organization setting (with workspace-level override) that automatically provisions a default workspace-user API key for members on join, invite acceptance, SCIM provisioning, and workspace add
+- Auto-generated keys inherit the workspace's `user_api_key_ttl` and the org/workspace-enforced `user_api_key_rotation_period` (if set)
+
+### API Key Rotation: Organization-Enforced Period
+- Organization owners/admins can now enforce a `rotation_period` on workspace-user API keys via the `user_api_key_rotation_period` setting (with optional per-workspace override)
+- New keys without a rotation policy are auto-assigned the enforced period; explicit rotation periods that differ from the enforced value are rejected at create/update time
+- New `rotation_period_days` column added to `rotation_policies` (preparatory; API surface remains `weekly` / `monthly`)
+- [Documentation](/product/enterprise-offering/org-management/api-key-rotation#organisation-enforced-rotation-period)
+
+### Configurable API Key Prefix (Air-Gapped Only)
+- New `API_KEY_PREFIX` environment variable lets self-hosted deployments prefix all newly-generated Portkey API keys with a custom string
+
+### Usage Limits: Custom Reset Cadence
+- Usage limits policies now support **`periodic_reset_days`** (1–365) for arbitrary day-based reset cadences, in addition to existing `monthly` / `weekly` resets
+- New **`next_usage_reset_at`** field to override the next reset timestamp (normalized to UTC midnight)
+- `periodic_reset` and `periodic_reset_days` are mutually exclusive
+- New `periodic_reset_days`, `next_usage_reset_at`, and `last_reset_at` fields exposed on policy GET/LIST responses
+- [Documentation](/product/enterprise-offering/budget-policies#periodic_reset_days-optional)
+
+### Integration & MCP Enhancements
+- **Pricing Adjustments**: Integrations now accept a `pricing_adjustments.multiplier` config to apply per-token markup/discount multipliers (`request_token`, `response_token`, `cache_*`, `audio`, `reasoning`, etc.) on top of base pricing
+- **Custom Host per Custom Model**: `models[].configurations.custom_host` can now be set per integration model (via `PUT /integrations/:id/integration-models`) — required `configurations` validation enforces a non-empty object with a valid URL
+- **Secret Mappings: JSON values**: `secret_mappings` now accept a `value_format` field (`string` | `json`) — `json` parses stringified JSON into the target field (e.g. service-account credentials)
+- **MCP Integrations**: `secret_mappings` are now supported on MCP integrations and resolved at request time. New `secret_mappings` column added to `mcp_integrations`
+- **Azure: Entra Federated Auth**: New `azure_auth_mode: entraFederated` mode for Azure OpenAI integrations (`azure_entra_tenant_id` + `azure_entra_client_id`, no client secret required)
+- **Bedrock Mantle Provider**: New `bedrock-mantle` provider seeded for AWS's OpenAI-compatible Bedrock inference engine
+- [Bedrock Mantle Documentation](/integrations/llms/bedrock-mantle)
+
+### SSO Subdomain Wildcards
+- Organisation email domains now accept an `allow_subdomains` flag — when enabled on a root domain, users from any subdomain (e.g. `team.example.com`, `eu.example.com`) resolve to the same SSO settings
+- Sub-domains themselves cannot have `allow_subdomains` enabled — only the root domain
+
+### SCIM Enhancements
+- **Workspace Mapping by Group Name**: `POST /v1/scim/workspaces` now accepts `scim_group_name` (in addition to `scim_group_id`) — auto-creates the SCIM group if it doesn't exist yet
+- Workspace mapping requests now go through validation middleware: `workspace_id` and `role` (one of `admin`, `manager`, `member` — case-insensitive) are required, plus exactly one of `scim_group_id` / `scim_group_name`
+- **Group Membership Cleanup**: SCIM group update flows refactored — group membership changes now correctly remove user API keys when users are removed from the org/workspace via SCIM
+- [Documentation](/product/enterprise-offering/org-management/scim/group-management)
+
+### Admin Log Permissions
+- New organization and workspace security settings:
+  - `organisationAdminsViewLogs` — control whether org admins can view request logs
+  - `organisationAdminsViewLogMetadata` — control whether org admins can view log metadata
+- Settings are enabled by default and support workspace-level overrides
+
+### Configs — Passthrough Provider
+- Configs now accept a top-level `passthrough: true` flag, allowing a config to mark requests as passthrough mode (no provider transformation) — exclusive with `targets`/`strategy`/`override_params`/`*_guardrails`
+
+### Guardrails Updates
+- **Required Metadata Key-Value Pairs**: New `matchType` parameter (`exact` (default), `contains`, `containsAll`, `regex`) controls how metadata values are compared
+- **Akto**: Schema renamed to **"Akto Guardrail"**, `apiDomain` is now required (Akto base URL is derived from it), `deny: true` is the new default
+- **Guardrail Pagination**: `GET /guardrails` now supports `current_page` and `page_size` query parameters
+- **Multi-ID Lookup**: `GET /guardrails?ids=...` now accepts comma-separated guardrail IDs
+- [Akto Documentation](/integrations/guardrails/akto)
+
+### Models API
+- `total_count` on `GET /v1/models` now reflects the filtered total (matching the applied query) instead of the unfiltered total
+- `/models` route is now accessible to all workspace roles (previously restricted)
+- Renamed `total` → `total_count` in models endpoint output
+
+### Agent Gateway
+- Granular RBAC scopes added for `organisation_agent_integrations.*`, `workspace_agent_integrations.*`, `agent_servers.*`, `agent_server_skills.*`, `agent_integration_skills.*`, and `agent_server_user_access.*`
+- New **`agents.invoke`** scope for invoking agents (workspace-service / workspace-user keys)
+- New `GET /v1/agent-servers/:id/agent-card` endpoint to fetch the upstream agent card
+
+### Self-Hosting & Deployment
+- **Gateway Registration — Air-Gapped & License-Gated**: Gateway registration is now enabled based on subscription `licenseType` (`HYBRID` / `AIRGAP`) combined with private-deployment flags. Air-gapped deployments can register gateways without external connectivity
+- **OpenShift / pm2**: Dockerfile updated with `pm2-home`, increased read limits, and removed `chown 1001` for OpenShift compatibility
+
+### Security
+- Strip sensitive request headers (e.g. `x-forwarded-*`) from inbound requests before processing
+- AWS role ARN is now returned **unmasked** on integration GET/LIST (was previously masked)
+- Security dependency updates and vulnerability fixes
+
+### Fixes and Improvements
+- Fixed `customHost` validation regression on custom-model integrations
+- Fixed cache invalidation on MCP server connection delete in enterprise deployments
+- Fixed pricing config response per model to include integration-level adjustments
+- Fixed workspace usage-limits validation when invalid values were passed
+- Fixed Terraform workspace update with non-ASCII (Unicode space) characters
+- Fixed user-removal scope check on workspace `removeUsers`
+
+</Update>
+
+<Update label="1.14.0" description="2026-04-12">
+
+## v1.14.0
+---
+
+### API Key Rotation — Generally Available
+- **API key rotation is now generally available**
+- Use API key rotation scopes (`*.rotate`) for organisation-service, workspace-service, and workspace-user API key types
+- [Documentation](/product/enterprise-offering/org-management/api-key-rotation)
+
+### Integration Security Settings
+- Added new **organization security settings** to control workspace manager write access for:
+  - **Workspace Integrations** (`managersWriteWsIntegrations`)
+  - **MCP Integrations** (`managersWriteWsMcpIntegrations`)
+  - **MCP Servers** (`managersWriteMcpServers`)
+- All three settings are **enabled by default** and support **workspace-level overrides**
+- [Documentation](/product/administration/configure-integration-access-permissions)
+
+### MCP Server User Connections API
+- New **List Connections** API (`GET /v1/mcp-servers/:mcpServerId/connections`) to retrieve user connections for an MCP server with pagination support
+- New **Revoke Connection** API (`DELETE /v1/mcp-servers/:mcpServerId/connections`) to revoke a user's connection to an MCP server
+- Admins and workspace managers can view and revoke connections for any user; non-admin users can only manage their own connections
+
+### SCIM Enhancements
+- SCIM provisioning now accepts **case-insensitive roles** — `Admin`, `admin`, and `ADMIN` are all treated identically for both organization and workspace role assignments
+
+### Self-Hosting Improvements
+- Added **configurable MySQL reader** with HADR (High Availability Disaster Recovery) mode for writer failover
+  - New environment variables: `DB_READER_HOST`, `DB_READER_USER`, `DB_READER_PASS`, `DB_READER_PORT`
+  - Enable HADR mode with `MYSQL_WRITER_HADR_MODE=ON` — the backend continues serving reads when the writer is unavailable and reconnects automatically
+  - Health endpoint reports `degraded` status when writer is unavailable in HADR mode
+
+### Security
+- Removed `x-powered-by` response header for improved security posture
+
+### Guardrails Updates
+- Added new **Lasso Classifier** check (`lasso.classify`) and updated Lasso integration schema with optional `apiEndpoint` for self-hosted deployments
+- [Documentation](/integrations/guardrails/lasso)
+
+### Fixes and Improvements
+- Fixed SCIM group update to skip workspace update when workspace is not found
+- Fixed workspace deletion to handle emoji characters when triggered from API keys (Terraform)
+- Fixed `last_updated_by` field for API key defaults configuration
+- Security dependency updates
+
+</Update>
+
+<Update label="1.13.0" description="2026-04-01">
+
+## v1.13.0
+---
+
+### API Key Rotation
+- Added **API key rotation** with support for automatic and manual rotation
+- Configure rotation policies when creating or updating API keys with `rotation_policy` parameter:
+  - `rotation_period`: `weekly` or `monthly` auto-rotation schedule
+  - `next_rotation_at`: ISO 8601 date for the next scheduled rotation
+  - `key_transition_period_ms`: Grace period (minimum 30 minutes) during which both old and new keys are valid
+- New **`POST /api-keys/:apiKeyId/rotate`** endpoint for manual key rotation — works with or without an auto-rotation policy
+- Auto-rotation processor with email alerts for upcoming rotations, completed rotations, and expiry warnings
+
+### Organization Session Management
+- Added **session management** settings at the organization level
+- Configure `session_settings` in organization auth settings with `max_session_ttl` (minimum 900 seconds / 15 minutes)
+- When set, user sessions exceeding the TTL are automatically rejected, requiring re-authentication
+
+### New Guardrail: Required Metadata Key-Value Pairs
+- Added **Required Metadata Key-Value Pairs** guardrail (`default.requiredMetadataKeyPairs`) to validate that requests contain specified metadata key-value pairs
+- Configurable parameters:
+  - `metadataPairs`: Object defining required key-value pairs
+  - `operator`: `all` (all pairs must match), `any` (at least one pair must match), or `none` (no pairs should match)
+- Runs on the `beforeRequestHook`
+
+### Rate Limits Enhancements
+- Added **`rpw`** (requests per week) as a new rate limit unit alongside existing `rpm`, `rph`, and `rpd`
+- Added **`endpoint_type`** as a new condition key for rate limit policies, allowing rate limits to target specific endpoint types (e.g., `chatComplete`, `embed`, `imageGenerate`)
+- [Documentation](/product/enterprise-offering/budget-policies)
+
+### Agent Gateway
+- Added **Agent Gateway** with full CRUD APIs for managing agent integrations and agent servers
+- Includes agent skills management, workspace-level access control, and user access management
+- RBAC support for agent resources
+
+### Self-Hosting Improvements
+- Added **ClickHouse replication and sharding** support for high-availability analytics deployments
+- Added support for **decoupled JWT authentication** in private deployments, allowing the data plane to validate tokens independently from the control plane
+<Note> 
+Requires Gateway v2.5.0 or higher
+</Note>
+
+### Fixes and Improvements
+- Fixed provisioning for empty groups
+- Added `last_reset_at` field to API key, workspace, integration, and virtual key responses
+- Model configuration and pricing updates
+- Security dependency updates
+
+</Update>
+
+<Update label="1.12.1" description="2026-03-16">
+
+## v1.12.1
+---
+
+### New Guardrail: Akto Agentic Security
+- Added **Akto Agentic Security** guardrail integration for advanced threat detection and security scanning of LLM inputs and outputs
+- [Documentation](/integrations/guardrails/akto)
+
+### New Guardrail: Inline Image URLs
+- Added **Inline Image URLs** guardrail that fetches external image URLs and converts them to Base64 inline data
+- Useful for VPC-SC environments where LLM providers cannot access external URLs
+- Configurable parameters: `providers` (target providers), `maxSizeBytes` (default: 20MB), `timeoutMs` (default: 30000), `failOnError` (default: false)
+
+### AWS Bedrock Guardrails
+- Added optional **Custom Host** field to the Bedrock guardrail integration schema, allowing use of private or custom Bedrock endpoints
+
+### Fixes and Improvements
+- Fixed SCIM user update validation to correctly handle user reactivation flows
+- Model configuration and pricing updates across multiple providers
+- Security dependency updates
+
+</Update>
 
 <Update label="1.12.0" description="2026-03-09">
 

@@ -5,6 +5,8 @@ description: Pass headers from agent requests to MCP servers.
 
 Header forwarding passes specific headers from agent requests through to MCP servers. Use for distributed tracing, tenant context, or custom metadata that needs to reach the upstream server.
 
+You can also **rename headers inline** using object entries, so client-side header names can differ from what the upstream server expects.
+
 ## When to Use
 
 Your agent includes headers with context that the MCP server needs. Maybe a trace ID for distributed tracing. Maybe a tenant ID for multi-tenant servers. Maybe custom metadata your server expects.
@@ -24,9 +26,9 @@ Common scenarios:
 
 Configure `forward_headers` when adding or editing an MCP server in the MCP Registry.
 
-### Allowlist Specific Headers
+### Shorthand (string array)
 
-Forward only the headers you specify:
+Forward only the headers you specify. No renaming support in this form:
 
 ```json
 {
@@ -36,31 +38,46 @@ Forward only the headers you specify:
 
 Other headers from the agent request are dropped.
 
-### Explicit Allowlist Mode
+### Allowlist mode
 
-The same behavior with explicit configuration:
+The same behavior with explicit configuration. Entries in the `headers` array can be:
+
+- **A string** — forwards the header as-is.
+- **An object** `{ "from": "<client_header>", "to": "<upstream_header>" }` — forwards the header with its name changed.
 
 ```json
 {
   "forward_headers": {
     "mode": "allowlist",
-    "headers": ["x-request-id", "x-trace-id", "x-tenant-id"]
+    "headers": [
+      "x-trace-id",
+      { "from": "x-tenant-id", "to": "X-Organization-Id" },
+      { "from": "x-env", "to": "X-Deploy-Environment" }
+    ]
   }
 }
 ```
 
-### Forward All Except Specific Headers
+In this example, `x-trace-id` is forwarded as-is, `x-tenant-id` arrives at the upstream as `X-Organization-Id`, and `x-env` arrives as `X-Deploy-Environment`.
 
-Forward everything except headers you exclude:
+### All-except mode
+
+Forward everything except headers you exclude. String entries are excluded; object entries rename forwarded headers:
 
 ```json
 {
   "forward_headers": {
     "mode": "all-except",
-    "headers": ["user-agent", "referer", "accept-language"]
+    "headers": [
+      "host",
+      "connection",
+      { "from": "x-tenant-id", "to": "X-Org-Id" }
+    ]
   }
 }
 ```
+
+Here, `host` and `connection` are excluded. All other headers are forwarded. Additionally, `x-tenant-id` is renamed to `X-Org-Id` before reaching the upstream server.
 
 <Warning>
 Use `all-except` mode carefully. It forwards more headers than you might expect, which could leak information or cause conflicts. Prefer explicit allowlists when possible.
@@ -84,8 +101,24 @@ These headers are **never forwarded** regardless of your configuration:
 | `apikey` | Could leak API keys |
 | `x-auth-token` | Could leak tokens |
 | `x-access-token` | Could leak tokens |
+| `x-user-claims` | Identity spoofing prevention |
+| `x-user-jwt` | Identity spoofing prevention |
 
 In `all-except` mode, these are automatically added to the blocklist. You cannot override this behavior.
+
+### Header mapping validation
+
+When using object entries for header renaming, **both** the source (`from`) and target (`to`) header names are validated against the protected headers blocklist. If either name is protected, the mapping is rejected and the header is not forwarded.
+
+Header matching on the source name is **case-insensitive**.
+
+```json
+// This mapping is rejected — x-api-key is protected
+{ "from": "x-api-key", "to": "X-Custom-Key" }
+
+// This mapping is also rejected — the target is protected
+{ "from": "x-custom", "to": "x-auth-token" }
+```
 
 ### Identity Headers Are Protected
 
@@ -251,6 +284,47 @@ x-org-id: org-12345
 ```
 
 Your server uses these headers to filter data to the correct tenant.
+
+---
+
+## Example: Header renaming
+
+Your agent sends `x-tenant-id` but your upstream MCP server expects `X-Organization-Id`.
+
+**Server configuration:**
+
+```json
+{
+  "forward_headers": {
+    "mode": "allowlist",
+    "headers": [
+      "x-request-id",
+      { "from": "x-tenant-id", "to": "X-Organization-Id" }
+    ]
+  }
+}
+```
+
+**Agent request:**
+
+```json
+{
+  "headers": {
+    "x-portkey-api-key": "pk_xxx",
+    "x-request-id": "req-abc123",
+    "x-tenant-id": "tenant-acme"
+  }
+}
+```
+
+**MCP server receives:**
+
+```
+x-request-id: req-abc123
+X-Organization-Id: tenant-acme
+```
+
+The `x-tenant-id` header is renamed to `X-Organization-Id` before reaching the upstream server.
 
 ---
 

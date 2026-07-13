@@ -1,0 +1,140 @@
+---
+title: "Model Rules"
+description: "Allow or block requested models using a default model list and metadata-based model mappings."
+---
+
+Model Rules is a built-in Portkey guardrail that checks the requested model before the request is sent upstream. It resolves an allowed model list from your configured rules, then either allows or blocks the request based on whether the requested model matches.
+
+With metadata-based mappings, you can dynamically control which models are available based on request context — such as customer tier, team, or workspace. This makes Model Rules especially useful for enforcing model access policies across your organization.
+
+<Info>
+  You can apply Model Rules at the **org level** by attaching it as an [Org Guardrail](/product/guardrails), giving you complete coverage across all workspaces and API keys.
+</Info>
+
+## Use cases
+
+- **PHI-compliant workloads**: Workspaces that process Protected Health Information (PHI) can have default metadata indicating their compliance requirements. Based on that metadata, you can restrict those workspaces to only access models that meet your data handling standards (e.g., only models hosted in specific regions or on specific providers).
+- **Tiered model access**: Offer different model access based on customer tier — free users get cost-efficient models, enterprise users get unrestricted access.
+- **Team-specific model policies**: Research teams may need access to frontier models, while support teams only need smaller, faster models.
+- **Cost control**: Prevent specific workspaces or API keys from accessing expensive models by mapping their metadata to a restricted model list.
+
+## Using Model Rules with Portkey
+
+### 1. Add a Model Rules check
+
+1. Navigate to the `Guardrails` page and click `Create`
+2. Search for `Model Rules` and click `Add`
+3. Fill in the parameters described below
+
+### Parameters
+
+<ParamField path="rules" type="object" required>
+  The rules object that defines how the allowed model list is resolved. See [Rules JSON shape](#rules-json-shape) below.
+</ParamField>
+
+<ParamField path="not" type="boolean" default={false}>
+  When `true`, any model resolved by the rules is blocked instead of allowed.
+</ParamField>
+
+### Rules JSON shape
+
+<ParamField path="defaults" type="string[]">
+  The default list of allowed models, used when no `metadata` entry matches the request.
+</ParamField>
+
+<ParamField path="metadata" type="object">
+  Maps request metadata keys to metadata values, which then map to allowed model lists. If a metadata entry matches the request, its model list replaces `defaults` for that request.
+</ParamField>
+
+<ParamField path="metadata.<metadata_key>" type="object">
+  A metadata key from the request, such as `customer_tier` or `team`.
+</ParamField>
+
+<ParamField path="metadata.<metadata_key>.<metadata_value>" type="string[]">
+  The list of allowed models when the metadata key equals this value.
+</ParamField>
+
+#### Wildcard
+
+Any entry in an allowed model list can be `*`. When `*` is present, every requested model matches that list.
+
+- `["*"]` — allow every model
+- `["gpt-4.1-mini", "*"]` — equivalent to `["*"]`, any model matches
+- Combined with `not: true`, `["*"]` blocks every model
+
+### Example rules
+
+```json
+{
+  "defaults": ["gpt-4.1-mini"],
+  "metadata": {
+    "customer_tier": {
+      "enterprise": ["*"],
+      "free": ["gpt-4.1-mini"]
+    },
+    "team": {
+      "research": ["claude-3-7-sonnet", "gpt-4.1"]
+    }
+  }
+}
+```
+
+In this example:
+- Requests with no matching metadata default to `gpt-4.1-mini`
+- Enterprise customers can access any model
+- Free-tier customers are restricted to `gpt-4.1-mini`
+- The research team can access `claude-3-7-sonnet` and `gpt-4.1`
+
+### 2. Set a guardrail action
+
+When you create the guardrail, set the action so failing requests are denied. In most cases you'll want:
+
+- **Deny**: block the request when the model does not pass the rules
+
+You can learn more about actions in the [Guardrails documentation](/product/guardrails#there-are-7-types-of-guardrail-actions).
+
+### 3. Attach the guardrail
+
+Once the guardrail is saved, you'll get a Guardrail ID. You can apply it in any of these ways:
+
+- Add it to `input_guardrails` in a [Portkey Config](/product/ai-gateway/configs)
+- Attach it to a [Workspace](/product/enterprise-offering/org-management/workspaces) so it applies to all requests in that workspace
+- Attach it as an [Org Guardrail](/product/guardrails) so it applies across the entire organization
+
+Example config:
+
+```json
+{
+  "input_guardrails": ["guardrails-id-xxx"]
+}
+```
+
+<Tip>
+  For complete coverage, attach Model Rules as an **Org Guardrail**. This ensures every request across all workspaces is subject to your model access policies, regardless of how individual configs are set up.
+</Tip>
+
+### 4. Make a request with metadata
+
+Send request metadata so the guardrail can resolve the correct model list.
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -H 'x-portkey-metadata: {"customer_tier":"enterprise","team":"research"}' \
+  -d '{
+    "model": "claude-3-7-sonnet",
+    "messages": [{
+      "role": "user",
+      "content": "Hello!"
+    }]
+  }'
+```
+
+In this example, the guardrail resolves the allowed model list from the `customer_tier: enterprise` metadata (which allows `*`), so the request for `claude-3-7-sonnet` is permitted.
+
+## Get support
+
+If you face any issues with Model Rules, join the [Portkey community forum](https://discord.gg/portkey-llms-in-prod-1143393887742861333) for assistance.
