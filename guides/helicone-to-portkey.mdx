@@ -1,0 +1,350 @@
+---
+title: "Migrate from Helicone to Portkey"
+description: "A practical migration playbook to move from Helicone to Portkey with minimal downtime."
+---
+
+<Info>
+  Use this guide to migrate in phases: first switch live traffic, then move advanced behaviors (metadata, traces, caching, fallbacks, and prompts).
+</Info>
+
+## Why switch to Portkey
+
+Teams typically migrate from Helicone to Portkey when they need an actively evolving AI gateway with stronger production controls for routing, governance, observability, and enterprise deployment.
+
+| Capability | Helicone | Portkey |
+| --- | --- | --- |
+| Gateway maturity | Maintenance-oriented docs and feature velocity | Actively developed universal AI gateway |
+| Provider orchestration | Basic fallback and header-driven controls | Config-driven fallback, retries, load balancing, conditional routing |
+| Observability model | Request/session headers and dashboard analytics | Trace IDs, metadata, logs, analytics, feedback, OpenTelemetry integrations |
+| Caching controls | Header-level cache toggles and options | Config-first caching + runtime cache headers |
+| Prompt operations | Prompt IDs, environments, variables | Prompt library, versioning, variables, API deployment |
+| Enterprise governance | Basic policy controls | Org-level metadata enforcement, access controls, deployment options |
+
+
+
+## Phase 1: Minimal traffic switch
+
+Goal: route existing requests through Portkey with the least code change.
+
+### What changes in code (Helicone -> Portkey)
+
+```javascript
+// ❌ Before: Helicone AI Gateway
+const client = new OpenAI({
+  baseURL: "https://ai-gateway.helicone.ai",
+  apiKey: process.env.HELICONE_API_KEY
+});
+```
+
+```python
+# ✅ After: Portkey
+from portkey_ai import Portkey
+
+# 1. Install: pip install portkey-ai
+# 2. Add @openai provider in model catalog
+# 3. Use it:
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@openai/gpt-4o",
+    messages=[{"role": "user", "content": "Say this is a test"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+### Verify minimal traffic switch
+
+- Request succeeds with expected model response.
+- Request appears in Portkey Logs.
+- Tokens/latency are visible in dashboard telemetry.
+
+
+**Relevant docs:**
+- [Python SDK](/api-reference/sdk/python)
+- [Node SDK](/api-reference/sdk/node)
+- [Chat Completions](/product/ai-gateway/chat-completions)
+- [Logs](/product/observability/logs)
+
+## Phase 2: Header migration
+
+Migrate Helicone header behaviors to Portkey equivalents.
+
+| Helicone header/pattern | Portkey equivalent | Notes |
+| --- | --- | --- |
+| `Helicone-Auth` | `x-portkey-api-key` (+ provider auth) | Portkey always needs Portkey API key; provider auth can come via `Authorization`, provider slug, or config |
+| `Helicone-Property-*` | `x-portkey-metadata` JSON | Move scattered key-value headers into one metadata object |
+| `Helicone-User-Id` | `x-portkey-metadata` with `_user` | Standardize on `_user` for user-level filtering |
+| `Helicone-Session-Id` | `x-portkey-trace-id` | Use one trace ID for correlated request chains |
+| `Helicone-Cache-Enabled` | Config-based cache policy | Use a Portkey config for default behavior; optional runtime cache headers for overrides |
+| `Helicone-Cache-Seed` | `x-portkey-cache-namespace` | Namespace cache partitions by tenant/user/context |
+| `Helicone-Fallbacks` | `x-portkey-config` with fallback strategy | Prefer config-driven routing for reusable and auditable behavior |
+| Rate-limit policy headers | Config + key/workspace governance | Set org/key-level policies where possible instead of per-call patching |
+
+**Relevant docs:**
+- [Headers reference](/api-reference/inference-api/headers)
+- [Configs](/product/ai-gateway/configs)
+
+## Phase 3: Feature parity tracks
+
+### 1) Observability and traces
+- Add `trace_id` / `traceId` to correlated workflows.
+- Attach metadata keys (for example `_user`, `environment`, `tenant_id`, `feature`) at request level, or enforce them at API key/workspace level.
+- Validate in Portkey Logs/Analytics filters and in Traces view.
+
+<Frame caption="Trace view for multi-step workflows">
+  <img src="/images/product/product-11-1.webp"/>
+</Frame>
+
+**Relevant docs:**
+- [Tracing](/product/observability/traces)
+- [Metadata](/product/observability/metadata)
+- [Configuring request logging](/product/administration/configuring-request-logging)
+
+### 2) Caching
+- Create cache policy in **Configs** on the Portkey platform (`cache.mode`, optional `cache.max_age`).
+- Attach that config via `x-portkey-config` (or set it as the API key's default config).
+- Compare hit rate and latency against your Helicone baseline.
+
+```bash
+# Helicone cache toggle
+-H "Helicone-Cache-Enabled: true" \
+-H "Helicone-Cache-Seed: user-123"
+```
+
+```bash
+# Portkey cache via config
+-H "x-portkey-config: pc-cache-xxx" \
+```
+
+```json
+// Portkey config (recommended default policy)
+{
+  "cache": {
+    "mode": "simple",
+    "max_age": 3600
+  }
+}
+```
+
+**Relevant docs:**
+- [Cache (Simple & Semantic)](/product/ai-gateway/cache-simple-and-semantic)
+- [Configs](/product/ai-gateway/configs)
+
+### 3) Routing, fallbacks, retries
+- Move header-based fallback JSON into a saved Portkey config (create it in **Configs** on the platform).
+- Add retries and timeout controls in the same config.
+- Roll out gradually using a canary key/config.
+
+```bash
+# Helicone header-based fallback
+-H 'Helicone-Fallbacks: [{"target-url":"https://api.openai.com","headers":{"Authorization":"Bearer ..."},"onCodes":[{"from":500,"to":599}]}]'
+```
+
+```json
+// Portkey config with fallback + retries + timeout
+{
+  "strategy": {
+    "mode": "fallback"
+  },
+  "targets": [
+    {
+      "provider": "@openai-prod",
+      "override_params": { "model": "gpt-4o-mini" }
+    },
+    {
+      "provider": "@anthropic-prod",
+      "override_params": { "model": "claude-3-5-sonnet-latest" }
+    }
+  ],
+  "retry": { "attempts": 2 },
+  "request_timeout": 30000
+}
+```
+
+
+**Relevant docs:**
+- [Fallbacks](/product/ai-gateway/fallbacks)
+- [Automatic retries](/product/ai-gateway/automatic-retries)
+- [Request timeouts](/product/ai-gateway/request-timeouts)
+- [Configs](/product/ai-gateway/configs)
+
+### 4) Prompt management
+- Recreate prompts in Portkey Prompt Library.
+- Use `prompts.completions.create` with `promptID` and `variables`; append environment/version in `promptID` where needed.
+- Validate prompt outputs before production promotion.
+
+```json
+// Helicone request pattern
+{
+  "model": "gpt-4o-mini",
+  "prompt_id": "abc123",
+  "environment": "production",
+  "inputs": { "customer_name": "John" }
+}
+```
+
+```json
+// Portkey prompt call pattern (documented)
+{
+  "promptID": "pp-support-bot-abc123@production",
+  "variables": { "customer_name": "John" }
+}
+```
+
+<Note>
+  Start by migrating your top 10-20 high-traffic prompts. Validate output parity with fixed fixtures before moving long-tail prompts.
+</Note>
+
+<Frame caption="Prompt Playground and comparison workflow">
+  <img src="/images/product/prompts/prompt-comparison-playground.png"/>
+</Frame>
+
+**Relevant docs:**
+- [Prompt Library](/product/prompt-engineering-studio/prompt-library)
+- [Prompt API](/product/prompt-engineering-studio/prompt-api)
+- [Prompt Versioning](/product/prompt-engineering-studio/prompt-versioning)
+
+### 5) Security and governance
+- Use workspace-scoped API keys where applicable.
+- Enforce metadata conventions for reporting and auditability.
+- Apply org-level controls (retention, access, policy) after the migration is stable.
+
+<Frame caption="Role-based access control">
+  <img src="/images/product/api-key-management.png" />
+</Frame>
+
+**Relevant docs:**
+- [Configure API key access permissions](/product/administration/configure-api-key-access-permissions)
+- [Enforcing request metadata](/product/administration/enforcing-request-metadata)
+- [Configure logs access permissions in workspace](/product/administration/configure-logs-access-permissions-in-workspace)
+
+## Budgets and rate limits
+
+After feature parity, add governance controls in Portkey so costs and throughput are enforced by platform policy.
+
+- **API key limits (recommended first):** Configure budget and rate limits directly on API keys from the dashboard.
+- **Workspace-wide limits:** Use workspace policies when you need shared limits across teams/services.
+- **Alerts:** Configure alert thresholds and email recipients before hard limit blocks.
+
+<Note>
+  Availability depends on your plan. API key budget/rate limits are available on Enterprise and select Pro customers.
+</Note>
+
+### Typical setup
+
+1. Open API keys in Portkey and edit the key used by migrated traffic.
+2. Enable a budget limit (cost or tokens), plus optional weekly/monthly reset.
+3. Enable a rate limit (requests or tokens per minute/hour/day).
+4. Add alert thresholds and recipients.
+
+<Frame caption="Budget and rate limit configuration">
+  <img src="/images/product/budget-limits-options.png" />
+</Frame>
+
+### Docs
+
+- [Enforce budget and rate limits on API keys](/product/administration/enforce-budget-and-rate-limit)
+- [Enforce workspace budget and rate limits](/product/administration/enforce-workspace-budget-limts-and-rate-limits)
+- [Usage & rate limit policies](/product/enterprise-offering/budget-policies)
+
+## Common pitfalls
+
+### Auth and provider routing
+
+- `x-portkey-api-key` authenticates to Portkey. Provider auth is separate unless your provider key is already saved in Portkey Model Catalog.
+- If you use provider slugs (`@provider-name`), make sure provider is configured in Model Catalog.
+
+### Metadata and tracing
+
+- `x-portkey-metadata` must be valid JSON.
+- Move user identity to `_user` consistently for dashboard filters.
+- Reuse the same `x-portkey-trace-id` across related multi-step calls.
+
+### Caching and fallbacks
+
+- If migrating from header-only cache toggles, configure default cache behavior in config first.
+- Fallback logic should live in config so all clients inherit the same policy.
+- Validate fallback triggers in staging by forcing known provider-side failures.
+
+**Relevant docs:**
+- [Cache (Simple & Semantic)](/product/ai-gateway/cache-simple-and-semantic)
+- [Fallbacks](/product/ai-gateway/fallbacks)
+- [Configs](/product/ai-gateway/configs)
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="401/403 after migration switch">
+    Check both Portkey API key (`x-portkey-api-key`) and provider auth (`Authorization` or provider slug/config path).
+  </Accordion>
+  <Accordion title="Requests not showing expected metadata">
+    Confirm `x-portkey-metadata` is valid JSON and includes stable keys like `_user`, `environment`, and tenant identifiers. Also verify API key/workspace-level metadata policies if configured.
+  </Accordion>
+  <Accordion title="Trace chains are fragmented">
+    Ensure related requests share the same `x-portkey-trace-id` end-to-end in your workflow.
+  </Accordion>
+  <Accordion title="Fallback not triggering">
+    Verify fallback rules are in the active config attached to your request or API key.
+  </Accordion>
+  <Accordion title="Cache hit rate dropped after migration">
+    Recheck namespace strategy and request canonicalization; avoid accidental metadata or payload variance.
+  </Accordion>
+</AccordionGroup>
+
+
+**Relevant docs:**
+- [Logs](/product/observability/logs)
+- [Tracing](/product/observability/traces)
+- [Headers reference](/api-reference/inference-api/headers)
+
+## Post-migration hardening
+
+- Standardize metadata schema for cross-team consistency.
+- Attach default configs to API keys where suitable.
+- Add budget/rate-limit governance and alerts.
+- Lock down access with least privilege in workspaces.
+
+
+**Relevant docs:**
+- [Enforcing request metadata](/product/administration/enforcing-request-metadata)
+- [Enforce default config](/product/administration/enforce-default-config)
+- [Configure API key access permissions](/product/administration/configure-api-key-access-permissions)
+
+## FAQ
+
+<AccordionGroup>
+  <Accordion title="Can I run Helicone and Portkey in parallel during migration?">
+    Yes. Start with a phased rollout and compare baseline metrics before full migration switch.
+  </Accordion>
+  <Accordion title="Do I need to rewrite all prompts at once?">
+    No. Migrate high-impact prompts first, validate parity, then move the long tail.
+  </Accordion>
+  <Accordion title="Can I migrate team-by-team instead of service-by-service?">
+    Yes. Use workspace keys and config boundaries to isolate rollout by team.
+  </Accordion>
+  <Accordion title="How should I preserve migration auditability?">
+    Keep a migration worksheet with header mappings, config IDs, and rollout checkpoints.
+  </Accordion>
+</AccordionGroup>
+
+**Relevant docs:**
+- [Support: Contact Us](/support/contact-us)
+- [Enterprise Support](/enterprise/support)
+
+## Resources
+
+- [Headers reference](/api-reference/inference-api/headers)
+- [Config object](/api-reference/inference-api/config-object)
+- [Gateway configs](/product/ai-gateway/configs)
+- [Cache (Simple & Semantic)](/product/ai-gateway/cache-simple-and-semantic)
+- [Fallbacks](/product/ai-gateway/fallbacks)
+- [Automatic retries](/product/ai-gateway/automatic-retries)
+- [Request timeouts](/product/ai-gateway/request-timeouts)
+- [Tracing](/product/observability/traces)
+- [Metadata](/product/observability/metadata)
+- [Prompt API](/product/prompt-engineering-studio/prompt-api)
+- [Prompt Versioning](/product/prompt-engineering-studio/prompt-versioning)
+- [Enforce budget and rate limits on API keys](/product/administration/enforce-budget-and-rate-limit)
+- [Enforce workspace budget and rate limits](/product/administration/enforce-workspace-budget-limts-and-rate-limits)
