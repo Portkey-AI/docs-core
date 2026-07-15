@@ -35,6 +35,8 @@ Before integrating with Portkey:
   - **Profile Name** (required): Enter the security profile name from your Prisma AIRS configuration
   - **AI Model**: Specify the AI model identifier (optional)
   - **App User**: Specify the application user context (optional)
+  - **Scan Scope**: Controls which messages are scanned (optional, defaults to `last_message`)
+  - **Strip Scaffolding**: Removes known agent-harness wrappers before scanning (optional, defaults to `false`)
 * Set any `actions` you want on your check, and create the Guardrail!
 
 
@@ -44,7 +46,35 @@ Before integrating with Portkey:
 
 | Check Name | Description | Parameters | Supported Hooks |
 |------------|-------------|------------|-----------------|
-| PANW Prisma AIRS Guardrail | Blocks prompt/response when Palo Alto Networks Prisma AI Runtime Security returns action=block | `Profile Name` (string, required), `AI Model` (string), `App User` (string) | `beforeRequestHook`, `afterRequestHook` |
+| PANW Prisma AIRS Guardrail | Blocks prompt/response when Palo Alto Networks Prisma AI Runtime Security returns action=block | `Profile Name` (string, required), `AI Model` (string), `App User` (string), `Scan Scope` (enum), `Strip Scaffolding` (boolean) | `beforeRequestHook`, `afterRequestHook` |
+
+### Parameter Details
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `Profile Name` | string | — | Security profile name from Prisma AIRS (required) |
+| `AI Model` | string | — | AI model identifier for context-aware detection |
+| `App User` | string | — | Application user context |
+| `Scan Scope` | enum | `last_message` | Which messages to scan: `last_message`, `last_user_message`, `user_messages`, `all_messages` |
+| `Strip Scaffolding` | boolean | `false` | Remove known agent-harness wrappers (e.g., `<system-reminder>` blocks, MCP tool instructions) before scanning |
+
+### Recommended Configuration for Agentic Clients
+
+When using Portkey with agentic clients like Claude Code, Cursor, or Cline, these clients often inject scaffolding into messages (system reminders, MCP tool instructions, suggestion mode markers) that can trigger false positives in security scans. Use `scan_scope` and `strip_scaffolding` to reduce noise while preserving detection of real threats:
+
+```json
+{
+  "scan_scope": "last_user_message",
+  "strip_scaffolding": true
+}
+```
+
+- **`scan_scope: "last_user_message"`** — skips non-user messages (e.g., system hooks, assistant scaffolding) and scans only the last user message
+- **`strip_scaffolding: true`** — strips known agent-harness wrappers before sending text to AIRS
+
+<Note>
+Tool result content (`tool_result`) is always preserved and scanned regardless of `strip_scaffolding`, since tool results are untrusted external input where indirect prompt injection can occur.
+</Note>
 
 ### 4. Add Guardrail ID to a Config and Make Your Request
 
