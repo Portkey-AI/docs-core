@@ -1,38 +1,112 @@
 ---
 title: "Enforcing Org Level Guardrails"
+description: "Enforce organization-wide input and output guardrails, and exclude specific workspaces when needed"
 ---
+
 ## Overview
-Portkey enables organization owners to enforce request guardrails at the organization level. This feature ensures that all API requests made within the organization comply with predefined policies, enhancing security, compliance, and governance.
+
+Portkey enables organization owners and admins to enforce request guardrails at the organization level. This feature ensures that API requests made within the organization comply with predefined policies, enhancing security, compliance, and governance.
 
 ## How It Works
-Organization owners can define input and output guardrails in the Organization Guardrails section. These guardrails are enforced on all API requests made within the organization, ensuring uniform policy enforcement across all users and applications.
+
+Organization owners can define input and output guardrails in the **Organisation Guardrails** section. By default, these guardrails are enforced on API requests across workspaces in the organization.
 
 - **Input Guardrails**: Define checks and constraints for incoming LLM requests.
 - **Output Guardrails**: Ensure LLM responses align with organizational policies.
 
-The guardrails available here are the same as those found in the Guardrails section of the Portkey platform. Multiple providers are supported for setting up guardrails. For a detailed list of supported providers and configurations
+The guardrails available here are the same as those found in the Guardrails section of the Portkey platform. Multiple providers are supported for setting up guardrails.
 
-<Card title="Guardrials Docs" href="/product/guardrails">
-    Learn about the different Guardrails you can set up in Portkey
+<Card title="Guardrails Docs" href="/product/guardrails">
+  Learn about the different Guardrails you can set up in Portkey
 </Card>
 
-
 ## Configuration
+
 ### Setting Up Guardrails Requirements
+
 1. Head to `Admin Settings` on the Portkey dashboard
 2. Navigate to the `Organisation Guardrails` section
 3. Add your `Input` and/or `Output` Guardrails
 4. Save your changes
 
-Once configured, these guardrails will be enforced on all API requests across the organization.
+Once configured, these guardrails are enforced on API requests across the organization, unless a workspace is explicitly excluded (see below).
 
+## Workspace Exclusions
 
+Organization owners and admins can **exclude specific workspaces** from organization-level input and/or output guardrails. Exclusions are managed separately for input and output guardrails, so a workspace can opt out of one without opting out of the other.
+
+When a workspace is excluded from org-level input or output guardrails:
+
+- The corresponding organization default guardrails are **not applied** to requests in that workspace
+- Workspace-level guardrails (if configured) continue to apply independently
+
+This is useful when a workspace needs a different compliance posture—for example, an internal sandbox that should not inherit production org defaults.
+
+### Managing Exclusions via API
+
+Use the Admin API to list and update workspace exclusions. Paths differ by entity type (`input-guardrails` or `output-guardrails`):
+
+| Action | Endpoint |
+|--------|----------|
+| Update exclusions | `PUT /v1/workspace-exclusions/input-guardrails` or `.../output-guardrails` |
+| List exclusions | `GET /v1/workspace-exclusions/input-guardrails` or `.../output-guardrails` |
+
+<CardGroup cols={2}>
+  <Card title="Update Workspace Exclusions" href="/api-reference/admin-api/control-plane/workspace-exclusions/update-workspace-exclusions">
+    Exclude or include workspaces from org-level input or output guardrails
+  </Card>
+  <Card title="List Workspace Exclusions" href="/api-reference/admin-api/control-plane/workspace-exclusions/list-workspace-exclusions">
+    List workspaces excluded from org-level input or output guardrails
+  </Card>
+</CardGroup>
+
+### Permissions
+
+| Action | Roles | API scope |
+|--------|-------|-----------|
+| Update workspace exclusions | Organization Owner, Organization Admin | `organisation_exclusions.update` |
+| List workspace exclusions | Organization Owner, Organization Admin | `organisation_exclusions.list` |
+
+These scopes are available on **Admin (organisation-service) API keys** only. See [API Keys (AuthN and AuthZ)](/product/enterprise-offering/org-management/api-keys-authn-and-authz) for the full scope list.
+
+### Example: Exclude a workspace from org input guardrails
+
+```bash
+curl -X PUT https://api.portkey.ai/v1/workspace-exclusions/input-guardrails \
+  -H "x-portkey-api-key: $PORTKEY_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "organisation_id": "ORG_UUID",
+    "workspaces": [
+      { "workspace_id": "ws-sandbox", "excluded": true }
+    ]
+  }'
+```
+
+To remove an exclusion (re-apply org defaults to the workspace), call the same endpoint with `"excluded": false`.
 
 <Note>
-Best Practices
-- Clearly communicate guardrail requirements to all developers in your organization.
-- Maintain internal documentation on your guardrail policies to ensure consistency.
+**How exclusions interact with workspace guardrails**
+
+Workspace exclusions only clear **organization-level** defaults for that workspace. They do not remove or disable [workspace-level guardrails](/product/administration/enforce-workspace-level-guardials). Configure those separately in workspace settings if needed.
 </Note>
 
+## Related Features
+
+<Card title="Enforcing Workspace Level Guardrails" href="/product/administration/enforce-workspace-level-guardials">
+  Set default input and output guardrails for a specific workspace
+</Card>
+
+<Card title="Configure Guardrail Access Permissions" href="/product/administration/configure-guardrail-access-permissions">
+  Control who can view and manage guardrails within workspaces
+</Card>
+
+## Best Practices
+
+- Clearly communicate org-level guardrail requirements to developers in your organization.
+- Use workspace exclusions sparingly, and document why a workspace is opted out.
+- Prefer workspace-level guardrails when a team needs additional checks on top of org defaults, rather than excluding the workspace entirely.
+
 ## Support
-For questions about configuring metadata schemas or troubleshooting issues, contact [Portkey support](mailto:support@portkey.ai) or reach out on [Discord](https://portkey.sh/reddit-discord).
+
+For questions about configuring organization-level guardrails or troubleshooting issues, contact [Portkey support](mailto:support@portkey.ai) or reach out on [Discord](https://portkey.sh/reddit-discord).
