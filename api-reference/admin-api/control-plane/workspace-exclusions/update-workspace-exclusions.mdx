@@ -1,0 +1,91 @@
+---
+title: "Update Workspace Exclusions"
+description: "Bulk update which workspaces are excluded from organization-level input or output guardrails"
+---
+
+Exclude or re-include workspaces from **organization-level input or output guardrails**. When a workspace is excluded, the corresponding org default guardrails are not applied to requests in that workspace.
+
+Choose the path based on which org-level defaults you want to change:
+
+| Entity | Endpoint |
+|--------|----------|
+| Input guardrails | `PUT /v1/workspace-exclusions/input-guardrails` |
+| Output guardrails | `PUT /v1/workspace-exclusions/output-guardrails` |
+
+Request body, validation, and response shape are the same for both.
+
+<Info>
+  Requires an Admin API key. Only Organization Owners and Admins can update workspace exclusions.
+</Info>
+
+## Body Parameters
+
+<ParamField body="organisation_id" type="string" required>
+  Organization UUID.
+</ParamField>
+
+<ParamField body="workspaces" type="object[]" required>
+  List of workspace exclusion updates. Must contain at least one entry. Duplicate `workspace_id` values are rejected.
+</ParamField>
+
+<ParamField body="workspaces[].workspace_id" type="string" required>
+  Workspace UUID or workspace slug (for example, `ws-engineering`).
+</ParamField>
+
+<ParamField body="workspaces[].excluded" type="boolean" required>
+  Set to `true` to exclude the workspace from the selected org-level guardrails. Set to `false` to remove the exclusion and re-apply org defaults.
+</ParamField>
+
+<ParamField body="override_existing" type="boolean" default={false}>
+  When `true`, archives all existing active exclusions for that entity type in the organization, then applies the provided `workspaces` list. When `false` (default), only the listed workspaces are upserted.
+</ParamField>
+
+## Example Request
+
+### Exclude a workspace from org input guardrails
+
+```bash
+curl -X PUT https://api.portkey.ai/v1/workspace-exclusions/input-guardrails \
+  -H "x-portkey-api-key: $PORTKEY_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "organisation_id": "6e44dcff-c77a-4325-a653-a77459f40aa6",
+    "workspaces": [
+      { "workspace_id": "ws-sandbox", "excluded": true },
+      { "workspace_id": "ws-staging", "excluded": false }
+    ],
+    "override_existing": false
+  }'
+```
+
+### Exclude a workspace from org output guardrails
+
+```bash
+curl -X PUT https://api.portkey.ai/v1/workspace-exclusions/output-guardrails \
+  -H "x-portkey-api-key: $PORTKEY_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "organisation_id": "6e44dcff-c77a-4325-a653-a77459f40aa6",
+    "workspaces": [
+      { "workspace_id": "ws-sandbox", "excluded": true }
+    ]
+  }'
+```
+
+## Example Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Workspace exclusions for input guardrails updated successfully"
+  }
+}
+```
+
+The `message` text reflects the entity type you updated (`input guardrails` or `output guardrails`).
+
+## Related
+
+- [List Workspace Exclusions](/api-reference/admin-api/control-plane/workspace-exclusions/list-workspace-exclusions)
+- [Enforcing Org Level Guardrails](/product/administration/enforce-orgnization-level-guardrails)
