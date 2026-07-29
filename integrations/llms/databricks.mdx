@@ -11,6 +11,16 @@ With Portkey, take advantage of features like fast AI gateway access, observabil
 Provider Slug: `databricks`
 </Note>
 
+## How It Works
+
+By default, Portkey routes requests to Databricks' [AI Gateway](https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/api-reference) endpoint (`/ai-gateway/...`) when no serving endpoint name is specified. This uses Databricks' pay-per-token Foundation Model APIs.
+
+If you specify a `databricksServingEndpointName` (or `databricks_serving_endpoint_name`) in your provider configuration, Portkey will route to `/serving-endpoints/<name>/invocations` instead, which is useful for provisioned throughput endpoints or custom model deployments.
+
+<Info>
+**Pricing in Logs:** Databricks currently only supports [custom pricing](/product/model-catalog/custom-models). Cost data will only appear in your Portkey logs if you configure custom pricing for your Databricks models in the Model Catalog.
+</Info>
+
 ## Quick Start
 
 Get Databricks working in 3 steps:
@@ -127,8 +137,9 @@ curl https://api.portkey.ai/v1/chat/completions \
 |-----------|-------------|----------|
 | `apiKey` | Databricks personal access token | Yes |
 | `databricksWorkspace` | Databricks workspace name (used to construct the URL: `https://<workspace>.cloud.databricks.com`) | Yes |
+| `databricksServingEndpointName` | Name of a specific serving endpoint. When set, requests route to `/serving-endpoints/<name>/invocations` instead of the default AI Gateway endpoint. | No |
 
-When using headers directly, pass the workspace name via the `x-portkey-databricks-workspace` header.
+When using headers directly, pass the workspace name via the `x-portkey-databricks-workspace` header and the serving endpoint name via the `x-portkey-databricks-serving-endpoint-name` header.
 
 <Card title="Complete Setup Guide →" href="/product/model-catalog">
   See all setup options, code examples, and detailed instructions
@@ -144,7 +155,7 @@ When using headers directly, pass the workspace name via the `x-portkey-databric
 | `/completions` | Supported |
 | `/embeddings` | Supported |
 | `/responses` | Supported |
-| `/messages` | Supported |
+| `/messages` | Supported (Anthropic models only) |
 
 ## Supported Features
 
@@ -249,7 +260,11 @@ curl https://api.portkey.ai/v1/responses \
 
 ## Messages API
 
-Use the Anthropic Messages API format with Databricks models:
+Use the Anthropic Messages API format with Databricks-hosted Anthropic models (e.g., Claude):
+
+<Note>
+The `/messages` endpoint is only supported for Anthropic models deployed on Databricks. It routes to Databricks' `/ai-gateway/anthropic/v1/messages` endpoint.
+</Note>
 
 <CodeGroup>
 ```python Python
@@ -262,7 +277,7 @@ response = portkey.with_options(
 ).post(
     "/v1/messages",
     body={
-        "model": "@databricks/databricks-meta-llama-3-1-70b-instruct",
+        "model": "@databricks/claude-sonnet-4-20250514",
         "max_tokens": 250,
         "messages": [{"role": "user", "content": "Say this is a test"}]
     },
@@ -281,7 +296,7 @@ const portkey = new Portkey({
 
 const response = await portkey.post("/v1/messages", {
     body: {
-        model: "@databricks/databricks-meta-llama-3-1-70b-instruct",
+        model: "@databricks/claude-sonnet-4-20250514",
         max_tokens: 250,
         messages: [{ role: "user", content: "Say this is a test" }]
     },
@@ -296,7 +311,7 @@ curl https://api.portkey.ai/v1/messages \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
   -d '{
-    "model": "@databricks/databricks-meta-llama-3-1-70b-instruct",
+    "model": "@databricks/claude-sonnet-4-20250514",
     "max_tokens": 250,
     "messages": [
       { "role": "user", "content": "Say this is a test" }
