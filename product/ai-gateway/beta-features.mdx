@@ -21,6 +21,78 @@ Once a feature is promoted to stable, the header becomes a no-op and can be safe
 
 ## Currently Available Beta Features
 
+### Use Responses API for Messages Transforms
+
+**Header value:** `use-responses-api-2026-07-30`
+
+Disables the automatic transformation of `/v1/messages` requests to Chat Completions format for providers that don't natively support the Messages API. When this flag is set, requests are routed through the Responses API adapter instead.
+
+**When to use it**
+
+- You want to use the Responses API format internally while still calling the `/v1/messages` endpoint
+- You need consistency with Responses API behavior across all your requests
+- You're migrating from Messages API to Responses API and want to test the behavior without changing endpoints
+
+**How it works**
+
+By default, when you send a `/v1/messages` request to a provider that doesn't natively support Anthropic's Messages format (like OpenAI, Gemini, Bedrock, etc.), Portkey automatically transforms it to the Chat Completions format. With this beta flag enabled, that transformation is skipped and the request is handled by the Responses API adapter instead.
+
+**How to send the header**
+
+<CodeGroup>
+```bash cURL
+curl https://api.portkey.ai/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-beta: use-responses-api-2026-07-30" \
+  -d '{
+    "model": "@openai-provider/gpt-4.1",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+```python Anthropic Python SDK
+import anthropic
+
+client = anthropic.Anthropic(
+  api_key="PORTKEY_API_KEY",
+  base_url="https://api.portkey.ai",
+  default_headers={
+    "x-portkey-beta": "use-responses-api-2026-07-30"
+  }
+)
+
+message = client.messages.create(
+  model="@openai-provider/gpt-4.1",
+  max_tokens=1024,
+  messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+```typescript Anthropic Node SDK
+import Anthropic from '@anthropic-ai/sdk';
+
+const client = new Anthropic({
+  apiKey: "PORTKEY_API_KEY",
+  baseURL: "https://api.portkey.ai",
+  defaultHeaders: {
+    "x-portkey-beta": "use-responses-api-2026-07-30"
+  }
+});
+
+const message = await client.messages.create({
+  model: "@openai-provider/gpt-4.1",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Hello!" }]
+});
+```
+</CodeGroup>
+
+See the [Messages API guide](/product/ai-gateway/messages-api) for more on using the Messages format across providers, and the [Responses API guide](/product/ai-gateway/responses-api) for the Responses API specification.
+
+---
+
 ### Server-Side MCP Execution
 
 **Header value:** `server-side-mcp-2026-06-01`
@@ -116,6 +188,8 @@ The `x-portkey-beta` HTTP header maps to the following SDK parameters:
 | Portkey Python SDK | `portkey_beta` |
 | OpenAI Node SDK (via `createHeaders`) | `portkeyBeta` |
 | OpenAI Python SDK (via `createHeaders`) | `portkey_beta` |
+| Anthropic Node SDK | `defaultHeaders: {"x-portkey-beta": "..."}` |
+| Anthropic Python SDK | `default_headers={"x-portkey-beta": "..."}` |
 | cURL / raw HTTP | `x-portkey-beta` header |
 
 ---
