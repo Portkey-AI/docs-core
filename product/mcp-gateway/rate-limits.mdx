@@ -17,7 +17,7 @@ MCP rate limits use the same policy engine as LLM rate limits, with a new `targe
 
 ## How It Works
 
-MCP rate limit policies are workspace-scoped. When a tool call comes through the MCP Gateway, Portkey checks all active `mcp_tools` rate limit policies for that workspace. If any policy's limit has been reached, the request is rejected with a clear error message.
+MCP rate limit policies are workspace-scoped. When a tool call comes through the MCP Gateway, Portkey checks all active `mcp_tools` rate limit policies for that workspace. If any policy's limit has been reached, the request is rejected with a rate limit error.
 
 Policies support two limit types:
 
@@ -26,24 +26,31 @@ Policies support two limit types:
 
 ---
 
-## Condition and Group-By Keys
+## Supported Condition and Group-By Keys
 
-Conditions define **when** a policy applies. Group-by keys define **how** limits are counted.
+Conditions determine **which requests** a policy applies to. Group-by keys determine **how limits are bucketed** — each unique combination gets its own counter.
 
-| Key | Description | Use as Condition | Use as Group-By |
-|-----|-------------|:---:|:---:|
-| `api_key` | The API key making the request | ✅ | ✅ |
-| `workspace_id` | The workspace the request belongs to | ✅ | ✅ |
-| `mcp_server` | The MCP server being called | ✅ | ✅ |
-| `mcp_tool` | The specific tool being called | ✅ | ✅ |
+| Key | Description | Example Value |
+|-----|-------------|---------------|
+| `api_key` | Match by API key ID | `"uuid_of_api_key"` |
+| `workspace_id` | Match by workspace ID | `"workspace_uuid"` |
+| `mcp_server` | Match by MCP server slug | `"slack"`, `"github"` |
+| `mcp_tool` | Match by tool name | `"send_message"`, `"create_issue"` |
+| `metadata.*` | Match by request metadata | `"metadata._user"` with value `"user123"` |
 
 <Warning>
-`api_key` is not available in OAuth-based MCP flows, since those requests are authenticated via identity provider tokens and do not carry an API key.
+`api_key` is not available in OAuth-based MCP flows, since those requests are authenticated via identity provider tokens and do not carry an API key. Use `mcp_server`, `mcp_tool`, or `metadata.*` keys instead.
 </Warning>
 
 ### Conditions
 
-Conditions filter which requests a policy applies to. For example, a condition of `mcp_server = slack` means the policy only counts requests going to the Slack MCP server.
+Conditions filter which requests a policy applies to. All conditions must match (AND logic). Each condition supports:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | The dimension to match against |
+| `value` | string \| string[] | Value(s) to match (OR logic for arrays). Use `"*"` for wildcard. |
+| `excludes` | string \| string[] | Value(s) to exclude from matching |
 
 ### Group-By
 
@@ -51,13 +58,194 @@ Group-by keys determine how limits are tracked independently. For example, group
 
 ---
 
-## Creating an MCP Rate Limit Policy
+## Rate Limit Units
+
+| Unit | Description |
+|------|-------------|
+| `rpm` | Requests/Tokens per minute |
+| `rph` | Requests/Tokens per hour |
+| `rpd` | Requests/Tokens per day |
+| `rpw` | Requests/Tokens per week |
+
+---
+
+## Use Cases
+
+### Use Case 1: Global MCP Rate Limit
+
+Limit all MCP tool calls in a workspace to 500 requests per minute.
+
+```json
+{
+  "name": "Global MCP rate limit",
+  "target": "mcp_tools",
+  "type": "requests",
+  "unit": "rpm",
+  "value": 500,
+  "conditions": [
+    { "key": "api_key", "value": "*" }
+  ],
+  "status": "active"
+}
+```
+
+---
+
+### Use Case 2: Per-User MCP Rate Limit
+
+Limit each user (identified by `_user` metadata) to 50 MCP tool calls per minute.
+
+```json
+{
+  "name": "Per-user MCP rate limit",
+  "target": "mcp_tools",
+  "type": "requests",
+  "unit": "rpm",
+  "value": 50,
+  "conditions": [
+    { "key": "metadata._user", "value": "*" }
+  ],
+  "group_by": [
+    { "key": "metadata._user" }
+  ],
+  "status": "active"
+}
+```
+
+---
+
+### Use Case 3: Per-Server Rate Limit
+
+Cap total throughput to the Slack MCP server to 1000 requests per hour.
+
+```json
+{
+  "name": "Slack server rate limit",
+  "target": "mcp_tools",
+  "type": "requests",
+  "unit": "rph",
+  "value": 1000,
+  "conditions": [
+    { "key": "mcp_server", "value": "slack" }
+  ],
+  "status": "active"
+}
+```
+
+---
+
+### Use Case 4: Limit a Specific Tool
+
+Throttle the `send_message` tool to 100 calls per minute, regardless of which server it's on.
+
+```json
+{
+  "name": "send_message rate limit",
+  "target": "mcp_tools",
+  "type": "requests",
+  "unit": "rpm",
+  "value": 100,
+  "conditions": [
+    { "key": "mcp_tool", "value": "send_message" }
+  ],
+  "status": "active"
+}
+```
+
+---
+
+### Use Case 5: Per-Server Token Limit
+
+Limit token consumption on the GitHub MCP server to 500,000 tokens per day.
+
+```json
+{
+  "name": "GitHub server token limit",
+  "target": "mcp_tools",
+  "type": "tokens",
+  "unit": "tpd",
+  "value": 500000,
+  "conditions": [
+    { "key": "mcp_server", "value": "github" }
+  ],
+  "status": "active"
+}
+```
+
+---
+
+### Use Case 6: Per-API-Key Limits Grouped by Server
+
+Give each API key its own rate limit, tracked independently per MCP server.
+
+```json
+{
+  "name": "Per-key per-server MCP limit",
+  "target": "mcp_tools",
+  "type": "requests",
+  "unit": "rpm",
+  "value": 100,
+  "conditions": [
+    { "key": "api_key", "value": "*" }
+  ],
+  "group_by": [
+    { "key": "api_key" },
+    { "key": "mcp_server" }
+  ],
+  "status": "active"
+}
+```
+
+---
+
+### Use Case 7: Per-Team Rate Limit by Server
+
+Track and limit MCP usage separately for each team and server combination.
+
+```json
+{
+  "name": "Per-team per-server MCP limit",
+  "target": "mcp_tools",
+  "type": "requests",
+  "unit": "rph",
+  "value": 500,
+  "conditions": [
+    { "key": "metadata._team", "value": "*" }
+  ],
+  "group_by": [
+    { "key": "metadata._team" },
+    { "key": "mcp_server" }
+  ],
+  "status": "active"
+}
+```
+
+---
+
+### Use Case 8: Exclude Specific Tools from a Server Limit
+
+Apply rate limit to all Slack tools except `list_channels`.
+
+```json
+{
+  "name": "Slack tools limit (excluding list_channels)",
+  "target": "mcp_tools",
+  "type": "requests",
+  "unit": "rpm",
+  "value": 200,
+  "conditions": [
+    { "key": "mcp_server", "value": "slack" },
+    { "key": "mcp_tool", "value": "*", "excludes": "list_channels" }
+  ],
+  "status": "active"
+}
+```
+
+---
+
+## Creating a Policy
 
 Use the Admin API to create a rate limit policy with `target` set to `mcp_tools`.
-
-### Requests-Based Limit
-
-Limit the number of tool calls to a specific tool across all servers:
 
 <CodeGroup>
 ```bash cURL
@@ -127,80 +315,6 @@ console.log(policy);
 ```
 </CodeGroup>
 
-### Token-Based Limit
-
-Limit token consumption per MCP server:
-
-<CodeGroup>
-```bash cURL
-curl -X POST "https://api.portkey.ai/v1/policies/rate-limits" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "GitHub server token limit",
-    "description": "Limit token consumption for GitHub MCP server",
-    "target": "mcp_tools",
-    "type": "tokens",
-    "unit": "tpd",
-    "value": 500000,
-    "conditions": [
-      { "key": "mcp_server", "value": "github" }
-    ],
-    "group_by": [
-      { "key": "workspace_id" }
-    ]
-  }'
-```
-
-```python Python SDK
-from portkey_ai import Portkey
-
-portkey = Portkey(api_key="PORTKEY_API_KEY")
-
-policy = portkey.admin.policies.rate_limits.create(
-    name="GitHub server token limit",
-    description="Limit token consumption for GitHub MCP server",
-    target="mcp_tools",
-    type="tokens",
-    unit="tpd",
-    value=500000,
-    conditions=[
-        {"key": "mcp_server", "value": "github"}
-    ],
-    group_by=[
-        {"key": "workspace_id"}
-    ]
-)
-
-print(policy)
-```
-
-```typescript Node.js SDK
-import Portkey from "portkey-ai";
-
-const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
-
-const policy = await portkey.admin.policies.rateLimits.create({
-  name: "GitHub server token limit",
-  description: "Limit token consumption for GitHub MCP server",
-  target: "mcp_tools",
-  type: "tokens",
-  unit: "tpd",
-  value: 500000,
-  conditions: [
-    { key: "mcp_server", value: "github" }
-  ],
-  group_by: [
-    { key: "workspace_id" }
-  ]
-});
-
-console.log(policy);
-```
-</CodeGroup>
-
----
-
 ## Listing MCP Rate Limit Policies
 
 Filter policies by `target` to list only MCP rate limit policies:
@@ -224,86 +338,19 @@ console.log(policies);
 
 ---
 
-## Rate Limit Intervals
-
-| Unit | Description |
-|------|-------------|
-| `rpm` | Requests per minute |
-| `rph` | Requests per hour |
-| `rpd` | Requests per day |
-| `tpm` | Tokens per minute |
-| `tph` | Tokens per hour |
-| `tpd` | Tokens per day |
-
----
-
-## Common Patterns
-
-### Limit a specific tool across all servers
-
-Apply a rate limit whenever a specific tool is called, regardless of which server it's on:
-
-```json
-{
-  "target": "mcp_tools",
-  "type": "requests",
-  "unit": "rpm",
-  "value": 50,
-  "conditions": [
-    { "key": "mcp_tool", "value": "send_message" }
-  ]
-}
-```
-
-### Per-server limits
-
-Cap total throughput to a specific MCP server:
-
-```json
-{
-  "target": "mcp_tools",
-  "type": "requests",
-  "unit": "rph",
-  "value": 1000,
-  "conditions": [
-    { "key": "mcp_server", "value": "slack" }
-  ]
-}
-```
-
-### Per-API-key limits grouped by server
-
-Give each API key its own limit, tracked independently per server:
-
-```json
-{
-  "target": "mcp_tools",
-  "type": "requests",
-  "unit": "rpm",
-  "value": 100,
-  "group_by": [
-    { "key": "api_key" },
-    { "key": "mcp_server" }
-  ]
-}
-```
-
----
-
 ## Key Considerations
 
 - **Target is immutable.** A policy's `target` cannot be changed after creation. To switch between `llm` and `mcp_tools`, archive the existing policy and create a new one.
 - **Existing policies are unaffected.** All existing rate limit policies default to `target: llm`. No migration is needed.
-- **OAuth flows and `api_key`.** The `api_key` condition and group-by key is not available in OAuth-based MCP flows. Use `mcp_server`, `mcp_tool`, or `workspace_id` instead.
+- **OAuth flows and `api_key`.** The `api_key` condition and group-by key is not available in OAuth-based MCP flows. Use `mcp_server`, `mcp_tool`, `workspace_id`, or `metadata.*` instead.
 - **Workspace-scoped only.** MCP rate limit policies are scoped to the workspace level. Org-wide MCP policies are not supported in this release.
 
 ---
 
 ## Exceeding Rate Limits
 
-When a rate limit is reached:
+When a rate limit is exceeded, Portkey returns a **429 Too Many Requests** HTTP status code.
 
-- The tool call is rejected with a rate limit error
 - The error message indicates which limit was exceeded
 - The limit resets automatically after the configured time interval
 
@@ -312,11 +359,11 @@ When a rate limit is reached:
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Workspace Rate Limits" icon="building" href="/product/administration/enforce-workspace-budget-limts-and-rate-limits">
-    Configure rate limits at the workspace level for both LLM and MCP workloads.
+  <Card title="Usage & Rate Limit Policies" icon="sliders" href="/product/enterprise-offering/budget-policies">
+    Full policy reference with conditions, group-by, and validation rules.
   </Card>
   <Card title="Rate Limits API" icon="code" href="/api-reference/admin-api/control-plane/policies/rate-limits/create-rate-limits-policy">
-    Full API reference for creating and managing rate limit policies.
+    API reference for creating and managing rate limit policies.
   </Card>
   <Card title="Observability" icon="chart-mixed" href="/product/mcp-gateway/observability">
     Monitor MCP tool call logs and usage analytics.
