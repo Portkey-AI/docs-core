@@ -145,12 +145,23 @@ When you share credentials with a workspace:
 
 ## 2. Model Provisioning
 
-**Model lists are tied to Integrations.** When you create an Integration, you control which models are available. All Providers created from that Integration will only have access to the models you've enabled.
+**Model lists are tied to Integrations.** When you create an Integration, the full list of supported models from our catalog is pre-populated. You control which models are available by enabling or disabling them. All Providers created from that Integration will only have access to the models you've enabled.
 
 This is essential for:
 - **Controlling costs:** Restrict access to expensive models
 - **Ensuring compliance:** Limit models to approved ones
 - **Maintaining consistency:** Standardize model usage across teams
+
+#### Default Behavior
+
+When creating an integration via API, `allow_all_models` defaults to **`false`**. This means:
+- All catalog models are pre-populated with a **disabled** (archived) status
+- No models are accessible until you explicitly enable them
+- To allow all models, pass `"allow_all_models": true` in the create request
+
+<Note>
+**For API users:** If you previously relied on models being accessible by default after creating an integration without specifying `allow_all_models`, you must now explicitly pass `"allow_all_models": true` in your create integration request. This change ensures integrations follow a secure-by-default approach — no model access is granted unless explicitly configured.
+</Note>
 
 #### Setting Up Model Provisioning
 
@@ -160,10 +171,35 @@ This is essential for:
 
 1. In your Integration settings, navigate to **Model Provisioning**
 2. Select the configuration options:
-   - **Allow All Models**: Provides access to all models offered by the provider
-   - **Allow Specific Models**: Create an allowlist of approved models
+   - **Allow All Models**: Provides access to all models offered by the provider (sets `allow_all_models: true`)
+   - **Allow Specific Models**: Create an allowlist of approved models (sets `allow_all_models: false`, then enables selected models)
 
 **Important:** The model list you set here applies to all Providers created from this Integration. Workspaces will only see and be able to use the models you've enabled.
+
+#### Updating Model Access via API
+
+When updating models on an existing integration using `PUT /v1/integrations/{slug}/models`, the `override_existing_model_access` flag controls how your update is applied:
+
+| Flag | Behavior |
+| :--- | :--- |
+| `override_existing_model_access: true` | All existing models are disabled first, then only the models you specify are enabled. Use this to **restrict** access to a specific subset. |
+| `override_existing_model_access: false` (default) | Your specified models are merged into the existing list without affecting other models. This is an **additive** update. |
+
+**Example: Restrict to specific models after creation**
+
+```bash
+curl -X PUT "https://api.portkey.ai/v1/integrations/openai-prod/models" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "models": [
+      {"slug": "gpt-4o", "enabled": true},
+      {"slug": "gpt-4o-mini", "enabled": true}
+    ],
+    "allow_all_models": false,
+    "override_existing_model_access": true
+  }'
+```
 
 
 #### Advanced Model Management
