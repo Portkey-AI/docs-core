@@ -517,7 +517,94 @@ print(chat_complete.choices[0].message.content)
 </Tabs>
 
 
-# CRUD: coming soon 🚀
+# Create Prompt via API
+
+You can create and manage prompt templates programmatically using the Portkey Admin API. This is the recommended approach when you need structural Mustache templates (section blocks like `{{#var}}...{{/var}}` that conditionally include entire JSON objects), which cannot be created through the UI's Pretty Mode editor.
+
+## The `is_raw_template` field
+
+| Value | Behaviour |
+| ----- | --------- |
+| `0` (default) | Portkey treats the `string` field as structured messages. Variables (`{{var}}`) inside string values work normally. |
+| `1` | Portkey runs Mustache rendering on the raw `string` first, then parses the result as JSON. Required when section blocks span JSON structure (e.g. a conditional `image_url` content block). |
+
+## Creating a Prompt
+
+<Tabs>
+<Tab title="cURL">
+```bash
+curl --request POST \
+  --url https://api.portkey.ai/v1/prompts \
+  --header 'Content-Type: application/json' \
+  --header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+  --data '{
+    "collection_id": "YOUR_COLLECTION_ID",
+    "name": "vision-conditional-prompt",
+    "model": "YOUR_MODEL",
+    "parameters": {
+      "max_tokens": 512,
+      "temperature": 0.5,
+      "top_p": 0.9,
+      "n": 1,
+      "stream": true
+    },
+    "string": "[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"{{user_prompt}}\"}{{#has_image}},{\"type\":\"image_url\",\"image_url\":{\"url\":\"{{image_url}}\"}}{{/has_image}},{\"type\":\"text\",\"text\":\"Please analyze accordingly.\"}]}]",
+    "is_raw_template": 1,
+    "virtual_key": "YOUR_VIRTUAL_KEY",
+    "version_description": "Conditional vision prompt with Mustache section",
+    "template_metadata": {
+      "template_type": "chat"
+    }
+  }'
+```
+</Tab>
+<Tab title="Python SDK">
+```python
+import requests
+
+response = requests.post(
+    "https://api.portkey.ai/v1/prompts",
+    headers={
+        "Content-Type": "application/json",
+        "x-portkey-api-key": "PORTKEY_API_KEY"
+    },
+    json={
+        "collection_id": "YOUR_COLLECTION_ID",
+        "name": "vision-conditional-prompt",
+        "model": "YOUR_MODEL",
+        "parameters": {
+            "max_tokens": 512,
+            "temperature": 0.5,
+            "top_p": 0.9,
+            "n": 1,
+            "stream": True
+        },
+        "string": '[{"role":"user","content":[{"type":"text","text":"{{user_prompt}}"}{{#has_image}},{"type":"image_url","image_url":{"url":"{{image_url}}"}}{{/has_image}},{"type":"text","text":"Please analyze accordingly."}]}]',
+        "is_raw_template": 1,
+        "virtual_key": "YOUR_VIRTUAL_KEY",
+        "version_description": "Conditional vision prompt with Mustache section",
+        "template_metadata": {"template_type": "chat"}
+    }
+)
+
+prompt_id = response.json()["id"]
+print(prompt_id)
+```
+</Tab>
+</Tabs>
+
+A successful response returns the prompt `id` and `slug`:
+
+```json
+{
+  "id": "PROMPT_UUID",
+  "slug": "pp-vision-conditional-XXXXXX",
+  "version_id": "VERSION_UUID",
+  "object": "prompt"
+}
+```
+
+Use the returned `id` or `slug` to call the prompt via the [Completions](/product/prompt-engineering-studio/prompt-api#prompt-completions) or [Render](/product/prompt-engineering-studio/prompt-api#prompt-render) endpoints.
 
 
 ## API Reference

@@ -278,6 +278,156 @@ response = portkey.prompts.completions.create({
 | `{{>Partials}} `                                | "Mini-templates" that can be called at runtime. On Portkey, you can save [partials](/product/prompt-engineering-studio/prompt-partial) separately and call them in your prompt templates by typing `{{>`                                                   | Template: Hello I am Tesla bot.`{{>pp-tesla-template}}` What can I help you with? <br /><br /> Data in `pp-tesla-template`: CopyTake the context from `{{context}}`. And answer user questions. <br /><br /> Output: Hello I am Tesla bot. Take the context from `{{context}}`. And answer user questions. What can I help you with?      |
 | `{{>>Partial Variables}} `                      | Pass your privately saved partials to Portkey by creating tags with double \>>Like: `{{>> }}` This is helpful if you do not want to save your partials with Portkey but are maintaining them elsewhere | Template: Hello I am Tesla bot.`{{>>My Private Partial}}` What can I help you with?                                                                                                                                                                                                                                    |
 
+### Structural Mustache and `is_raw_template`
+
+Standard Mustache `{{variable}}` tags work inside string values in any mode. However, when you need a section block like `{{#has_image}}...{{/has_image}}` to **conditionally include or exclude an entire JSON object** inside a messages array (for example, adding an `image_url` content block only when an image is present), the template is structurally invalid JSON until after Mustache renders it.
+
+For this use case you must:
+
+1. Use **JSON Mode** in the Playground UI (toggle from Pretty to JSON)
+2. Set `"is_raw_template": 1` when creating the prompt via the API
+
+This tells Portkey to run Mustache rendering first and then parse the result as valid JSON, rather than treating the stored string as JSON immediately.
+
+**Example: Conditionally including an image content block**
+
+The template string stored in the prompt (note: `{{#has_image}}` wraps an entire JSON object in the array):
+
+```json
+[{
+  "role": "user",
+  "content": [
+    { "type": "text", "text": "{{user_prompt}}" },
+    {{#has_image}}
+    { "type": "image_url", "image_url": { "url": "{{image_url}}" } },
+    {{/has_image}}
+    { "type": "text", "text": "Please analyze accordingly." }
+  ]
+}]
+```
+
+**Create this prompt via API:**
+
+<Tabs>
+<Tab title="cURL">
+```bash
+curl --request POST \
+  --url https://api.portkey.ai/v1/prompts \
+  --header 'Content-Type: application/json' \
+  --header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+  --data '{
+    "collection_id": "YOUR_COLLECTION_ID",
+    "name": "vision-conditional-prompt",
+    "model": "YOUR_MODEL",
+    "parameters": {
+      "max_tokens": 512,
+      "temperature": 0.5,
+      "top_p": 0.9,
+      "n": 1,
+      "stream": true
+    },
+    "string": "[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"{{user_prompt}}\"}{{#has_image}},{\"type\":\"image_url\",\"image_url\":{\"url\":\"{{image_url}}\"}}{{/has_image}},{\"type\":\"text\",\"text\":\"Please analyze accordingly.\"}]}]",
+    "is_raw_template": 1,
+    "virtual_key": "YOUR_VIRTUAL_KEY",
+    "version_description": "Conditional vision prompt with Mustache section",
+    "template_metadata": {
+      "template_type": "chat"
+    }
+  }'
+```
+</Tab>
+</Tabs>
+
+**Call the saved prompt at runtime:**
+
+<Tabs>
+<Tab title="With image (cURL)">
+```bash
+curl --request POST \
+  --url https://api.portkey.ai/v1/prompts/YOUR_PROMPT_ID/completions \
+  --header 'Content-Type: application/json' \
+  --header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+  --data '{
+    "variables": {
+      "user_prompt": "What objects are visible in this image?",
+      "has_image": true,
+      "image_url": "https://example.com/photo.png"
+    }
+  }'
+```
+</Tab>
+<Tab title="Without image (cURL)">
+```bash
+curl --request POST \
+  --url https://api.portkey.ai/v1/prompts/YOUR_PROMPT_ID/completions \
+  --header 'Content-Type: application/json' \
+  --header 'x-portkey-api-key: $PORTKEY_API_KEY' \
+  --data '{
+    "variables": {
+      "user_prompt": "Summarize this topic.",
+      "has_image": false
+    }
+  }'
+```
+</Tab>
+<Tab title="Python SDK">
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+# With image
+response = portkey.prompts.completions.create(
+    prompt_id="YOUR_PROMPT_ID",
+    variables={
+        "user_prompt": "What objects are visible in this image?",
+        "has_image": True,
+        "image_url": "https://example.com/photo.png"
+    }
+)
+
+# Without image — omit has_image or pass False
+response = portkey.prompts.completions.create(
+    prompt_id="YOUR_PROMPT_ID",
+    variables={
+        "user_prompt": "Summarize this topic.",
+        "has_image": False
+    }
+)
+```
+</Tab>
+<Tab title="NodeJS SDK">
+```javascript
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+// With image
+const response = await portkey.prompts.completions.create({
+    promptID: "YOUR_PROMPT_ID",
+    variables: {
+        user_prompt: "What objects are visible in this image?",
+        has_image: true,
+        image_url: "https://example.com/photo.png"
+    }
+});
+
+// Without image — omit has_image or pass false
+const response = await portkey.prompts.completions.create({
+    promptID: "YOUR_PROMPT_ID",
+    variables: {
+        user_prompt: "Summarize this topic.",
+        has_image: false
+    }
+});
+```
+</Tab>
+</Tabs>
+
+<Note>
+When `has_image` is `false` or absent, Mustache skips the entire `image_url` object, and the final messages array sent to the model will contain only the text content blocks. No changes to the saved template are needed.
+</Note>
+
 ### Using Variable Tags
 
 You can directly pass your data object containing all the variable/tags info (in JSON) to Portkey's `prompts.completions` method with the `variables` property.
