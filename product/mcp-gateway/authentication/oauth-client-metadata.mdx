@@ -67,6 +67,7 @@ Add `oauth_metadata` in **Advanced Configuration** when setting up your MCP inte
 | `contacts` | string[] | Contact email addresses |
 | `tos_uri` | string | Terms of Service URL |
 | `policy_uri` | string | Privacy policy URL |
+| `authorization_params` | object | Extra query parameters appended to the upstream authorization URL (string values only) |
 
 ---
 
@@ -107,6 +108,14 @@ The following fields are excluded from customization:
 - `software_statement` - Not yet supported
 
 If you include these fields, they're ignored.
+
+### Authorization Parameters That Cannot Be Set
+
+`authorization_params` cannot override the parameters Portkey and the MCP SDK own, because doing so would break PKCE or the callback correlation:
+
+`response_type`, `client_id`, `client_secret`, `code_challenge`, `code_challenge_method`, `redirect_uri`, `state`, `scope`, `resource`
+
+Any of these keys in `authorization_params` are ignored and logged as a warning. Use the `scope` field of `oauth_metadata` to change requested scopes.
 
 ---
 
@@ -196,6 +205,39 @@ The `redirect_uri` configured in Portkey must exactly match the **Authorization 
 </Note>
 
 See the [GitHub MCP server guide](/integrations/mcp-servers/github-mcp-server#connect-via-portkey-mcp-gateway) for complete setup instructions.
+
+---
+
+## Example: Provider-Specific Authorization Parameters (Google)
+
+Some providers require query parameters on the authorization request that the OAuth spec doesn't define. Google is the common case: it only returns a **refresh token** when the authorization request carries `access_type=offline`, and only re-issues one for a user who has already consented when `prompt=consent` is also present.
+
+Without a refresh token, Portkey has nothing to renew the connection with, so the user is pushed back through consent once the access token expires (one hour for Google).
+
+Add these with `authorization_params`:
+
+```json
+{
+  "oauth_metadata": {
+    "client_id": "...apps.googleusercontent.com",
+    "client_secret": "your_google_oauth_client_secret",
+    "redirect_uri": "https://mcp.portkey.ai/oauth/upstream-callback",
+    "scope": "https://www.googleapis.com/auth/drive.readonly",
+    "authorization_params": {
+      "access_type": "offline",
+      "prompt": "consent"
+    }
+  }
+}
+```
+
+Portkey appends every key in `authorization_params` to the upstream authorization URL on each auth flow. Values must be strings; non-string values are ignored.
+
+<Note>
+Connections authorized **before** this setting was added have no stored refresh token, and Google skips consent for a user who has already granted access — so the setting alone won't fix them. Remove the affected user's connection and have them authorize again; `prompt=consent` guarantees a refresh token on that pass.
+</Note>
+
+For external authorization providers, set `authorization_params` inside `external_auth_config` instead.
 
 ---
 
