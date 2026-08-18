@@ -1,30 +1,25 @@
 ---
-title: 'Arize Phoenix'
-description: 'Extend Portkey’s powerful AI Gateway with Arize Phoenix for unified LLM observability, tracing, and analytics across your ML stack.'
+title: 'Arize AX'
+description: 'Extend Portkey’s AI Gateway with Arize AX for unified LLM observability, tracing, and evaluation.'
 ---
 
-Portkey is a **production-grade AI Gateway and Observability platform** for AI applications. It offers built-in observability, reliability features and over 40+ key LLM metrics. For teams standardizing observability in Arize Phoenix, Portkey also supports seamless integration.
+[Arize AX](https://arize.com/products/ax/) is the full-featured observability and evaluation platform from [Arize AI](https://arize.com/?utm_source=portkey-docs&utm_medium=partner&utm_campaign=partner-docs&utm_content=tracing-provider-arize) for production teams, AI-native companies, and enterprises. It is available as managed cloud or enterprise self-hosted deployment.
+
+Portkey is a **production-grade AI Gateway and Observability platform** for AI applications. The [OpenInference Portkey instrumentation](https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-portkey) lets Arize AX capture Portkey-routed calls, including gateway requests and the underlying LLM completions.
 
 <Note>
-Portkey provides comprehensive observability out-of-the-box. This integration is for teams who want to consolidate their ML observability in Arize Phoenix alongside Portkey's AI Gateway capabilities.
+Use Arize AX for production AI observability and evaluation. If you want an open-source path for local development, experimentation, or single-container self-hosting, use the separate [Arize Phoenix integration](/integrations/tracing-providers/phoenix).
 </Note>
 
+## Why Portkey + Arize AX?
 
-
-
-
-## Why Portkey + Arize Phoenix?
-
-[Arize Phoenix](https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-portkey) brings observability to LLM workflows with tracing, prompt debugging, and performance monitoring.
-
-Thanks to Phoenix's OpenInference instrumentation, Portkey can emit structured traces automatically — no extra setup needed. This gives you clear visibility into every LLM call, making it easier to debug and improve your app.
-
+Thanks to OpenInference instrumentation, Portkey can emit structured traces automatically. This gives you visibility into each LLM call routed through the gateway, making it easier to debug behavior, inspect token usage, and evaluate production traffic in Arize AX. For production evaluation patterns, see Arize's [agent evaluation guide](https://arize.com/guides/ai-agent-handbook/agent-evaluation/) and [LLM evaluation guide](https://arize.com/resources/llm-evaluation/).
 
 <CardGroup cols={2}>
 <Card title="AI Gateway Features" icon="shield">
 - **1600+ LLM Providers**: Single API for OpenAI, Anthropic, AWS Bedrock, and more
 - **Advanced Routing**: Fallbacks, load balancing, conditional routing
-- **Cost Optimization**: Semantic caching, request
+- **Cost Optimization**: Semantic caching and request controls
 - **Security**: PII detection, content filtering, compliance controls
 </Card>
 
@@ -36,80 +31,69 @@ Thanks to Phoenix's OpenInference instrumentation, Portkey can emit structured t
 </Card>
 </CardGroup>
 
-With this integration, you can route LLM traffic through Portkey and gain deep observability in Arize Phoenix—bringing together the best of gateway orchestration and ML observability.
-
+With this integration, you can route LLM traffic through Portkey and gain deep observability in Arize AX, bringing together gateway orchestration and ML observability.
 
 ## Getting Started
 
-### Installation
+### Prerequisites
 
-Install the required packages to enable Arize Phoenix integration with your Portkey deployment:
+- Python 3.10+
+- An Arize AX account
+- A Portkey API key
+- An OpenAI API key, or another provider key routed through Portkey
 
-<CodeGroup>
+### Step 1: Install dependencies
 
-```bash arize
-pip install portkey-ai openinference-instrumentation-portkey arize-otel
+Install the required packages for Arize AX and Portkey:
+
+```bash
+pip install arize-otel openinference-instrumentation-portkey portkey-ai openai
 ```
 
-```bash phoenix
-pip install portkey-ai openinference-instrumentation-portkey arize-phoenix-otel
-```
-</CodeGroup>
+### Step 2: Configure credentials
 
-### Setting up the Integration
+Set the Arize AX and Portkey credentials in the same shell that runs your application:
+
+```bash
+export ARIZE_SPACE_ID="your-space-id"
+export ARIZE_API_KEY="your-arize-api-key"
+export ARIZE_PROJECT_NAME="portkey-gateway"
+export PORTKEY_API_KEY="your-portkey-api-key"
+export OPENAI_API_KEY="your-openai-api-key"
+```
+
+### Step 3: Register Arize AX and instrument Portkey
 
 <Steps>
-<Step title="Configure Arize Phoenix">
-First, set up the Arize OpenTelemetry configuration:
-
-<CodeGroup>
-```python arize
-from arize.otel import register
-
-# Configure Arize as your telemetry backend
-tracer_provider = register(
-    space_id="your-space-id",      # Found in Arize app settings
-    api_key="your-api-key",        # Your Arize API key
-    project_name="portkey-gateway" # Name your project
-)
-```
-
-```python phoenix
-from phoenix.otel import register
-
-# Configure Arize as your telemetry backend
-tracer_provider = register(
-    space_id="your-space-id",      # Found in Arize app settings
-    api_key="your-api-key",        # Your Arize API key
-    project_name="portkey-gateway" # Name your project
-)
-```
-
-
-</CodeGroup>
-</Step>
-
-<Step title="Enable Portkey Instrumentation">
-Initialize the Portkey instrumentor to format traces for Arize:
+<Step title="Configure Arize AX">
+First, set up the Arize AX OpenTelemetry configuration:
 
 ```python
+import os
+from arize.otel import register
 from openinference.instrumentation.portkey import PortkeyInstrumentor
 
-# Enable instrumentation
+tracer_provider = register(
+    space_id=os.environ["ARIZE_SPACE_ID"],
+    api_key=os.environ["ARIZE_API_KEY"],
+    project_name=os.environ["ARIZE_PROJECT_NAME"],
+)
+
 PortkeyInstrumentor().instrument(tracer_provider=tracer_provider)
 ```
 </Step>
 
 <Step title="Configure Portkey AI Gateway">
-Set up Portkey with all its powerful features:
+Set up Portkey in the same process after registering the `PortkeyInstrumentor`:
 
 ```python
+import os
 from portkey_ai import Portkey
 
-# Initialize Portkey client
 portkey = Portkey(
-    api_key="your-portkey-api-key",
-    provider="@your-openai-portkey-provider"
+    api_key=os.environ["PORTKEY_API_KEY"],
+    provider="openai",
+    Authorization=f"Bearer {os.environ['OPENAI_API_KEY']}",
 )
 
 response = portkey.chat.completions.create(
@@ -124,84 +108,47 @@ print(response.choices[0].message.content)
 
 ## Complete Integration Example
 
-Here's a complete working example that connects Portkey's AI Gateway with Arize Phoenix for centralized monitoring:
-
+Here's a complete working example that connects Portkey's AI Gateway with Arize AX for centralized monitoring.
 
 ```python [expandable]
 import os
-from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-from arize.otel import register  # OR from phoenix.otel import register
-
-# configure the Phoenix tracer
+from arize.otel import register
 from openinference.instrumentation.portkey import PortkeyInstrumentor
 
-# Step 1: Configure Arize Phoenix
 tracer_provider = register(
-    space_id="your-space-id",
-    api_key="your-arize-api-key",
-    project_name="portkey-production"
+    space_id=os.environ["ARIZE_SPACE_ID"],
+    api_key=os.environ["ARIZE_API_KEY"],
+    project_name=os.getenv("ARIZE_PROJECT_NAME", "portkey-production"),
 )
 
-# Step 2: Enable Portkey instrumentation
 PortkeyInstrumentor().instrument(tracer_provider=tracer_provider)
 
-# Step 3: Configure Portkey's Advanced AI Gateway
-advanced_config = {
-    "strategy": {
-        "mode": "loadbalance"  # Distribute load across providers
-    },
-    "targets": [
-        {
-            "provider":"@openai-prod",
-            "weight": 0.7,
-            "override_params": {"model": "gpt-4o"}
-        },
-        {
-            "provider":"@anthropic-prod",
-            "weight": 0.3,
-            "override_params": {"model": "claude-3-5-sonnet-latest"}
-        }
-    ],
-    "cache": {
-        "mode": "semantic",  # Intelligent caching
-        "max_age": 3600
-    },
-    "retry": {
-        "attempts": 3,
-        "on_status_codes": [429, 500, 502, 503, 504]
-    },
-    "request_timeout": 30000
-}
+# Import Portkey after instrumentation is registered.
+from portkey_ai import Portkey
 
-# Initialize Portkey-powered client
-client = OpenAI(
-    api_key="PORTKEY_API_KEY",
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        config=advanced_config,
-        metadata={
-            "user_id": "user-123",
-            "session_id": "session-456",
-            "feature": "chat-assistant"
-        }
-    )
+portkey = Portkey(
+    api_key=os.environ["PORTKEY_API_KEY"],
+    provider="openai",
+    Authorization=f"Bearer {os.environ['OPENAI_API_KEY']}",
 )
 
-# Make requests through Portkey's AI Gateway
-response = client.chat.completions.create(
-    model="gpt-4o",  # Portkey handles provider routing
+response = portkey.chat.completions.create(
+    model="gpt-4o-mini",
     messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Explain quantum computing in simple terms."}
     ],
-    temperature=0.7
 )
 
 print(response.choices[0].message.content)
 ```
 
+## Verify in Arize AX
 
+Open your Arize AX space and select the project configured by `ARIZE_PROJECT_NAME`. You should see a trace for the Portkey request, including the LLM span, prompt, response, token usage, model, and provider metadata.
+
+<Card title="Arize AX Portkey Tracing Guide" icon="book" href="https://arize.com/docs/ax/integrations/python-agent-frameworks/portkey/portkey-tracing">
+See the Arize-side Portkey tracing setup, verification steps, and troubleshooting guidance.
+</Card>
 
 <Card title="Cookbook on Portkey x Arize" href="/guides/integrations/arize-portkey">
 Learn how to use Portkey's Universal API to orchestrate multiple LLMs in a structured debate while tracking performance and evaluating outputs with Arize.
@@ -210,7 +157,7 @@ Learn how to use Portkey's Universal API to orchestrate multiple LLMs in a struc
 
 ## Portkey AI Gateway Features
 
-While Arize Phoenix provides observability, Portkey delivers a complete AI infrastructure platform. Here's everything you get with Portkey:
+While Arize AX provides observability and evaluation, Portkey delivers a complete AI infrastructure platform. Here's everything you get with Portkey:
 
 ### 🚀 Core Gateway Capabilities
 
