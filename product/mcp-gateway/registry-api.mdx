@@ -1,0 +1,239 @@
+---
+title: Registry API
+description: Serve your approved MCP servers as a standards-compliant catalog that governance-aware clients can consume.
+---
+
+The Registry API serves every MCP server approved in your organization as a catalog in the standard [MCP Registry](https://github.com/modelcontextprotocol/registry) `server.json` format.
+
+Point a governance-aware MCP client at this endpoint to restrict users to an approved set of servers. Anything outside the catalog is blocked by the client.
+
+<Info>
+This is the machine-readable counterpart to the [MCP Registry](/product/mcp-gateway/mcp-registry) dashboard. Admins approve servers in the UI; this endpoint serves that same list to clients.
+</Info>
+
+---
+
+## Endpoint
+
+```bash
+GET https://mcp.portkey.ai/v0.1/servers
+```
+
+Authenticate with the `x-portkey-api-key` header. The key needs the `mcp_servers.list` scope.
+
+<CodeGroup>
+```sh cURL
+curl https://mcp.portkey.ai/v0.1/servers \
+    -H "x-portkey-api-key: $PORTKEY_API_KEY"
+```
+
+```python Python
+import requests
+
+resp = requests.get(
+    "https://mcp.portkey.ai/v0.1/servers",
+    headers={"x-portkey-api-key": PORTKEY_API_KEY}
+)
+catalog = resp.json()
+```
+
+```js JavaScript
+const resp = await fetch("https://mcp.portkey.ai/v0.1/servers", {
+    headers: { "x-portkey-api-key": PORTKEY_API_KEY }
+})
+const catalog = await resp.json()
+```
+</CodeGroup>
+
+<Note>
+The header is the only accepted credential. Bearer tokens and query-parameter API keys are not supported on this endpoint.
+</Note>
+
+For self-hosted deployments, swap the host for your own MCP Gateway URL:
+
+```bash
+GET https://<your-mcp-gateway>/v0.1/servers
+```
+
+The registry is part of the MCP Gateway itself, not a separate service. Any deployment that serves MCP traffic also serves its own catalog.
+
+---
+
+## Query parameters
+
+<ParamField query="limit" type="integer" default="50">
+  Number of servers per page. Range `1`–`100`.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Opaque pagination cursor. Pass the `nextCursor` from the previous response.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Case-insensitive substring match on the server name.
+</ParamField>
+
+<ParamField query="updated_since" type="string">
+  ISO 8601 timestamp. Returns only servers modified after this time. Use it for incremental syncs.
+</ParamField>
+
+<ParamField query="workspace_id" type="string">
+  Workspace UUID or slug (`ws-acme-corp`). Narrows an org-wide key to a single workspace.
+</ParamField>
+
+---
+
+## Response
+
+```json
+{
+  "servers": [
+    {
+      "server": {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "ai.portkey.ws-acme-corp/github-tools",
+        "title": "GitHub Tools",
+        "description": "Code search and PR management",
+        "version": "1.2.0",
+        "websiteUrl": "https://github.com",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.portkey.ai/github-tools/mcp"
+          }
+        ]
+      },
+      "_meta": {
+        "io.portkey.ai/registry": {
+          "publishedAt": "2025-11-01T08:30:00.000Z",
+          "updatedAt": "2026-02-15T14:22:00.000Z",
+          "isLatest": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "count": 1,
+    "nextCursor": "MjAyNS0xMS0wMVQwODozMDowMC4wMDBafGFiYzEyMw"
+  }
+}
+```
+
+### Field reference
+
+| Field | Description |
+|-------|-------------|
+| `name` | Unique identifier, built as `ai.portkey.{workspace-slug}/{server-slug}` |
+| `title` | Display name from the upstream server, falling back to the name set in Portkey |
+| `description` | Description from the upstream server, falling back to the one set in Portkey |
+| `version` | Version reported by the upstream MCP server. Defaults to `0.0.0` when the server doesn't report one |
+| `remotes[].url` | Portkey Gateway URL for the server. Clients connect here, not to the upstream server |
+| `remotes[].type` | Always `streamable-http` |
+| `websiteUrl`, `icons` | Included only when the upstream server reports them |
+| `_meta` | Portkey extensions: `publishedAt`, `updatedAt`, and `isLatest` |
+| `metadata.count` | Number of servers in this page, not the org-wide total |
+| `metadata.nextCursor` | Present only when more pages exist |
+
+<Note>
+`remotes[].url` always points at the Portkey Gateway. Traffic keeps flowing through Portkey, so access control, guardrails, rate limits, and logging still apply.
+</Note>
+
+---
+
+## Pagination
+
+Results are cursor-paginated and sorted newest-first. When `metadata.nextCursor` is present, pass it back as `cursor` to fetch the next page. When it's absent, the catalog is fully read.
+
+```python
+servers, cursor = [], None
+
+while True:
+    params = {"limit": 100}
+    if cursor:
+        params["cursor"] = cursor
+
+    page = requests.get(
+        "https://mcp.portkey.ai/v0.1/servers",
+        headers={"x-portkey-api-key": PORTKEY_API_KEY},
+        params=params
+    ).json()
+
+    servers.extend(page["servers"])
+    cursor = page["metadata"].get("nextCursor")
+    if not cursor:
+        break
+```
+
+Treat the cursor as opaque. Don't construct or parse it — an unrecognized cursor returns `400`.
+
+---
+
+## Which servers appear
+
+The catalog reflects what admins approved in the dashboard. A server is listed only when the server, its integration, its workspace, and the workspace's access grant are all active. Archived servers and revoked workspace access disappear from the catalog automatically.
+
+Scope follows the API key:
+
+| Key type | Servers returned |
+|----------|------------------|
+| Organization (admin) | Every approved server across all workspaces in the org |
+| Workspace | Only servers approved for that workspace |
+
+Add `workspace_id` to narrow an organization key to a single workspace. A workspace key can't read a workspace other than its own.
+
+<Info>
+Use an organization key to publish one catalog covering the whole company. Use workspace keys to give each team a catalog scoped to what they're entitled to.
+</Info>
+
+---
+
+## Serving the catalog to static-URL clients
+
+Some governance-aware clients fetch their registry from a plain HTTPS URL and can't attach custom headers. Because this endpoint requires `x-portkey-api-key`, put a small proxy in front of it:
+
+<Steps>
+<Step title="Fetch the catalog">
+  Call the Registry API with your API key from a scheduled job.
+</Step>
+<Step title="Publish the JSON">
+  Write the response to a static HTTPS location — S3, nginx, or any web server the client can reach.
+</Step>
+<Step title="Point the client at it">
+  Configure the client's registry URL to your static endpoint.
+</Step>
+<Step title="Refresh on a schedule">
+  Re-run the job on the client's sync interval. Use `updated_since` to pull only what changed.
+</Step>
+</Steps>
+
+This keeps the API key server-side and never exposes it to end users.
+
+---
+
+## Errors
+
+| Status | Cause |
+|--------|-------|
+| `400` | Invalid query parameter, or an unrecognized `cursor` |
+| `401` | Missing or invalid `x-portkey-api-key` |
+| `403` | Key lacks the `mcp_servers.list` scope, or requests a workspace it can't access |
+| `404` | `workspace_id` doesn't exist |
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="MCP Registry" icon="book" href="/product/mcp-gateway/mcp-registry">
+    Approve servers, configure auth, and manage the catalog from the dashboard.
+  </Card>
+  <Card title="Team Provisioning" icon="users" href="/product/mcp-gateway/access-control">
+    Control which workspaces see which servers.
+  </Card>
+  <Card title="Using MCP Servers" icon="plug" href="/product/mcp-gateway/using-mcp-servers">
+    Connect clients to servers from the catalog.
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/mcp-gateway/observability">
+    Monitor MCP traffic and usage.
+  </Card>
+</CardGroup>
