@@ -152,7 +152,33 @@ Users have to re-authorize a connected server far more often than expected.
 
 **Fix:**
 1. Make sure you're on the latest gateway version (especially for self-hosted deployments).
-2. If reconnects continue, [contact support](#still-stuck) with the server slug and timestamps so the team can review the token refresh logs.
+2. If the server is a Google one, see the next section.
+3. If reconnects continue, [contact support](#still-stuck) with the server slug and timestamps so the team can review the token refresh logs.
+
+### A Google MCP server asks you to reconnect every hour
+
+Google (Drive, Calendar, and other Google-hosted MCP servers) only returns a **refresh token** when the authorization request includes `access_type=offline`. Without one, the gateway has nothing to renew with, so the connection dies as soon as the one-hour access token expires.
+
+**Fix:** add these authorization parameters to the integration's `oauth_metadata`:
+
+```json
+{
+  "oauth_metadata": {
+    "client_id": "...apps.googleusercontent.com",
+    "client_secret": "your_google_oauth_client_secret",
+    "redirect_uri": "https://mcp.portkey.ai/oauth/upstream-callback",
+    "scope": "https://www.googleapis.com/auth/drive.readonly",
+    "authorization_params": {
+      "access_type": "offline",
+      "prompt": "consent"
+    }
+  }
+}
+```
+
+Then have each affected user reconnect. Existing connections were created without a refresh token, and Google skips consent for a user who has already granted access — `prompt=consent` forces the consent screen again so a refresh token is issued.
+
+See [OAuth Client Metadata](/product/mcp-gateway/authentication/oauth-client-metadata#example-provider-specific-authorization-parameters-google) for details.
 
 ---
 
