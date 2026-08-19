@@ -32,7 +32,25 @@ When a user first accesses an OAuth-protected MCP server, Portkey initiates the 
 
 ## Configuration
 
-Add `oauth_metadata` in **Advanced Configuration** when setting up your MCP integration in the MCP Registry.
+When setting up your MCP integration in the MCP Registry, expand **Advanced Settings** and paste your client metadata into the **OAuth Metadata** field as a plain JSON object:
+
+```json
+{
+  "client_name": "Your Company Name",
+  "client_uri": "https://yourcompany.com",
+  "logo_uri": "https://yourcompany.com/logo.png",
+  "software_id": "com.yourcompany.mcp-gateway",
+  "scope": "mcp:servers:read mcp:tools:execute",
+  "contacts": ["support@yourcompany.com"],
+  "tos_uri": "https://yourcompany.com/terms",
+  "policy_uri": "https://yourcompany.com/privacy"
+}
+```
+
+<Warning>
+Do **not** wrap this in an outer `oauth_metadata` key when using the **OAuth Metadata** field. The field's contents are stored as your OAuth metadata directly, so an extra wrapper nests your settings one level too deep and Portkey ignores them silently — including a `client_id`, which causes Portkey to fall back to Dynamic Client Registration.
+
+The wrapper is only correct in the separate **Advanced Configuration** JSON box, which merges its top-level keys into the integration's configuration:
 
 ```json
 {
@@ -48,6 +66,9 @@ Add `oauth_metadata` in **Advanced Configuration** when setting up your MCP inte
   }
 }
 ```
+</Warning>
+
+All the examples on this page show the contents of the **OAuth Metadata** field. If you use the **Advanced Configuration** box instead, nest each one under `oauth_metadata`.
 
 ---
 
@@ -55,6 +76,8 @@ Add `oauth_metadata` in **Advanced Configuration** when setting up your MCP inte
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `client_id` | string | Pre-registered OAuth client ID. Setting this disables Dynamic Client Registration for the integration |
+| `client_secret` | string | Pre-registered OAuth client secret, for confidential clients |
 | `client_name` | string | Name shown during OAuth consent |
 | `client_uri` | string | Organization's homepage URL |
 | `logo_uri` | string | Logo shown during consent (should be HTTPS) |
@@ -125,17 +148,15 @@ Your enterprise requires all OAuth registrations to include legal contact inform
 
 ```json
 {
-  "oauth_client_metadata": {
-    "client_name": "Acme Corp MCP Gateway",
-    "client_uri": "https://acme.com",
-    "logo_uri": "https://acme.com/assets/logo.png",
-    "software_id": "com.acme.mcp-gateway",
-    "software_version": "1.0.0",
-    "scope": "mcp:read mcp:write",
-    "contacts": ["security@acme.com", "legal@acme.com"],
-    "tos_uri": "https://acme.com/legal/terms",
-    "policy_uri": "https://acme.com/legal/privacy"
-  }
+  "client_name": "Acme Corp MCP Gateway",
+  "client_uri": "https://acme.com",
+  "logo_uri": "https://acme.com/assets/logo.png",
+  "software_id": "com.acme.mcp-gateway",
+  "software_version": "1.0.0",
+  "scope": "mcp:read mcp:write",
+  "contacts": ["security@acme.com", "legal@acme.com"],
+  "tos_uri": "https://acme.com/legal/terms",
+  "policy_uri": "https://acme.com/legal/privacy"
 }
 ```
 
@@ -149,10 +170,8 @@ Some OAuth servers require clients to be pre-registered with a specific `softwar
 
 ```json
 {
-  "oauth_metadata": {
-    "software_id": "registered-client-12345",
-    "client_name": "Pre-Registered MCP Client"
-  }
+  "software_id": "registered-client-12345",
+  "client_name": "Pre-Registered MCP Client"
 }
 ```
 
@@ -164,9 +183,7 @@ Request specific OAuth scopes from the MCP server:
 
 ```json
 {
-  "oauth_metadata": {
-    "scope": "read:projects write:issues admin:webhooks"
-  }
+  "scope": "read:projects write:issues admin:webhooks"
 }
 ```
 
@@ -183,25 +200,24 @@ Some MCP servers like GitHub don't support OAuth Dynamic Client Registration (DC
 | Field | Description |
 |-------|-------------|
 | `client_id` | OAuth App client ID from the service |
-| `client_secret` | OAuth App client secret from the service |
-| `redirect_uri` | Must be `https://mcp.portkey.ai/oauth/upstream-callback` |
+| `client_secret` | OAuth App client secret from the service (only for confidential apps) |
 | `scope` | Scopes to request during authorization |
+| `token_endpoint_auth_method` | Set to `client_secret_post` or `client_secret_basic` if the OAuth App is registered as a confidential/web client. The default is `none`, which such apps reject at token exchange. |
+
+Providing a `client_id` disables Dynamic Client Registration entirely for that integration — Portkey presents the client you configured instead of trying to register a new one.
 
 **GitHub example:**
 
 ```json
 {
-  "oauth_metadata": {
-    "client_id": "Iv1.a1b2c3d4e5f6g7h8",
-    "client_secret": "your_github_oauth_client_secret",
-    "redirect_uri": "https://mcp.portkey.ai/oauth/upstream-callback",
-    "scope": "repo read:org"
-  }
+  "client_id": "Iv1.a1b2c3d4e5f6g7h8",
+  "client_secret": "your_github_oauth_client_secret",
+  "scope": "repo read:org"
 }
 ```
 
 <Note>
-The `redirect_uri` configured in Portkey must exactly match the **Authorization callback URL** set when creating the GitHub OAuth App.
+Set the OAuth App's **Authorization callback URL** to Portkey's callback, `<gateway-url>/oauth/upstream-callback`. On Portkey's managed gateway that is `https://mcp.portkey.ai/oauth/upstream-callback`; on a self-hosted or hybrid deployment, use your own gateway host (the value of `MCP_GATEWAY_BASE_URL`). This URL is always controlled by the gateway, so a `redirect_uri` set in your OAuth metadata is ignored.
 </Note>
 
 See the [GitHub MCP server guide](/integrations/mcp-servers/github-mcp-server#connect-via-portkey-mcp-gateway) for complete setup instructions.
@@ -238,6 +254,13 @@ Connections authorized **before** this setting was added have no stored refresh 
 </Note>
 
 For external authorization providers, set `authorization_params` inside `external_auth_config` instead.
+## Troubleshooting
+
+**Portkey still attempts Dynamic Client Registration even though I set a `client_id`.**
+Portkey resolved no client ID from your configuration, so it fell back to registration. Check that the JSON in the **OAuth Metadata** field has `client_id` at the top level, with no outer `oauth_metadata` wrapper. If you configured it through the **Advanced Configuration** box instead, the wrapper is required there — but it must appear exactly once.
+
+**Consent succeeds, then the token exchange fails.**
+The client ID is being presented correctly and the failure is now on the provider side. In order of likelihood: the OAuth App is registered as a confidential/web client while Portkey defaults to `token_endpoint_auth_method: "none"` (set it explicitly, and supply `client_secret`); the callback URL registered on the provider doesn't exactly match `<gateway-url>/oauth/upstream-callback`; or the app is missing a granted scope or the `refresh_token` grant, which Portkey requests by default.
 
 ---
 
