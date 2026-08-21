@@ -1,0 +1,344 @@
+---
+title: "Gmail MCP server"
+description: "Connect Gmail's MCP server through Portkey MCP Gateway for reading, sending, and managing emails"
+---
+
+Use the Gmail MCP server to read emails, send messages, and manage labels from AI agents. Portkey MCP Gateway adds centralized auth, access control, and observability on top of Google's endpoint.
+
+## When should you use this server
+
+- Fetch recent emails or threads to surface context during agent workflows
+- Draft or send emails from AI assistants with human-in-the-loop review
+- Search mailboxes for specific conversations, attachments, or senders
+- Manage labels and read state programmatically
+
+## Key features
+
+- Full mailbox access (read, send, modify) based on granted OAuth scopes
+- Hosted endpoint — no self-hosted binary to run
+- OAuth 2.0-based access aligned with Google Workspace permissions
+
+## Authentication
+
+- **Method:** OAuth 2.1 with **manual OAuth metadata** (Google does not use Dynamic Client Registration)
+- **Google Cloud app:** Create an OAuth 2.0 client in [Google Cloud Console](https://console.cloud.google.com/), configure redirect URL and Gmail scopes
+
+## Endpoint
+
+**Remote MCP server:**
+
+```
+https://gmailmcp.googleapis.com/mcp/v1
+```
+
+---
+
+## Connect via Portkey MCP Gateway
+
+Portkey MCP Gateway provides centralized access control, observability, and credential management for Gmail's MCP server. Connect once, and all agents get managed Gmail access.
+
+<Note>
+Gmail requires creating a Google OAuth app and passing `client_id`, `client_secret`, `redirect_uri`, and `scope` in Portkey **Advanced Configuration** — same pattern as other providers that need manual OAuth metadata (for example [GitHub](/integrations/mcp-servers/github-mcp-server#method-1-oauth-with-github-oauth-app) and [Slack](/integrations/mcp-servers/slack-mcp-server)).
+</Note>
+
+### Step 1: Create a Google OAuth 2.0 app
+
+#### 1a. Create a project and enable required APIs
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
+2. Click the project dropdown at the top and select **New Project**.
+3. Enter a project name (e.g., `Portkey-Gmail-MCP`) and click **Create**. Ensure this project is active in the top dropdown.
+4. In the top search bar, search for and enable **both** of the following APIs:
+   - **Gmail API** (`gmail.googleapis.com`)
+   - **Gmail MCP API** (`gmailmcp.googleapis.com`)
+
+#### 1b. Configure the OAuth consent screen
+
+1. In the left sidebar, navigate to **APIs & Services** → **Google Auth Platform**.
+2. Click **Get Started**.
+3. Complete the 4-part configuration wizard:
+   - **App Information:** Enter an app name (e.g., `Portkey Gmail MCP`) and select your user support email. Click **Next**.
+   - **Audience:** Choose **Internal** (restricted to your Google Workspace org) or **External** (for `@gmail.com` accounts or external domains). Click **Next**.
+   - **Contact Information:** Enter your developer contact email. Click **Next**.
+   - **Finish:** Accept the Google API services user data policy. Click **Continue**, then **Create**.
+
+#### 1c. Configure data access (Gmail scopes)
+
+1. Under **Google Auth Platform**, click **Data Access**.
+2. Click **Add or remove scopes**.
+3. Search for `gmail` or paste the required scope URIs:
+   - `https://www.googleapis.com/auth/gmail.readonly` — Read messages and threads
+   - `https://www.googleapis.com/auth/gmail.compose` — Create and edit drafts
+   - `https://www.googleapis.com/auth/gmail.send` — Send emails directly
+   - `https://www.googleapis.com/auth/gmail.modify` — Modify labels and read state
+4. Select the checkboxes and click **Update**.
+
+<Tip>
+Choose only the scopes your agents actually need. `gmail.readonly` is sufficient for read-only workflows.
+</Tip>
+
+#### 1d. Add test users (external apps only)
+
+*If you selected "Internal" in 1b, skip to 1e.*
+
+1. Click **Audience** in the left navigation.
+2. Scroll to **Test users** and click **+ Add users**.
+3. Enter the Gmail addresses that will authenticate with the MCP integration.
+4. Click **Save**.
+
+#### 1e. Generate OAuth 2.0 client credentials
+
+1. Under **Google Auth Platform**, click **Clients** (or go to **APIs & Services** → **Credentials**).
+2. Click **+ Create Client** (or **Create Credentials** → **OAuth client ID**).
+3. Set **Application type** to **Web application**.
+4. Set a name (e.g., `Portkey Gateway Client`).
+5. Under **Authorized redirect URIs**, click **+ Add URI** and enter:
+
+   ```
+   https://mcp.portkey.ai/oauth/upstream-callback
+   ```
+
+6. Click **Create**.
+7. Copy both the **Client ID** and **Client Secret** from the modal.
+
+<Warning>
+Store the Client Secret securely — Google only shows it once during creation.
+</Warning>
+
+---
+
+### Step 2: Register the integration in Portkey
+
+1. In Portkey, go to **MCP Registry** → **Add MCP Integration**.
+2. Fill in the basic details:
+
+| Field | Value |
+|-------|-------|
+| **Name** | Gmail |
+| **Slug** | `gmail` |
+| **Server URL** | `https://gmailmcp.googleapis.com/mcp/v1` |
+| **Auth Type** | OAuth 2.1 |
+
+3. Expand **Advanced Configuration** and paste (replace placeholders):
+
+```json
+{
+  "oauth_metadata": {
+    "client_id": "YOUR_GOOGLE_CLIENT_ID",
+    "client_secret": "YOUR_GOOGLE_CLIENT_SECRET",
+    "redirect_uri": "https://mcp.portkey.ai/oauth/upstream-callback",
+    "scope": "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify"
+  }
+}
+```
+
+<Tip>
+Adjust `scope` to match only the scopes you configured in Step 1c. Separate multiple scopes with spaces.
+</Tip>
+
+4. Configure workspace access as needed, then save the integration.
+
+---
+
+### Step 3: Connect from an agent
+
+With Portkey OAuth 2.1, agents connect without credentials in headers:
+
+<CodeGroup>
+```json Claude Desktop / Cursor
+{
+  "mcpServers": {
+    "gmail": {
+      "url": "https://mcp.portkey.ai/gmail/mcp"
+    }
+  }
+}
+```
+</CodeGroup>
+
+On first tool use, the client opens Google's authorization screen. Portkey stores and refreshes tokens automatically.
+
+---
+
+## Available scopes reference
+
+| Scope | Access level |
+|-------|-------------|
+| `gmail.readonly` | Read-only access to messages, threads, labels, and settings |
+| `gmail.send` | Send emails on the user's behalf |
+| `gmail.modify` | Read, send, and modify (labels, read state) but not delete |
+| `gmail.compose` | Create and send drafts |
+| `gmail.labels` | Create, read, update, and delete labels |
+
+---
+
+## Tools provided
+
+### **list_messages**
+
+Lists messages in the user's mailbox. Supports filtering by label IDs and search queries.
+
+**Arguments:**
+
+* `maxResults` *(number, optional)* — maximum number of messages to return (default 100, max 500).
+* `labelIds` *(string[], optional)* — only return messages with all of the specified labels applied.
+* `q` *(string, optional)* — Gmail search query string (e.g., `from:user@example.com is:unread`).
+* `pageToken` *(string, optional)* — token for fetching the next page of results.
+
+---
+
+### **get_message**
+
+Retrieves a specific message by its ID, with optional format control.
+
+**Arguments:**
+
+* `id` *(string, required)* — the ID of the message to retrieve.
+* `format` *(string, optional)* — format of the message: `full`, `metadata`, `minimal`, or `raw`. Defaults to `full`.
+
+---
+
+### **search_messages**
+
+Searches for messages using Gmail's search operators.
+
+**Arguments:**
+
+* `query` *(string, required)* — Gmail search query (e.g., `subject:invoice from:finance@company.com`).
+* `maxResults` *(number, optional)* — maximum number of messages to return.
+* `pageToken` *(string, optional)* — token for the next page of results.
+
+---
+
+### **send_message**
+
+Sends an email message on behalf of the authenticated user.
+
+**Arguments:**
+
+* `to` *(string, required)* — recipient email address.
+* `subject` *(string, required)* — email subject line.
+* `body` *(string, required)* — email body content.
+* `cc` *(string, optional)* — CC recipients (comma-separated).
+* `bcc` *(string, optional)* — BCC recipients (comma-separated).
+* `threadId` *(string, optional)* — thread ID to reply within an existing conversation.
+
+---
+
+### **create_draft**
+
+Creates a new draft message without sending it.
+
+**Arguments:**
+
+* `to` *(string, required)* — recipient email address.
+* `subject` *(string, required)* — email subject.
+* `body` *(string, required)* — email body content.
+* `cc` *(string, optional)* — CC recipients (comma-separated).
+* `bcc` *(string, optional)* — BCC recipients (comma-separated).
+* `threadId` *(string, optional)* — thread ID to associate the draft with an existing conversation.
+
+---
+
+### **list_drafts**
+
+Lists draft messages in the user's mailbox.
+
+**Arguments:**
+
+* `maxResults` *(number, optional)* — maximum number of drafts to return.
+* `pageToken` *(string, optional)* — token for the next page.
+* `q` *(string, optional)* — search query to filter drafts.
+
+---
+
+### **trash_message**
+
+Moves a message to the trash.
+
+**Arguments:**
+
+* `id` *(string, required)* — the ID of the message to trash.
+
+---
+
+### **modify_message**
+
+Adds or removes labels from a message. Use this to mark messages as read/unread, archive, or apply custom labels.
+
+**Arguments:**
+
+* `id` *(string, required)* — the ID of the message to modify.
+* `addLabelIds` *(string[], optional)* — list of label IDs to add.
+* `removeLabelIds` *(string[], optional)* — list of label IDs to remove (e.g., `UNREAD` to mark as read).
+
+---
+
+### **list_threads**
+
+Lists email threads in the user's mailbox.
+
+**Arguments:**
+
+* `maxResults` *(number, optional)* — maximum number of threads to return.
+* `labelIds` *(string[], optional)* — filter by label IDs.
+* `q` *(string, optional)* — Gmail search query string.
+* `pageToken` *(string, optional)* — token for the next page.
+
+---
+
+### **get_thread**
+
+Retrieves all messages in an email thread.
+
+**Arguments:**
+
+* `id` *(string, required)* — the ID of the thread to retrieve.
+* `format` *(string, optional)* — format for messages in the thread: `full`, `metadata`, or `minimal`.
+
+---
+
+### **list_labels**
+
+Lists all labels in the user's mailbox (system labels like INBOX, SENT, SPAM and user-created labels).
+
+**Arguments:**
+
+_None_
+
+---
+
+### **create_label**
+
+Creates a new user-defined label.
+
+**Arguments:**
+
+* `name` *(string, required)* — display name for the label.
+* `labelListVisibility` *(string, optional)* — label visibility in the label list: `labelShow`, `labelHide`, or `labelShowIfUnread`.
+* `messageListVisibility` *(string, optional)* — message list visibility: `show` or `hide`.
+
+---
+
+### **get_profile**
+
+Returns profile information for the authenticated user's Gmail account, including the email address, messages total, threads total, and history ID.
+
+**Arguments:**
+
+_None_
+
+---
+
+## Prerequisites
+
+- A Google Cloud project with both Gmail API and Gmail MCP API enabled
+- A compatible MCP host with remote server support
+
+<Note>
+Add `"headers": { "x-portkey-api-key": "YOUR_PORTKEY_API_KEY" }` when the workspace requires the Portkey API key on the MCP request — see [Integrations](/product/mcp-gateway/integrations). For self-hosted gateways, replace `mcp.portkey.ai` with the gateway host.
+</Note>
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
