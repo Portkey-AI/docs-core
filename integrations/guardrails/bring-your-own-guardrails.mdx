@@ -32,10 +32,12 @@ In the Guardrail configuration UI, you'll need to provide:
 | **Webhook URL** | Your webhook's endpoint URL | `string` |
 | **Headers** | Headers to include with webhook requests | `JSON` |
 | **Timeout** | Maximum wait time for webhook response | `number` (ms) |
+| **Fail on Error** | Treat a non-200 response or a timeout as a failed check | `boolean` |
+| **Forward Headers** | Client headers to forward to your webhook | `string[]` |
 
 #### Webhook URL
 
-This should be a publicly accessible URL where your webhook is hosted.
+This should be a publicly accessible URL where your webhook is hosted. On self-hosted gateways, webhooks on private networks must be allowlisted in `TRUSTED_CUSTOM_HOSTS`.
 
 
 #### Headers
@@ -55,6 +57,133 @@ The maximum time Portkey will wait for your webhook to respond before proceeding
 
 - Default: `3000ms` (3 seconds)
 - If your webhook processing is time-intensive, consider increasing this value
+
+### Configure Your Webhook Inline in a Config
+
+Skip the portal entirely and pass the webhook check inline in the request config. Any hook that carries its own `checks` array runs as-is — no guardrail is created and no ID is looked up.
+
+```json Inline webhook guardrail
+{
+  "before_request_hooks": [{
+    "id": "inline-input-webhook",
+    "type": "guardrail",
+    "deny": true,
+    "checks": [{
+      "id": "default.webhook",
+      "parameters": {
+        "webhookURL": "https://guardrails.example.com/pre-check",
+        "headers": { "Authorization": "Bearer WEBHOOK_TOKEN" },
+        "timeout": 5000,
+        "failOnError": true
+      }
+    }]
+  }],
+  "after_request_hooks": [{
+    "id": "inline-output-webhook",
+    "type": "guardrail",
+    "deny": false,
+    "checks": [{
+      "id": "default.webhook",
+      "parameters": {
+        "webhookURL": "https://guardrails.example.com/post-check",
+        "timeout": 3000
+      }
+    }]
+  }]
+}
+```
+
+Send the config with any inference request:
+
+<CodeGroup>
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H 'x-portkey-config: {"before_request_hooks":[{"id":"inline-input-webhook","type":"guardrail","deny":true,"checks":[{"id":"default.webhook","parameters":{"webhookURL":"https://guardrails.example.com/pre-check","timeout":5000,"failOnError":true}}]}]}' \
+  -d '{
+    "model": "@my-openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Say Hi"}]
+  }'
+```
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config={
+        "before_request_hooks": [{
+            "id": "inline-input-webhook",
+            "type": "guardrail",
+            "deny": True,
+            "checks": [{
+                "id": "default.webhook",
+                "parameters": {
+                    "webhookURL": "https://guardrails.example.com/pre-check",
+                    "headers": {"Authorization": "Bearer WEBHOOK_TOKEN"},
+                    "timeout": 5000,
+                    "failOnError": True
+                }
+            }]
+        }]
+    }
+)
+
+response = portkey.chat.completions.create(
+    model="@my-openai/gpt-4o-mini",
+    messages=[{"role": "user", "content": "Say Hi"}]
+)
+```
+
+```js NodeJS
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: {
+        before_request_hooks: [{
+            id: "inline-input-webhook",
+            type: "guardrail",
+            deny: true,
+            checks: [{
+                id: "default.webhook",
+                parameters: {
+                    webhookURL: "https://guardrails.example.com/pre-check",
+                    headers: { Authorization: "Bearer WEBHOOK_TOKEN" },
+                    timeout: 5000,
+                    failOnError: true
+                }
+            }]
+        }]
+    }
+})
+
+const response = await portkey.chat.completions.create({
+    model: "@my-openai/gpt-4o-mini",
+    messages: [{ role: "user", content: "Say Hi" }]
+})
+```
+</CodeGroup>
+
+#### Hook Fields
+
+| Field | Description | Type |
+| :-- | :-- | :-- |
+| `id` | Label for the hook, shown in logs. Any string works — it is never looked up | `string` |
+| `type` | Always `guardrail` for webhook checks | `string` |
+| `checks` | The checks to run. One `default.webhook` entry per endpoint | `array` |
+| `deny` | Block the request when the webhook returns `verdict: false` | `boolean` |
+| `async` | Run the check without blocking the request | `boolean` |
+| `sequential` | Run checks one after another instead of in parallel | `boolean` |
+
+To call several webhooks, add more entries to `checks`. They run in parallel unless `sequential` is `true`.
+
+Results come back under `hook_results.before_request_hooks` and `hook_results.after_request_hooks` in the response, exactly as they do for saved guardrails.
+
+<Note>
+Inline checks still respect org-level guardrail settings — checks belonging to a disabled guardrail category are skipped. Configs travel in a request header, so very large inline configs can hit proxy header size limits. For big or shared guardrails, create a saved guardrail and reference it by ID instead.
+</Note>
 
 ### Webhook Request Structure
 
