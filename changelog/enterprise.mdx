@@ -32,15 +32,17 @@ The xAI provider now supports image generation, with OpenAI-compatible parameter
 
 [xAI Documentation](/integrations/llms/x-ai)
 
-### Bedrock India Geo Routing & Context-Tier Pricing
+### Bedrock India Inference Profile & Context-Based Pricing
 
-Amazon Bedrock requests routed through the India-geo cross-region inference profile now resolve correctly, and `custom_pricing.context_tier_map` is now used to price requests by context length (short vs. long context) at cost-calculation time.
+Amazon Bedrock requests that use the India cross-region inference profile (model IDs prefixed with `in.`) now resolve to the correct underlying model.
+
+Bedrock models that charge different rates for short vs. long context are now billed at the tier matching the request's input token count, so long-context requests are no longer priced at the short-context rate.
 
 [AWS Bedrock Documentation](/integrations/llms/bedrock/aws-bedrock)
 
 ### Unified Gateway + MCP Server Mode
 
-A new `--unified` server flag runs the AI Gateway and MCP Gateway on a single port, routing MCP and OAuth paths internally instead of requiring two separate ports/services.
+Set `SERVER_MODE=unified` to run the AI Gateway and MCP Gateway on a single port. In this mode, MCP endpoints are served under the `/m` path prefix (for example, `https://your-gateway.com/m/...`), while LLM traffic continues to use `/v1/*`. This removes the need to run two services or configure host-based routing to split AI Gateway and MCP Gateway traffic.
 
 [Self-Hosting Documentation](/self-hosting/hybrid-deployments/aws/eks)
 
@@ -50,15 +52,18 @@ The webhook guardrail can now run on proxy (`/v1/*`) requests via an opt-in `exe
 
 [Guardrails Documentation](/product/guardrails/list-of-guardrail-checks)
 
+### OAuth Support in Prisma AIRS AI Gateway via Cloud Identity Engine
+
+OAuth is now supported in Prisma AIRS AI Gateway through Palo Alto Networks Cloud Identity Engine (CIE). You can sync your data plane user directory through CIE and then use it for the OAuth flow.
+
 ### Provider Updates
 
-- **Palo Alto Networks Prisma AIRS**: Scan endpoint URL is now configurable via `AIRS_URL`, and model/user/app metadata is resolved from the live request instead of static plugin params
-- **Azure AI Foundry**: Fixed cache-token cost attribution for OpenAI-Responses-style usage payloads
-- **Azure OpenAI**: Codex models are now routed through the messages-to-responses adapter
+- **Azure AI Foundry**: Fixed cached input tokens being priced as regular input tokens for models called through `/v1/responses`
+- **Azure OpenAI**: Codex models can now be called through the Anthropic-compatible `/v1/messages` endpoint
 - **Azure OpenAI**: `entraFederated` and `workload` auth modes no longer send an empty `Authorization` header before token exchange completes
 - **Amazon Bedrock**: Fixed a `temperature` validation error for Claude 4+ models called through the Messages API
-- **Anthropic**: SSE `ping` events are now forwarded as keepalives on OpenAI-shaped stream paths, preventing long-running streams from being dropped
-- **Anthropic**: Fixed `cache_control` being dropped for single-content-part messages sent through the Responses adapter
+- **Anthropic**: Long-running streams are no longer dropped during long model prefills — Anthropic's keepalive `ping` events are now passed through when streaming via the OpenAI-compatible `/v1/chat/completions` and `/v1/complete` endpoints
+- **Anthropic**: Fixed prompt caching being silently skipped for messages with a single content block when calling Anthropic models through `/v1/responses`
 - **fal.ai**: Fixed image-generation pricing falling back to the wrong model name
 - **Together AI**: Added `stream_options` support
 - **OpenAI**: Fixed a tool-call ID error when converting Anthropic tool calls to the Responses API
@@ -68,15 +73,12 @@ The webhook guardrail can now run on proxy (`/v1/*`) requests via an opt-in `exe
 ### Fixes and Improvements
 
 - **Security**: The JWT guardrail now fails closed by default on invalid signatures, `alg: none`, and expired tokens
-- **Security**: Fixed `custom_host` leaking from one target to other targets in fallback/load-balance configs
-- **Security**: The MCP JWT validation cache key now includes the full validation config and uses SHA-256 hashing, closing a stale-auth window after config changes
-- **MCP**: Fixed OAuth login for Enterprise Hybrid deployments using a Cloud Authentication Service (CAS) identity provider
-- **MCP**: The JWT introspection endpoint now honors the configured content type
-- **MCP**: Service-type API keys using local JWT auth skip the unnecessary per-user access check
-- **Usage Limits**: Fixed request-count-based limits and JWT-key usage limits not being enforced
+- **Reliability**: Fixed `custom_host` leaking from one target to other targets in fallback/load-balance configs
+- **JWT Validation**: Changes to your JWT auth configuration now take effect right away instead of waiting for previously cached validation results to expire
+- **JWT Validation**: When a token introspection endpoint is configured with a custom `introspectContentType` (such as `application/json`), the request body is now encoded to match that content type instead of always being sent as form-urlencoded. Applies to both the JWT guardrail and MCP Gateway JWT authentication
+- **MCP**: Removed a redundant per-user access check for MCP requests authenticated with local JWT auth. Local JWT mode does not carry user attribution, so there was no user to check access for
+- **Usage Limits**: Fixed request-count-based usage limits and usage limits on JWT-authenticated keys not being applied — requests continued to be served after the configured limit was reached
 - **F5 Guardrails**: Added an opt-in `forwardMetadata` parameter to forward request metadata to the scan request
-
-[MCP Gateway Documentation](/product/mcp-gateway/authentication/oauth)
 
 </Update>
 
