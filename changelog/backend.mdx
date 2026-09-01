@@ -1,12 +1,179 @@
 ---
 title: "Backend"
-sidebarTitle: "Backend [1.22.0]"
+sidebarTitle: "Backend [1.25.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://www.paloaltonetworks.com/ai-security/ai-gateway#:~:text=See%20Prisma%20AIRS%20AI%20Gateway%20in%20Action" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="1.25.0" description="2026-09-01">
+
+## v1.25.0
+---
+
+### MCP Gateway — Guardrails for MCP Servers
+- MCP servers can now have **guardrails** attached via `capability_ids` mappings, with support for `run_on` values (`beforeToolCall`, `afterToolCall`). Guardrails are evaluated per tool call and can block or monitor tool execution
+- New APIs for MCP server guardrail mappings with cache invalidation and lifecycle management
+- MCP guardrail schemas added to the guardrail schema registry
+- Guardrail list API no longer applies a default target filter, returning both LLM and MCP guardrails
+
+<Note>UI support for configuring MCP server guardrails is coming soon.</Note>
+
+### MCP Registry
+- New MCP registry endpoint for listing available MCP servers with cursor-based pagination
+
+### New Guardrails
+- **Singulr**: New partner guardrail integration (`singulr`) for AI security scanning
+- **Alibaba Cloud AI Guardrails**: New partner guardrail integration for Alibaba Cloud's content moderation and security service
+
+### New Providers
+- **Deepgram**: Added to the Model Catalog (`deepgram`) with TTS models and pricing
+- **Lightning AI**: Added to the Model Catalog (`lightning-ai`)
+- **Headroom**: Added to the Model Catalog (`headroom`) for enterprise AI integrations
+
+### Guardrails Updates
+- **F5 Guardrails**: Added `forwardMetadata` parameter support
+- **Config validation**: Guardrail slugs referenced in configs are now validated at save time — invalid or non-existent slugs in `input_guardrails` / `output_guardrails` are rejected
+- Guardrail create API now returns `created_at` and `created_by` in the response
+
+### Integrations — Workload Identity Federation for Providers
+- Integrations now support **workload identity federation** (`wif`) as a provider authentication type, enabling keyless authentication from cloud workloads (GKE, EKS, etc.) to AI providers
+
+### Deployment Enhancements
+- Deployments support **tags** (key-value pairs) for filtering and organisation
+- Deployments support **`source_type`** field and MCP Gateway base URL configuration
+- List deployments API returns gateway base URLs
+
+### Observability
+- Generation log responses now include **hook check data** (guardrail check results and errors) from the log store, surfacing detailed guardrail evaluation data alongside request/response logs
+- Integration model auto-sync for automated model catalog refresh
+
+### Log Exports
+- Log export deletion support
+- Improved error messages when workspace is missing in export API requests
+
+### API Key Management
+- User API key creation now rejects over-privileged scope requests — users cannot create keys with scopes exceeding their own role permissions
+- `GET` workspace members API now returns user email
+
+### Self-Hosting
+- Plugin schema now supports `service-role` for Bedrock plugins
+
+### Performance
+- Read-through caching for organisation lookups reduces redundant DB queries
+- Custom validator for `pricingConfig` validation on integration model updates
+
+### Security
+- CORS headers excluded from prompt playground proxy forwarding
+- Alibaba plugin credentials masked in API responses
+- API key scope enforcement hardened for user role permissions
+- Dependency updates and security fixes
+
+### Fixes and Improvements
+- **Configs**: Fixed per-version author display in config version history (from v1.24.2 fix carry-over)
+- **Prompts**: Fixed duplicate slug handling on prompt creation
+- **Workspaces**: Fixed workspace slug hydrator validation error responses
+- **Guardrails**: Fixed recursive guardrail slug extraction across nested config targets
+- **Exports**: Fixed misleading workspace error message for exports API
+- **Private Deployments**: Fixed virtual key handling scenarios in private deployments
+- **SCIM**: Fixed group display name updates and SCIM group listing auto-map behavior
+- **Cache**: Organisation cache improvements
+
+</Update>
+
+<Update label="1.24.2" description="2026-08-15">
+
+## v1.24.2
+---
+
+### API Key Management — Default Scopes for Auto-Created User API Keys
+- New **`user_api_key_auto_create_scopes`** organisation setting (with workspace-level override) controls which data-plane scopes are granted to auto-provisioned workspace-user API keys. When set, auto-created keys receive only the listed scopes instead of the full default scope set
+- [Documentation](/product/administration/enforce-default-config#default-scopes-for-auto-created-user-api-keys)
+
+### JWT Authentication
+- JWKS fetching now tries a direct fetch first and falls back to private link routing only when the direct path fails, improving resilience in hybrid deployments where the JWKS endpoint may or may not be reachable over the public internet
+
+### Guardrails
+- `forwardHeaders` parameter removed from Portkey-managed PRO check schemas (`portkey.moderateContent`, `portkey.language`, `portkey.pii`, `portkey.gibberish`) — these checks are handled internally and do not support user-configured header forwarding
+
+### Security
+- API key generation now uses strictly alphanumeric characters, eliminating modulo bias in the random generation
+
+### Fixes and Improvements
+- **Configs**: Fixed per-version author and timestamp display in config version history
+
+</Update>
+
+<Update label="1.24.1" description="2026-08-12">
+
+## v1.24.1
+---
+
+### Integrations — OAuth Client Credentials for Upstream Providers
+- Integrations now support **`oauthClientCredentials`** as a `provider_auth_type`, enabling OAuth 2.0 Client Credentials grant for upstream provider authentication. Configure `oauth_token_endpoint`, `oauth_client_id`, `oauth_client_secret`, and optionally `oauth_scope` when creating or updating an integration
+- Currently available for **OpenAI** integrations. The client secret is masked in API responses
+
+### Self-Hosting — Azure Workload Identity for Log Store
+- Azure Blob Storage log store now supports **workload identity** authentication (`AZURE_AUTH_MODE=workload`), in addition to existing Entra ID and managed identity modes. Uses Kubernetes-projected federated tokens for keyless access to Azure Storage
+
+### Guardrails
+- `forwardHeaders` parameter removed from 22 local-only guardrail check schemas (regex, model allowlist, word count, etc.) where it had no effect — only external checks that make outbound HTTP calls support header forwarding
+
+</Update>
+
+<Update label="1.24.0" description="2026-08-10">
+
+## v1.24.0
+---
+
+### Rate Limit Policies — MCP Tool Call Target
+- Rate limit policies now support a **`target`** field with values `llm` (default) and `mcp_tools`, allowing you to create rate limit policies specifically for MCP tool calls through the MCP Gateway
+- The `target` field is returned in `GET` and `LIST` rate limit policy responses, and the `LIST` endpoint accepts a `target` query parameter for filtering
+- MCP rate limits are included in the OAuth token introspection response for the MCP Gateway to enforce
+- [Documentation](/product/enterprise-offering/budget-policies#target)
+
+<Note>Requires Gateway **2.18.0** or higher for MCP tool call rate limiting.</Note>
+
+### Guardrails — `forwardHeaders` Validation
+- Guardrail `forwardHeaders` are now validated at create/update time. Restricted headers (credentials, cloud metadata, internal routing, hop-by-hop) and invalid header names are rejected
+- The `forwardHeaders` parameter is now explicitly defined in all guardrail provider schemas for static schema export and gateway parity
+- [Documentation](/product/guardrails/forwarding-headers)
+
+### Analytics — LLM, MCP, and A2A Breakdown
+- Token, request, and error chart APIs now return separate counters for **LLM**, **MCP**, and **A2A** (agent-to-agent) traffic, enabling per-workload analytics breakdowns in the dashboard
+
+### Self-Hosting — Redis IAM & Workload Identity Authentication
+- **AWS ElastiCache**: New IAM authentication mode (`AWS_REDIS_AUTH_MODE=iam`) for ElastiCache with automatic token refresh. Configure with `AWS_REDIS_CLUSTER_NAME`, `AWS_REDIS_REGION`, and optionally `AWS_REDIS_ASSUME_ROLE_ARN` / `AWS_REDIS_ROLE_EXTERNAL_ID` for cross-account access
+- **Azure Cache for Redis**: Added workload identity authentication support via `AZURE_REDIS_WORKLOAD_CLIENT_ID` and `AZURE_REDIS_WORKLOAD_TENANT_ID`, and password authentication for Azure Redis
+- **GCP Memorystore**: New `gcp-memory-store` cache store type with GCP workload identity authentication (`GCP_REDIS_AUTH_MODE`)
+- [Components Documentation](/product/enterprise-offering/components)
+
+### Security
+- Improved email masking in audit logs to preserve domain while distinguishing users
+
+### Fixes and Improvements
+- **Prompts**: Fixed slug vs workspace ID resolution in prompt partials and prompts
+- **Analytics**: Fixed cache status filter handling in cost and token chart APIs
+- **Cache**: Fixed API key cache invalidation when organisation auth settings are updated
+- Model configuration and pricing updates
+- Security dependency updates
+
+</Update>
+
+<Update label="1.23.0" description="2026-08-05">
+
+## v1.23.0
+---
+
+### Security
+- Hardened SSRF checks for prompt playground and prompt completions proxy calls. Admin-supplied gateway URLs (from org enterprise settings or workspace deployments) are now routed through safe DNS lookup validation, blocking IMDS, metadata endpoints, and private DNS-rebind targets. Env-configured gateway hostnames are automatically added to the trusted host set
+
+### DB Migrations
+- Added index on `api_keys.last_updated_at` for improved query performance
+
+</Update>
 
 <Update label="1.22.0" description="2026-08-03">
 
