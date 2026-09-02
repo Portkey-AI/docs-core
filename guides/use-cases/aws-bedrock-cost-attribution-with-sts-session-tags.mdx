@@ -304,12 +304,56 @@ The gateway automatically sanitises metadata before passing it to AWS STS. Under
 
 ## Credential Caching
 
-The gateway caches STS credentials per unique combination of `(roleArn, externalId, region, sourceCredentialHash, tagsHash)`. Different metadata tag sets produce different cache keys, so:
+The gateway caches STS temporary credentials to minimize `AssumeRole` API calls. No custom cache configuration is needed — caching works out of the box.
 
-- Two requests with **identical metadata** reuse the same cached credentials (no extra STS call).
-- Two requests with **different metadata** trigger separate `AssumeRole` calls and produce distinct STS sessions.
+### Cache key composition
 
-This ensures cost attribution accuracy while minimizing STS API usage.
+Each cached credential is keyed by the combination of:
+
+| Parameter | Source | Effect on cache |
+|---|---|---|
+| `roleArn` | Virtual key / provider config | Different target roles → separate cache entries |
+| `externalId` | Virtual key / provider config | Different external IDs → separate cache entries |
+| `region` | Virtual key / provider config / `AWS_ASSUME_ROLE_REGION` env | Different regions → separate cache entries |
+| `sourceCredentialHash` | SHA-256 of the gateway's own credentials (access key + secret key + session token) | If the gateway's source credentials rotate, the cache naturally invalidates |
+| `tagsHash` | FNV-1a hash of the sanitised metadata key-value pairs | **Different metadata → different cache entries → separate STS sessions** |
+
+The cache key format is:
+
+```
+assumed-sts-<roleArn>/<externalId>/<region>/<sourceCredentialHash>/<tagsHash>
+```
+
+Parameters **not** in the cache key: model name, Portkey API key, virtual key slug, request body. These do not affect the STS call and are irrelevant to credential identity.
+
+### TTL and reuse
+
+| Setting | Value | Configurable? |
+|---|---|---|
+| Credential cache TTL | **5 minutes** (300 seconds) | Not configurable via env — hardcoded in the gateway |
+| Cache backend | **Redis** (with 30-second local in-process cache) when Redis is configured; **in-memory** otherwise | Follows the gateway's `CACHE_STORE` setting |
+| Local cache layer | When using Redis, a 30-second in-process local cache avoids a Redis round-trip on every request | Automatic when Redis is configured |
+
+### When does a new AssumeRole call happen?
+
+A new STS `AssumeRole` call is made **only** when no cached credential exists for the computed cache key. In practice:
+
+- **Same metadata, same role** — Reuses cached credentials for up to 5 minutes. One STS call per 5-minute window.
+- **Different metadata, same role** — Each unique metadata set triggers its own STS call and produces a separate cached entry. For example, 3 distinct `team` values means 3 STS calls (then cached for 5 min each).
+- **Gateway restart** — Clears the in-memory cache. Redis cache (if configured) survives restarts.
+- **Source credential rotation** — When the gateway's own credentials change (e.g. ECS task role refresh), the `sourceCredentialHash` changes and new STS calls are made.
+
+### Estimating STS call volume
+
+```
+STS calls ≈ (unique metadata combinations × unique roles × unique regions) / 5 min
+```
+
+For a gateway serving 3 teams (`ai-platform`, `mobile`, `backend`) through 1 Bedrock role in 1 region, expect ~3 STS calls every 5 minutes — regardless of request volume.
+
+<Note>
+AWS STS has no hard per-second rate limit, but sustained high call rates may trigger throttling. The 5-minute cache keeps call volume well within safe bounds for typical deployments. If you have hundreds of unique metadata combinations, consider limiting the metadata keys sent as session tags to a small set of high-cardinality dimensions (e.g. `team` and `env`, not per-request IDs).
+</Note>
 
 ---
 
@@ -320,9 +364,9 @@ This ensures cost attribution accuracy while minimizing STS API usage.
 This is the most common error. The full message looks like:
 
 ```
-User: arn:aws:sts::884994594706:assumed-role/ecsTaskContainerRole/...
+User: arn:aws:sts::<GATEWAY_ACCOUNT>:assumed-role/<GATEWAY_ROLE>/...
 is not authorized to perform: sts:TagSession on resource:
-arn:aws:iam::642137768492:role/portkey-bedrock-invokemodel
+arn:aws:iam::<TARGET_ACCOUNT>:role/<BEDROCK_ROLE>
 ```
 
 **Fix:** Add `sts:TagSession` to **both** the caller's IAM policy (Step 2a) **and** the target role's trust policy (Step 2b). In cross-account setups, both accounts must allow the action.
