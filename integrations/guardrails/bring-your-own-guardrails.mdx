@@ -34,6 +34,7 @@ In the Guardrail configuration UI, you'll need to provide:
 | **Timeout** | Maximum wait time for webhook response | `number` (ms) |
 | **Fail on Error** | Treat a non-200 response or a timeout as a failed check | `boolean` |
 | **Forward Headers** | Client headers to forward to your webhook | `string[]` |
+| **Execute on Proxy** | Run webhooks on proxy requests in deny-only mode (transforms are ignored) | `boolean` |
 
 #### Webhook URL
 
@@ -74,7 +75,8 @@ Skip the portal entirely and pass the webhook check inline in the request config
         "webhookURL": "https://guardrails.example.com/pre-check",
         "headers": { "Authorization": "Bearer WEBHOOK_TOKEN" },
         "timeout": 5000,
-        "failOnError": true
+        "failOnError": true,
+        "executeOnProxy": true
       }
     }]
   }],
@@ -221,7 +223,15 @@ Portkey sends comprehensive information about the AI request to your webhook:
   </ParamField>
   
   <ParamField body="provider" type="string">Portkey provider slug. Example: `openai`, `azure-openai`, etc.</ParamField>
-  <ParamField body="requestType" type="string">Type of request: `chatComplete`, `complete`, or `embed`</ParamField>
+  <ParamField body="requestType" type="string">Type of request: `chatComplete`, `complete`, `embed`, or `proxy`</ParamField>
+  <ParamField body="requestInfo" type="object">
+    HTTP metadata for the request. Present when the webhook runs on a proxy route.
+    <Expandable title="Properties">
+      <ParamField body="method" type="string">HTTP method (e.g., `POST`, `GET`)</ParamField>
+      <ParamField body="path" type="string">Request path (e.g., `/v1/moderations`)</ParamField>
+      <ParamField body="contentType" type="string|null">Content-Type header value (e.g., `application/json`)</ParamField>
+    </Expandable>
+  </ParamField>
 <ParamField body="metadata" type="object">Custom metadata passed with the request. Can come from: 1) the `x-portkey-metadata` header, 2) default API key settings, or 3) workspace defaults.</ParamField>
 <ParamField body="eventType" type="string">When the hook is triggered: `beforeRequestHook` or `afterRequestHook`</ParamField>
 </Expandable>
@@ -390,6 +400,10 @@ Return a verdict without modifying the request/response:
 
 Modify the user's request before it reaches the LLM provider:
 
+<Note>
+Request transformations are not applied for proxy requests. Webhook guardrails on proxy routes operate in deny-only mode.
+</Note>
+
 <Tabs>
 <Tab title="Example: Adding Content Policy">
 ```json
@@ -446,6 +460,10 @@ Modify the user's request before it reaches the LLM provider:
 ### Response Transformation
 
 Modify the LLM's response before it reaches the user:
+
+<Note>
+Response transformations are not applied for proxy requests. Webhook guardrails on proxy routes operate in deny-only mode.
+</Note>
 
 <Tabs>
 <Tab title="Example: Content Filtering">
@@ -544,6 +562,39 @@ You can forward specific client request headers to your webhook by adding `forwa
 Your webhook will receive these headers alongside `Content-Type` and any custom headers configured in the UI.
 
 <Card title="Forwarding Headers" href="/product/guardrails/forwarding-headers" />
+
+## Webhook Guardrails on Proxy Requests
+
+By default, webhook guardrails only run on standard routes (`/v1/chat/completions`, `/v1/embeddings`, etc.). To run a webhook guardrail on proxy (`/v1/*`) passthrough requests, set `executeOnProxy: true` on the webhook check.
+
+```json Inline config for proxy webhook
+{
+  "before_request_hooks": [{
+    "id": "proxy-content-check",
+    "type": "guardrail",
+    "deny": true,
+    "checks": [{
+      "id": "default.webhook",
+      "parameters": {
+        "webhookURL": "https://guardrails.example.com/proxy-check",
+        "executeOnProxy": true
+      }
+    }]
+  }]
+}
+```
+
+### How It Works
+
+- Your webhook receives the full JSON request body in `request.json`, along with `requestInfo` containing the HTTP method, path, and content type.
+- Both `before_request_hooks` and `after_request_hooks` are supported on proxy routes.
+- The webhook can allow or deny the request based on the payload content.
+
+### Limitations
+
+- **Deny-only mode**: `transformedData` returned by the webhook is ignored for proxy requests, since the webhook cannot know the upstream schema of an opaque passthrough body.
+- **JSON only**: Proxy requests with non-JSON content types (binary, FormData, etc.) skip the webhook entirely.
+- **All checks must opt in**: If a guardrail contains multiple checks, every check must be a `default.webhook` with `executeOnProxy: true`. Mixed guardrails (e.g., webhook + regex match) are skipped on proxy routes — split them into separate guardrails.
 
 ## Important Implementation Notes
 
