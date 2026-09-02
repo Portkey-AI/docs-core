@@ -1,0 +1,155 @@
+---
+title: "Headroom"
+description: "Headroom compresses LLM request context before inference to cut input token costs."
+---
+
+[Headroom](https://headroom-docs.vercel.app/) is a content-aware context compression engine. Portkey's Headroom guardrail sends the request's messages to a Headroom proxy, swaps in the compressed version, and forwards it to the model — so you pay for fewer input tokens without changing your application code.
+
+<Card title="Get Started with Headroom" href="https://headroom-docs.vercel.app/docs/proxy" />
+
+<Note>
+Headroom is **bring-your-own-proxy**. Portkey does not host it. Deploy a Headroom proxy in your own infrastructure and point the integration at it — request payloads never leave your network.
+</Note>
+
+## Deploy a Headroom Proxy
+
+```bash
+pip install "headroom-ai[proxy]"
+
+HEADROOM_COMPRESS_ALLOW_REMOTE=1 \
+HEADROOM_PROXY_TOKEN="your-proxy-token" \
+headroom proxy --host 0.0.0.0 --port 8787
+```
+
+| Variable | Purpose |
+|----------|---------|
+| `HEADROOM_COMPRESS_ALLOW_REMOTE=1` | Required when the gateway is not on the same host. Headroom's compression endpoint is loopback-only by default and returns `404` to every other caller. |
+| `HEADROOM_PROXY_TOKEN` | Bearer token the proxy requires. Recommended once the proxy is reachable off-loopback. |
+
+Verify the deployment with `curl http://your-headroom-host:8787/health`.
+
+## Using Headroom with Portkey
+
+### 1. Add Headroom Credentials to Portkey
+
+* Click on the `Admin Settings` button on Sidebar
+* Navigate to `Plugins` tab under Organisation Settings
+* Click on the edit button for the **Headroom** integration
+* Add your **Headroom Proxy URL** (for example `https://headroom.internal.example.com:8787`)
+* Add your **Headroom Proxy Token** — leave blank if the proxy runs without `HEADROOM_PROXY_TOKEN`
+
+### 2. Add Headroom's Guardrail Check
+
+* Navigate to the `Guardrails` page and click the `Create` button
+* Search for **"Headroom Compress Context"** and click `Add`
+* Configure the compression behaviour (all parameters are optional):
+
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `mode` | enum | `optimize` sends the compressed payload to the provider. `audit` returns savings stats but forwards the original payload. | `optimize` |
+| `compress_user_messages` | boolean | Compress user-role messages. Enable when user messages carry bulk data like logs or tool outputs. | `false` |
+| `compress_system_messages` | boolean | Compress system-role messages. | `false` |
+| `target_ratio` | number | Keep ratio for compression (`0.5` keeps 50%). Leave empty for Headroom defaults. | — |
+| `protect_recent` | number | Number of recent messages left uncompressed. Set `0` to compress everything. | `4` |
+| `protect_analysis_context` | boolean | Detect analyze/review intent and protect code from compression. | `true` |
+| `token_budget` | number | Override the model's context limit. Headroom compresses to fit within this budget. | — |
+| `timeout` | number | Maximum time to wait for the compression request (ms) | `10000` |
+
+* Set any `actions` you want on your check, and create the Guardrail!
+
+<Note>
+    Guardrail Actions allow you to orchestrate your guardrails logic. You can learn more about them [here](/product/guardrails#there-are-6-types-of-guardrail-actions)
+</Note>
+
+| Check Name | Description | Supported Hooks |
+|------------|-------------|-----------------|
+| Headroom Compress Context | Compresses LLM request context using a Headroom proxy to reduce input token costs | `beforeRequestHook` |
+
+Start with `mode: audit` to measure savings on real traffic without changing what reaches the model, then switch to `optimize`.
+
+### 3. Add Guardrail ID to a Config and Make Your Request
+
+* When you save a Guardrail, you'll get an associated Guardrail ID — add this ID to the `input_guardrails` param in your Portkey Config
+* Create these Configs in Portkey UI, save them, and get an associated Config ID to attach to your requests. [More here](/product/ai-gateway/configs).
+
+```json
+{
+  "input_guardrails": ["guardrails-id-xxx"]
+}
+```
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***"
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***"
+)
+```
+  </Tab>
+  <Tab title="cURL">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Analyse these logs: ..."}]
+  }'
+```
+  </Tab>
+</Tabs>
+
+For more, refer to the [Config documentation](/product/ai-gateway/configs).
+
+## Compression Results
+
+Savings appear in the `hook_results` block of the response and in your Portkey logs:
+
+```json
+"data": {
+  "tokens_before": 12500,
+  "tokens_after": 4375,
+  "tokens_saved": 8125,
+  "compression_ratio": 0.35,
+  "transforms_applied": ["router:smart_crusher:0.35"],
+  "mode": "optimize"
+}
+```
+
+`compression_ratio` is `tokens_after / tokens_before`, so lower is better — `0.35` means a 65% reduction. A ratio of `1.0` means nothing was compressed.
+
+## Compression Needs Large Inputs
+
+Headroom skips content where compression would cost more than it saves, so **small requests return zero savings by design**. Content below roughly 300 tokens, JSON arrays under 5 items, and tool outputs under 500 tokens pass through unchanged, as does source code and the last `protect_recent` messages.
+
+Headroom pays off on long agent sessions, multi-tool workflows, API and database responses, build output, and structured logs — typically 40–95% reduction. Short conversational turns see close to nothing. Test with a realistic payload, not a one-line prompt.
+
+## Supported Request Types
+
+Headroom compresses requests with a `messages` array:
+- **Chat Completions** (`/v1/chat/completions`)
+- **Messages** (Anthropic-style)
+
+Requests without a `messages` array pass through untouched. Compression also fails open — if the proxy is unreachable, slow, or errors, the original request is sent to the provider and the failure is recorded in `hook_results`.
+
+## Get Support
+
+If you face any issues with the Headroom integration, join the [Portkey community forum](https://discord.gg/portkey-llms-in-prod-1143393887742861333) for assistance.
+
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
