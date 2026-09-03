@@ -1,0 +1,420 @@
+---
+title: "AWS Bedrock Cost Attribution with STS Session Tags"
+description: "Attribute Amazon Bedrock costs per application, team, or environment by forwarding Portkey metadata as AWS STS session tags through a shared assumed role."
+---
+
+LLM gateways typically share a single IAM role across all tenants. Without per-request tagging, every Bedrock call attributes to the same identity in AWS Cost Explorer — making cost breakdowns impossible.
+
+Portkey solves this by forwarding the `x-portkey-metadata` header as [AWS STS session tags](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_session-tags.html) during `AssumeRole`. Each unique tag set produces a distinct STS session, so AWS records cost and usage per application, team, or environment — no extra IAM roles required.
+
+## How It Works
+
+```
+┌──────────┐    x-portkey-metadata     ┌─────────────────┐   Tags.member.N   ┌─────────┐
+│  Client   │ ───────────────────────▶ │  Portkey Gateway  │ ───────────────▶ │ AWS STS  │
+│           │  {"app":"chatbot",       │                   │  AssumeRole +    │          │
+│           │   "team":"platform"}     │  (self-hosted)    │  SessionTags     │          │
+└──────────┘                           └─────────────────┘                   └────┬─────┘
+                                                                                  │
+                                                                     Temp credentials
+                                                                     with session tags
+                                                                                  │
+                                                                                  ▼
+                                                                          ┌──────────────┐
+                                                                          │ Amazon Bedrock │
+                                                                          │               │
+                                                                          │ InvokeModel   │
+                                                                          └──────────────┘
+                                                                                  │
+                                                              Tags land in CUR 2.0 & Cost Explorer
+```
+
+1. Client sends `x-portkey-metadata` with key-value pairs on each request.
+2. Gateway parses the metadata, sanitises it (drops reserved `aws:` prefixes, enforces AWS limits), and passes the pairs as `Tags.member.N.Key / Tags.member.N.Value` in the STS `AssumeRole` POST.
+3. AWS STS issues temporary credentials tagged with those values.
+4. Gateway uses those credentials to call Bedrock `InvokeModel`.
+5. Tags appear in **CUR 2.0** (`iamPrincipal/` prefix), **CloudTrail**, and **Cost Explorer**.
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| **Gateway version** | `≥ 2.19.0` |
+| **Auth type** | Bedrock with **AWS Assumed Role** ([setup guide](/product/model-catalog/connect-bedrock-with-amazon-assumed-role)) |
+| **Deployment** | Self-hosted (ECS, EKS, EC2, or Docker) |
+
+---
+
+## Step 1: Enable Session Tags on the Gateway
+
+Set the environment variable on the gateway container:
+
+```sh
+AWS_BEDROCK_STS_SESSION_TAGS_ENABLED=true
+```
+
+<Accordion title="Example: ECS task definition (excerpt)">
+```json
+{
+    "containerDefinitions": [{
+        "name": "portkey-gateway",
+        "environment": [
+            {"name": "AWS_BEDROCK_STS_SESSION_TAGS_ENABLED", "value": "true"}
+        ]
+    }]
+}
+```
+</Accordion>
+
+<Accordion title="Example: Kubernetes deployment (excerpt)">
+```yaml
+containers:
+  - name: portkey-gateway
+    env:
+      - name: AWS_BEDROCK_STS_SESSION_TAGS_ENABLED
+        value: "true"
+```
+</Accordion>
+
+<Accordion title="Example: Docker Compose (excerpt)">
+```yaml
+services:
+  portkey-gateway:
+    environment:
+      - AWS_BEDROCK_STS_SESSION_TAGS_ENABLED=true
+```
+</Accordion>
+
+Restart or redeploy the gateway after adding the variable.
+
+---
+
+## Step 2: Configure IAM Permissions on AWS
+
+Session tags require `sts:TagSession` in **two places**: the caller's IAM policy and the target role's trust policy. Missing either one causes an `AccessDenied` error.
+
+### 2a. Caller principal (the gateway's execution role)
+
+The IAM role the gateway runs under (e.g. an ECS task role, an EC2 instance profile, or a Kubernetes service account role) must be allowed to both assume and tag the target Bedrock role.
+
+Add or update the policy attached to the **caller role**:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "sts:AssumeRole",
+                "sts:TagSession"
+            ],
+            "Resource": "arn:aws:iam::<TARGET_ACCOUNT_ID>:role/<BEDROCK_ROLE_NAME>"
+        }
+    ]
+}
+```
+
+Replace `<TARGET_ACCOUNT_ID>` and `<BEDROCK_ROLE_NAME>` with the actual values for the role Portkey assumes to invoke Bedrock.
+
+<Note>
+**Cross-account setups:** When the gateway and the Bedrock role live in different AWS accounts, both the caller permissions (in the gateway account) and the target trust policy (in the Bedrock account) must allow `sts:TagSession`. This is the most common source of `AccessDenied` errors.
+</Note>
+
+### 2b. Target role trust policy (the Bedrock invocation role)
+
+Open the target role in IAM, go to **Trust relationships → Edit trust policy**, and ensure the `Action` includes both `sts:AssumeRole` and `sts:TagSession`:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::<GATEWAY_ACCOUNT_ID>:role/<GATEWAY_EXECUTION_ROLE>"
+            },
+            "Action": [
+                "sts:AssumeRole",
+                "sts:TagSession"
+            ],
+            "Condition": {
+                "StringEquals": {
+                    "sts:ExternalId": "<YOUR_EXTERNAL_ID>"
+                }
+            }
+        }
+    ]
+}
+```
+
+<Note>
+The `Condition` block is optional but recommended. If you configured an external ID when setting up the assumed role in Portkey, include it here.
+</Note>
+
+### 2c. Bedrock invocation permissions (no change needed)
+
+The existing permission policy on the target role (`bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream`) does not need modification. Session tags only affect the `AssumeRole` call, not the Bedrock API calls themselves.
+
+---
+
+## Step 3: Send Metadata with Requests
+
+Pass key-value pairs in the `x-portkey-metadata` header (or the SDK `metadata` option). Every key-value pair becomes an STS session tag.
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="bedrock"
+)
+
+response = portkey.with_options(
+    metadata={
+        "app": "chatbot",
+        "team": "ai-platform",
+        "env": "production",
+        "cost_center": "CC-1234"
+    }
+).chat.completions.create(
+    model="anthropic.claude-sonnet-4-20250514-v1:0",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+
+print(response.choices[0].message)
+```
+
+```js JavaScript
+import Portkey from "portkey-ai"
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "bedrock"
+})
+
+const response = await portkey.chat.completions.create({
+    model: "anthropic.claude-sonnet-4-20250514-v1:0",
+    messages: [{ role: "user", content: "Hello" }]
+}, {
+    metadata: {
+        app: "chatbot",
+        team: "ai-platform",
+        env: "production",
+        cost_center: "CC-1234"
+    }
+})
+
+console.log(response.choices)
+```
+
+```sh cURL
+curl https://your-gateway.example.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: bedrock" \
+  -H 'x-portkey-metadata: {"app":"chatbot","team":"ai-platform","env":"production","cost_center":"CC-1234"}' \
+  -d '{
+    "model": "anthropic.claude-sonnet-4-20250514-v1:0",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Step 4: Verify Tags in CloudTrail
+
+After sending a tagged request, confirm the tags appear in the `AssumeRole` CloudTrail event:
+
+```sh
+aws cloudtrail lookup-events \
+  --region <YOUR_REGION> \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRole \
+  --max-results 5 \
+  --output json \
+  --query "Events[?contains(CloudTrailEvent, '<BEDROCK_ROLE_NAME>')].CloudTrailEvent" \
+  | jq -r '.[] | fromjson | {eventTime, requestParameters}'
+```
+
+A successful tagged request shows a `tags` array in `requestParameters`:
+
+```json
+{
+    "eventTime": "2026-09-02T10:15:30Z",
+    "requestParameters": {
+        "roleArn": "arn:aws:iam::123456789012:role/portkey-bedrock-invokemodel",
+        "roleSessionName": "202692",
+        "externalId": "...",
+        "tags": [
+            {"key": "app", "value": "chatbot"},
+            {"key": "team", "value": "ai-platform"},
+            {"key": "env", "value": "production"},
+            {"key": "cost_center", "value": "CC-1234"}
+        ]
+    }
+}
+```
+
+If the `tags` field is absent, double-check:
+- Gateway version is `≥ 2.19.0`
+- `AWS_BEDROCK_STS_SESSION_TAGS_ENABLED=true` is set
+- The gateway was restarted after adding the variable
+
+---
+
+## Step 5: View Costs in AWS Cost Explorer
+
+Session tags flow into **AWS Cost and Usage Reports (CUR 2.0)** with the `iamPrincipal/` prefix. To view them in Cost Explorer:
+
+1. Open **Billing and Cost Management → Cost Allocation Tags**.
+2. Filter for **User-defined cost allocation tags**.
+3. Locate your tag keys (e.g. `app`, `team`, `env`) and click **Activate**.
+
+<Note>
+Tags take up to **24 hours** to appear after the first tagged API call, and a further **24 hours** to activate in Cost Explorer.
+</Note>
+
+4. In **Cost Explorer**, group or filter by **Tag** → select your activated tag key.
+
+This breaks down Bedrock spend by application, team, environment, or any other dimension passed in metadata — all through a single shared IAM role.
+
+---
+
+## Tag Constraints and Sanitisation
+
+The gateway automatically sanitises metadata before passing it to AWS STS. Understanding the constraints helps avoid silent tag drops.
+
+| Constraint | Limit | Gateway behavior |
+|---|---|---|
+| Maximum tags per request | 50 | Excess tags silently dropped |
+| Key length | 128 characters | Truncated to 128 |
+| Value length | 256 characters | Truncated to 256 |
+| `aws:` key prefix | Reserved by AWS | Dropped silently |
+| Empty keys or values | Not allowed | Dropped silently |
+| Non-scalar values (objects, arrays) | Not supported | Dropped during metadata parsing |
+| Value types | String only | Numbers and booleans auto-coerced to strings |
+
+**Source:** [AWS STS session tag limits](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html), [AssumeRole API reference](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html)
+
+---
+
+## Credential Caching
+
+The gateway caches STS temporary credentials to minimize `AssumeRole` API calls. No custom cache configuration is needed — caching works out of the box.
+
+### Cache key composition
+
+Each cached credential is keyed by the combination of:
+
+| Parameter | Source | Effect on cache |
+|---|---|---|
+| `roleArn` | Virtual key / provider config | Different target roles → separate cache entries |
+| `externalId` | Virtual key / provider config | Different external IDs → separate cache entries |
+| `region` | Virtual key / provider config / `AWS_ASSUME_ROLE_REGION` env | Different regions → separate cache entries |
+| `sourceCredentialHash` | SHA-256 of the gateway's own credentials (access key + secret key + session token) | If the gateway's source credentials rotate, the cache naturally invalidates |
+| `tagsHash` | FNV-1a hash of the sanitised metadata key-value pairs | **Different metadata → different cache entries → separate STS sessions** |
+
+The cache key format is:
+
+```
+assumed-sts-<roleArn>/<externalId>/<region>/<sourceCredentialHash>/<tagsHash>
+```
+
+Parameters **not** in the cache key: model name, Portkey API key, virtual key slug, request body. These do not affect the STS call and are irrelevant to credential identity.
+
+### TTL and reuse
+
+| Setting | Value | Configurable? |
+|---|---|---|
+| Credential cache TTL | **5 minutes** (300 seconds) | Not configurable via env — hardcoded in the gateway |
+| Cache backend | **Redis** (with 30-second local in-process cache) when Redis is configured; **in-memory** otherwise | Follows the gateway's `CACHE_STORE` setting |
+| Local cache layer | When using Redis, a 30-second in-process local cache avoids a Redis round-trip on every request | Automatic when Redis is configured |
+
+### When does a new AssumeRole call happen?
+
+A new STS `AssumeRole` call is made **only** when no cached credential exists for the computed cache key. In practice:
+
+- **Same metadata, same role** — Reuses cached credentials for up to 5 minutes. One STS call per 5-minute window.
+- **Different metadata, same role** — Each unique metadata set triggers its own STS call and produces a separate cached entry. For example, 3 distinct `team` values means 3 STS calls (then cached for 5 min each).
+- **Gateway restart** — Clears the in-memory cache. Redis cache (if configured) survives restarts.
+- **Source credential rotation** — When the gateway's own credentials change (e.g. ECS task role refresh), the `sourceCredentialHash` changes and new STS calls are made.
+
+### Estimating STS call volume
+
+```
+STS calls ≈ (unique metadata combinations × unique roles × unique regions) / 5 min
+```
+
+For a gateway serving 3 teams (`ai-platform`, `mobile`, `backend`) through 1 Bedrock role in 1 region, expect ~3 STS calls every 5 minutes — regardless of request volume.
+
+<Note>
+AWS STS has no hard per-second rate limit, but sustained high call rates may trigger throttling. The 5-minute cache keeps call volume well within safe bounds for typical deployments. If you have hundreds of unique metadata combinations, consider limiting the metadata keys sent as session tags to a small set of high-cardinality dimensions (e.g. `team` and `env`, not per-request IDs).
+</Note>
+
+---
+
+## Troubleshooting
+
+<Accordion title="AccessDenied: not authorized to perform sts:TagSession">
+
+This is the most common error. The full message looks like:
+
+```
+User: arn:aws:sts::<GATEWAY_ACCOUNT>:assumed-role/<GATEWAY_ROLE>/...
+is not authorized to perform: sts:TagSession on resource:
+arn:aws:iam::<TARGET_ACCOUNT>:role/<BEDROCK_ROLE>
+```
+
+**Fix:** Add `sts:TagSession` to **both** the caller's IAM policy (Step 2a) **and** the target role's trust policy (Step 2b). In cross-account setups, both accounts must allow the action.
+</Accordion>
+
+<Accordion title="Tags not appearing in CloudTrail">
+
+Possible causes:
+
+1. **Gateway version too old** — Confirm `>= 2.19.0` by calling `GET /health`.
+2. **Feature flag not set** — Verify `AWS_BEDROCK_STS_SESSION_TAGS_ENABLED=true` is in the container environment.
+3. **Gateway not restarted** — Environment variables are read at startup. Redeploy after adding the variable.
+4. **Metadata not sent** — Confirm the `x-portkey-metadata` header is present in Portkey's request inspector.
+5. **Cached credentials** — Previously cached (untagged) credentials may still be in use. Wait for the credential TTL to expire or restart the gateway to clear the cache.
+</Accordion>
+
+<Accordion title="Tags not appearing in Cost Explorer">
+
+1. Tags must be **activated** as cost allocation tags in the Billing console (Step 5).
+2. Activation takes up to **24 hours** after the first tagged Bedrock call.
+3. Cost Explorer data may lag an additional **24 hours**.
+4. Ensure you are looking under **User-defined cost allocation tags**, not IAM principal type tags.
+</Accordion>
+
+<Accordion title="Requests fail after upgrading to 2.19.0">
+
+If Bedrock requests fail immediately after upgrading with the feature flag enabled, the most likely cause is missing `sts:TagSession` permissions. As a quick mitigation:
+
+1. Disable the feature flag: set `AWS_BEDROCK_STS_SESSION_TAGS_ENABLED` to `false` (or remove it).
+2. Restart the gateway.
+3. Fix the IAM permissions per Step 2, then re-enable.
+</Accordion>
+
+<Accordion title="Role chaining and transitive tags">
+
+STS session tags do **not** survive role chaining by default. If the gateway performs a two-hop assumption (source role → target role), tags passed on the first hop are dropped on the second unless marked as [transitive](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_session-tags.html#id_session-tags_role-chaining). The gateway does not currently set `TransitiveTagKeys`.
+</Accordion>
+
+---
+
+## Reference
+
+- [AWS: Pass session tags in STS](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_session-tags.html)
+- [AWS: AssumeRole API — Tags parameter](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html)
+- [AWS: IAM principal cost attribution for Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/cost-mgmt-iam-principal-tracking.html)
+- [AWS: Using IAM principal for cost allocation](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/iam-principal-cost-allocation.html)
+- [Portkey: Connect Bedrock with Assumed Role](/product/model-catalog/connect-bedrock-with-amazon-assumed-role)
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
