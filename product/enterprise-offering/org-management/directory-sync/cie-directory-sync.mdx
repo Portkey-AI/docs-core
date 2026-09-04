@@ -1,0 +1,431 @@
+---
+title: "CIE Directory Sync"
+description: "Sync users and groups from Palo Alto Networks Cloud Identity Engine (CIE) into SCM's AI Gateway for automated workspace provisioning."
+---
+
+# CIE Directory Sync
+
+CIE (Cloud Identity Engine) Directory Sync allows you to pull users and groups from your organization's identity provider directories — such as **Entra ID (Azure AD)**, **Okta**, or **On-Premises Active Directory** — into SCM via Palo Alto's Cloud Identity Engine. Once synced, you can map CIE groups to SCM's AI Gateway workspaces so that users are **automatically provisioned** into the correct workspaces.
+
+---
+
+## Overview
+
+CIE Directory Sync is available for organizations running in **SCM (Strata Cloud Manager)**. It replaces the need for manual user provisioning or standalone SCIM integration by leveraging CIE as the centralized identity source.
+
+### How It Works
+
+1. **CIE aggregates directories** — Your organization's identity providers (Entra ID, Okta, on-prem AD) are connected to CIE via the Strata Cloud Manager. CIE syncs and caches user/group data from these directories.
+2. **Admin maps groups to workspaces** — An admin selects which CIE directory to connect, then maps CIE groups to AI Gateway workspaces.
+3. **Users are auto-provisioned** — Background sync periodically pulls group membership changes from CIE and provisions/deprovisions users in the mapped workspaces automatically.
+
+### Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Domain (Connected Directory)** | An identity provider directory synced into CIE. Each domain represents a separate directory source. |
+| **Tenant ID** | The CIE tenant identifier for your organization, auto-provisioned during Onboarding. You never need to enter this manually. |
+| **Group** | A directory group from CIE (e.g., a security group). Groups contain users that can be mapped to workspaces. |
+| **Group-Workspace Mapping** | A 1:1 link between a CIE group and an AI Gateway workspace. All members of the mapped group are automatically provisioned into that workspace. |
+| **User Identity Attribute** | The CIE user attribute used as the email address — either **UPN (User Principal Name)** or **Mail (Primary Email)**. |
+| **Auth Profile** | The authentication profile used to validate user identity during MCP inbound authentication. These profiles are synced from [Authentication Profiles](https://docs.paloaltonetworks.com/identity/cloud-identity-engine/authenticate-users-with-the-cloud-identity-engine) configured under CIE. |
+
+---
+
+## Prerequisites
+
+Before configuring CIE Directory Sync in SCM's AI Gateway, ensure the following:
+
+1. **CIE is provisioned for your organization** — Your Strata Cloud Manager tenant must have CIE activated with a Directory Sync instance. This is set up during Onboarding.
+2. **At least one directory is connected in CIE** — Navigate to CIE and verify that at least one directory (Entra ID, Okta, or On-Premises) has been added and has a successful sync status.
+3. **You have SCM admin access** — Only organization admins can configure Directory Sync in SCM's AI Gateway.
+
+<Info>
+CIE Directory Sync is only available for SCM Tenants. It is not available in standalone deployments. For non-SCM deployments, use [SCIM Provisioning](/product/enterprise-offering/org-management/scim/scim) instead.
+</Info>
+
+---
+
+## Setting Up Directories in CIE
+
+Before SCM's AI Gateway can sync from CIE, you need to connect your identity provider directories in CIE. This is done in the **Strata Cloud Manager → Cloud Identity Engine** console.
+
+For more information about CIE, see the [Cloud Identity Engine documentation](https://docs.paloaltonetworks.com/identity/cloud-identity-engine/cloud-identity-engine-overview).
+
+![CIE Directories listing — showing CIE Directory, Entra ID, and Okta directories with sync status, user/group counts, and last sync times](/images/directory-sync/cie-directories-listing.png)
+
+### Adding a New Directory
+
+1. In the CIE console, navigate to **Directory Sync → Directories**.
+2. Click **Add New Directory**.
+3. You will see the directory type options:
+
+![CIE "Set Up Directory" page — CIE Directory, On-Premises Directory, and Cloud Directory options](/images/directory-sync/cie-set-up-directory.png)
+
+For SCM's AI Gateway integration, the relevant directory types are:
+
+| Directory Type | Provider | Description |
+|---------------|----------|-------------|
+| **Cloud Directory** | Entra ID (Azure AD), Okta, Google | Connect a cloud identity provider. This is the most common setup. |
+| **On-Premises Directory** | Active Directory | Install a Cloud Identity agent to sync from on-prem AD. |
+| **CIE Directory** | CIE-native (`cie_directory`) | Create a local directory managed entirely within CIE. |
+
+4. Follow the CIE setup wizard for your chosen directory type.
+5. Once the directory syncs successfully, it will appear in the CIE Directories listing with user and group counts.
+
+<Note>
+SCM's AI Gateway can connect to **any** directory type that CIE supports. The "Connected Directory" dropdown will show all directories that have been successfully synced in CIE.
+</Note>
+
+---
+
+## Configuring Directory Sync in SCM's AI Gateway
+
+Navigate to **AI Gateway → Admin Settings → Authentication → Directory Sync** in the SCM console.
+
+![SCM AI Gateway Directory Sync configuration page — Connected Directory, User Identity Attribute, Auth Profile, Sync State, and Group Mappings](/images/directory-sync/portkey-directory-sync-overview.jpg)
+
+### Step 1: Select a Connected Directory
+
+The **Connected Directory** dropdown shows all available directories from CIE, along with their provider type and entity counts (groups and users).
+
+![Connected Directory dropdown — available domains with provider type and user/group counts](/images/directory-sync/connected-directory-dropdown.png)
+
+Each entry displays:
+- **Domain name** — the directory domain (e.g., `corp.example.com`)
+- **Provider type** — `aad` (Entra ID), `okta`, `cie_directory` (CIE-native), `ad` (on-prem)
+- **Group and user counts** — number of groups and users in that directory
+
+Select the directory you want to sync from. You can also select **None (Disconnected)** to disconnect.
+
+<Warning>
+Currently, only **one directory** can be connected at a time. 
+</Warning>
+
+### Step 2: Choose the User Identity Attribute
+
+The **User Identity Attribute** determines which CIE attribute is used as the user's email address.
+
+![User Identity Attribute dropdown — UPN (User Principal Name) and Mail (Primary Email) options](/images/directory-sync/user-identity-attr-dropdown.png)
+
+| Attribute | Description | When to Use |
+|-----------|-------------|-------------|
+| **UPN (User Principal Name)** | The `userPrincipalName` attribute from the directory (e.g., `john@contoso.com`) | Default choice. Use when UPN matches the user's email. |
+| **Mail (Primary Email)** | The `mail` attribute from the directory | Use when UPN differs from email (e.g., UPN is `john@contoso.onmicrosoft.com` but email is `john@contoso.com`) |
+
+<Warning>
+If the selected attribute is **missing** for a user in CIE, that user will be **skipped** during sync and logged as rejected. Verify that your chosen attribute is populated for all users in your directory.
+</Warning>
+
+<Info>
+Changing the User Identity Attribute after initial setup triggers an automatic **full re-sync** to update all user email addresses. This is safe — no users are removed during this re-sync.
+</Info>
+
+### Step 3: Select an Auth Profile
+
+The **Auth Profile** dropdown shows authentication profiles available for your tenant. These profiles are synced from [Authentication Profiles](https://docs.paloaltonetworks.com/identity/cloud-identity-engine/authenticate-users-with-the-cloud-identity-engine) configured under CIE. The selected profile is used to validate user identity during MCP inbound authentication flows.
+
+### Step 4: Save Configuration
+
+Click **Save** to persist your Connected Directory and User Identity Attribute selections.
+
+Once saved, the sync configuration becomes **active** and the background sync scheduler begins monitoring for changes.
+
+---
+
+## Directory Sync State
+
+The **Directory Sync State** section shows the current health of the sync process.
+
+![Directory Sync State — Status: Success, Last Updated: Sep 4, 2026, Objects Synced: 12 users · 1 groups](/images/directory-sync/sync-state-success.jpg)
+
+| Field | Description |
+|-------|-------------|
+| **Status** | Current sync status — `Success`, `In Progress`, or `Failed` |
+| **Last Updated** | Timestamp of the last sync run (success or failed) |
+| **Objects Synced** | Count of users and groups currently mapped to workspaces |
+
+### Full Sync Button
+
+Delta sync with CIE for group-membership updates happens every 15 minutes. So any update can take up to 15 minutes to reflect in AI Gateway. If CIE rebuilds its cache (approximately every week), AI Gateway does a full sync automatically.
+
+But in case there is some issue or mismatch noted and you don't want to wait for the full sync period, you can click **Full Sync** which will do a forceful full sync of data from CIE.
+
+<Info>
+If a sync is already in progress, the force sync request will not create a duplicate — it will run as a full sync once the current sync completes.
+</Info>
+
+### Configure in CIE Button
+
+The **Configure in CIE** button redirects to your CIE Directory Sync console, where you can manage directories, agents, and certificates.
+
+---
+
+## Group Mappings
+
+The **Group Mappings** section is where you map CIE groups to workspaces. Users in a mapped group are automatically provisioned into the corresponding workspace.
+
+![Group Mappings — "Default Directory" mapped to "Engineering_Workspace"](/images/directory-sync/group-mappings.jpg)
+
+### Adding a Mapping
+
+1. Click **Add Mapping**. The **Add Group Mapping** dialog opens:
+
+![Add Group Mapping dialog — select a CIE Group and a Workspace, then click Add](/images/directory-sync/add-group-mapping-dialog.png)
+
+2. Select a **CIE Group** from the dropdown. The dropdown lists all groups from your connected directory.
+3. Select a **Workspace** to map the group to.
+4. Click **Add**.
+
+### Mapping Rules
+
+- **1:1 mapping** — Each group can only be mapped to one workspace, and each workspace can only have one group mapped to it
+- **Workspace must exist** — The target workspace must already exist. Directory Sync does not create workspaces.
+
+### Removing a Mapping
+
+Click the **delete** (trash) icon next to a mapping to remove it. Users provisioned by this mapping will be **immediately removed** from that workspace.
+
+<Warning>
+Deleting a mapping immediately removes users from the workspace. This action cannot be undone — you would need to re-create the mapping and wait for a sync to re-provision users.
+</Warning>
+
+---
+
+## Disabling Directory Sync
+
+To disable Directory Sync entirely:
+
+1. Navigate to **Admin Settings → Authentication → Directory Sync**
+2. Select **None (Disconnected)** from the Connected Directory dropdown, or call `DELETE /directory-sync/`
+
+**What happens when you disable sync:**
+
+1. All CIE-synced users are **removed from their mapped workspaces**
+2. All group-workspace mappings are removed
+3. All group and sync status records are removed
+4. The sync configuration is deactivated
+
+<Warning>
+Disabling Directory Sync immediately removes all CIE-provisioned users from their workspaces. This is a destructive action. Users can be re-provisioned by re-enabling sync and re-creating group mappings.
+</Warning>
+
+To **re-enable** sync after disabling:
+1. Select a Connected Directory again and save
+2. Group mappings do **not** carry over — you must re-create them explicitly
+3. A full sync will run to provision users into the newly mapped workspaces
+
+---
+
+## API Reference
+
+All Directory Sync APIs are served under `/ai_gw/admin/v2/directory-sync/` and require SCM admin authentication.
+
+### Get Configuration
+
+```
+GET /directory-sync/
+```
+
+Returns the current sync configuration.
+
+**Response:**
+```json
+{
+  "status": "active",
+  "tenant_id": "your-tenant-id",
+  "region": "us",
+  "domains": ["corp.example.com"],
+  "user_identity_attr": "User Principal Name",
+  "settings": {}
+}
+```
+
+### Update Configuration
+
+```
+PUT /directory-sync/
+```
+
+Enable or update sync configuration.
+
+**Request:**
+```json
+{
+  "domains": ["corp.example.com"],
+  "user_identity_attr": "User Principal Name"
+}
+```
+
+**Validation:**
+- `domains` must be an array with exactly 1 entry (multi-domain not yet supported)
+- `user_identity_attr` must be `"User Principal Name"` or `"Mail"`
+
+### Delete Configuration
+
+```
+DELETE /directory-sync/
+```
+
+Disable sync and remove all synced data. Optionally accepts a `domain` in the request body.
+
+### List Available Domains
+
+```
+GET /directory-sync/domains
+```
+
+Returns all directories available in CIE for this organization.
+
+**Response:**
+```json
+{
+  "domains": [
+    {
+      "domain": "corp.example.com",
+      "provider": "aad",
+      "count": { "group": 10, "user": 22 }
+    },
+    {
+      "domain": "directory.example.com",
+      "provider": "okta",
+      "count": { "group": 10, "user": 10 }
+    }
+  ]
+}
+```
+
+### List Groups
+
+```
+GET /directory-sync/groups?search=&page=1&page_size=50&domain=&refresh=false
+```
+
+Returns groups from the connected directory. Results are cached for 5 minutes; pass `refresh=true` to force a fresh CIE call.
+
+### Get Sync Status
+
+```
+GET /directory-sync/status
+```
+
+Returns per-domain sync health including last sync time, strategy used, success/failure stats, and consecutive failure count.
+
+### Force Full Sync
+
+```
+POST /directory-sync/force-sync
+```
+
+Triggers an immediate full membership sync for all mapped groups.
+
+### Create Group-Workspace Mapping
+
+```
+POST /directory-sync/group-workspace-mappings
+```
+
+**Request:**
+```json
+{
+  "group_unique_identifier": "b39bd5e4-4d44-43f6-90d8-ff0f878a38f7",
+  "group_name": "Engineering",
+  "workspace_id": "ws-engineering-uuid"
+}
+```
+
+Triggers an immediate membership sync for the newly mapped group.
+
+### List Mappings
+
+```
+GET /directory-sync/group-workspace-mappings
+```
+
+### Delete Mapping
+
+```
+DELETE /directory-sync/group-workspace-mappings/:id
+```
+
+Removes users from the workspace and removes the mapping.
+
+### List Directory-Provisioned Members
+
+```
+GET /dp-members/?workspace_id=&search=&page_size=50&current_page=0
+```
+
+Lists all directory-provisioned (CIE-synced) users in the organization. Optionally filter by workspace.
+
+**Query Parameters:**
+- `workspace_id` — (optional) Filter to users in a specific workspace
+- `search` — (optional) Search by user name or email
+- `page_size` — (optional, default 50, max 100) Number of results per page
+- `current_page` — (optional, default 0) Page offset
+
+**Response:**
+```json
+{
+  "total": 12,
+  "object": "list",
+  "data": [
+    {
+      "id": "user-uuid",
+      "email": "john@example.com",
+      "first_name": "John",
+      "last_name": "Doe",
+      "org_role": "member",
+      "workspaces": [
+        { "id": "ws-uuid", "name": "Engineering", "role": "member" }
+      ],
+      "object": "dp-member"
+    }
+  ]
+}
+```
+
+### Get Directory-Provisioned Member
+
+Returns details for a specific directory-provisioned user, including all their workspace memberships.
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| **No domains shown** in Connected Directory dropdown | CIE not provisioned for this org, or no directories added in CIE | Ensure CIE is activated for your SCM tenant. Add directories in CIE. |
+| **Users not provisioned** after mapping | Selected User Identity Attribute is missing for those users | Check CIE to confirm users have the UPN or Mail attribute populated. Switch attribute if needed. |
+| **Users not removed** after deleting mapping | User belongs to another group also mapped to the same workspace | This is by design — users who have access through another mapping are not removed. |
+| **Sync shows "Skip" every cycle** | No membership changes detected in CIE | This is normal — no changes occurred since last sync. Use the Full Sync button to force a refresh. |
+| **Delta sync falling back to full** | CIE cache was rebuilt, or cursor expired | This is expected behavior. CIE periodically rebuilds its cache, which triggers a full resync. This acts as a self-healing mechanism. |
+
+---
+
+## CIE Directory Sync vs SCIM Provisioning
+
+| Feature | CIE Directory Sync | SCIM Provisioning |
+|---------|-------------------|-------------------|
+| **Identity Source** | CIE (aggregates multiple IdPs) | Direct from IdP (Okta, Azure AD) |
+| **Deployment Mode** | SCM only | Any deployment |
+| **Group Mapping** | 1 group → 1 workspace 
+| **Roles** | All users get `member` role | Configurable per-group (admin, manager, member) |
+| **Sync Trigger** | Automatic background + manual Full Sync | Real-time push from IdP |
+| **User Creation** | Automatic from CIE data | Automatic from SCIM payload |
+
+<Info>
+CIE Directory Sync and SCIM Provisioning are **mutually exclusive** — an organization uses one or the other, not both. SCM-mode organizations use CIE; non-SCM organizations use SCIM.
+</Info>
+
+---
+
+## Support
+
+If you encounter issues with CIE Directory Sync, contact your support team.
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
