@@ -5,13 +5,13 @@ description: "Sync users and groups from Palo Alto Networks Cloud Identity Engin
 
 # CIE Directory Sync
 
-CIE (Cloud Identity Engine) Directory Sync allows you to pull users and groups from your organization's identity provider directories — such as **Entra ID (Azure AD)**, **Okta**, or **On-Premises Active Directory** — into Portkey via Palo Alto's Cloud Identity Engine. Once synced, you can map CIE groups to Portkey workspaces so that users are **automatically provisioned** into the correct workspaces.
+CIE (Cloud Identity Engine) Directory Sync allows you to pull users and groups from your organization's identity provider directories — such as **Entra ID (Azure AD)**, **Okta**, or **On-Premises Active Directory** — into SCM via Palo Alto's Cloud Identity Engine. Once synced, you can map CIE groups to SCM's AI Gateway workspaces so that users are **automatically provisioned** into the correct workspaces.
 
 ---
 
 ## Overview
 
-CIE Directory Sync is available for organizations running in **SCM (Strata Cloud Manager) mode**. It replaces the need for manual user provisioning or standalone SCIM integration by leveraging CIE as the centralized identity source.
+CIE Directory Sync is available for organizations running in **SCM (Strata Cloud Manager)**. It replaces the need for manual user provisioning or standalone SCIM integration by leveraging CIE as the centralized identity source.
 
 ### How It Works
 
@@ -28,16 +28,16 @@ CIE Directory Sync is available for organizations running in **SCM (Strata Cloud
 | **Tenant ID** | The CIE tenant identifier for your organization, auto-provisioned during COB (Cloud Onboarding). You never need to enter this manually. |
 | **Group** | A directory group from CIE (e.g., an Entra ID security group). Groups contain users that can be mapped to Portkey workspaces. |
 | **Group-Workspace Mapping** | A 1:1 link between a CIE group and a Portkey workspace. All members of the mapped group are automatically provisioned into that workspace. |
-| **User Identity Attribute** | The CIE user attribute used as the Portkey email address — either **UPN (User Principal Name)** or **Mail (Primary Email)**. |
+| **User Identity Attribute** | The CIE user attribute used as the email address — either **UPN (User Principal Name)** or **Mail (Primary Email)**. |
 | **Auth Profile** | The CAS (Cloud Auth Service) authentication profile used to validate user identity during MCP inbound authentication. |
 
 ---
 
 ## Prerequisites
 
-Before configuring CIE Directory Sync in Portkey, ensure the following:
+Before configuring CIE Directory Sync in SCM's AI Gateway, ensure the following:
 
-1. **CIE is provisioned for your organization** — Your Strata Cloud Manager tenant must have a Directory Sync instance (`app_id: directory_sync`) in its TSG instances. This is set up during Cloud Onboarding (COB).
+1. **CIE is provisioned for your organization** — Your Strata Cloud Manager tenant must have a Directory Sync instance in its TSG instances. This is set up during Cloud Onboarding (COB).
 2. **At least one directory is connected in CIE** — Navigate to CIE and verify that at least one directory (Entra ID, Okta, or On-Premises) has been added and has a successful sync status.
 3. **You have SCM admin access** — Only organization admins can configure Directory Sync in Portkey.
 
@@ -49,7 +49,7 @@ CIE Directory Sync is only available for SCM Tenants. It is not available in sta
 
 ## Setting Up Directories in CIE
 
-Before Portkey can sync from CIE, you need to connect your identity provider directories in CIE. This is done in the **Strata Cloud Manager → Cloud Identity Engine** console.
+Before SCM's AI Gateway can sync from CIE, you need to connect your identity provider directories in CIE. This is done in the **Strata Cloud Manager → Cloud Identity Engine** console.
 
 ![CIE Directories listing — showing CIE Directory, Entra ID, and Okta directories with sync status, user/group counts, and last sync times](/images/directory-sync/cie-directories-listing.png)
 
@@ -61,7 +61,7 @@ Before Portkey can sync from CIE, you need to connect your identity provider dir
 
 ![CIE "Set Up Directory" page — CIE Directory, On-Premises Directory, and Cloud Directory options](/images/directory-sync/cie-set-up-directory.png)
 
-For Portkey integration, the relevant directory types are:
+For SCM's AI Gateway integration, the relevant directory types are:
 
 | Directory Type | Provider | Description |
 |---------------|----------|-------------|
@@ -73,7 +73,7 @@ For Portkey integration, the relevant directory types are:
 5. Once the directory syncs successfully, it will appear in the CIE Directories listing with user and group counts.
 
 <Note>
-Portkey can connect to **any** directory type that CIE supports. The "Connected Directory" dropdown in Portkey will show all directories that have been successfully synced in CIE.
+SCM's AI Gateway can connect to **any** directory type that CIE supports. The "Connected Directory" dropdown in Portkey will show all directories that have been successfully synced in CIE.
 </Note>
 
 ---
@@ -101,13 +101,6 @@ Select the directory you want to sync from. You can also select **None (Disconne
 Currently, only **one directory** can be connected at a time. 
 </Warning>
 
-**What happens behind the scenes:**
-
-When you open this page, Portkey calls `GET /directory-sync/domains` which:
-1. Looks up your organization's `tenant_id` from COB metadata (the `tsg_instances` entry where `app_id === 'directory_sync'`)
-2. Calls CIE's `GET /service/directory/v1/domain/status?tenantId={tenant_id}` API
-3. Returns the list of available domains with their provider and entity counts
-
 ### Step 2: Choose the User Identity Attribute
 
 The **User Identity Attribute** determines which CIE attribute is used as the user's email address in Portkey.
@@ -133,14 +126,7 @@ The **Auth Profile** dropdown shows CAS (Cloud Auth Service) authentication prof
 
 ### Step 4: Save Configuration
 
-Click **Save** to persist your Connected Directory and User Identity Attribute selections. This calls `PUT /directory-sync/` with:
-
-```json
-{
-  "domains": ["ayushportkey.onmicrosoft.com"],
-  "user_identity_attr": "User Principal Name"
-}
-```
+Click **Save** to persist your Connected Directory and User Identity Attribute selections.
 
 Once saved, the sync configuration becomes **active** and the background sync scheduler begins monitoring for changes.
 
@@ -165,8 +151,8 @@ Click the **Full Sync** button to trigger an immediate full membership sync. Thi
 - You suspect sync drift and want to force a reconciliation
 - CIE has been rebuilt (periodic cache refresh) and you want to pick up changes immediately
 
-The full sync button calls `POST /directory-sync/force-sync`, which:
-1. Sets `force_full_sync = true` on all domain sync status records
+The full sync button will do the following:
+1. Sets to a force sync state on all domain sync status records
 2. Enqueues an immediate sync job (skips the normal scheduler interval)
 3. The sync processor ignores delta optimization and does a complete membership pull for all mapped groups
 
@@ -192,23 +178,14 @@ The **Group Mappings** section is where you map CIE groups to Portkey workspaces
 
 ![Add Group Mapping dialog — select a CIE Group and a Workspace, then click Add](/images/directory-sync/add-group-mapping-dialog.png)
 
-2. Select a **CIE Group** from the dropdown. The dropdown lists all groups from your connected directory, fetched from CIE's `/cache/group` endpoint. Groups are searchable and paginated.
+2. Select a **CIE Group** from the dropdown. The dropdown lists all groups from your connected directory.
 3. Select a **Portkey Workspace** to map the group to.
 4. Click **Add**.
-
-**What happens when you create a mapping:**
-
-1. The group is stored in Portkey's `cie_groups` table (if not already present)
-2. The mapping is created in `cie_group_workspace_map`
-3. An **immediate full membership sync** is triggered for that specific group — users are provisioned right away, no need to wait for the next background cycle
-4. CIE group members are looked up by `cie_unique_identifier` or created as new Portkey users if they don't exist
-5. Users are added to the organization and the mapped workspace with the `member` role
 
 ### Mapping Rules
 
 - **1:1 mapping** — Each group can only be mapped to one workspace, and each workspace can only have one group mapped to it (enforced in the UI; the backend schema supports M:N for future flexibility)
 - **Workspace must exist** — The target workspace must already exist in Portkey. Directory Sync does not create workspaces.
-- **Auto-mapping** — If you configure a `workspace_prefix` in settings (e.g., `ws-`), groups matching the pattern `ws-{WorkspaceName}` will be automatically mapped to existing workspaces with that name during group discovery
 
 ### Removing a Mapping
 
