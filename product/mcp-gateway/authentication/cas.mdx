@@ -6,8 +6,6 @@ description: "OAuth 2.1 authentication for MCP Gateway using Palo Alto Networks 
 
 CAS (Cloud Authentication Service) is the OAuth 2.1 authentication method for MCP Gateway in **SCM (Strata Cloud Manager)** deployments. When an MCP client connects to a gateway running in SCM mode, CAS handles user authentication through Palo Alto Networks' identity infrastructure instead of Portkey's built-in OAuth.
 
-
-
 <Info>
 CAS authentication is only available for organizations running in **SCM deployment mode**. For standard Portkey deployments, use [Portkey OAuth](/product/mcp-gateway/authentication/oauth) or [External OAuth](/product/mcp-gateway/authentication/external-oauth) instead.
 </Info>
@@ -16,7 +14,7 @@ CAS authentication is only available for organizations running in **SCM deployme
 
 ## Overview
 
-CAS bridges the MCP Gateway's OAuth 2.1 flow with Palo Alto Networks' centralized authentication. Instead of users logging in with Portkey credentials, they authenticate through their organization's identity provider (Entra ID, Okta, or on-prem Active Directory) via CAS.
+CAS bridges the MCP Gateway's OAuth flow with Palo Alto Networks' centralized authentication. Instead of users logging in with Portkey credentials, they authenticate through their organization's identity provider (Entra ID, Okta, or on-prem Active Directory) via CAS.
 
 ### How It Works
 
@@ -24,26 +22,24 @@ CAS bridges the MCP Gateway's OAuth 2.1 flow with Palo Alto Networks' centralize
 sequenceDiagram
     participant Client as MCP Client
     participant Gateway as AI Gateway
-    participant Albus as Management Plane
+    participant Portkey as Portkey
     participant CAS as CAS (Palo Alto)
     participant IdP as Identity Provider
 
     Client->>Gateway: Connect to MCP server
-    Gateway->>Albus: Initiate OAuth 2.1 + PKCE
-    Albus->>CAS: Redirect user to CAS login
+    Gateway->>Portkey: Initiate OAuth flow
+    Portkey->>CAS: Redirect user to CAS login
     CAS->>IdP: Authenticate via org IdP
     IdP-->>CAS: Identity verified
-    CAS-->>Albus: Signed JWT with user claims
-    Albus->>Albus: Verify JWT, resolve user
-    Albus-->>Gateway: Authorization code
+    CAS-->>Portkey: User authenticated
+    Portkey-->>Gateway: Authorization code
     Gateway-->>Client: Access token issued
 ```
 
-1. **MCP client requests access** — The client (e.g., Cursor, Claude Desktop) connects to an MCP server through the AI Gateway without an API key.
-2. **OAuth flow initiates** — The gateway starts an OAuth 2.1 flow with PKCE, redirecting through the Management Plane (Albus).
-3. **CAS login** — The user is redirected to the CAS login page, where they authenticate using their organization's identity provider.
-4. **JWT verification** — CAS returns a signed JWT containing the user's identity claims. The Management Plane verifies the JWT signature, validates claims, and resolves the user to a Portkey identity.
-5. **Token issued** — An OAuth access token is issued to the MCP client, scoped to the user's workspace permissions.
+1. **MCP client requests access** — The client (e.g., Cursor, Claude Desktop) connects to an MCP server through the AI Gateway.
+2. **CAS login** — The user is redirected to the CAS login page, where they authenticate using their organization's identity provider.
+3. **User resolved** — Portkey verifies the authenticated identity, resolves the user, and determines workspace access.
+4. **Token issued** — An OAuth access token is issued to the MCP client, scoped to the user's workspace permissions.
 
 ---
 
@@ -53,7 +49,7 @@ Before CAS authentication works for your MCP Gateway:
 
 1. **SCM deployment mode** — Your organization must be running in SCM mode with CAS activated by Palo Alto Networks.
 
-2. **CIE Directory Sync configured** — Users must be provisioned into Portkey workspaces via [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync). CAS authenticates users, but CIE is what provisions them into the system. Without CIE sync, authenticated users cannot be resolved to a Portkey identity.
+2. **CIE Directory Sync configured** — Users must be provisioned into workspaces via [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync). CAS authenticates users, but CIE is what provisions them into the system. Without CIE sync, authenticated users cannot be resolved.
 
 3. **Authentication Profile selected** — An Auth Profile must be selected in the CIE Directory Sync configuration. This profile determines which identity provider is used for the CAS login flow. Auth Profiles are managed in the [CIE Authentication Profiles](https://docs.paloaltonetworks.com/identity/cloud-identity-engine/authenticate-users-with-the-cloud-identity-engine) console.
 
@@ -67,19 +63,19 @@ See [CIE Directory Sync](/product/enterprise-offering/org-management/directory-s
 
 ## Setup
 
-CAS authentication is automatically enabled for organizations in SCM deployment mode. No additional configuration is required on the MCP Gateway side — the gateway detects SCM mode and routes authentication through CAS instead of Portkey's built-in OAuth.
+CAS authentication is automatically enabled for organizations in SCM deployment mode. No additional configuration is required on the MCP Gateway side — the gateway detects SCM mode and routes authentication through CAS.
 
 ### What the Admin Needs to Configure
 
 | Step | Where | What |
 |------|-------|------|
 | 1. Connect a directory | CIE Console | Add your identity provider (Entra ID, Okta, AD) to CIE |
-| 2. Configure Directory Sync | SCM AI Gateway → Admin Settings | Select the connected directory and user identity attribute |
-| 3. Select Auth Profile | SCM AI Gateway → Admin Settings | Choose the CAS authentication profile for MCP auth |
-| 4. Map groups to workspaces | SCM AI Gateway → Admin Settings | Map CIE groups to AI Gateway workspaces |
+| 2. Configure Directory Sync | AI Gateway → Admin Settings | Select the connected directory and user identity attribute |
+| 3. Select Auth Profile | AI Gateway → Admin Settings | Choose the CAS authentication profile for MCP auth |
+| 4. Map groups to workspaces | AI Gateway → Admin Settings | Map CIE groups to AI Gateway workspaces |
 
 <Note>
-**Email claim is required.** CAS identifies users by their email address. The identity provider must include the user's email in the authentication claims. If the email claim is missing from the CAS response, the user cannot be resolved and authentication will fail.
+**Email claim is required.** CAS identifies users by their email address. The identity provider must include the user's email in the authentication claims. If the email claim is missing, the user cannot be resolved and authentication will fail.
 
 Ensure that the **User Identity Attribute** selected in CIE Directory Sync (UPN or Mail) matches the email attribute returned by your identity provider during CAS authentication.
 </Note>
@@ -105,74 +101,6 @@ When a user connects an MCP client to the gateway for the first time:
 ### Subsequent Connections
 
 After the initial authentication, the MCP client uses refresh tokens to maintain access. Users are not prompted to log in again until the refresh token expires or is revoked.
-
----
-
-## How CAS Resolves Users
-
-When CAS returns a signed JWT after authentication, the Management Plane performs the following resolution:
-
-1. **JWT verification** — Validates the signature, issuer, audience, and expiration (`exp` claim is required).
-2. **Email extraction** — Reads the user's email from the JWT claims.
-3. **User lookup** — Matches the email to a user provisioned via CIE Directory Sync.
-4. **Workspace resolution** — Determines which workspaces the user has access to based on CIE group-workspace mappings.
-5. **Consent check** — If this is the user's first time accessing this MCP server, the consent page is shown.
-
-If any step fails — invalid JWT, missing email, user not found, no workspace access — the flow returns an appropriate OAuth error to the client.
-
----
-
-## Consent Flow
-
-After authentication, users are shown a consent page before access is granted. The consent page displays:
-
-- The **MCP server name** the client is requesting access to
-- The **workspace** the access will be scoped to
-- The **permissions** being requested
-
-Users can approve or deny access. Approval is remembered — subsequent connections to the same server skip the consent page.
-
----
-
-## Token Management
-
-CAS-issued tokens follow the same lifecycle as standard Portkey OAuth tokens:
-
-| Token | Lifetime | Purpose |
-|-------|----------|---------|
-| **Access token** | Short-lived | Used for MCP requests. Scoped to user + workspace. |
-| **Refresh token** | Long-lived | Used to obtain new access tokens without re-authentication. |
-
-Token refresh is handled transparently by the MCP client. When an access token expires, the client uses the refresh token to get a new one without user interaction.
-
----
-
-## Upstream OAuth (Server-Side)
-
-CAS handles **gateway authentication** (client → gateway). For **server authentication** (gateway → MCP server), the standard upstream OAuth flow applies separately. If an MCP server requires its own OAuth (e.g., a Linear or GitHub MCP server), the gateway handles that independently after the user is authenticated via CAS.
-
-The two flows are:
-1. **CAS** — Proves the user's identity to the gateway
-2. **Upstream OAuth** — Gets the user's consent and tokens for the target MCP server
-
-Both happen seamlessly in a single browser interaction when needed.
-
----
-
-## Security
-
-CAS authentication includes the following security measures:
-
-| Measure | Description |
-|---------|-------------|
-| **OAuth 2.1 + PKCE** | Prevents authorization code interception attacks |
-| **Signed JWTs** | CAS response tokens are cryptographically signed and verified |
-| **One-time session markers** | Prevents session replay attacks |
-| **Expiration validation** | JWT `exp` claim is required — tokens without expiration are rejected |
-| **Scheme validation** | Redirect URLs are validated to block `javascript:`, `data:`, and other dangerous schemes |
-| **CSP headers** | All authentication pages include Content Security Policy headers |
-| **X-Frame-Options** | All authentication pages set `DENY` to prevent clickjacking |
-| **Cache-Control** | All authentication responses set `no-store` to prevent caching |
 
 ---
 
