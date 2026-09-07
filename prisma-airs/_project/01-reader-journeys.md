@@ -73,8 +73,10 @@ Gaps:
   assertions (defaults, limits, precedence rules) with no claim references. Under §3 they are
   all unsupported until reconciled against the KB. This is the single largest item of INIT 1
   work by volume.
-- **G3.2 — No applicability metadata.** Pages do not state supported version or environment
-  (managed / hybrid / air-gapped), which §2 "Identity and provenance" requires.
+- **G3.2 — No applicability metadata.** Pages do not state supported version, which §2
+  "Identity and provenance" requires. *Narrowed 2026-09-07 (Q12): environment is not part of
+  this gap. Launch covers managed and hybrid, product behaviour is deployment-invariant, and
+  applicability is therefore version-only.*
 
 ## J4 — Operate and troubleshoot the integration
 
@@ -108,10 +110,12 @@ external `Portkey-AI/openapi` repo.
 
 Gaps:
 
-- **G5.1 — Reference truth lives in a second repo.** The OpenAPI spec is the de facto
-  authority for API contracts and it is outside this repo and outside the KB. Handoff §3
-  rule 1 says the KB is the sole factual authority; this needs an explicit exemption or an
-  ingestion path. Raise with the operator.
+- **G5.1 — Reference truth lives in a second repo.** *Partly resolved 2026-09-07 (Q6): a new
+  OpenAPI repository will be supplied and is the source for Prisma AIRS API reference;
+  `Portkey-AI/openapi` is Portkey-corpus tooling and is not inherited.* What remains open is
+  the grounding status, not the source: the new spec is either ingested into the KB or carries
+  a recorded exemption under §3 rule 1. Settle when the repo arrives — API reference is a large
+  body of substantive assertions and the easiest place for grounding to lapse unnoticed.
 - **G5.2 — Limits and errors are not consolidated.** No single rate-limit / quota / error-code
   reference; the information is distributed across feature pages.
 

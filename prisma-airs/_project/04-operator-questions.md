@@ -21,10 +21,31 @@ No secrets in chat — use normally configured access.
 | **Q7** Owners | Vrushank Vyas owns all four roles: factual review, editorial publication, conflicts, and urgent withdrawal. |
 | **Q8** Virtual Keys version | **Keep as is.** Do not touch. |
 | **Q9** Changelog publication policy | Approved: the release-only exception is correct. Changelog entries publish on the release schedule; guide and reference patches wait for KB acceptance. |
+| **Q4** Onboarding path | Onboarding is through **Strata Cloud Manager**. The documented detail waits for the KB — not an operator call. |
+| **Q5** SSO/SCIM correctness | **Moot.** Those pages are Portkey-docs content. Prisma AIRS docs are built by re-grounding, not by inheriting. |
+| **Q6** OpenAPI spec | A **new OpenAPI repo** will be supplied and is the source for Prisma AIRS API reference. The current `Portkey-AI/openapi` is not. |
+| **Q11** Generated ancestry | Confirmed as a **hard prerequisite**, not INIT 2 hardening. Ingestion must refuse generated-ancestry content as corroborating evidence. |
+| **Q12** Environments | **Managed and hybrid.** Product behaviour does **not** vary by deployment — see the note below. Language scope unchanged (English). |
+| **Q13** Change discovery | Downgraded to a performance detail. Reconcile against manifests; treat a cursor as an optional read-narrowing optimization. |
 
 Standing instruction, 2026-09-07: **do not modify non-Prisma-AIRS docs.** Pre-existing issues
 found while working — 66 broken links across 48 files, non-page files at the repo root inside
 the build scope — are accepted as-is and are not to be fixed as part of this initiative.
+
+Generalized 2026-09-07, from the Q5 answer: **defects in the Portkey-branded corpus are out of
+scope entirely.** Not deferred, not backlogged — out of scope. Prisma AIRS pages are produced
+by re-grounding against the KB, so a wrong statement in a Latest-version page is never
+inherited and never needs fixing on the way through. Do not open triage work against it.
+
+**Deployment invariance (Q12).** The product behaves the same whether managed or hybrid.
+Deployment is described plainly where it is relevant and is not a variant axis for content.
+The consequence for [`03-provenance-model.md`](./03-provenance-model.md): `applies_to` does not
+need to fan out per environment, there are no environment-variant page sets, and the coverage
+ledger stays one-dimensional. This is a large simplification — do not reintroduce environment
+branching without a specific reason.
+
+**Launch scope is reserved.** Vrushank hand-designs the docs skeleton, reusing and improving
+the Portkey structure. Do not propose a navigation tree or page inventory. Come back for it.
 
 Also decided: **the `prisma-airs-cta` snippet is not used anywhere in the Prisma AIRS version.**
 It announces the Portkey → Prisma AIRS transition, which is redundant on pages that are already
@@ -96,24 +117,32 @@ and `support@portkey.ai`?
 
 ### Q4. What is the onboarding path for a Prisma AIRS customer?
 
-`introduction/make-your-first-request` starts at `app.portkey.ai` signup. If AIRS customers
-arrive through a Strata Cloud Manager tenant, the quickstart is wrong for the target reader
-and the INIT 1 first-use exit criterion cannot pass. Which path is documented — or both?
+> **ANSWERED 2026-09-07 — Strata Cloud Manager, with the detail deferred to the KB.**
+> Onboarding runs through SCM. The specifics of the documented path are a KB question, not an
+> operator one, and are not to be inferred from the existing `app.portkey.ai` quickstart.
+
+`introduction/make-your-first-request` starts at `app.portkey.ai` signup, which is a
+Portkey-corpus artifact and is not inherited.
 
 ### Q5. Is the SSO/SCIM documentation currently wrong?
 
-The RFP knowledge file states that identity for Prisma AIRS AI Gateway is delivered by Strata
-Cloud Manager / Common Services IAM and that `product/enterprise-offering/org-management/sso`
-and `.../scim/*` are "not applicable." Those pages are live today.
-
-If that is accurate this is published-and-incorrect content, not a documentation gap, and it
-should be triaged ahead of new authoring. Needs a KB answer, not an RFP answer.
+> **MOOT 2026-09-07.** The pages in question belong to the Portkey-branded corpus. Prisma AIRS
+> documentation is produced by re-grounding against the KB, not by inheriting and correcting
+> existing prose, so a wrong statement there is never carried forward. No triage required.
+>
+> Generalizes: see the out-of-scope rule in the answered section above.
 
 ### Q6. Does the OpenAPI spec count as KB-accepted knowledge?
 
-API reference is generated from `Portkey-AI/openapi` (external repo, validated in CI). Handoff
-§3 rule 1 makes the KB the sole factual authority. Either the spec is ingested into the KB, or
-it needs an explicit recorded exemption. Which?
+> **ANSWERED 2026-09-07 — a new OpenAPI repository will be supplied and is the source for
+> Prisma AIRS API reference.** `Portkey-AI/openapi`, which currently feeds `docs.json`'s
+> `api.openapi` setting, is Portkey-corpus tooling and is not the Prisma AIRS source.
+
+Still to settle when that repo arrives, because the answer names a source rather than a
+grounding status: is the new spec **ingested into the KB** so its assertions are accepted
+knowledge, or does it carry a **recorded exemption** as an authored artifact under §3 rule 1?
+Either is coherent. Leaving it unstated is not — API reference is a large body of substantive
+assertions, and it is the easiest place for grounding to lapse without anyone noticing.
 
 ### Q7. Who owns factual review, editorial publication, conflicts, and urgent withdrawal?
 
@@ -136,12 +165,19 @@ It is a complete second published version. Keep, freeze, or retire?
   publish on the release schedule; guide and reference patches wait for KB acceptance.
 - **Q10.** Which task/scheduler facilities, budgets, and notification channels should the
   reconciliation integration reuse? §6 says reuse existing; none are visible from here.
-- **Q11.** Does the existing docs-ingestion pipeline preserve generated ancestry? §5 makes
-  this an acceptance requirement — without it, recrawling published pages defeats loop
-  protection.
-- **Q12.** Launch-critical versions, environments (managed / hybrid / air-gapped), and
-  languages. §0 DEFAULT is English only.
-- **Q13.** Is KB change discovery **cursor-based** (a watermark we advance per run) or
-  **snapshot-only** (we store the previous accepted-claim set and diff locally)? This
-  determines the state model for the KB→docs watcher, not just its transport — see
-  [`07-reconciliation-loop.md`](./07-reconciliation-loop.md#kb--docs). Ask alongside Q2.
+  **Open and under active discussion** — a proposal is recorded in
+  [`07-reconciliation-loop.md`](./07-reconciliation-loop.md#q10--scheduler-budgets-and-notifications).
+  The substantive item is not the scheduler but the single-owner review queue.
+- ~~**Q11.**~~ **ANSWERED 2026-09-07 — hard prerequisite, confirmed.** Ingestion must mark
+  crawled documentation as generated and the confidence model must refuse it as corroborating
+  evidence. Preservation of the metadata alone is insufficient; refusal is the requirement. The
+  reconciliation loop must not run against production KB until this is verified. Verification
+  is a KB-team question and rides with Q2.
+- ~~**Q12.**~~ **ANSWERED 2026-09-07.** Managed and hybrid. Product behaviour is deployment-
+  invariant. English only. Launch scope and skeleton reserved to Vrushank.
+- ~~**Q13.**~~ **ANSWERED 2026-09-07 — downgraded.** Reconcile against the manifests
+  regardless of what the KB offers; `claim_revision_seen` is already the stored previous
+  snapshot. A cursor, if one exists, narrows which claims to re-read and is never the source of
+  truth — §5's "an empty queue is not evidence of synchronization" applies to cursors, since a
+  cursor is a queue. Rationale in
+  [`07-reconciliation-loop.md`](./07-reconciliation-loop.md#kb--docs).

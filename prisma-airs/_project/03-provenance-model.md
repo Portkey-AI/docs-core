@@ -74,6 +74,15 @@ publication:
   published_revision: "actually-served-revision"
 ```
 
+**`applies_to` is narrower than it looks (Q12, 2026-09-07).** Launch environments are managed
+and hybrid, and product behaviour is **deployment-invariant** — the same capabilities behave
+the same way on both. So `applies_to` carries version applicability, not environment
+applicability. There are no environment-variant page sets, no per-environment claim fan-out,
+and the coverage ledger stays one-dimensional. Deployment is described plainly on the pages
+where it is genuinely the subject, and nowhere else. Do not reintroduce environment branching
+into the manifest without a specific, recorded reason: it multiplies the claim space and every
+downstream index with it.
+
 `published_revision` is deliberately separate from `docs_revision`. Handoff §5: "A successful
 commit is not proof that readers received the update," and §9 requires reconciliation to
 account for proposals, accepted revisions, and published revisions **separately**.

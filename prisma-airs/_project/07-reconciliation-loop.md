@@ -93,15 +93,27 @@ Two watchers on independent clocks, converging on the shared disposition ledger.
 Poll KB change discovery, then resolve through the dependency index to a section set, then
 tier, then act.
 
-The polling design depends on an unanswered question (Q13, below): whether the KB's change
-discovery is **cursor-based** or **snapshot-only**.
+**Decided 2026-09-07 (Q13): reconcile against the manifests, always. A cursor is an
+optimization, never the source of truth.**
 
-| KB contract | Design |
-|---|---|
-| Cursor / watermark | Advance a stored cursor per run. Cheap, exact, and the natural fit. |
-| Snapshot only | Store the previous accepted-claim snapshot; diff locally each run. Costs storage proportional to eligible claim count, and makes the loop's correctness depend on our own snapshot integrity. |
+An earlier draft treated cursor-vs-snapshot as a fork in the state model. It is not, for one
+reason: **the previous snapshot already exists.** `claim_revision_seen` in the dependency index
+is precisely that, and it has to be stored anyway for tier-0 digest comparison. There is no
+second store to build and no fork to choose between.
 
-Ask before building. It changes the state model, not just the transport.
+So each run reads the current revision of every claim in the index and compares against what
+the manifests already record. If the KB also exposes a cursor, use it to narrow *which* claims
+to re-read — a performance win, nothing more.
+
+The reason to prefer reconciliation even where a cursor exists is §5: "an empty queue is not
+evidence of synchronization." A cursor **is** a queue, and a KB-side promise about completeness
+and ordering. The events most likely to fall outside that promise — bulk re-imports, backfills,
+manual claim edits, retractions — are exactly the ones that matter most, and a missed cursor
+event is both silent and permanent. Snapshot reconciliation is self-healing: state is
+re-derived from what is actually there, so anything missed corrects itself on the next pass.
+
+Cost is bounded by coverage rather than by KB size, since only claims appearing in the
+dependency index are read. While the migrated corpus is small, so is the read.
 
 ### docs → KB
 
@@ -151,11 +163,18 @@ well-supported.
 Handoff §5 requires generated ancestry to be preserved end to end, and the `docs.page.v2`
 manifest already carries `origin_kind` and `generated_by` for exactly this. But the manifest
 is only half the mechanism. The other half lives in the ingestion pipeline, which must
-**refuse generated-ancestry content as corroborating evidence** — and whether it does is
-[Q11](./04-operator-questions.md), still unanswered.
+**refuse generated-ancestry content as corroborating evidence.**
 
-Treat Q11 as a hard prerequisite rather than a hardening task. Ordinary bugs announce
-themselves; this one does not.
+**Confirmed a hard prerequisite, 2026-09-07 (Q11).** Not INIT 2 hardening, not a later
+robustness pass. The loop does not run against production KB until this is verified.
+
+Preservation is not the requirement — *refusal* is. "We keep the metadata" is a passing answer
+to the wrong question: metadata that nothing acts on changes no outcome. What has to be
+demonstrated is the code path where the confidence model reads the ancestry field and declines
+to count the content as support. Ask for the field name and that path.
+
+Ordinary bugs announce themselves. This one raises confidence while lowering accuracy, so by
+the time it is visible the corrupted claims look well-supported.
 
 ## Ledger transitions
 
@@ -196,9 +215,10 @@ other metric says. Learn that from a dashboard rather than from a customer.
 
 ## Sequenced work
 
-1. **On KB access (Q2).** Read the change-discovery contract. Answer Q13 before writing code.
-2. **On Q11.** Confirm ingestion refuses generated ancestry. Do not run the loop against
-   production KB until this is confirmed.
+1. **On KB access (Q2).** Read the claim-read and change-discovery contract. No longer gated on
+   Q13 — reconciliation against manifests works against either contract shape.
+2. **On Q11.** Verify ingestion *refuses* generated ancestry, not merely records it. Do not run
+   the loop against production KB until that code path has been seen.
 3. Build the dependency index as a grounding-gate output. This lands with the first migrated
    pages and is worth doing even if the loop is never built — it makes manual impact analysis
    deterministic.
@@ -211,8 +231,39 @@ other metric says. Learn that from a dashboard rather than from a customer.
 Steps 4 through 6 are deliberately ordered by blast radius rather than by difficulty. Tier 2
 is the most interesting to build and should be built last.
 
-## New operator question
+## Q10 — scheduler, budgets, and notifications
 
-**Q13. Is KB change discovery cursor-based or snapshot-only?** Recorded in
-[`04-operator-questions.md`](./04-operator-questions.md). Needed before the KB→docs watcher can
-be designed; it determines whether we store a cursor or a full previous snapshot.
+Handoff §6 says reuse existing infrastructure. Nothing is visible from this workspace, so this
+is a proposal rather than a decision. Four separable pieces, and only the last one is
+difficult.
+
+**Scheduler — GitHub Actions cron.** The reflex is to reach for a PANW-internal scheduler on
+§6 grounds, but the output artifact is a pull request. The scheduler should live where the
+artifact lives; anything else moves credentials across a boundary for no gain. Revisit only if
+the KB endpoint is unreachable from GitHub-hosted runners, which is a network question worth
+asking alongside Q2.
+
+**Budgets — three ceilings per run.** Claims examined, pull requests opened, and a hard token
+budget. On breach: stop, alert, resume on the next run. This is safe specifically because of
+the idempotency key — a partial run is replayable, so a budget stop costs latency rather than
+correctness. That property is the return on designing idempotency in early.
+
+**Notifications — a GitHub issue, not a message.** A tier-3 event lands as `conflict` in the
+disposition ledger, which means a human decision that has not been made yet. That needs a
+durable work item with an owner and a close state. A chat notification scrolls away and leaves
+the ledger entry orphaned, which reproduces the exact "empty queue is not evidence" failure
+§5 warns about. Mirror to a chat channel if one exists, but the issue is the record and the
+issue's closure is what clears the ledger.
+
+**The review queue — the actual open item.** Q7 assigns all four roles to one person. For a
+bounded migration that is fine. For a loop that runs indefinitely it is a structural problem:
+every tier-2 and tier-3 event requires one specific human, the queue grows whenever that person
+is unavailable, and nothing in the metrics distinguishes a quiet week from nobody looking. The
+"runs since last successful KB read" metric catches a stalled *agent*; it does not catch a
+stalled *reviewer*.
+
+Minimum viable fix, in preference order: a named backup for factual review; or an explicit
+service-level target on queue age with the staleness budget alerting when it is breached; or,
+weakest but better than nothing, a documented pause procedure so the loop is deliberately
+stopped during known absences rather than quietly accumulating. Worth settling before the loop
+goes live — it is cheap to arrange now and awkward to arrange during an incident.

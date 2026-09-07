@@ -18,7 +18,7 @@ Last updated: 2026-09-07.
 | Navigation model | Verified | `navigation.versions[]` → 2 versions ("Latest", "Virtual Keys (Deprecated)") → 7 and 4 tabs → groups → pages |
 | Native components in active use | Verified | `CodeGroup`, `Card`, `Accordion`/`AccordionGroup`, `Frame`, `Check`, MDX snippet imports |
 | Snippet mechanism | Verified | `snippets/` incl. `prisma-airs-cta.mdx`, imported into pages |
-| OpenAPI-backed reference | Verified | `docs.json` → `api.openapi` points at `Portkey-AI/openapi` master `openapi.yaml`; CI at `.github/workflows/openapi-validate.yml` |
+| OpenAPI-backed reference | Verified | `docs.json` → `api.openapi` points at `Portkey-AI/openapi` master `openapi.yaml`; CI at `.github/workflows/openapi-validate.yml`. **Portkey-corpus only** — Q6 (2026-09-07) assigns Prisma AIRS API reference to a new repository, not yet supplied |
 | Machine-readable exports enabled | Verified | Footer links `llms.txt` and `llms-full.txt` — **relevant to §3 rule 6**: these are public exports and must be checked for private material |
 | Redirects, SEO, contextual, metadata config | Verified | present as `docs.json` top-level keys |
 | Strict build validation | Verified | `mint validate` (CLI 4.2.876, installed globally) — exits non-zero on warnings; full corpus passes |
