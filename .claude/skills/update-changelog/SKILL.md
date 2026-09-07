@@ -120,7 +120,7 @@ Before writing any prose, write down the discrete facts the release establishes.
 `prisma-airs/_project/releases/<repo-short>@<tag>.yaml`.
 
 This is the input to the KB contribution step (added once KB MCP access exists — see
-`prisma-airs/_project/06-changelog-contribution-path.md`). Until then it stands on its own as
+`prisma-airs/_project/README.md`, "Changelog contribution path"). Until then it stands on its own as
 a review artifact: it makes the release's factual content inspectable separately from how it
 was worded.
 
@@ -232,7 +232,7 @@ So:
 
 Once KB MCP access exists, step 4b (submit assertions to the KB) slots in here, and the guide
 patches additionally wait on KB acceptance while the changelog entry does not. See
-`prisma-airs/_project/06-changelog-contribution-path.md`.
+`prisma-airs/_project/README.md` under "Changelog contribution path".
 
 ### 8. Report back
 

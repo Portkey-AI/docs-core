@@ -149,7 +149,7 @@ grounding rule. Prefer putting it in the overlay.
 
 ## Naming rules
 
-[`05-naming-rules.md`](./05-naming-rules.md) applies, and its rule of thumb — *if a reader
+[The naming rules](./README.md#naming-rules) applies, and its rule of thumb — *if a reader
 would type it or a machine would parse it, it does not change* — resolves unusually cleanly
 here, because a spec is mostly machine-parsed.
 
@@ -176,7 +176,7 @@ Renaming affects both. Raise it rather than choosing.
 ## Provenance: design the extension now
 
 The spec has to participate in the claim→section dependency index
-([`03-provenance-model.md`](./03-provenance-model.md)), or 219 pages become a hole in it. Use
+([the provenance model](./README.md#provenance-model)), or 219 pages become a hole in it. Use
 OpenAPI's `x-` extension mechanism, per operation and per documented property:
 
 ```yaml
@@ -198,7 +198,7 @@ retrofit, because reconstructing which claim supported a description after the f
 indistinguishable from inventing it.
 
 `origin_kind` and `text_digest` are also what make echo protection work if any description is
-ever machine-drafted. See [`07-reconciliation-loop.md`](./07-reconciliation-loop.md).
+ever machine-drafted. See [the reconciliation loop](./README.md#reconciliation-loop).
 
 ## One spec, no variants
 
@@ -209,7 +209,7 @@ deployment. Multiple entries in `servers[]` are fine; divergent content is not.
 ## Validation is currently absent — the new repo should own it
 
 Recorded because it contradicts an earlier entry in
-[`00-capability-register.md`](./00-capability-register.md), now corrected.
+[the platform facts table](./README.md#platform-facts), now corrected.
 
 `.github/workflows/openapi-validate.yml` in this repo runs
 `openapi-spec-validator openapi.yaml` against the **docs-core repository root**, where no
@@ -248,7 +248,7 @@ The operating rules:
 
 ### What this changes downstream
 
-[`07-reconciliation-loop.md`](./07-reconciliation-loop.md) was designed as a two-node loop, KB
+[the reconciliation loop](./README.md#reconciliation-loop) was designed as a two-node loop, KB
 ↔ docs. It is now **three-node**: KB ↔ spec ↔ docs. Three consequences, recorded there:
 
 - Drift detection needs a KB↔spec comparison, not only KB↔docs.
