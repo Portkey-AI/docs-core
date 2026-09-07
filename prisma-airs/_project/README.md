@@ -35,6 +35,7 @@ Anything added to `_project/` inherits the exclusion. Anything added elsewhere d
 | [`06-changelog-contribution-path.md`](./06-changelog-contribution-path.md) | The docs→KB MCP round trip, piloted on release changelogs. | §4, §5 |
 | [`07-reconciliation-loop.md`](./07-reconciliation-loop.md) | The standing KB↔docs loop: triage tiers, runtime shape, echo protection. | §5, §9, §10 |
 | [`08-openapi-handoff.md`](./08-openapi-handoff.md) | Instructions for the agent building the new Prisma AIRS OpenAPI spec. | §3, §2 |
+| [`09-handoff-v3-feedback.md`](./09-handoff-v3-feedback.md) | Feedback on the brief itself, from implementing against it. For v3. | all |
 | [`releases/`](./releases/) | Per-release assertion files, emitted by the `update-changelog` skill. | §4 |
 
 ## Scope
