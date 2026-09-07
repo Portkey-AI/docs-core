@@ -7,7 +7,7 @@ description: "OAuth 2.1 authentication for MCP Gateway using Palo Alto Networks 
 CAS (Cloud Authentication Service) is the OAuth 2.1 authentication method for MCP Gateway in **SCM (Strata Cloud Manager)** deployments. When an MCP client connects to a gateway running in SCM mode, CAS handles user authentication through Palo Alto Networks' identity infrastructure instead of Portkey's built-in OAuth.
 
 <Info>
-CAS authentication is only available for organizations running in **SCM deployment mode**. For standard Portkey deployments, use [Portkey OAuth](/product/mcp-gateway/authentication/oauth) or [External OAuth](/product/mcp-gateway/authentication/external-oauth) instead.
+For standard Portkey deployments, use [Portkey OAuth](/product/mcp-gateway/authentication/oauth) or [External OAuth](/product/mcp-gateway/authentication/external-oauth) instead.
 </Info>
 
 ---
@@ -36,22 +36,15 @@ sequenceDiagram
     Gateway-->>Client: Access token issued
 ```
 
-1. **MCP client requests access** — The client (e.g., Cursor, Claude Desktop) connects to an MCP server through the AI Gateway.
-2. **CAS login** — The user is redirected to the CAS login page, where they authenticate using their organization's identity provider.
-3. **User resolved** — Portkey verifies the authenticated identity, resolves the user, and determines workspace access.
-4. **Token issued** — An OAuth access token is issued to the MCP client, scoped to the user's workspace permissions.
-
 ---
 
 ## Prerequisites
 
 Before CAS authentication works for your MCP Gateway:
 
-1. **SCM deployment mode** — Your organization must be running in SCM mode with CAS activated by Palo Alto Networks.
+1. **CIE Directory Sync configured** — Users must be provisioned into workspaces via [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync). CAS authenticates users, but CIE is what provisions them into the system. Without CIE sync, authenticated users cannot be resolved.
 
-2. **CIE Directory Sync configured** — Users must be provisioned into workspaces via [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync). CAS authenticates users, but CIE is what provisions them into the system. Without CIE sync, authenticated users cannot be resolved.
-
-3. **Authentication Profile selected** — An Auth Profile must be selected in the CIE Directory Sync configuration. This profile determines which identity provider is used for the CAS login flow. Auth Profiles are managed in the [CIE Authentication Profiles](https://docs.paloaltonetworks.com/identity/cloud-identity-engine/authenticate-users-with-the-cloud-identity-engine) console.
+2. **Authentication Profile selected** — An Auth Profile must be selected in the CIE Directory Sync configuration. This profile determines which identity provider is used for the CAS login flow. Auth Profiles are managed in the [CIE Authentication Profiles](https://docs.paloaltonetworks.com/identity/cloud-identity-engine/authenticate-users-with-the-cloud-identity-engine) console.
 
 <Warning>
 CAS relies on CIE for user provisioning. If CIE Directory Sync is not configured, or no group-workspace mappings exist, users will authenticate successfully with CAS but fail to resolve — resulting in an authorization error.
@@ -63,7 +56,7 @@ See [CIE Directory Sync](/product/enterprise-offering/org-management/directory-s
 
 ## Setup
 
-CAS authentication is automatically enabled for organizations in SCM deployment mode. No additional configuration is required on the MCP Gateway side — the gateway detects SCM mode and routes authentication through CAS.
+CAS authentication is automatically enabled. No additional configuration is required on the MCP Gateway side — the gateway routes authentication through CAS.
 
 ### What the Admin Needs to Configure
 
@@ -86,21 +79,25 @@ Ensure that the **User Identity Attribute** selected in CIE Directory Sync (UPN 
 
 ### First-Time Connection
 
-When a user connects an MCP client to the gateway for the first time:
+When a user connects an MCP client to the gateway for the first time, the MCP client opens a browser window and the CAS login page is shown.
 
-1. The MCP client opens a browser window.
-2. The user sees the CAS login page (branded by their organization's identity provider).
-3. After authenticating, a consent page appears showing which MCP server the client is requesting access to.
-4. The user approves, and the browser redirects back to the MCP client.
-5. The client now has an access token and can make MCP requests.
+**Step 1 — Authenticate with your identity provider**
+
+The user enters their organization credentials on the CAS Single Sign-on page. This page is hosted by Palo Alto Networks and connects to your configured identity provider (Entra ID, Okta, or on-prem AD).
 
 ![CAS Single Sign-on — Palo Alto Networks login page where users authenticate with their organization credentials](/images/cas-login.png)
 
+**Step 2 — Approve access to the MCP server**
+
+After authentication, the user is shown a consent page. It displays the MCP server being requested, the workspace it belongs to, and the redirect destination. The user can approve or reject the request.
+
 ![Authorization Request — consent page showing the MCP server name, workspace selection, redirect destination, and approve/reject buttons](/images/cas-consent.png)
+
+Once approved, the browser redirects back to the MCP client with an access token. The client can now make MCP requests.
 
 ### Subsequent Connections
 
-After the initial authentication, the MCP client uses refresh tokens to maintain access. Users are not prompted to log in again until the refresh token expires or is revoked.
+After the initial authentication, the MCP client uses refresh tokens to maintain access. Users are not prompted to log in again until the refresh token expires or is revoked. Approval is also remembered — subsequent connections to the same MCP server skip the consent page.
 
 ---
 
@@ -108,7 +105,6 @@ After the initial authentication, the MCP client uses refresh tokens to maintain
 
 | Feature | CAS (SCM) | Portkey OAuth | External OAuth |
 |---------|-----------|---------------|----------------|
-| **Deployment** | SCM only | All deployments | All deployments |
 | **Identity provider** | Palo Alto CAS → org IdP | Portkey accounts | Customer's IdP |
 | **User provisioning** | Via CIE Directory Sync | Self-service signup | Manual or SCIM |
 | **Consent flow** | Yes | Yes | Depends on IdP |
@@ -123,7 +119,6 @@ After the initial authentication, the MCP client uses refresh tokens to maintain
 |-------|-------|------------|
 | User authenticates but gets "authorization failed" | User not provisioned via CIE | Configure [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync) and verify group-workspace mappings |
 | "Email not found in claims" error | IdP not returning email attribute | Ensure the IdP includes the email claim. Verify the User Identity Attribute (UPN vs Mail) in CIE matches what the IdP returns |
-| CAS login page not appearing | Organization not in SCM mode | CAS is only available for SCM deployments. Use [Portkey OAuth](/product/mcp-gateway/authentication/oauth) for standard deployments |
 | Consent page shows but redirect fails | Browser blocking the redirect | Check for browser extensions or corporate policies blocking redirects to custom URI schemes (`cursor://`, `vscode://`) |
 | Token refresh fails | Refresh token expired or revoked | User must re-authenticate through the CAS flow |
 
