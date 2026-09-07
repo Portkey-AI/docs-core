@@ -75,6 +75,7 @@ source outside the KB corpus, under a scoped recorded exemption to rule 1. Detai
 | Q11 | **Generated ancestry:** hard prerequisite. Ingestion must *refuse* generated-ancestry content as corroborating evidence. Verification rides with Q2. | 2026-09-07 |
 | Q12 | **Environments:** managed and hybrid. **Product behaviour is deployment-invariant.** English only. | 2026-09-07 |
 | Q13 | **Change discovery:** downgraded to a performance detail — reconcile against manifests regardless of contract shape. | 2026-09-07 |
+| Q14 | **Navigation primitive:** Prisma AIRS stays a `navigation.versions[]` entry **for now**. Not `products`, `tabs` or `anchors`. Provisional by the operator's own wording — see below. | 2026-09-07 |
 
 **Launch scope and navigation skeleton are reserved to Vrushank**, who is hand-designing them,
 reusing and improving the Portkey structure. Do not propose a navigation tree or page
@@ -97,6 +98,26 @@ second exemption.
    fall back on.
 4. Sync is **bidirectional and webhook-driven**: a spec change notifies the KB, a KB change
    notifies the spec repository.
+
+### Version, not product (Q14)
+
+Prisma AIRS is a third entry in `navigation.versions[]`, between "Latest" and "Virtual Keys
+(Deprecated)". "Latest" stays first, so it stays the default.
+
+Decided **"at the moment"** — treat it as provisional, and record the cost so a later switch is
+a decision rather than a discovery.
+
+- Readers see a version switcher, which frames Prisma AIRS as a variant of Portkey docs rather
+  than as the product. That framing is wrong on the merits and acceptable while the Prisma AIRS
+  page count is small.
+- The switch is cheap while the corpus is small and gets steadily more expensive: moving to
+  `products` or `tabs` at the top level rewrites every route, which means redirects for every
+  published page and re-binding for anything the OpenAPI group config generates.
+- So the **revisit trigger is route stability, not page count.** Reconsider before the first
+  substantial batch of Prisma AIRS pages publishes and acquires inbound links — not after.
+
+Nothing else in this document depends on the choice. Page contracts, provenance, the loop and
+the spec handoff are all route-shaped, not primitive-shaped.
 
 ### Deployment invariance (Q12)
 

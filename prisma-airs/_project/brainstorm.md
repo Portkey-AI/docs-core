@@ -107,11 +107,14 @@ The top level of `navigation` accepts exactly one of: `products`, `languages`, `
 `tabs`, `dropdowns`, `anchors`, `groups`, `pages`. This repo uses `versions` — three of them,
 which is why Prisma AIRS currently sits as a peer of "Latest" and "Virtual Keys (Deprecated)".
 
-That was the right *insertion* while scaffolding. It is probably the wrong *destination*, since
-Prisma AIRS is not a version of Portkey docs — it is the product. Worth deciding early: a
-version switcher labelled "Prisma AIRS" quietly frames the whole corpus as a variant.
+**Settled 2026-09-07 (Q14): stays a version, for now.** So the version switcher is the reader's
+top-level control at launch, and the sections below are the alternatives to revisit against
+rather than options to choose from. The one thing worth holding onto is the revisit trigger:
+route stability, not page count — moving off `versions` later means a redirect for every
+published page, so the moment to reconsider is *before* the first substantial batch publishes
+and acquires inbound links.
 
-Rough shape of the tradeoff, for whichever you design toward:
+Rough shape of the tradeoff, for whenever that revisit happens:
 
 - **`products`** — strongest separation, own sidebar and identity per product. Right if AI
   Gateway, MCP Gateway and Prompt Studio are sold and adopted separately.
@@ -235,9 +238,9 @@ full speed while authoring is blocked.
 
 ## 8. Open questions for you
 
-1. **Version or product?** Should Prisma AIRS stay a `versions[]` entry, or become the site —
-   with Portkey-branded content retired or moved? This determines whether readers see a version
-   switcher, and it is the largest presentation decision on the list.
+1. ~~**Version or product?**~~ **Answered 2026-09-07 — stays a `versions[]` entry for now.**
+   Revisit before the first substantial batch of pages publishes, since the cost is a redirect
+   per published route.
 2. **Brand latitude.** How closely must this track PANW brand — exact palette and type, or a
    docs-appropriate interpretation?
 3. **Is there a console sign-in URL** worth a navbar primary button at launch?
