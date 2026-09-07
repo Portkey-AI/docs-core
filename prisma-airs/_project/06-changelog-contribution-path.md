@@ -97,7 +97,7 @@ This is the rule the current skill's step 7 ("apply documentation updates flagge
 does not yet distinguish. Today it edits guides in the same pass as the changelog. Under §4
 those become two proposals on two different clocks.
 
-## Publication policy — needs a decision
+## Publication policy — approved 2026-09-07
 
 Handoff §4 DEFAULT: "normal docs publication waits for KB acceptance."
 
@@ -116,8 +116,12 @@ Recommendation:
 - **Guide and reference patches** — wait for KB acceptance. No exception.
 
 That keeps the exception narrow and scoped to a page type whose content is inherently a dated
-observation rather than a standing product claim. It needs operator sign-off
-([`04-operator-questions.md`](./04-operator-questions.md) Q9) — do not assume it.
+observation rather than a standing product claim.
+
+**Approved 2026-09-07** ([`04-operator-questions.md`](./04-operator-questions.md) Q9). This is
+now the operating policy, not a recommendation. The exception is release-only: it does not
+extend to any other page type, and §4 is explicit that it "must not silently weaken grounding
+for all pages."
 
 ## Disposition tracking
 

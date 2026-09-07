@@ -1,6 +1,7 @@
 # Product naming and vocabulary rules
 
-Status: **proposal, pending operator sign-off** (see [`04-operator-questions.md`](./04-operator-questions.md) Q3).
+Status: **approved 2026-09-07** (Q3). Approval covers the rule below *and* the four items in
+"Unresolved" — those are settled as written unless revisited.
 
 Scope confirmed 2026-09-07: the whole corpus is Prisma AIRS AI Gateway, rebranded in place.
 The other tabs are modules of it, not separate products.
@@ -65,7 +66,10 @@ Which vocabulary is public is Q3's open sub-question — do not apply these unti
 Note the gaps in both directions: MCP Gateway and Administration have no licensing label
 listed, and the labels do not name Self-Hosting. Resolve before applying.
 
-## Unresolved — these need a decision, not a rule
+## Previously unresolved — approved as written, 2026-09-07
+
+Each of these was flagged as needing a decision. All four are approved as described; the
+reasoning is kept because it is what a future reader will need in order to revisit them.
 
 1. **Open-source Gateway identity.** `product/open-source` and `changelog/open-source`
    document the OSS Gateway, which is a genuinely separate, publicly-named project. Does it
@@ -74,6 +78,10 @@ listed, and the labels do not name Self-Hosting. Resolve before applying.
    forum, `support@portkey.ai`. These are Portkey-community properties embedded in pages —
    including the current entry page. Keep, replace with PANW support channels, or serve
    differently per version?
+
+   Related and already decided: the **`prisma-airs-cta` snippet is not used in the Prisma AIRS
+   version at all.** It announces the Portkey → Prisma AIRS transition, which is redundant on
+   pages that are already Prisma AIRS. It stays where it is on the Latest-version pages.
 3. **Certifications and metrics.** `introduction/what-is-portkey` states ISO 27001 / SOC 2 /
    GDPR / HIPAA, "25M requests daily", "99.99% uptime", "20-40ms" latency. Under the new
    parent these are claims about a different legal entity. All are substantive assertions

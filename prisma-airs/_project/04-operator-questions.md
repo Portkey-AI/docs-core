@@ -11,9 +11,37 @@ No secrets in chat — use normally configured access.
 
 ---
 
-## Blocking — nothing can be authored until these are answered
+## Answered — 2026-09-07
+
+| # | Answer |
+|---|---|
+| **Q1** Scope | **(a)** The whole corpus is Prisma AIRS AI Gateway, rebranded in place. Other tabs are modules of it, not separate products. |
+| **Q2** KB / MCP | Still open. Endpoint to be supplied. **This remains the blocker on all page authoring.** |
+| **Q3** Naming rule | Approved as proposed in [`05-naming-rules.md`](./05-naming-rules.md), including the four items that document could not settle. |
+| **Q7** Owners | Vrushank Vyas owns all four roles: factual review, editorial publication, conflicts, and urgent withdrawal. |
+| **Q8** Virtual Keys version | **Keep as is.** Do not touch. |
+| **Q9** Changelog publication policy | Approved: the release-only exception is correct. Changelog entries publish on the release schedule; guide and reference patches wait for KB acceptance. |
+
+Standing instruction, 2026-09-07: **do not modify non-Prisma-AIRS docs.** Pre-existing issues
+found while working — 66 broken links across 48 files, non-page files at the repo root inside
+the build scope — are accepted as-is and are not to be fixed as part of this initiative.
+
+Also decided: **the `prisma-airs-cta` snippet is not used anywhere in the Prisma AIRS version.**
+It announces the Portkey → Prisma AIRS transition, which is redundant on pages that are already
+Prisma AIRS.
+
+Deferred by agreement: `mint a11y` and `mint test` will be adopted later.
+
+---
+
+## Blocking — nothing can be authored until Q2 is answered
+
+Answered questions below are retained rather than deleted: the reasoning is why the answer
+means what it means, and it is worth keeping next to the decision.
 
 ### Q1. What is the assigned Prisma AIRS AI Gateway scope in this repository?
+
+> **ANSWERED 2026-09-07 — (a), whole corpus rebranded in place.** Retained for the reasoning.
 
 This repo is the full Portkey documentation set: 2 navigation versions, 7 tabs, ~1,200 pages,
 covering AI Gateway, MCP Gateway, Agent Gateway, Model Catalog, Prompt Studio, Guardrails,
@@ -47,6 +75,8 @@ be Portkey's own MCP Gateway product rather than the KB. Please confirm either w
 Until this is answered, handoff §3 rule 2 blocks all page authoring.
 
 ### Q3. What is the product naming rule?
+
+> **ANSWERED 2026-09-07 — approved as proposed.** Retained for the reasoning.
 
 "Portkey" is the product name throughout the published prose. Needed: the term-by-term rule,
 specifically what stays unchanged. The RFP knowledge file already draws this line for
@@ -87,10 +117,14 @@ it needs an explicit recorded exemption. Which?
 
 ### Q7. Who owns factual review, editorial publication, conflicts, and urgent withdrawal?
 
+> **ANSWERED 2026-09-07 — all four roles: Vrushank Vyas.**
+
 Four roles in the handoff, currently unassigned. Urgent withdrawal (§10) in particular needs a
 named owner and an approved procedure that does not sit behind ordinary editorial review.
 
 ### Q8. Is the deprecated "Virtual Keys" navigation version in scope?
+
+> **ANSWERED 2026-09-07 — keep as is, do not touch.**
 
 It is a complete second published version. Keep, freeze, or retire?
 
@@ -98,9 +132,8 @@ It is a complete second published version. Keep, freeze, or retire?
 
 ## Deferred — needed for INIT 2, not INIT 1
 
-- **Q9.** Publication policy for engineering changelogs originating in docs. Handoff §4
-  DEFAULT is that publication waits for KB acceptance; a release-only exception must be
-  explicit if wanted.
+- ~~**Q9.**~~ **ANSWERED 2026-09-07.** Release-only exception approved: changelog entries
+  publish on the release schedule; guide and reference patches wait for KB acceptance.
 - **Q10.** Which task/scheduler facilities, budgets, and notification channels should the
   reconciliation integration reuse? §6 says reuse existing; none are visible from here.
 - **Q11.** Does the existing docs-ingestion pipeline preserve generated ancestry? §5 makes
