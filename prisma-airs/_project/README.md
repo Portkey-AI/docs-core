@@ -33,6 +33,7 @@ Anything added to `_project/` inherits the exclusion. Anything added elsewhere d
 | [`04-operator-questions.md`](./04-operator-questions.md) | The §11 questions, narrowed to what could not be answered from the repo. | §11 |
 | [`05-naming-rules.md`](./05-naming-rules.md) | Portkey → Prisma AIRS vocabulary rule; what renames and what must not. | §2 |
 | [`06-changelog-contribution-path.md`](./06-changelog-contribution-path.md) | The docs→KB MCP round trip, piloted on release changelogs. | §4, §5 |
+| [`07-reconciliation-loop.md`](./07-reconciliation-loop.md) | The standing KB↔docs loop: triage tiers, runtime shape, echo protection. | §5, §9, §10 |
 | [`releases/`](./releases/) | Per-release assertion files, emitted by the `update-changelog` skill. | §4 |
 
 ## Scope

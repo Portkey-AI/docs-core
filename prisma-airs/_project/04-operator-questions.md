@@ -141,3 +141,7 @@ It is a complete second published version. Keep, freeze, or retire?
   protection.
 - **Q12.** Launch-critical versions, environments (managed / hybrid / air-gapped), and
   languages. §0 DEFAULT is English only.
+- **Q13.** Is KB change discovery **cursor-based** (a watermark we advance per run) or
+  **snapshot-only** (we store the previous accepted-claim set and diff locally)? This
+  determines the state model for the KB→docs watcher, not just its transport — see
+  [`07-reconciliation-loop.md`](./07-reconciliation-loop.md#kb--docs). Ask alongside Q2.
