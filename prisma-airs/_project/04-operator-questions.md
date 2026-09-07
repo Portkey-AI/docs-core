@@ -165,9 +165,14 @@ It is a complete second published version. Keep, freeze, or retire?
   publish on the release schedule; guide and reference patches wait for KB acceptance.
 - **Q10.** Which task/scheduler facilities, budgets, and notification channels should the
   reconciliation integration reuse? §6 says reuse existing; none are visible from here.
-  **Open and under active discussion** — a proposal is recorded in
-  [`07-reconciliation-loop.md`](./07-reconciliation-loop.md#q10--scheduler-budgets-and-notifications).
-  The substantive item is not the scheduler but the single-owner review queue.
+  **Largely settled 2026-09-07** — proposal in
+  [`07-reconciliation-loop.md`](./07-reconciliation-loop.md#q10--scheduler-budgets-and-notifications):
+  Actions cron, three per-run ceilings, GitHub issues as the tier-3 record.
+  Review capacity was raised as a concern and **withdrawn**: tier 1 and tier 2 are ordinary
+  pull requests that any maintainer reviews, and the repo already sustains ~8 distinct
+  reviewers with no bottleneck. What remains is two lines of workflow config — the default
+  assignee for tier-3 issues, and a self-reporting health check so the loop's own silence is
+  distinguishable from a quiet week.
 - ~~**Q11.**~~ **ANSWERED 2026-09-07 — hard prerequisite, confirmed.** Ingestion must mark
   crawled documentation as generated and the confidence model must refuse it as corroborating
   evidence. Preservation of the metadata alone is insufficient; refusal is the requirement. The

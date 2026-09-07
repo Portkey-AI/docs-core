@@ -205,13 +205,18 @@ stalling, so the metrics that matter are queue-shaped rather than event-shaped:
 | Metric | Why |
 |---|---|
 | **Staleness budget** — sections whose `claim_revision_seen` is older than the KB's current revision, bucketed by age | The primary health signal. Should oscillate, not climb. |
-| Open handles by age | Detects a review bottleneck before it becomes a correctness problem. |
+| Open handles by age | Catches a submission that was accepted and then forgotten. |
 | Tier distribution per run | A sudden tier-2 spike usually means a KB re-import, not a product change. |
 | Runs since last successful KB read | Distinguishes "nothing changed" from "we stopped looking." Those look identical otherwise. |
+| Open tier-3 issue age | The one queue with no forcing function behind it. |
 | `conflict` count, never aggregated away | Each one is a human decision that has not been made yet. |
 
 If the staleness budget grows monotonically, the loop is failing regardless of what every
-other metric says. Learn that from a dashboard rather than from a customer.
+other metric says.
+
+Rather than assuming anyone watches a dashboard, wire these into the health check: when a
+threshold is breached, the loop opens an issue about itself. Metrics nobody is obliged to read
+report a problem to no one.
 
 ## Sequenced work
 
@@ -225,8 +230,10 @@ other metric says. Learn that from a dashboard rather than from a customer.
 4. Implement tier 0 only, in report mode: detect and log, create nothing. Runs against real
    data with zero blast radius and validates the digest comparison.
 5. Add tier 1 auto-PRs behind the rate ceiling and the kill switch.
-6. Add tier 2 draft PRs and tier 3 alerting.
-7. Add the reconciliation sweep for stale handles (§5, §9).
+6. Add tier 2 draft PRs, and tier 3 issues with a default assignee.
+7. Add the self-reporting health check: the loop opens an issue when its own thresholds are
+   breached or when it has not completed a successful KB read in N runs.
+8. Add the reconciliation sweep for stale handles (§5, §9).
 
 Steps 4 through 6 are deliberately ordered by blast radius rather than by difficulty. Tier 2
 is the most interesting to build and should be built last.
@@ -255,15 +262,48 @@ the ledger entry orphaned, which reproduces the exact "empty queue is not eviden
 §5 warns about. Mirror to a chat channel if one exists, but the issue is the record and the
 issue's closure is what clears the ledger.
 
-**The review queue — the actual open item.** Q7 assigns all four roles to one person. For a
-bounded migration that is fine. For a loop that runs indefinitely it is a structural problem:
-every tier-2 and tier-3 event requires one specific human, the queue grows whenever that person
-is unavailable, and nothing in the metrics distinguishes a quiet week from nobody looking. The
-"runs since last successful KB read" metric catches a stalled *agent*; it does not catch a
-stalled *reviewer*.
+### Review capacity is not the problem
 
-Minimum viable fix, in preference order: a named backup for factual review; or an explicit
-service-level target on queue age with the staleness budget alerting when it is breached; or,
-weakest but better than nothing, a documented pause procedure so the loop is deliberately
-stopped during known absences rather than quietly accumulating. Worth settling before the loop
-goes live — it is cheap to arrange now and awkward to arrange during an incident.
+An earlier draft of this section claimed the single-owner review queue was the hard part,
+reasoning from Q7's assignment of all four roles to one person. That was wrong, and it is
+recorded here because the mistake is an easy one to repeat.
+
+Q7 is about who holds **factual authority for the migration**. It does not follow that every
+loop event needs that same person. Tier 1 in particular is not a judgement call: the PR body
+quotes the prior claim, the new claim, and the claim ID, and the diff is a single value.
+Verifying it is a string comparison. Tier 2 is ordinary docs review — prose checked against
+quoted claims. Both are things any maintainer does, and GitHub already queues and routes them.
+
+Checked against the repo, 2026-09-07: the last fifteen merged pull requests were reviewed by
+roughly eight distinct people, with no bottleneck. There is no `CODEOWNERS` file; review
+happens anyway. Adding a review process on top of that would be ceremony.
+
+Two narrower things survive, and neither is about capacity.
+
+### Tier 3 produces an issue, and issues do not force
+
+By design tier 3 emits no pull request — the input is a contradiction or a retraction, so there
+is nothing to propose and nothing to approve. It emits an issue: *the KB withdrew a claim that
+four published pages depend on.* Resolving it means establishing what is true, possibly by
+asking the KB team, and then choosing between withdrawal, patch, and hold. §10 places urgent
+withdrawal outside ordinary editorial review.
+
+The asymmetry: a pull request is visibly blocking something, so it gets picked up. An issue can
+sit for weeks while the pages it names stay published and wrong, and nothing about the repo
+looks unhealthy in the meantime.
+
+So the open item is small and concrete — **who is the default assignee on a tier-3 issue at
+creation time**, and does unassigned mean unowned? Workflow configuration, decided when the
+loop is built.
+
+### Nothing watches for absence
+
+A pull request queue reports on pull requests that exist. It is structurally incapable of
+reporting that the loop stopped opening them — expired credentials, a KB read failing for nine
+days, or a dependency index that quietly lost entries so stale claims generate nothing at all.
+"No PRs this week" is indistinguishable from a healthy week.
+
+That is what the staleness budget and "runs since last successful KB read" are for, but a
+dashboard needs someone to look at it in a way a pull request does not. Cheapest fix, and the
+one to build: **have the loop open an issue when its own health check fails**, so silence
+arrives through the same channel as everything else and no new habit is required of anyone.
