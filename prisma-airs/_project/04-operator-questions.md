@@ -23,7 +23,7 @@ No secrets in chat — use normally configured access.
 | **Q9** Changelog publication policy | Approved: the release-only exception is correct. Changelog entries publish on the release schedule; guide and reference patches wait for KB acceptance. |
 | **Q4** Onboarding path | Onboarding is through **Strata Cloud Manager**. The documented detail waits for the KB — not an operator call. |
 | **Q5** SSO/SCIM correctness | **Moot.** Those pages are Portkey-docs content. Prisma AIRS docs are built by re-grounding, not by inheriting. |
-| **Q6** OpenAPI spec | A **new OpenAPI repo** will be supplied and is the source for Prisma AIRS API reference. The current `Portkey-AI/openapi` is not. |
+| **Q6** OpenAPI spec | A **new OpenAPI repo** is the source for Prisma AIRS API reference. Grounding status settled: the spec is a **second trusted source outside the KB corpus**, under an explicit recorded exemption to §3 rule 1. Conflicts go to maintainers; drift from either side is raised; sync is bidirectional and webhook-driven. |
 | **Q11** Generated ancestry | Confirmed as a **hard prerequisite**, not INIT 2 hardening. Ingestion must refuse generated-ancestry content as corroborating evidence. |
 | **Q12** Environments | **Managed and hybrid.** Product behaviour does **not** vary by deployment — see the note below. Language scope unchanged (English). |
 | **Q13** Change discovery | Downgraded to a performance detail. Reconcile against manifests; treat a cursor as an optional read-narrowing optimization. |
@@ -138,11 +138,23 @@ Portkey-corpus artifact and is not inherited.
 > Prisma AIRS API reference.** `Portkey-AI/openapi`, which currently feeds `docs.json`'s
 > `api.openapi` setting, is Portkey-corpus tooling and is not the Prisma AIRS source.
 
-Still to settle when that repo arrives, because the answer names a source rather than a
-grounding status: is the new spec **ingested into the KB** so its assertions are accepted
-knowledge, or does it carry a **recorded exemption** as an authored artifact under §3 rule 1?
-Either is coherent. Leaving it unstated is not — API reference is a large body of substantive
-assertions, and it is the easiest place for grounding to lapse without anyone noticing.
+**Grounding status settled 2026-09-07: recorded exemption.** The specification is a key source
+of trusted knowledge that sits *outside* the KB corpus — co-equal with the KB, not subordinate
+to it and not merely an ingestion input.
+
+This is a deliberate deviation from §3 rule 1's "sole factual authority," scoped to the API
+specification, and it is recorded rather than assumed precisely so it cannot be cited later as
+precedent for a second exemption.
+
+Operating rules: conflicts are resolved by **maintainers**, never automatically and never
+last-write-wins; both artifacts must stay in sync and **drift from either side is raised**,
+with no authoritative side to fall back on; sync is **bidirectional and webhook-driven** in
+both directions.
+
+Consequences are written up in
+[`08-openapi-handoff.md`](./08-openapi-handoff.md#authority-the-spec-is-a-second-trusted-source--recorded-exemption)
+and the reconciliation loop is now three-node —
+[`07`](./07-reconciliation-loop.md#kb--spec--the-third-node).
 
 ### Q7. Who owns factual review, editorial publication, conflicts, and urgent withdrawal?
 

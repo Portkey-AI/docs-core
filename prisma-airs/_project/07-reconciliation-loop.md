@@ -115,6 +115,34 @@ re-derived from what is actually there, so anything missed corrects itself on th
 Cost is bounded by coverage rather than by KB size, since only claims appearing in the
 dependency index are read. While the migrated corpus is small, so is the read.
 
+### KB ↔ spec — the third node
+
+**Added 2026-09-07 (Q6).** This design was originally two-node: KB ↔ docs. The OpenAPI
+specification is now a **second trusted source outside the KB corpus**, co-equal rather than
+subordinate, under an explicit recorded exemption to §3 rule 1. See
+[`08-openapi-handoff.md`](./08-openapi-handoff.md#authority-the-spec-is-a-second-trusted-source--recorded-exemption).
+
+The topology is KB ↔ spec ↔ docs, and it changes three things here.
+
+**Drift is symmetric.** There is no authoritative side to fall back on, so the loop compares KB
+and spec directly and raises a divergence regardless of which artifact moved. "The spec is
+newer" is not a resolution. Neither is "the KB is newer."
+
+**Resolution is human, always.** A KB↔spec contradiction has no diff to review — it is a
+disagreement between two trusted records about what is true. Structurally that is tier 3, and
+it inherits tier 3's handling: an issue with a default assignee, no pull request, no automated
+reconciliation.
+
+**Webhooks make polling the backstop.** Sync is bidirectional and webhook-driven: a spec change
+notifies the KB, a KB change notifies the spec repository. That gives the loop real push
+triggers on both sides. Keep the scheduled reconciliation anyway — §5's "an empty queue is not
+evidence of synchronization" applies to webhook deliveries exactly as it applies to cursors,
+and a missed delivery is silent. Webhooks reduce latency; reconciliation establishes truth.
+
+The join key for detecting spec drift is `x-airs-provenance` on the operation. Without a claim
+reference there, nothing can observe that the KB moved and the spec did not — the drift is
+real, and invisible.
+
 ### docs → KB
 
 Already half-specified. `update-changelog` step 4a emits the assertion file today; step 4b

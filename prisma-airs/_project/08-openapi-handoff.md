@@ -50,9 +50,17 @@ Where the KB does not yet support a description, **leave it empty**. An empty de
 renders as a visible gap and shows up in coverage. A confident, plausible, wrong description is
 invisible and will survive review. Empty beats invented, every time.
 
-## The join key: method + path
+## How the docs should consume it — do not repeat the current pattern
 
-Pages bind to operations through frontmatter:
+Everything in this section was verified against the installed `mint` CLI **4.2.876** by reading
+`@mintlify/validation` schemas and `@mintlify/common` / `@mintlify/scraping` type definitions.
+Web access is blocked from this workspace, so it was not read from Mintlify's own
+documentation — treat it as accurate for this CLI version and worth confirming against their
+docs before relying on the finer points.
+
+### What this repo does today, and why not to copy it
+
+219 hand-written `.mdx` stub files, each one binding to a single operation by frontmatter:
 
 ```yaml
 ---
@@ -61,12 +69,83 @@ openapi: post /chat/completions
 ---
 ```
 
-219 pages do this. **The method+path pair is the contract between the spec and the docs**, so
-path stability is a documentation concern and not only an API design concern. Renaming a path
-silently unbinds a page — the page still builds, it just stops rendering an operation.
+Each is separately listed in `docs.json` navigation, and several carry a manually pasted
+snippet import. Adding an endpoint means writing a file and editing navigation. This is the
+"inefficient way" — it is 219 files of hand-maintained coupling.
 
-If a path must change, it is a docs migration, not a spec edit. Flag those explicitly in the
-handoff back.
+Consequence while it lasts: **method+path is the join key.** Renaming a path silently unbinds a
+page — it still builds, it just stops rendering an operation. A path change is a docs migration,
+not a spec edit.
+
+### What to build instead
+
+`groupSchema` accepts `openapi`, `asyncapi`, `tag`, `directory` and `expanded` alongside
+`pages`. Putting `openapi` on a navigation **group** makes Mintlify generate a page per
+operation:
+
+```json
+{
+  "group": "Endpoints",
+  "openapi": {
+    "source": "https://raw.githubusercontent.com/<org>/<spec-repo>/main/openapi.yaml",
+    "directory": "api-reference",
+    "overlays": ["overlays/docs-prose.yaml"]
+  }
+}
+```
+
+No stub files, no per-endpoint navigation entries, no join key to keep in sync. `tag` on a
+group filters operations into it, so tag structure in the spec becomes navigation structure.
+
+Only HTTPS sources are accepted; HTTP requires the CLI's `--local-schema` flag.
+
+### Overlays are the important find
+
+`openapi.overlays` takes **OpenAPI Overlay documents, applied in order**. From the schema's own
+description: *"An empty array disables all overlays for this specification, including
+auto-discovered ones"* — so Mintlify auto-discovers overlay files as well as honouring explicit
+ones.
+
+This solves a problem the rest of this handoff could only work around. The spec can stay a
+clean engineering artifact holding structure, while documentation prose lives in a **separate
+overlay document** applied at build time:
+
+| Artifact | Owner | Content | Review |
+|---|---|---|---|
+| `openapi.yaml` | Engineering | Paths, schemas, types, required, enums, security | API review |
+| `overlays/docs-prose.yaml` | Docs | `summary`, `description`, examples, tag prose | **Grounding gate** |
+
+That is *inherit the shape, re-ground the prose* expressed as two files instead of as a
+discipline. The grounding gate applies to the overlay, which is small and entirely prose, and
+engineering can ship structural changes without touching a single grounded assertion.
+
+Strong recommendation: adopt this split from the start. Retrofitting it means unpicking prose
+from a spec that has already merged them.
+
+### `x-mint`, the vendor extension
+
+Operations and schemas accept an `x-mint` object. Verified fields:
+
+| Field | Effect |
+|---|---|
+| `metadata` | Page meta tags — becomes generated-page frontmatter |
+| `content` | Extra MDX injected into the generated page |
+| `pre` / `post` | MDX before and after the generated body |
+| `href` | Override the generated page URL |
+| `groups` | Assign the operation to navigation groups |
+| `playground` | `{ expand }` — playground display |
+| `mcp` | `{ enabled, name, description }` — expose the operation as an MCP tool |
+
+Also available: `x-hidden` and `x-excluded` on operations, and `x-mint-enum` on schemas for
+enum display names.
+
+Two notes. `x-mint.content` / `pre` / `post` remove the last real reason to keep stub files —
+per-endpoint custom prose no longer requires one. And `x-mint.mcp` is worth a deliberate
+decision rather than a default, since it determines which operations become agent-callable
+tools; that is a product surface, not a docs setting.
+
+Everything under `x-mint` that is prose is **published documentation** and inherits the
+grounding rule. Prefer putting it in the overlay.
 
 ## Naming rules
 
@@ -145,27 +224,68 @@ in its own CI, on its own file, and prove it with a run history rather than a wo
 Note that `mint validate` in docs-core *does* fetch and check the remote spec — it reports
 `OpenAPI definition is valid`. That is the real check today, and it lives on the docs side.
 
-## Still open — do not assume either way
+## Authority: the spec is a second trusted source — recorded exemption
 
-**Q6, grounding status.** Naming the source did not settle whether the new spec is *ingested
-into the KB* so its assertions become accepted knowledge, or carries a *recorded exemption*
-under §3 rule 1. Both are coherent; silence is not.
+**Decided 2026-09-07 (Q6).** The OpenAPI specification is a **key source of trusted knowledge
+that sits outside the KB corpus.** It is not subordinate to the KB and is not merely an
+ingestion input.
 
-Build for ingestion regardless — populate `x-airs-provenance` — because that is the option
-that keeps rule 1 intact, and it is a no-op if an exemption is granted later.
+This is a deliberate deviation from handoff §3 rule 1, which names the KB the *sole* factual
+authority, and it is written here as the explicit recorded exemption that Q6 asked for. It is
+scoped to the API specification. It does not weaken grounding anywhere else, and it must not be
+cited as precedent for a second exemption.
 
-**Q2, KB access.** Not yet available from the docs workspace. Until it is, the same constraint
-that blocks page authoring blocks description authoring. Structural work — paths, schemas,
-types, provenance scaffolding, CI — is unblocked and is the right thing to do first.
+The operating rules:
+
+1. **Two trusted sources, one truth.** The spec and the KB are both authoritative in their
+   domains. Neither silently overrides the other.
+2. **Conflicts are resolved by maintainers.** Never automatically, never last-write-wins. This
+   is the same principle §5 already applies to KB conflicts, extended to the spec.
+3. **They must stay in sync, and drift from *either* side is raised.** Drift is a defect
+   regardless of which artifact moved. There is no "authoritative" side to fall back on.
+4. **Sync is bidirectional and webhook-driven.** A spec change fires a webhook to the KB; a KB
+   change fires a webhook to the spec repository.
+
+### What this changes downstream
+
+[`07-reconciliation-loop.md`](./07-reconciliation-loop.md) was designed as a two-node loop, KB
+↔ docs. It is now **three-node**: KB ↔ spec ↔ docs. Three consequences, recorded there:
+
+- Drift detection needs a KB↔spec comparison, not only KB↔docs.
+- Webhooks on both sides give the loop real push triggers, so polling becomes the backstop
+  rather than the mechanism.
+- A KB↔spec contradiction is a maintainer decision with no diff to review — structurally the
+  same as tier 3, and it inherits tier 3's handling.
+
+### What it means for this repository
+
+Keep populating `x-airs-provenance`. Its purpose shifts slightly but does not go away: it is no
+longer only "which KB claim supports this description," it is also the **join key that makes
+drift detectable**. Without a claim reference on an operation, nothing can tell that the KB
+moved and the spec did not.
+
+## Still open
+
+**Q2, KB access.** Not yet available from the docs workspace, and the webhook contract in both
+directions depends on it. Until then, description authoring is blocked exactly as page
+authoring is. Structural work — paths, schemas, types, overlay split, provenance scaffolding,
+CI — is unblocked and is the right thing to do first.
 
 ## Suggested order
 
 1. Structure only. Paths, methods, schemas, types, required, enums, security. Verified against
    the running API, not against the old spec.
 2. CI that validates, with run history.
-3. `x-airs-provenance` scaffolding on every operation, `claims` empty.
-4. Naming pass over prose fields — titles and tag descriptions. Leave `description` empty
+3. **Split prose into an overlay** from the first commit — `openapi.yaml` for structure,
+   `overlays/docs-prose.yaml` for everything a reader reads. Cheap now, painful later.
+4. `x-airs-provenance` scaffolding on every operation, `claims` empty.
+5. Naming pass over prose fields — titles and tag descriptions. Leave `description` empty
    rather than porting.
-5. **Stop.** Descriptions wait for the KB.
+6. Tag structure, deliberately: tags become navigation groups under the group-level `openapi`
+   config, so tag design is information architecture.
+7. **Stop.** Descriptions wait for the KB.
 
-Steps 1–4 need no KB access and are worth doing now. Step 5 is where the handoff comes back.
+Steps 1–6 need no KB access and are worth doing now. Step 7 is where the handoff comes back.
+
+Two things to hand back rather than decide: the `tags[].name` question above, and which
+operations should carry `x-mint.mcp` — that one is a product surface decision.
