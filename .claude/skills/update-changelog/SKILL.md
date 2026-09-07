@@ -114,6 +114,50 @@ If a doc page **doesn't yet exist** for the feature, do NOT auto-create one — 
 
 **Never write a `[Docs](...)` link without verifying the file exists.** Broken links erode trust in the changelog.
 
+### 4a. Extract factual assertions
+
+Before writing any prose, write down the discrete facts the release establishes. Save to
+`prisma-airs/_project/releases/<repo-short>@<tag>.yaml`.
+
+This is the input to the KB contribution step (added once KB MCP access exists — see
+`prisma-airs/_project/06-changelog-contribution-path.md`). Until then it stands on its own as
+a review artifact: it makes the release's factual content inspectable separately from how it
+was worded.
+
+```yaml
+release:
+  id: "gateway-enterprise-node@v2.21.0"
+  repo: "Portkey-AI/gateway-enterprise-node"
+  date: "2026-08-14"
+  source_revision: "<git-sha of the tag>"
+assertions:
+  - id: r1
+    text: "<one factual statement, stated plainly>"
+    kind: new-capability        # new-capability|behavior-change|default-change|fix|deprecation
+    applies_to: "<version or environment the fact holds for>"
+    supersedes: []              # existing facts this invalidates; [] if net-new
+    affects: []                 # doc routes carrying the superseded fact
+```
+
+Rules:
+
+- **One assertion per fact, not per PR.** A PR can establish several facts, and several PRs
+  can establish one. Bucket by fact.
+- **State the fact, not the change to the docs.** ✅ `"Default request timeout is 60s"` —
+  ❌ `"Updated the timeout section"`.
+- **`supersedes` is the field that matters.** A release that changes a default doesn't only
+  add a fact, it invalidates one. That invalidation is what identifies stale pages. Populate
+  it by searching for the current documented value:
+  ```bash
+  grep -rn "<old-value-or-param>" product/ api-reference/ self-hosting/
+  ```
+  Put whatever routes that finds into `affects`.
+- **`kind: fix` assertions usually have empty `supersedes`** — a bug fix restores documented
+  behavior rather than changing it. If a fix *does* change documented behavior, it is a
+  `behavior-change`, not a fix.
+- **Skip non-facts.** Dependency bumps, CI changes, and internal refactors produce no
+  assertions even when they produce changelog lines.
+
 ### 5. Write the changelog entry
 
 Insert a new `<Update>` block immediately after the frontmatter, **above** the previous top entry. Pattern:
@@ -162,17 +206,41 @@ In the frontmatter, update:
 sidebarTitle: "<Product Name> [<NEW_VERSION>]"
 ```
 
-### 7. Apply documentation updates flagged in step 4
+### 7. Apply documentation updates flagged in step 4 — as a separate change
 
-For approved doc updates:
-- Make the smallest possible edit — one new section, one new table row
-- Cross-link from the changelog entry to the updated doc
+A release produces **two outputs on two different clocks.** Do not merge them into one commit.
+
+| Output | Mutability | Ships when |
+|---|---|---|
+| The `<Update>` changelog entry | **Immutable once published.** Corrections append a new entry; they never rewrite the old one. | With the release |
+| Patches to guides / reference / API pages | Mutable — normal doc content | Once the facts are confirmed |
+
+The reason: the changelog entry is a dated observation of what shipped. It stays true forever,
+even after the behavior it describes changes again. A guide states current behavior, so it
+has to keep changing. Rewriting a historical release entry to match the current guide destroys
+the record of what a customer running that version actually got.
+
+So:
+
+- **Separate commits.** Changelog entry first, guide patches second. Separate PRs if the
+  guide patches are large or need a different reviewer.
+- Make the smallest possible edit to each guide — one new section, one new table row.
+- Cross-link from the changelog entry to the updated doc.
+- If a guide patch turns out to be wrong, fix the guide. **Never** edit the shipped
+  `<Update>` block to match.
+- Drive the patch list from `affects` in the step 4a assertion file, not from memory.
+
+Once KB MCP access exists, step 4b (submit assertions to the KB) slots in here, and the guide
+patches additionally wait on KB acceptance while the changelog entry does not. See
+`prisma-airs/_project/06-changelog-contribution-path.md`.
 
 ### 8. Report back
 
 End with a summary:
 - Version added and the changelog file path
-- Any docs updated (with file paths)
+- The assertion file path, and the assertion count broken down by `kind`
+- Any assertions with a non-empty `supersedes` — these are the facts that made existing docs stale, and they are the ones most likely to be missed
+- Any docs updated (with file paths), noted as a **separate change** from the changelog entry
 - Any **flagged** docs that the user should consider creating (new providers, new guardrails, new endpoints) — these are typically larger tasks involving `docs.json`
 
 ## Tips
@@ -204,3 +272,12 @@ End with a summary:
 
 ❌ Don't include every PR — chore/CI/refactor PRs without user impact belong on the cutting room floor
 ✅ Skip ruthlessly; the changelog is for users, not contributors
+
+❌ Don't edit a previously published `<Update>` block to reflect current behavior
+✅ Historical entries are immutable. A later release changed things — say so in the later entry. The old entry stays true for the version it describes
+
+❌ Don't ship the changelog entry and the guide patches as one commit
+✅ Two outputs, two clocks (see step 7). The entry is a dated record; the guides state current behavior
+
+❌ Don't write assertions that describe the documentation ("updated the timeout section")
+✅ Write the fact itself ("default request timeout is 60s") — assertions are product facts, not edit logs
