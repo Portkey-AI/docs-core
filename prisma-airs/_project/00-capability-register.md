@@ -21,15 +21,27 @@ Last updated: 2026-09-07.
 | OpenAPI-backed reference | Verified | `docs.json` → `api.openapi` points at `Portkey-AI/openapi` master `openapi.yaml`; CI at `.github/workflows/openapi-validate.yml` |
 | Machine-readable exports enabled | Verified | Footer links `llms.txt` and `llms-full.txt` — **relevant to §3 rule 6**: these are public exports and must be checked for private material |
 | Redirects, SEO, contextual, metadata config | Verified | present as `docs.json` top-level keys |
+| Strict build validation | Verified | `mint validate` (CLI 4.2.876, installed globally) — exits non-zero on warnings; full corpus passes |
+| Build exclusion mechanism | Verified | repo-root `.mintignore`, gitignore syntax. **Mintlify parses `.md` as well as `.mdx`, and navigation omission does not exclude a file from the build or from public exports.** Defaults also ignore `.git`, `.github`, `.claude`, `.agents`, `.idea`, `node_modules`, `README.md` |
+| Additional CLI checks available | Verified | `mint broken-links`, `mint a11y`, `mint test` (runnable code blocks), `mint export`, `mint format` — all unexercised so far; relevant to §7 gates 5, 6, 7 |
 | Branch/PR preview and required checks | Assumed | repo has PR-merge history (`create-split-prs.sh`, merge commits); the actual Mintlify GitHub App config is not visible from the working tree |
 | Publication authority (who can deploy) | Unverified | not determinable from the repo |
 | Deployment-status observation API | Unverified | handoff §5 warns: do not invent a Mintlify outbound webhook. Not investigated. |
 | Assigned AI Gateway edit scope | **Unverified** | see [`04-operator-questions.md`](./04-operator-questions.md) Q1 — the whole repo is currently in scope by default, which the handoff does not sanction |
 
-Note: mintlify.com could not be fetched from this session (network egress denied), so
-platform behavior above is grounded in this repository rather than in current Mintlify
-documentation. Re-check syntax and workflow details against the live docs during
-implementation, per handoff §12.
+Note: mintlify.com could not be fetched from this session (network egress denied), so platform
+behavior above is grounded in this repository and in the locally installed CLI rather than in
+current Mintlify documentation. Re-check syntax and workflow details against the live docs
+during implementation, per handoff §12.
+
+### Outstanding platform hygiene
+
+Non-page files sit at the repo root inside the build scope and are **not** currently in
+`.mintignore`: `writing-style-guide.md`, `MCP-Gateway-Roadmap.md`, `create-split-prs.sh`,
+plus stray images (`Addcree.png`, `Screenshot2025-07-21at5.39.59PM.png`). They parse without
+error, so they raise no warning, but they are inside the build and therefore potentially
+inside the public exports. Worth a decision — deliberately left alone here because excluding
+them changes existing published output and is outside the AI Gateway docs scope.
 
 ## Prisma AIRS KB
 

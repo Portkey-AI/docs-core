@@ -13,8 +13,16 @@ prisma-airs/
 └── *.mdx          published pages for the "Prisma AIRS" docs.json version
 ```
 
-Planning artifacts are `.md`, not `.mdx`, and are not referenced from `docs.json`, so
-Mintlify does not build or serve them.
+`_project/` is excluded from the Mintlify build by the repo-root `.mintignore`.
+
+That exclusion is load-bearing, and the reason is worth stating: **Mintlify parses `.md` as
+well as `.mdx`, and omitting a file from `docs.json` navigation does not keep it out of the
+build or out of the public exports** (`llms.txt` / `llms-full.txt`). Handoff §2 warns about
+exactly this — "A page absent from navigation is not necessarily private" — and it was
+confirmed here the hard way: `mint validate` reported a parse error inside the handoff
+markdown before `.mintignore` existed.
+
+Anything added to `_project/` inherits the exclusion. Anything added elsewhere does not.
 
 | File | Purpose | Handoff ref |
 |---|---|---|

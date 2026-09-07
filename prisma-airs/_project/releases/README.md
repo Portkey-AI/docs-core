@@ -16,8 +16,12 @@ them. Two jobs:
 
 ## Why they live here and not in `changelog/`
 
-`changelog/*.mdx` is built and published by Mintlify. These are `.yaml` under `_project/`,
-so they are neither built nor served, and they stay out of `llms.txt` / `llms-full.txt`.
+`changelog/*.mdx` is built and published by Mintlify. These live under `_project/`, which the
+repo-root `.mintignore` excludes from the build and therefore from `llms.txt` /
+`llms-full.txt`.
+
+The `.yaml` extension is not what protects them — Mintlify processes `.md` too, and an
+unreferenced path is still a built path. `.mintignore` is the mechanism.
 
 They are not secret — everything in them becomes public in the changelog entry anyway. They
 are simply not *pages*.

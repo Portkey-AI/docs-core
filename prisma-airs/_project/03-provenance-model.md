@@ -15,7 +15,19 @@ absent from navigation is not necessarily private."
 
 This repo has `llms.txt` and `llms-full.txt` **enabled** (footer links in `docs.json`). Those
 are full-corpus public exports. Manifests must therefore not live in page frontmatter and not
-live in any `.mdx` under a built path.
+live under a built path.
+
+**Verified 2026-09-07:** "not built" is narrower than it sounds. Mintlify processes `.md` as
+well as `.mdx`, and omission from `docs.json` navigation does **not** exclude a file — this
+was confirmed by `mint validate` raising a parse error inside a planning `.md` file that no
+navigation entry referenced.
+
+The actual exclusion mechanism is a repo-root **`.mintignore`** (gitignore syntax; Mintlify
+also always ignores `.git`, `.github`, `.claude`, `.agents`, `.idea`, `node_modules`, and
+`README.md`). It now excludes `prisma-airs/_project/`.
+
+So the rule for manifests is: excluded by `.mintignore`, or stored outside the repo. Choosing
+an unreferenced path or a non-`.mdx` extension is **not** sufficient protection.
 
 Recommended storage, in preference order:
 
