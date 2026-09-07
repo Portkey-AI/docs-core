@@ -9,24 +9,21 @@ Portkey solves this by forwarding the `x-portkey-metadata` header as [AWS STS se
 
 ## How It Works
 
-```
-┌──────────┐    x-portkey-metadata     ┌─────────────────┐   Tags.member.N   ┌─────────┐
-│  Client   │ ───────────────────────▶ │  Portkey Gateway  │ ───────────────▶ │ AWS STS  │
-│           │  {"app":"chatbot",       │                   │  AssumeRole +    │          │
-│           │   "team":"platform"}     │  (self-hosted)    │  SessionTags     │          │
-└──────────┘                           └─────────────────┘                   └────┬─────┘
-                                                                                  │
-                                                                     Temp credentials
-                                                                     with session tags
-                                                                                  │
-                                                                                  ▼
-                                                                          ┌──────────────┐
-                                                                          │ Amazon Bedrock │
-                                                                          │               │
-                                                                          │ InvokeModel   │
-                                                                          └──────────────┘
-                                                                                  │
-                                                              Tags land in CUR 2.0 & Cost Explorer
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Gateway as Portkey Gateway<br/>(self-hosted)
+    participant STS as AWS STS
+    participant Bedrock as Amazon Bedrock
+
+    Client->>Gateway: Request + x-portkey-metadata<br/>{"app":"chatbot", "team":"platform"}
+    Gateway->>Gateway: Parse & sanitise metadata
+    Gateway->>STS: AssumeRole + Tags.member.N<br/>(Key/Value pairs from metadata)
+    STS-->>Gateway: Temporary credentials<br/>(tagged session)
+    Gateway->>Bedrock: InvokeModel<br/>(using tagged credentials)
+    Bedrock-->>Gateway: Response
+    Gateway-->>Client: Response
+    Note over STS,Bedrock: Tags land in CUR 2.0 (iamPrincipal/ prefix),<br/>CloudTrail, and Cost Explorer
 ```
 
 1. Client sends `x-portkey-metadata` with key-value pairs on each request.
