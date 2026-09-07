@@ -631,6 +631,7 @@ prisma-airs/
 ├── _project/
 │   ├── README.md                                   this file — the canonical doc
 │   ├── openapi-handoff.md                          instructions for the spec-repo agent
+│   ├── brainstorm.md + brainstorm.html             presentation design brainstorm + wireframe
 │   ├── prisma-airs-docs-mintlify-handoff-v2.md     the source brief
 │   └── releases/                                   per-release assertion YAML (generated)
 └── overview.mdx                                    published — the Prisma AIRS version seed
