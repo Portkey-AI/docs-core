@@ -1,0 +1,146 @@
+---
+title: "OAuth in SCM"
+sidebarTitle: "OAuth (SCM)"
+description: "OAuth 2.1 authentication for MCP Gateway in SCM deployments — powered by Palo Alto Networks Cloud Authentication Service (CAS)."
+---
+
+CAS (Cloud Authentication Service) is the OAuth 2.1 authentication method for MCP Gateway in **SCM (Strata Cloud Manager)** deployments. When an MCP client connects to a gateway running in SCM mode, CAS handles user authentication through Palo Alto Networks' identity infrastructure instead of the AI Gateway's built-in OAuth.
+
+<Info>
+For standard deployments, use [AI Gateway OAuth](/product/mcp-gateway/authentication/oauth) or [External OAuth](/product/mcp-gateway/authentication/external-oauth) instead.
+</Info>
+
+---
+
+## Overview
+
+CAS bridges the MCP Gateway's OAuth flow with Palo Alto Networks' centralized authentication. Instead of users logging in with standard credentials, they authenticate through their organization's identity provider (Entra ID, Okta, or on-prem Active Directory) via CAS.
+
+### How It Works
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant Gateway as AI Gateway<br/>(Data Plane)
+    participant CP as AI Gateway<br/>(Control Plane)
+    participant CAS as CAS (Palo Alto)
+    participant IdP as Identity Provider
+
+    Client->>Gateway: Connect to MCP server
+    Gateway->>CP: Initiate OAuth flow
+    CP->>CAS: Redirect user to CAS login
+    CAS->>IdP: Authenticate via org IdP
+    IdP-->>CAS: Identity verified
+    CAS-->>CP: User authenticated
+    CP-->>Gateway: Authorization code
+    Gateway-->>Client: Access token issued
+```
+
+---
+
+## Prerequisites
+
+Before CAS authentication works for your MCP Gateway:
+
+1. **CIE Directory Sync configured** — Users must be provisioned into workspaces via [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync). CAS authenticates users, but CIE is what provisions them into the system. Without CIE sync, authenticated users cannot be resolved.
+
+2. **Authentication Profile selected** — An Auth Profile must be selected in the CIE Directory Sync configuration. This profile determines which identity provider is used for the CAS login flow. Auth Profiles are managed in the [CIE Authentication Profiles](https://docs.paloaltonetworks.com/identity/cloud-identity-engine/authenticate-users-with-the-cloud-identity-engine) console.
+
+<Warning>
+CAS relies on CIE for user provisioning. If CIE Directory Sync is not configured, or no group-workspace mappings exist, users will authenticate successfully with CAS but fail to resolve — resulting in an authorization error.
+
+See [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync) for setup instructions.
+</Warning>
+
+---
+
+## Setup
+
+CAS authentication is automatically enabled. No additional configuration is required on the MCP Gateway side — the gateway routes authentication through CAS.
+
+### What the Admin Needs to Configure
+
+| Step | Where | What |
+|------|-------|------|
+| 1. Connect a directory | CIE Console | Add your identity provider (Entra ID, Okta, AD) to CIE |
+| 2. Configure Directory Sync | AI Gateway → Admin Settings | Select the connected directory and user identity attribute |
+| 3. Select Auth Profile | AI Gateway → Admin Settings | Choose the CAS authentication profile for MCP auth |
+| 4. Map groups to workspaces | AI Gateway → Admin Settings | Map CIE groups to AI Gateway workspaces |
+
+<Note>
+**Email claim is required.** CAS identifies users by their email address. The identity provider must include the user's email in the authentication claims. If the email claim is missing, the user cannot be resolved and authentication will fail.
+
+Ensure that the **User Identity Attribute** selected in CIE Directory Sync (UPN or Mail) matches the email attribute returned by your identity provider during CAS authentication.
+</Note>
+
+---
+
+## User Experience
+
+### First-Time Connection
+
+When a user connects an MCP client to the gateway for the first time, the MCP client opens a browser window and the CAS login page is shown.
+
+**Step 1 — Authenticate with your identity provider**
+
+The user enters their organization credentials on the CAS Single Sign-on page. This page is hosted by Palo Alto Networks and connects to your configured identity provider.
+
+<Note>
+The login page appearance may vary depending on your configured Authentication Profile and identity provider. The example below shows the default CAS login for a local directory. Organizations using external IdPs (e.g., Entra ID, Okta) will see their IdP's login page instead.
+</Note>
+
+![CAS Single Sign-on — sample login page for a local directory configuration](/images/cas-login.png)
+
+**Step 2 — Approve access to the MCP server**
+
+After authentication, the user is shown a consent page. It displays the MCP server being requested, the workspace it belongs to, and the redirect destination. The user can approve or reject the request.
+
+<Note>
+If you are a member of multiple workspaces where the MCP server is provisioned, a workspace dropdown will appear on the consent page. Select the workspace you want the access token to be scoped to.
+</Note>
+
+![Authorization Request — consent page showing the MCP server name, workspace selection, redirect destination, and approve/reject buttons](/images/cas-consent.png)
+
+Once approved, the browser redirects back to the MCP client with an access token. The client can now make MCP requests.
+
+### Subsequent Connections
+
+After the initial authentication, the MCP client uses refresh tokens to maintain access. Users are not prompted to log in again until the refresh token expires or is revoked. Approval is also remembered — subsequent connections to the same MCP server skip the consent page.
+
+---
+
+## Comparison with Other Auth Methods
+
+| Feature | CAS (SCM) | AI Gateway OAuth | External OAuth |
+|---------|-----------|------------------|----------------|
+| **Identity provider** | Palo Alto CAS → org IdP | AI Gateway accounts | Customer's IdP |
+| **User provisioning** | Via CIE Directory Sync | Self-service signup | Manual or SCIM |
+| **Consent flow** | Yes | Yes | Depends on IdP |
+| **Token management** | Automatic | Automatic | Customer manages |
+| **MCP client support** | All standard MCP clients | All standard MCP clients | All standard MCP clients |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| User authenticates but gets "authorization failed" | User not provisioned via CIE | Configure [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync) and verify group-workspace mappings |
+| "Email not found in claims" error | IdP not returning email attribute | Ensure the IdP includes the email claim. Verify the User Identity Attribute (UPN vs Mail) in CIE matches what the IdP returns |
+| Consent page shows but redirect fails | Browser blocking the redirect | Check for browser extensions or corporate policies blocking redirects to custom URI schemes (`cursor://`, `vscode://`) |
+| Token refresh fails | Refresh token expired or revoked | User must re-authenticate through the CAS flow |
+
+---
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync) | Provision users from CIE into AI Gateway workspaces (required for CAS) |
+| [SCM Architecture](/self-hosting/hybrid-deployments/scm-architecture) | Architecture guide for SCM deployment mode |
+| [OAuth](/product/mcp-gateway/authentication/oauth) | AI Gateway's built-in OAuth for non-SCM deployments |
+| [External OAuth](/product/mcp-gateway/authentication/external-oauth) | Bring your own identity provider |
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
