@@ -1,38 +1,38 @@
 ---
-title: "CAS Authentication (SCM)"
-sidebarTitle: "CAS (SCM)"
-description: "OAuth 2.1 authentication for MCP Gateway using Palo Alto Networks Cloud Authentication Service (CAS) — available for SCM deployments."
+title: "OAuth in SCM"
+sidebarTitle: "OAuth (SCM)"
+description: "OAuth 2.1 authentication for MCP Gateway in SCM deployments — powered by Palo Alto Networks Cloud Authentication Service (CAS)."
 ---
 
-CAS (Cloud Authentication Service) is the OAuth 2.1 authentication method for MCP Gateway in **SCM (Strata Cloud Manager)** deployments. When an MCP client connects to a gateway running in SCM mode, CAS handles user authentication through Palo Alto Networks' identity infrastructure instead of Portkey's built-in OAuth.
+CAS (Cloud Authentication Service) is the OAuth 2.1 authentication method for MCP Gateway in **SCM (Strata Cloud Manager)** deployments. When an MCP client connects to a gateway running in SCM mode, CAS handles user authentication through Palo Alto Networks' identity infrastructure instead of the AI Gateway's built-in OAuth.
 
 <Info>
-For standard Portkey deployments, use [Portkey OAuth](/product/mcp-gateway/authentication/oauth) or [External OAuth](/product/mcp-gateway/authentication/external-oauth) instead.
+For standard deployments, use [AI Gateway OAuth](/product/mcp-gateway/authentication/oauth) or [External OAuth](/product/mcp-gateway/authentication/external-oauth) instead.
 </Info>
 
 ---
 
 ## Overview
 
-CAS bridges the MCP Gateway's OAuth flow with Palo Alto Networks' centralized authentication. Instead of users logging in with Portkey credentials, they authenticate through their organization's identity provider (Entra ID, Okta, or on-prem Active Directory) via CAS.
+CAS bridges the MCP Gateway's OAuth flow with Palo Alto Networks' centralized authentication. Instead of users logging in with standard credentials, they authenticate through their organization's identity provider (Entra ID, Okta, or on-prem Active Directory) via CAS.
 
 ### How It Works
 
 ```mermaid
 sequenceDiagram
     participant Client as MCP Client
-    participant Gateway as AI Gateway
-    participant Portkey as Portkey
+    participant Gateway as AI Gateway<br/>(Data Plane)
+    participant CP as AI Gateway<br/>(Control Plane)
     participant CAS as CAS (Palo Alto)
     participant IdP as Identity Provider
 
     Client->>Gateway: Connect to MCP server
-    Gateway->>Portkey: Initiate OAuth flow
-    Portkey->>CAS: Redirect user to CAS login
+    Gateway->>CP: Initiate OAuth flow
+    CP->>CAS: Redirect user to CAS login
     CAS->>IdP: Authenticate via org IdP
     IdP-->>CAS: Identity verified
-    CAS-->>Portkey: User authenticated
-    Portkey-->>Gateway: Authorization code
+    CAS-->>CP: User authenticated
+    CP-->>Gateway: Authorization code
     Gateway-->>Client: Access token issued
 ```
 
@@ -83,13 +83,21 @@ When a user connects an MCP client to the gateway for the first time, the MCP cl
 
 **Step 1 — Authenticate with your identity provider**
 
-The user enters their organization credentials on the CAS Single Sign-on page. This page is hosted by Palo Alto Networks and connects to your configured identity provider (Entra ID, Okta, or on-prem AD).
+The user enters their organization credentials on the CAS Single Sign-on page. This page is hosted by Palo Alto Networks and connects to your configured identity provider.
 
-![CAS Single Sign-on — Palo Alto Networks login page where users authenticate with their organization credentials](/images/cas-login.png)
+<Note>
+The login page appearance may vary depending on your configured Authentication Profile and identity provider. The example below shows the default CAS login for a local directory. Organizations using external IdPs (e.g., Entra ID, Okta) will see their IdP's login page instead.
+</Note>
+
+![CAS Single Sign-on — sample login page for a local directory configuration](/images/cas-login.png)
 
 **Step 2 — Approve access to the MCP server**
 
 After authentication, the user is shown a consent page. It displays the MCP server being requested, the workspace it belongs to, and the redirect destination. The user can approve or reject the request.
+
+<Note>
+If you are a member of multiple workspaces where the MCP server is provisioned, a workspace dropdown will appear on the consent page. Select the workspace you want the access token to be scoped to.
+</Note>
 
 ![Authorization Request — consent page showing the MCP server name, workspace selection, redirect destination, and approve/reject buttons](/images/cas-consent.png)
 
@@ -103,9 +111,9 @@ After the initial authentication, the MCP client uses refresh tokens to maintain
 
 ## Comparison with Other Auth Methods
 
-| Feature | CAS (SCM) | Portkey OAuth | External OAuth |
-|---------|-----------|---------------|----------------|
-| **Identity provider** | Palo Alto CAS → org IdP | Portkey accounts | Customer's IdP |
+| Feature | CAS (SCM) | AI Gateway OAuth | External OAuth |
+|---------|-----------|------------------|----------------|
+| **Identity provider** | Palo Alto CAS → org IdP | AI Gateway accounts | Customer's IdP |
 | **User provisioning** | Via CIE Directory Sync | Self-service signup | Manual or SCIM |
 | **Consent flow** | Yes | Yes | Depends on IdP |
 | **Token management** | Automatic | Automatic | Customer manages |
@@ -130,7 +138,7 @@ After the initial authentication, the MCP client uses refresh tokens to maintain
 |-------|-------------|
 | [CIE Directory Sync](/product/enterprise-offering/org-management/directory-sync/cie-directory-sync) | Provision users from CIE into AI Gateway workspaces (required for CAS) |
 | [SCM Architecture](/self-hosting/hybrid-deployments/scm-architecture) | Architecture guide for SCM deployment mode |
-| [OAuth](/product/mcp-gateway/authentication/oauth) | Portkey's built-in OAuth for non-SCM deployments |
+| [OAuth](/product/mcp-gateway/authentication/oauth) | AI Gateway's built-in OAuth for non-SCM deployments |
 | [External OAuth](/product/mcp-gateway/authentication/external-oauth) | Bring your own identity provider |
 
 import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
