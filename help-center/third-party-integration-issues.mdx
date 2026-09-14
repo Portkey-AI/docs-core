@@ -1,0 +1,315 @@
+---
+title: "Third-Party Tool Integration: Common Issues and Resolutions"
+description: "Troubleshoot common connection and configuration issues when integrating Portkey with AI coding assistants, frameworks, and developer tools."
+---
+
+This guide covers the most frequently reported issues when connecting Portkey with third-party developer tools — AI coding assistants, agent frameworks, observability libraries, and other integrations. Find your symptom and apply the fix.
+
+<Info>
+Most integration issues fall into one of three categories: incorrect base URL or API key configuration, provider-specific schema requirements that differ from OpenAI's defaults, or tool-specific header/metadata constraints. The sections below are organized by tool.
+</Info>
+
+## Find your issue
+
+<CardGroup cols={2}>
+  <Card title="Claude Code / Claude Desktop" icon="robot" href="#claude-code-and-claude-desktop">
+    Auth errors, missing responses, Bedrock setup
+  </Card>
+  <Card title="Cursor / VS Code" icon="code" href="#cursor-and-vs-code">
+    Endpoint config, model routing
+  </Card>
+  <Card title="LangChain / LangGraph" icon="link" href="#langchain-and-langgraph">
+    Connection errors, streaming issues
+  </Card>
+  <Card title="MLflow" icon="chart-line" href="#mlflow">
+    Schema validation errors with Bedrock
+  </Card>
+  <Card title="OpenCode" icon="terminal" href="#opencode">
+    Model-specific failures via Portkey
+  </Card>
+  <Card title="Other tools" icon="plug" href="#other-openai-compatible-tools">
+    Any OpenAI-compatible client, n8n, Langflow, etc.
+  </Card>
+</CardGroup>
+
+---
+
+## Claude Code and Claude Desktop
+
+### Claude Code + AWS Bedrock: ValidationException on `requestMetadata`
+
+**Symptom:** You configure Claude Code to route through Portkey to AWS Bedrock and receive:
+
+```
+ValidationException: 1 validation error detected: Value at 'requestMetadata' failed to
+satisfy constraint: Map value must satisfy constraint: [Member must have length less than
+or equal to 256, Member must satisfy regular expression pattern: [a-zA-Z0-9\s:_@$#=/+,-.]{0,256}]
+```
+
+The error appears in Portkey logs with `x-portkey-provider: bedrock` and status `400`.
+
+**Cause:** Claude Code injects user metadata into the `requestMetadata` field. AWS Bedrock enforces strict character validation on all values in this map — only alphanumeric characters and a small set of symbols are allowed. If any metadata value (for example, a `user_id` containing a URL, email address, or special characters) violates this, Bedrock rejects the entire request.
+
+**Fix:**
+1. **Upgrade your gateway** — this is fixed in gateway **v2.12.0** and later. If you're on a self-hosted or hybrid deployment, upgrade to that version. On Portkey SaaS, the fix will be deployed automatically.
+2. **As a workaround**, override the `metadata.user_id` in your Claude Code configuration to use only alphanumeric characters and the allowed symbols (`[a-zA-Z0-9 :_@$#=/+,-.{0,256}]`).
+
+---
+
+### Claude Desktop: Prompts succeed in Portkey logs but responses don't appear in the app
+
+**Symptom:** Portkey logs show successful completions (2xx status, tokens counted), but Claude Desktop shows no response or the response is blank. This is particularly common with Vertex AI Gemini models.
+
+**Cause:** Claude Desktop expects responses in the standard OpenAI streaming format. Some providers (notably Vertex AI) return content in a slightly different structure, and the transformation layer may not always surface it correctly in the client.
+
+**Diagnostic steps:**
+1. Open Portkey logs and confirm the request returned a 2xx with tokens in the response body.
+2. Copy the response body from the log and check that `choices[0].message.content` is non-empty.
+3. Try the same request directly from the Portkey playground to confirm the model is returning content.
+
+**Fix:**
+- If the Portkey log shows a successful response but Claude Desktop shows nothing, the issue is likely a response-format mismatch. [Contact support](#still-stuck) with the Portkey log ID, the model you're using, and your Claude Desktop `claude_desktop_config.json`.
+- If the Portkey log shows an error, troubleshoot the model/provider configuration first (check your virtual key and model name).
+
+---
+
+### Claude Code access revoked unexpectedly
+
+**Symptom:** A team member's Claude Code access stops working — usually after time off or an account change. The Portkey key is valid but the tool can't connect.
+
+**Cause:** API keys in Portkey are scoped to a workspace. If someone's key was rotated, a permission policy was changed, or the key was linked to a user who left, it stops working for new requests.
+
+**Fix:**
+1. Go to **Settings → API Keys** in your Portkey workspace.
+2. Create a new API key with the correct permissions for Claude Code.
+3. Update the key in the user's Claude Code `ANTHROPIC_API_KEY` environment variable or config file.
+
+---
+
+## Cursor and VS Code
+
+### Cursor can't connect to Portkey gateway
+
+**Symptom:** Cursor returns a connection error or authentication failure when using Portkey as the base URL.
+
+**Cause:** Most Cursor connection issues are either a wrong base URL or missing/malformed headers.
+
+**Fix:** In Cursor's model settings, configure the following:
+
+| Setting | Value |
+|---------|-------|
+| Base URL | `https://api.portkey.ai/v1` |
+| API Key | Your Portkey API key |
+
+If you're using a config (to apply routing, fallbacks, or guardrails), add the config slug as a custom header:
+
+```
+x-portkey-config: <your-config-slug>
+```
+
+See the [Cursor integration guide](/integrations/libraries/cursor) for full setup steps.
+
+---
+
+## LangChain and LangGraph
+
+### LangChain SDK connection errors with Portkey
+
+**Symptom:** LangChain raises `ConnectionError`, `AuthenticationError`, or requests time out when routed through Portkey.
+
+**Cause:** LangChain's OpenAI integration requires the base URL and headers to be set correctly when instantiating the client.
+
+**Fix:** Pass the Portkey base URL and headers in the `ChatOpenAI` (or `OpenAI`) constructor:
+
+<CodeGroup>
+```python Python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    api_key="YOUR_PORTKEY_API_KEY",
+    base_url="https://api.portkey.ai/v1",
+    default_headers={
+        "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+        "x-portkey-provider": "openai",  # or your target provider
+        # optionally: "x-portkey-config": "your-config-slug"
+    }
+)
+```
+```typescript TypeScript
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({
+  openAIApiKey: "YOUR_PORTKEY_API_KEY",
+  configuration: {
+    baseURL: "https://api.portkey.ai/v1",
+    defaultHeaders: {
+      "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+      "x-portkey-provider": "openai",
+    },
+  },
+});
+```
+</CodeGroup>
+
+For a complete setup guide including tracing and callbacks, see [LangChain (Python)](/integrations/libraries/langchain-python) and [LangChain (JS/TS)](/integrations/libraries/langchain-js).
+
+---
+
+## MLflow
+
+### MLflow LLM judge fails via Portkey → Bedrock with schema error
+
+**Symptom:** MLflow's online LLM evaluation (judge) works when routing through Portkey to Azure OpenAI, but fails when routing to Bedrock (Anthropic), with:
+
+```
+output_config.format.schema: For 'object' type, 'additionalProperties' must be
+explicitly set to false
+```
+
+**Cause:** This is a Bedrock constraint. When using structured outputs (`response_format` with a JSON schema), AWS Bedrock requires every object type in the schema to have `additionalProperties: false` explicitly set. Azure OpenAI and other providers do not enforce this, so the same schema works elsewhere.
+
+MLflow generates its judge schema dynamically, and the generated schema doesn't include `additionalProperties: false` on nested objects.
+
+**Fix:**
+
+Option 1 — **Fix the schema in MLflow:** ensure every object node in the JSON schema passed by MLflow includes `additionalProperties: false`. This includes nested objects, not just the top-level one:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "score": { "type": "number" },
+    "reasoning": { "type": "string" },
+    "details": {
+      "type": "object",
+      "properties": {
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+Option 2 — **Route judge requests to a non-Bedrock provider:** for MLflow evaluation use cases, route to Azure OpenAI or direct Anthropic (not Bedrock) where this constraint doesn't apply. Use a Portkey config to send judge traffic to a different target than your production traffic.
+
+---
+
+## OpenCode
+
+### OpenCode: some models fail via Portkey while others work
+
+**Symptom:** In your `opencode.json`, some models work through Portkey (e.g., GLM 5.2) while others fail (e.g., Minimax M3) with the same configuration.
+
+**Cause:** Model availability and compatibility through Portkey depends on the upstream provider. Some models on Fireworks AI or other providers have different API behavior, streaming requirements, or format expectations that may not yet be fully supported.
+
+**Fix:**
+1. Check that the model ID in your `opencode.json` exactly matches the ID the provider expects. Provider-prefixed IDs (e.g., `@fireworks/accounts/fireworks/models/...` vs `accounts/fireworks/models/...`) behave differently.
+2. Test the model directly through the Portkey playground to confirm it works before configuring it in OpenCode.
+3. If a specific model consistently fails, [report it to support](#still-stuck) with the model ID and provider.
+
+A working OpenCode configuration pointing to a custom Portkey deployment looks like:
+
+```json
+{
+  "provider": {
+    "portkey": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Portkey",
+      "options": {
+        "baseURL": "https://api.portkey.ai/v1",
+        "headers": {
+          "x-portkey-api-key": "YOUR_PORTKEY_API_KEY",
+          "x-portkey-provider": "fireworks-ai"
+        }
+      },
+      "models": {
+        "accounts/fireworks/models/llama-v3p1-8b-instruct": {
+          "name": "Llama 3.1 8B"
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
+## Other OpenAI-compatible tools
+
+### Any tool using OpenAI's SDK or a compatible client
+
+For any tool that supports a custom `base_url` / `baseURL` and API key, the Portkey configuration is:
+
+| Parameter | Value |
+|-----------|-------|
+| Base URL | `https://api.portkey.ai/v1` |
+| API Key | Your Portkey API key |
+| Extra headers | `x-portkey-provider: <provider>` (required unless using a config) |
+
+**Required headers:**
+
+- `x-portkey-api-key` — your Portkey API key
+- `x-portkey-provider` — the target provider (`openai`, `anthropic`, `vertex-ai`, `bedrock`, etc.)
+- `x-portkey-config` — (optional) a config slug if you want routing, fallbacks, or guardrails
+
+If the tool doesn't support custom headers (only a base URL and API key), use a [Portkey config](/product/ai-gateway/configs) that embeds the provider and routing logic, and attach the config to the API key.
+
+---
+
+### n8n: connecting to Portkey
+
+Configure the n8n OpenAI node with:
+- **Base URL:** `https://api.portkey.ai/v1`
+- **API Key:** (your Portkey key)
+- Add `x-portkey-provider` as a custom header in the **Additional Fields** section
+
+See the [n8n integration guide](/integrations/agents/n8n).
+
+---
+
+### Langflow: connecting to Portkey
+
+In Langflow's OpenAI component, set the API base to `https://api.portkey.ai/v1` and use your Portkey API key. For routing to non-OpenAI providers, pass the required headers via Langflow's **Custom Headers** field.
+
+---
+
+## Common mistakes
+
+| Mistake | What happens | Fix |
+|---------|--------------|-----|
+| Using `x-portkey-provider` without a provider | Requests fail with 400 | Use `x-portkey-provider` or a config slug |
+| Wrong base URL (e.g., `api.portkey.ai` without `/v1`) | 404 on all requests | Always use `https://api.portkey.ai/v1` |
+| Sending metadata with special characters to Bedrock | `ValidationException` | Sanitize metadata values; upgrade to gateway v2.12.0+ |
+| Structured output schema without `additionalProperties: false` on Bedrock | Schema validation error | Add the field to every object node in the schema |
+| Provider-specific model ID format | Model not found or wrong model called | Check the exact ID in Portkey's model catalog |
+
+---
+
+## Still stuck?
+
+Contact **support@portkey.ai** with:
+
+- The tool you're integrating (Claude Code, Cursor, LangChain version, etc.)
+- Your Portkey workspace ID
+- The error message and status code
+- A Portkey log ID (from the Logs page) for the failing request
+- The provider you're routing to
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Integration guides" icon="plug" href="/integrations/libraries">
+    Step-by-step guides for every supported library and tool.
+  </Card>
+  <Card title="AI Apps integrations" icon="robot" href="/integrations/ai-apps">
+    Claude Code, Cursor, OpenCode, n8n, Langflow, and more.
+  </Card>
+  <Card title="Gateway configs" icon="sliders" href="/product/ai-gateway/configs">
+    Set up routing, fallbacks, and retries without code changes.
+  </Card>
+  <Card title="MCP Gateway troubleshooting" icon="server" href="/help-center/mcp-gateway-troubleshooting">
+    Fix MCP-specific connection and auth issues.
+  </Card>
+</CardGroup>
