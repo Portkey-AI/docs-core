@@ -1,28 +1,29 @@
 ---
-title: "Setup Guide"
-sidebarTitle: "Setup Guide"
-description: "Set up Prisma AIRS AI Gateway in Strata Cloud Manager and make your first secured LLM request."
+title: "Simple Setup"
+sidebarTitle: "Simple Setup"
+description: "Set up Prisma AIRS AI Gateway in Strata Cloud Manager and make your first LLM request."
 ---
 
-This guide takes you from an empty gateway to a working, guardrailed request. It uses OpenAI as
-the provider because it is the shortest path; every step works the same way for Anthropic,
-Vertex AI, Bedrock, Azure OpenAI and the rest of the [supported
-providers](/aigw/integrations/llms).
+This guide takes you from an empty gateway to a working LLM request. It uses OpenAI as the
+provider because it is the shortest path; every step works the same way for Anthropic, Vertex
+AI, Bedrock, Azure OpenAI and the rest of the [supported providers](/aigw/integrations/llms).
 
 <Note>
-**Before you start.** AI Gateway must be enabled on your Strata Cloud Manager tenant, and you
-need a Prisma AIRS API key with at least one security profile configured. Both are set up in
-Strata Cloud Manager outside the gateway.
+**Before you start.** AI Gateway must be enabled on your Strata Cloud Manager tenant.
 </Note>
+
+<Tip>
+This is the minimal path. To scan requests with Prisma AIRS, enable the plugin and attach a
+guardrail — see the [Prisma AIRS guardrail
+reference](/aigw/integrations/guardrails/palo-alto-panw-prisma) — then bind it to your key with
+a [config](/aigw/product/ai-gateway/configs).
+</Tip>
 
 ## Overview
 
 <Steps>
-  <Step title="Enable the Prisma AIRS plugin" />
   <Step title="Set up a workspace" />
   <Step title="Add an LLM integration" />
-  <Step title="Create a Prisma AIRS guardrail" />
-  <Step title="Create a config" />
   <Step title="Create an API key" />
   <Step title="Make your first request" />
   <Step title="Check the logs" />
@@ -30,14 +31,7 @@ Strata Cloud Manager outside the gateway.
 
 ---
 
-## 1. Enable the Prisma AIRS plugin
-
-Go to **Admin Settings → Plugins** and enable the **Prisma AIRS** plugin.
-
-Open the plugin's credential editor, paste your **Prisma AIRS API key**, and click **Update**.
-This key is what the gateway uses to call Prisma AIRS on every scanned request.
-
-## 2. Set up a workspace
+## 1. Set up a workspace
 
 Workspaces are managed under **Workspace Control**. A workspace is the unit that owns
 integrations, configs and API keys, and it is the boundary your access scopes are evaluated
@@ -52,7 +46,7 @@ Strata Cloud Manager tenant; workspaces divide it; users and machine identities 
 workspace.
 </Note>
 
-## 3. Add an LLM integration
+## 2. Add an LLM integration
 
 Go to **Integrations → Add LLM Integration**.
 
@@ -75,62 +69,13 @@ Go to **Integrations → Add LLM Integration**.
 The integration gets a **provider slug** — something like `@openai-prod`. You will use it in the
 `model` parameter of every request.
 
-## 4. Create a Prisma AIRS guardrail
-
-Go to **Catalogs → Create Guardrail** and add the **PANW Prisma AIRS Guardrail** check.
-
-| Field | What to put in it |
-| :--- | :--- |
-| **Profile Name** or **Profile ID** | The Prisma AIRS security profile to scan against. Leave both empty to use the profile linked to your API key. |
-| **Scan Scope** | Which messages get scanned: `last_message` (default), `last_user_message`, `user_messages`, or `all_messages`. |
-| **Strip Scaffolding** | Removes known agent-harness wrappers — system reminders, MCP tool instructions — before scanning. Turn this on when the caller is an agentic client like Claude Code or Cursor. |
-
-Set the guardrail **actions** — what happens when Prisma AIRS returns a block verdict — and click
-**Save**.
-
-<Warning>
-If you later modify a guardrail, click **Update** after **Save**. Saving alone does not publish
-the change.
-</Warning>
-
-Note the **guardrail ID** on the saved guardrail. It looks like `pg-xxxxxx`, and you need it in
-the next step.
-
-<Card title="Prisma AIRS guardrail reference" href="/aigw/integrations/guardrails/palo-alto-panw-prisma">
-  Every parameter, the threats it detects, and the recommended settings for agentic clients.
-</Card>
-
-## 5. Create a config
-
-Go to **Profiles & Policies → Config** and click **Create**.
-
-A config is the routing and policy object attached to a request. Attach the guardrail from step 4
-to it:
-
-```json
-{
-  "input_guardrails": ["pg-xxxxxx"],
-  "output_guardrails": ["pg-xxxxxx"]
-}
-```
-
-`input_guardrails` scans the prompt before it reaches the provider; `output_guardrails` scans the
-response on the way back. Use one or both.
-
-Configs can be scoped to specific workspaces. Save it and note the **config ID** — it looks like
-`pc-xxxxxx`.
-
-<Card title="Configs" href="/aigw/product/ai-gateway/configs">
-  Routing, fallbacks, retries, caching and conditional routing all live in the config object.
-</Card>
-
-## 6. Create an API key
+## 3. Create an API key
 
 Go to **Security Keys → Create New**.
 
-Assign the config from step 5 to the key. Any request made with this key gets that config —
-including the guardrail — without the caller having to pass anything extra. You can also attach
-default metadata here, which then shows up on every log line.
+Create the key inside the workspace from step 1. You can attach default metadata here, which
+then shows up on every log line, and a [config](/aigw/product/ai-gateway/configs) if you have
+one — any request made with the key then picks it up without the caller passing anything extra.
 
 Copy the key. It is shown once.
 
@@ -138,7 +83,7 @@ Copy the key. It is shown once.
   Scopes, metadata enforcement, expiry and rotation.
 </Card>
 
-## 7. Make your first request
+## 4. Make your first request
 
 The gateway speaks the OpenAI API. Point your existing client at
 `https://aigw.portkey.ai/v1`, authenticate with your gateway API key, and prefix the model with
@@ -195,28 +140,21 @@ console.log(completion.choices[0].message.content);
 Three things to note:
 
 - **`Authorization` carries the gateway key**, not the provider key. The gateway holds the OpenAI
-  credential from step 3 and attaches it upstream.
+  credential from step 2 and attaches it upstream.
 - **The provider slug lives in `model`.** `@openai-prod/gpt-4o` means "the `gpt-4o` model, via the
   `@openai-prod` integration". You do not need a provider header.
-- **The guardrail is already applied**, because it is attached to the config, which is attached to
-  the API key.
-
-### Confirm the guardrail fires
-
-Send something your security profile should block. Depending on the actions you set in step 4,
-you will get either a hard denial or a `200` response carrying the guardrail verdict — the "soft
-deny" behaviour, which is the right choice for long-running agent sessions that a fatal error
-would terminate.
+- **Policy rides on the key.** Anything attached to the config on your API key — guardrails,
+  fallbacks, retries, caching — applies without the caller opting in.
 
 <Tip>
 To scope a config to a single request rather than to the whole API key, pass
 `-H "x-portkey-config: pc-xxxxxx"`. The header overrides the key's default.
 </Tip>
 
-## 8. Check the logs
+## 5. Check the logs
 
 Go to **Observability → Logs**. Your request is there with the model, provider, token counts,
-cost, latency and the guardrail verdict.
+cost and latency. If a guardrail is attached to the key, its verdict shows here too.
 
 To correlate a set of calls, pass a trace ID on the request:
 
@@ -226,8 +164,8 @@ To correlate a set of calls, pass a trace ID on the request:
 
 Requests sharing a trace ID are grouped as one session in the log view.
 
-On the Prisma AIRS side, go to **AI Runtime → AI Sessions** and paste the same trace ID to see
-the scan results for that session.
+Once Prisma AIRS scanning is enabled, the same trace ID resolves on the Prisma AIRS side under
+**AI Runtime → AI Sessions**, where you can see the scan results for that session.
 
 ## Next steps
 
