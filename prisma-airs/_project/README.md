@@ -214,10 +214,17 @@ a legacy name in it.
 version.** It announces the Portkey → Prisma AIRS transition, which is redundant on pages that
 are already Prisma AIRS. It stays on Latest-version pages.
 
-**Approved as written:** the open-source Gateway keeps its own identity; community CTAs
-(Discord, `git.new/ai-gateway-docs`, `support@portkey.ai`, `status.portkey.ai`) stay as they
-are; the compliance and uptime claims on `introduction/what-is-portkey` are Portkey-corpus and
-not inherited.
+**Approved as written:** the open-source Gateway keeps its own identity; the remaining
+community CTAs (`git.new/ai-gateway-docs`, `support@portkey.ai`, `status.portkey.ai`) stay as
+they are; the compliance and uptime claims on `introduction/what-is-portkey` are
+Portkey-corpus and not inherited.
+
+**Superseded (2026-09-12, PR #1071):** Discord was originally in that list. Every link
+pointing at Discord has since been removed from the docs and replaced with
+`support@portkey.ai`. Do not reintroduce Discord CTAs. Two third-party mentions
+(`integrations/libraries/hermes-agent.mdx`, `guides/ted-ai-hack-24.mdx`) reference other
+orgs' servers and were deliberately left; so were the two legacy `join-portkey-on-discord`
+redirect *sources* in `docs.json`, which are inbound URL paths kept so old links resolve.
 
 **Never run a global find-and-replace.** The identifier list guarantees it breaks code samples
 across ~1,200 pages. The migration unit is a page, and the trigger is the grounding gate.
