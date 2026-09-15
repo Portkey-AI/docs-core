@@ -1,0 +1,117 @@
+---
+title: 'Supabase'
+description: 'Generate embeddings with Portkey and store them in Supabase pgvector'
+---
+
+Supabase provides Postgres with pgvector for AI applications. With Portkey, generate embeddings using 1600+ models and store them in Supabase for efficient retrieval.
+
+## Prerequisites
+
+- Supabase project API key
+- [Portkey API key](https://app.portkey.ai/api-keys)
+
+## Setup
+
+### 1. Install Dependencies
+
+```sh
+pip install portkey-ai supabase
+```
+
+### 2. Prepare Database
+
+<Steps>
+<Step title="Create Supabase Project">
+Go to [Supabase](https://supabase.com/dashboard/sign-in) and create a new project.
+</Step>
+
+<Step title="Enable pgvector">
+In **Database → Extensions**, enable `pgvector`. Or run:
+
+```sql
+create extension vector;
+```
+</Step>
+
+<Step title="Create Documents Table">
+Create a table for documents and embeddings. OpenAI's `text-embedding-ada-002` outputs 1536 dimensions:
+
+```sql
+create table documents (
+  id bigserial primary key,
+  content text,
+  embedding vector(1536)
+);
+```
+</Step>
+</Steps>
+
+### 3. Configure Clients
+
+```python
+from portkey_ai import Portkey
+from supabase import create_client, Client
+
+# Supabase
+supabase: Client = create_client(
+    "YOUR_SUPABASE_PROJECT_URL",
+    "YOUR_SUPABASE_API_KEY"
+)
+
+# Portkey
+client = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    provider="@openai-prod"
+)
+```
+
+## Generate & Store Embeddings
+
+```python
+# Generate embedding
+response = client.embeddings.create(
+    model="text-embedding-ada-002",
+    input="The food was delicious and the waiter..."
+)
+
+embedding = response.data[0].embedding
+
+# Store in Supabase
+result = supabase.table('documents').insert({
+    "content": "The food was delicious and the waiter...",
+    "embedding": embedding
+}).execute()
+```
+
+## Switch Providers
+
+Change the provider to use different embedding models:
+
+```python
+# Cohere embeddings (1024 dimensions)
+client = Portkey(
+    api_key="YOUR_PORTKEY_API_KEY",
+    provider="@cohere-prod"
+)
+
+response = client.embeddings.create(
+    model="embed-english-v3.0",
+    input_type="search_query",
+    input="The food was delicious and the waiter..."
+)
+```
+
+<Note>
+Cohere's `embed-english-v3.0` outputs 1024 dimensions. Create a separate table with `vector(1024)` for Cohere embeddings.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+<Card title="Model Catalog" icon="list" href="/aigw/product/model-catalog">
+Set up embedding providers
+</Card>
+<Card title="Supported Providers" icon="plug" href="/aigw/integrations/llms">
+See all 1600+ supported models
+</Card>
+</CardGroup>

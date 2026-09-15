@@ -1,0 +1,191 @@
+---
+title: "Text-to-Speech"
+description: "Portkey's AI gateway supports text-to-speech models on OpenAI, Azure OpenAI, and Google Vertex AI."
+---
+
+## Usage
+
+We follow the OpenAI signature where you can send the input text and the voice option as a part of the API request. All the output formats `mp3`, `opus`, `aac`, `flac`, and `pcm` are supported. Portkey also supports real time audio streaming for TTS models.
+
+Here's an example:
+
+<Tabs>
+  <Tab title="OpenAI NodeJS">
+
+```js
+import fs from "fs";
+import path from "path";
+import OpenAI from "openai";
+import { PORTKEY_GATEWAY_URL } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: "PORTKEY_API_KEY",
+  baseURL: PORTKEY_GATEWAY_URL
+});
+
+const speechFile = path.resolve("./speech.mp3");
+
+async function main() {
+  const mp3 = await openai.audio.speech.create({
+    model: "@openai/tts-1",
+    voice: "alloy",
+    input: "Today is a wonderful day to build something people love!",
+  });
+  const buffer = Buffer.from(await mp3.arrayBuffer());
+  await fs.promises.writeFile(speechFile, buffer);
+}
+
+main();
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```py
+from pathlib import Path
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL
+)
+
+speech_file_path = Path(__file__).parent / "speech.mp3"
+
+response = client.audio.speech.create(
+  model="@openai/tts-1",
+  voice="alloy",
+  input="Today is a wonderful day to build something people love!"
+)
+
+f = open(speech_file_path, "wb")
+f.write(response.content)
+f.close()
+```
+  </Tab>
+
+ <Tab title="Python SDK">
+
+```python
+from pathlib import Path
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+    provider="@PROVIDER"
+)
+
+speech_file_path = Path(__file__).parent / "speech.mp3"
+
+response = portkey.audio.speech.create(
+  model="@openai/tts-1",
+  voice="alloy",
+  input="Today is a wonderful day to build something people love!"
+)
+
+f = open(speech_file_path, "wb")
+f.write(response.content)
+f.close()
+```
+    </Tab>
+<Tab title="cURL">
+
+```sh
+curl "https://api.portkey.ai/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai/tts-1",
+    "input": "Today is a wonderful day to build something people love!",
+    "voice": "alloy"
+  }' \
+  --output speech.mp3
+```
+  </Tab>
+</Tabs>
+
+On completion, the request will get logged in the logs UI and show the cost and latency incurred.
+
+## SSE Streaming
+
+OpenAI and Azure OpenAI support Server-Sent Events (SSE) streaming for the speech endpoint. Set `stream_format` to `"sse"` to receive audio data as a stream of events:
+
+<Tabs>
+  <Tab title="Python">
+
+```py
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@PROVIDER"
+)
+
+response = portkey.audio.speech.create(
+    model="@openai/tts-1",
+    voice="alloy",
+    input="Today is a wonderful day to build something people love!",
+    stream_format="sse"
+)
+```
+  </Tab>
+  <Tab title="cURL">
+
+```sh
+curl "https://api.portkey.ai/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai/tts-1",
+    "input": "Today is a wonderful day to build something people love!",
+    "voice": "alloy",
+    "stream_format": "sse"
+  }'
+```
+  </Tab>
+</Tabs>
+
+## Google Vertex AI TTS
+
+Google Vertex AI offers Gemini TTS models with advanced features like multi-speaker synthesis and style control. Portkey supports two methods:
+
+1. **Chat Completions with `speech_config`** - Use Gemini TTS through the chat completions endpoint
+2. **Audio Speech endpoint** - OpenAI-compatible `/audio/speech` endpoint
+
+<Tabs>
+  <Tab title="Chat Completions">
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@vertex-ai/gemini-2.5-flash-tts",
+    "messages": [{"role": "user", "content": "Say cheerfully: Hello!"}],
+    "speech_config": {
+      "voice_config": {"prebuilt_voice_config": {"voice_name": "Kore"}},
+      "language_code": "en-US"
+    }
+  }'
+```
+  </Tab>
+  <Tab title="Audio Speech">
+
+```sh
+curl "https://api.portkey.ai/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@vertex-ai/gemini-2.5-flash-tts",
+    "input": "Hello! This is a test.",
+    "voice": "Kore",
+    "response_format": "mp3"
+  }' \
+  --output speech.mp3
+```
+  </Tab>
+</Tabs>
+
+For detailed documentation including multi-speaker synthesis, style prompts, and all available voices, see [Google Vertex AI Text-to-Speech](/aigw/integrations/llms/vertex-ai/text-to-speech).

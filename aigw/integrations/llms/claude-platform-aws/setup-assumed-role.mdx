@@ -1,0 +1,196 @@
+---
+title: "Setup Assumed Role for Claude Platform on AWS"
+description: "Configure AWS IAM assumed role authentication for Claude Platform on AWS on Portkey"
+---
+
+<Card title="Enterprise Self-Hosted Deployment" href="https://github.com/Portkey-AI/helm/blob/main/charts/portkey-gateway/docs/Bedrock.md">
+  On the Enterprise plan? See the Helm documentation for assumed role setup in self-hosted deployments.
+</Card>
+
+## Enable Outbound Web Identity Federation
+
+<Warning>
+This is a one-time setup step for your AWS account. Without it, all Claude Platform on AWS requests fail with `"Outbound web identity federation is disabled for your account"`.
+
+```bash
+aws iam enable-outbound-web-identity-federation
+```
+</Warning>
+
+## Select Assumed Role Authentication
+
+Create a new integration on Portkey:
+
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Select **Claude Platform on AWS**
+3. Choose **AWS Assumed Role** as the authentication method
+
+## Create an IAM Permission Policy
+
+Create a permission policy in your AWS account. Claude Platform on AWS uses the `aws-external-anthropic` IAM namespace (not `bedrock`).
+
+### Inference-only policy
+
+For workloads that only need chat completions and token counting:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ClaudePlatformInference",
+      "Effect": "Allow",
+      "Action": [
+        "aws-external-anthropic:CreateInference",
+        "aws-external-anthropic:CountTokens"
+      ],
+      "Resource": "arn:aws:aws-external-anthropic:*:*:workspace/*"
+    }
+  ]
+}
+```
+
+### Full access policy
+
+For workloads that also need batch processing and file management:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ClaudePlatformFullAccess",
+      "Effect": "Allow",
+      "Action": [
+        "aws-external-anthropic:CreateInference",
+        "aws-external-anthropic:CountTokens",
+        "aws-external-anthropic:CreateBatchInference",
+        "aws-external-anthropic:GetBatchInference",
+        "aws-external-anthropic:ListBatchInferences",
+        "aws-external-anthropic:CancelBatchInference",
+        "aws-external-anthropic:DeleteBatchInference",
+        "aws-external-anthropic:CreateFile",
+        "aws-external-anthropic:GetFile",
+        "aws-external-anthropic:ListFiles",
+        "aws-external-anthropic:DeleteFile"
+      ],
+      "Resource": "arn:aws:aws-external-anthropic:*:*:workspace/*"
+    }
+  ]
+}
+```
+
+<Note>
+To restrict access to a specific workspace and region, replace the `Resource` with:
+
+```
+arn:aws:aws-external-anthropic:us-west-2:123456789012:workspace/wrkspc_01AbCdEf23GhIj
+```
+</Note>
+
+Alternatively, attach one of the AWS-managed policies:
+
+| Managed Policy | Scope |
+|---|---|
+| `AnthropicFullAccess` | All `aws-external-anthropic:*` actions |
+| `AnthropicInferenceAccess` | Inference + read-only actions |
+| `AnthropicReadOnlyAccess` | `Get*`, `List*`, `CallWithBearerToken` |
+
+## Create an IAM Role
+
+1. Open the [IAM Console](https://console.aws.amazon.com/iam/) and go to **Roles → Create role**
+2. Choose **AWS account** as the trusted entity type
+3. Optionally set an **external ID** -- copy it for later
+4. Attach the permission policy created above
+5. Name the role (e.g., `portkey-claude-platform-role`) and create it
+
+## Configure the Trust Relationship
+
+Open the role, navigate to the **Trust relationships** tab, and click **Edit trust policy**.
+
+Add Portkey's AWS account as a trusted principal:
+
+```sh Portkey Account ARN
+arn:aws:iam::299329113195:role/portkey-app
+```
+
+<Note>
+This ARN is for the [hosted Portkey app](https://app.portkey.ai/). For enterprise self-hosted deployments, refer to the [Helm documentation](https://github.com/Portkey-AI/helm/blob/main/charts/portkey-gateway/docs/Bedrock.md).
+</Note>
+
+### Trust policy without external ID
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::299329113195:role/portkey-app"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {}
+    }
+  ]
+}
+```
+
+### Trust policy with external ID
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::299329113195:role/portkey-app"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "<your-external-id>"
+        }
+      }
+    }
+  ]
+}
+```
+
+## Configure the Integration
+
+Back in Portkey, enter the following in the Claude Platform on AWS integration modal:
+
+| Field | Value |
+|---|---|
+| **Role ARN** | The ARN of the role you created (e.g., `arn:aws:iam::123456789012:role/portkey-claude-platform-role`) |
+| **External ID** | The external ID you set (if any) |
+| **AWS Region** | The region for your workspace (e.g., `us-west-2`) |
+| **Anthropic Workspace ID** | Your workspace ID (optional, format: `wrkspc_01AbCdEf23GhIj`) |
+
+Save the integration. Portkey will assume the IAM role and sign requests with SigV4 using the `aws-external-anthropic` service name.
+
+## Verify the Setup
+
+Test the integration with a simple request:
+
+```sh cURL icon="square-terminal"
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@claude-platform-aws-provider/claude-sonnet-4-6",
+    "messages": [{ "role": "user", "content": "Hello" }],
+    "max_tokens": 100
+  }'
+```
+
+## Troubleshooting
+
+| Error | Cause | Fix |
+|---|---|---|
+| `Outbound web identity federation is disabled` | Federation not enabled on the AWS account | Run `aws iam enable-outbound-web-identity-federation` |
+| `Access denied` / `not authorized to perform` | Missing IAM permissions | Verify the permission policy includes the required `aws-external-anthropic:*` actions |
+| `Invalid signature` | Incorrect region or credentials | Confirm the region matches your workspace and the role ARN is correct |
+| `Trust policy error` | Portkey ARN not in trust policy | Add `arn:aws:iam::299329113195:role/portkey-app` as a trusted principal |

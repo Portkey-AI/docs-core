@@ -1,0 +1,103 @@
+---
+title: "Automatic Retries"
+description: Automatically retry failed LLM requests with exponential backoff.
+---
+
+<Info>
+Available on all Portkey [plans](https://portkey.ai/pricing).
+</Info>
+
+- Up to **5 retry attempts**
+- Trigger on **specific error codes**
+- **Exponential backoff** to prevent overload
+- Optionally respect provider's `Retry-After` headers
+
+## Examples
+
+<CodeGroup>
+
+```json Basic (5 attempts)
+{
+  "retry": { "attempts": 5 },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
+```
+
+```json Specific Error Codes
+{
+  "retry": { "attempts": 3, "on_status_codes": [429, 503] },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
+```
+
+```json Respect Retry-After Headers
+{
+  "retry": { "attempts": 3, "on_status_codes": [429], "use_retry_after_headers": true },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
+```
+
+</CodeGroup>
+
+<Info>
+The `@provider-slug/model-name` format automatically routes to the correct provider. Set up providers in [Model Catalog](https://app.portkey.ai/model-catalog).
+</Info>
+
+## Retry on Specific Error Codes
+
+Default retry codes: **[429, 500, 502, 503, 504, 529]**
+
+Override with `on_status_codes`:
+
+```json
+{
+  "retry": { "attempts": 3, "on_status_codes": [408, 429, 500] },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
+```
+
+<Note>
+When `on_status_codes` is set, retries trigger **only** on those codes—not the defaults.
+</Note>
+
+## Respect Provider Retry Headers
+
+Enable `use_retry_after_headers` to use the provider's `retry-after-ms`, `x-ms-retry-after-ms`, or `retry-after` headers instead of exponential backoff.
+
+```json
+{
+  "retry": { "attempts": 3, "on_status_codes": [429], "use_retry_after_headers": true },
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
+```
+
+<Note>
+When `use_retry_after_headers` is set to true and the provider includes Retry-After or Retry-After-ms headers in their response, Portkey will use these values to determine the wait time before the next retry attempt, overriding the exponential backoff strategy.
+If the provider doesn't include these headers in the response, Portkey will fall back to the standard exponential backoff strategy.
+The cumulative retry wait time for a single request is capped at 60 seconds. For example, if the first retry has a wait time of 20 seconds, and the second retry response includes a Retry-After value of 50 seconds, the request will fail since the total wait time (20+50=70) exceeds the 60-second cap. Similarly, if any single Retry-After value exceeds 60 seconds, the request will fail immediately.
+</Note>
+
+## Exponential Backoff
+
+| Attempt | Wait Time |
+|---------|-----------|
+| Initial | Immediate |
+| 1st retry | 1 second |
+| 2nd retry | 2 seconds |
+| 3rd retry | 4 seconds |
+| 4th retry | 8 seconds |
+| 5th retry | 16 seconds |
+
+## Retry Attempt Header
+
+Check `x-portkey-retry-attempt-count` in responses:
+
+| Value | Meaning |
+|-------|---------|
+| `-1` | All retries exhausted, request failed |
+| `0` | No retries configured |
+| `>0` | Successful on this retry attempt |
+
+<Note>
+Retry attempts aren't logged individually. Response times are summed in a single log entry.
+</Note>

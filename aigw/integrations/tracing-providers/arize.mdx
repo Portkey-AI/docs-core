@@ -1,0 +1,317 @@
+---
+title: 'Arize AX'
+description: 'Extend Portkey’s AI Gateway with Arize AX for unified LLM observability, tracing, and evaluation.'
+---
+
+[Arize AX](https://arize.com/products/ax/) is the full-featured observability and evaluation platform from [Arize AI](https://arize.com/?utm_source=portkey-docs&utm_medium=partner&utm_campaign=partner-docs&utm_content=tracing-provider-arize) for production teams, AI-native companies, and enterprises. It is available as managed cloud or enterprise self-hosted deployment.
+
+Portkey is a **production-grade AI Gateway and Observability platform** for AI applications. The [OpenInference Portkey instrumentation](https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-portkey) lets Arize AX capture Portkey-routed calls, including gateway requests and the underlying LLM completions.
+
+<Note>
+Use Arize AX for production AI observability and evaluation. If you want an open-source path for local development, experimentation, or single-container self-hosting, use the separate [Arize Phoenix integration](/aigw/integrations/tracing-providers/phoenix).
+</Note>
+
+## Why Portkey + Arize AX?
+
+Thanks to OpenInference instrumentation, Portkey can emit structured traces automatically. This gives you visibility into each LLM call routed through the gateway, making it easier to debug behavior, inspect token usage, and evaluate production traffic in Arize AX. For production evaluation patterns, see Arize's [agent evaluation guide](https://arize.com/guides/ai-agent-handbook/agent-evaluation/) and [LLM evaluation guide](https://arize.com/resources/llm-evaluation/).
+
+<CardGroup cols={2}>
+<Card title="AI Gateway Features" icon="shield">
+- **1600+ LLM Providers**: Single API for OpenAI, Anthropic, AWS Bedrock, and more
+- **Advanced Routing**: Fallbacks, load balancing, conditional routing
+- **Cost Optimization**: Semantic caching and request controls
+- **Security**: PII detection, content filtering, compliance controls
+</Card>
+
+<Card title="Built-in Observability" icon="chart-line">
+- **40+ Key Metrics**: Cost, latency, tokens, error rates
+- **Detailed Logs & Traces**: Request/response bodies and custom tracing
+- **Custom Metadata**: Attach custom metadata to your requests
+- **Custom Alerts**: Real-time monitoring and notifications
+</Card>
+</CardGroup>
+
+With this integration, you can route LLM traffic through Portkey and gain deep observability in Arize AX, bringing together gateway orchestration and ML observability.
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.10+
+- An Arize AX account
+- A Portkey API key
+- An OpenAI API key, or another provider key routed through Portkey
+
+### Step 1: Install dependencies
+
+Install the required packages for Arize AX and Portkey:
+
+```bash
+pip install arize-otel openinference-instrumentation-portkey portkey-ai openai
+```
+
+### Step 2: Configure credentials
+
+Set the Arize AX and Portkey credentials in the same shell that runs your application:
+
+```bash
+export ARIZE_SPACE_ID="your-space-id"
+export ARIZE_API_KEY="your-arize-api-key"
+export ARIZE_PROJECT_NAME="portkey-gateway"
+export PORTKEY_API_KEY="your-portkey-api-key"
+export OPENAI_API_KEY="your-openai-api-key"
+```
+
+### Step 3: Register Arize AX and instrument Portkey
+
+<Steps>
+<Step title="Configure Arize AX">
+First, set up the Arize AX OpenTelemetry configuration:
+
+```python
+import os
+from arize.otel import register
+from openinference.instrumentation.portkey import PortkeyInstrumentor
+
+tracer_provider = register(
+    space_id=os.environ["ARIZE_SPACE_ID"],
+    api_key=os.environ["ARIZE_API_KEY"],
+    project_name=os.environ["ARIZE_PROJECT_NAME"],
+)
+
+PortkeyInstrumentor().instrument(tracer_provider=tracer_provider)
+```
+</Step>
+
+<Step title="Configure Portkey AI Gateway">
+Set up Portkey in the same process after registering the `PortkeyInstrumentor`:
+
+```python
+import os
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key=os.environ["PORTKEY_API_KEY"],
+    provider="openai",
+    Authorization=f"Bearer {os.environ['OPENAI_API_KEY']}",
+)
+
+response = portkey.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Explain machine learning"}]
+)
+
+print(response.choices[0].message.content)
+```
+</Step>
+</Steps>
+
+## Complete Integration Example
+
+Here's a complete working example that connects Portkey's AI Gateway with Arize AX for centralized monitoring.
+
+```python [expandable]
+import os
+from arize.otel import register
+from openinference.instrumentation.portkey import PortkeyInstrumentor
+
+tracer_provider = register(
+    space_id=os.environ["ARIZE_SPACE_ID"],
+    api_key=os.environ["ARIZE_API_KEY"],
+    project_name=os.getenv("ARIZE_PROJECT_NAME", "portkey-production"),
+)
+
+PortkeyInstrumentor().instrument(tracer_provider=tracer_provider)
+
+# Import Portkey after instrumentation is registered.
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key=os.environ["PORTKEY_API_KEY"],
+    provider="openai",
+    Authorization=f"Bearer {os.environ['OPENAI_API_KEY']}",
+)
+
+response = portkey.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "user", "content": "Explain quantum computing in simple terms."}
+    ],
+)
+
+print(response.choices[0].message.content)
+```
+
+## Verify in Arize AX
+
+Open your Arize AX space and select the project configured by `ARIZE_PROJECT_NAME`. You should see a trace for the Portkey request, including the LLM span, prompt, response, token usage, model, and provider metadata.
+
+<Card title="Arize AX Portkey Tracing Guide" icon="book" href="https://arize.com/docs/ax/integrations/python-agent-frameworks/portkey/portkey-tracing">
+See the Arize-side Portkey tracing setup, verification steps, and troubleshooting guidance.
+</Card>
+
+<Card title="Cookbook on Portkey x Arize" href="/guides/integrations/arize-portkey">
+Learn how to use Portkey's Universal API to orchestrate multiple LLMs in a structured debate while tracking performance and evaluating outputs with Arize.
+</Card>
+
+## Portkey AI Gateway Features
+
+While Arize AX provides observability and evaluation, Portkey delivers a complete AI infrastructure platform. Here's everything you get with Portkey:
+
+### 🚀 Core Gateway Capabilities
+
+<CardGroup cols={2}>
+<Card title="1600+ LLM Providers" icon="layer-group" href="/integrations">
+Access OpenAI, Anthropic, Google, Cohere, Mistral, Llama, and 1600+ models through a single unified API. No more managing different SDKs or endpoints.
+</Card>
+
+<Card title="Universal API" icon="key" href="/aigw/product/ai-gateway/universal-api">
+Use the same code to call any LLM provider. Switch between models and providers without changing your application code.
+</Card>
+
+<Card title="LLM Integrations" icon="key" href="/product/integrations">
+Secure vault for API keys with budget limits, rate limiting, and access controls. Never expose raw API keys in your code.
+</Card>
+
+<Card title="Advanced Configs" icon="cog" href="/aigw/product/ai-gateway/configs">
+Define routing strategies, model parameters, and reliability settings in reusable configurations. Version control your AI infrastructure.
+</Card>
+</CardGroup>
+
+### 🛡️ Reliability & Performance
+
+<CardGroup cols={3}>
+<Card title="Smart Fallbacks" icon="life-ring" href="/aigw/product/ai-gateway/fallbacks">
+Automatically switch to backup providers when primary fails. Define fallback chains across multiple providers.
+</Card>
+
+<Card title="Load Balancing" icon="shield" href="/aigw/product/ai-gateway/load-balancing">
+Distribute requests across multiple API keys or providers based on custom weights and strategies.
+</Card>
+
+<Card title="Automatic Retries" icon="rotate-ccw" href="/aigw/product/ai-gateway/automatic-retries">
+Configurable retry logic with exponential backoff for transient failures and rate limits.
+</Card>
+
+<Card title="Request Timeouts" icon="clock" href="/aigw/product/ai-gateway/request-timeouts">
+Set custom timeouts to prevent hanging requests and improve application responsiveness.
+</Card>
+
+<Card title="Conditional Routing" icon="route" href="/aigw/product/ai-gateway/conditional-routing">
+Route requests to different models based on content, metadata, or custom conditions.
+</Card>
+
+<Card title="Canary Testing" icon="flask" href="/aigw/product/ai-gateway/canary-testing">
+Gradually roll out new models or providers with percentage-based traffic splitting.
+</Card>
+</CardGroup>
+
+### 💰 Cost Optimization
+
+<CardGroup cols={2}>
+<Card title="Semantic Caching" icon="database" href="/aigw/product/ai-gateway/cache-simple-and-semantic">
+Intelligent caching that understands semantic similarity. Reduce costs by up to 90% on repeated queries.
+</Card>
+
+<Card title="Budget Limits" icon="dollar-sign" href="/aigw/product/model-catalog/budget-limits">
+Set spending limits per provider, team, or project. Get alerts before hitting limits.
+</Card>
+
+<Card title="Rate Limits" icon="clock" href="/aigw/product/model-catalog/rate-limits">
+Set rate limits per provider, team, or project.
+</Card>
+
+<Card title="Cost Analytics" icon="chart-pie" href="/aigw/product/observability/analytics">
+Real-time cost tracking across all providers with detailed breakdowns by model, user, and feature.
+</Card>
+</CardGroup>
+
+### 📊 Built-in Observability
+
+<CardGroup cols={2}>
+<Card title="Comprehensive Metrics" icon="chart-bar" href="/aigw/product/observability/analytics">
+Track 40+ metrics including latency, tokens, costs, cache hits, error rates, and more in real-time.
+</Card>
+
+<Card title="Detailed Logs" icon="list" href="/aigw/product/observability/logs">
+Full request/response logging with advanced filtering, search, and export capabilities.
+</Card>
+
+<Card title="Distributed Tracing" icon="list" href="/aigw/product/observability/traces">
+Trace requests across your entire AI pipeline with correlation IDs and custom metadata.
+</Card>
+
+<Card title="Custom Alerts" icon="bell" href="/aigw/product/observability/analytics">
+Set up alerts on any metric with webhook, email, or Slack notifications.
+</Card>
+</CardGroup>
+
+### 🔒 Security & Compliance
+
+<CardGroup cols={3}>
+<Card title="PII Detection" icon="shield-check" href="/aigw/product/guardrails">
+Automatically detect and redact sensitive information like SSN, credit cards, and personal data.
+</Card>
+
+<Card title="Content Filtering" icon="filter" href="/aigw/product/guardrails">
+Block harmful, toxic, or inappropriate content in real-time based on custom policies.
+</Card>
+
+<Card title="Access Controls" icon="users" href="/aigw/product/enterprise-offering/access-control-management">
+Fine-grained RBAC with team management, user permissions, and audit logs.
+</Card>
+
+<Card title="SOC2 Compliance" icon="certificate" href="/aigw/product/enterprise-offering/security-portkey">
+Enterprise-grade security with SOC2 Type II certification and GDPR compliance.
+</Card>
+
+<Card title="Audit Logs" icon="history" href="/aigw/product/enterprise-offering/access-control-management#audit-logs">
+Complete audit trail of all API usage, configuration changes, and user actions.
+</Card>
+
+<Card title="Data Privacy" icon="lock" href="/aigw/product/enterprise-offering/security-portkey">
+Zero data retention options and deployment in your own VPC for maximum privacy.
+</Card>
+</CardGroup>
+
+### 🏢 Enterprise Features
+
+<CardGroup cols={2}>
+<Card title="SSO Integration" icon="key" href="/aigw/product/enterprise-offering/org-management/sso">
+SAML 2.0 support for Okta, Azure AD, Google Workspace, and custom IdPs.
+</Card>
+
+<Card title="Organization Management" icon="building" href="/aigw/product/enterprise-offering/org-management">
+Multi-workspace support with hierarchical teams and department-level controls.
+</Card>
+
+<Card title="SLA Guarantees" icon="handshake" href="/aigw/product/enterprise-offering">
+99.9% uptime SLA with dedicated support and custom deployment options.
+</Card>
+
+<Card title="Private Deployments" icon="server" href="/aigw/self-hosting/hybrid-deployments/architecture">
+Deploy Portkey in your own AWS, Azure, or GCP environment with full control.
+</Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+<Card title="Explore Portkey Features" icon="rocket" href="/aigw/product/ai-gateway">
+Discover all AI Gateway capabilities beyond observability
+</Card>
+
+<Card title="LLM Integrations" icon="key" href="/product/integrations">
+Secure your API keys and set budgets
+</Card>
+
+<Card title="Advanced Routing" icon="route" href="/aigw/product/ai-gateway/configs">
+Configure fallbacks, load balancing, and more
+</Card>
+
+<Card title="Built-in Analytics" icon="chart-bar" href="/aigw/product/observability">
+Use Portkey's native observability features
+</Card>
+</CardGroup>
+
+**Need help?** Reach out to [support@portkey.ai](mailto:support@portkey.ai)

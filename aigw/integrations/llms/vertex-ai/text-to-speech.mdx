@@ -1,0 +1,616 @@
+---
+title: "Text-to-Speech"
+description: "Generate speech from text using Google Vertex AI's Gemini TTS models"
+---
+
+Google Vertex AI offers powerful text-to-speech capabilities through [Gemini TTS models](https://cloud.google.com/text-to-speech/docs/gemini-tts). Portkey supports two approaches for TTS:
+
+1. **Gemini TTS via Chat Completions** - Use Gemini TTS models through the chat completions endpoint with `speech_config` or OpenAI-compatible `audio` parameter (maps to [Vertex AI API](https://cloud.google.com/text-to-speech/docs/gemini-tts#use-vertex-ai-api))
+2. **Cloud Text-to-Speech API** - Use the OpenAI-compatible `/audio/speech` endpoint for Chirp and Gemini TTS voices (maps to [Cloud Text-to-Speech API](https://cloud.google.com/text-to-speech/docs/gemini-tts#use-cloud-text-to-speech-api))
+
+---
+
+## Method 1: Gemini TTS via Chat Completions
+
+This method uses the [Vertex AI generateContent API](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/gemini#request_body) internally and provides granular control over speech synthesis using `speech_config` or the OpenAI-compatible `audio` parameter.
+
+### Available Models
+
+| Model ID | Optimized For | Speaker Support |
+|----------|--------------|-----------------|
+| `gemini-2.5-flash-tts` | Low latency, everyday applications | Single & multi-speaker |
+| `gemini-2.5-pro-tts` | High control, podcasts, audiobooks | Single & multi-speaker |
+| `gemini-2.5-flash-lite-preview-tts` | Cost-efficient applications | Single speaker only |
+| `gemini-3.1-flash-tts-preview` | Low latency with latest features | Single & multi-speaker |
+
+### Using `speech_config` (Vertex AI Native)
+
+<CodeGroup>
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@vertex-ai/gemini-2.5-flash-tts",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say the following in a cheerful way: Hello! Welcome to Portkey. We make AI applications reliable and production-ready."
+      }
+    ],
+    "speech_config": {
+      "voice_config": {
+        "prebuilt_voice_config": {
+          "voice_name": "Kore"
+        }
+      },
+      "language_code": "en-US"
+    }
+  }' \
+  | jq -r '.choices[0].message.audio.data' \
+  | base64 -d \
+  | ffmpeg -f s16le -ar 24k -ac 1 -i - output.wav
+```
+
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+# Use extra_body for non-OpenAI parameters
+response = client.chat.completions.create(
+    model="@vertex-ai/gemini-2.5-flash-tts",
+    messages=[
+        {
+            "role": "user",
+            "content": "Say the following in a cheerful way: Hello! Welcome to Portkey."
+        }
+    ],
+    extra_body={
+        "speech_config": {
+            "voice_config": {
+                "prebuilt_voice_config": {
+                    "voice_name": "Kore"
+                }
+            },
+            "language_code": "en-US"
+        }
+    }
+)
+
+# Audio is returned as base64 in the response
+audio_data = response.choices[0].message.audio.data
+```
+
+```javascript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY"
+});
+
+// Portkey Node SDK accepts additional parameters directly
+const response = await portkey.chat.completions.create({
+    model: "@vertex-ai/gemini-2.5-flash-tts",
+    messages: [
+        {
+            role: "user",
+            content: "Say the following in a cheerful way: Hello! Welcome to Portkey."
+        }
+    ],
+    speech_config: {
+        voice_config: {
+            prebuilt_voice_config: {
+                voice_name: "Kore"
+            }
+        },
+        language_code: "en-US"
+    }
+});
+
+// Audio is returned as base64 in the response
+const audioData = response.choices[0].message.audio.data;
+```
+
+</CodeGroup>
+
+<Note>
+Since `speech_config` is not part of the OpenAI API specification:
+- **Python SDK**: Use `extra_body` parameter to pass provider-specific parameters
+- **Node.js SDK**: Pass additional parameters directly - the Portkey SDK accepts arbitrary parameters via its flexible type definitions
+</Note>
+
+### Using `audio` Parameter (OpenAI-Compatible)
+
+For a simpler, OpenAI-compatible interface, use the `audio` parameter:
+
+<CodeGroup>
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@vertex-ai/gemini-2.5-flash-tts",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say the following warmly: Thank you for using our service today!"
+      }
+    ],
+    "audio": {
+      "voice": "Aoede"
+    }
+  }' \
+  | jq -r '.choices[0].message.audio.data' \
+  | base64 -d \
+  | ffmpeg -f s16le -ar 24k -ac 1 -i - output.wav
+```
+
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+response = client.chat.completions.create(
+    model="@vertex-ai/gemini-2.5-flash-tts",
+    messages=[
+        {
+            "role": "user",
+            "content": "Say the following warmly: Thank you for using our service today!"
+        }
+    ],
+    audio={
+        "voice": "Aoede"
+    }
+)
+
+audio_data = response.choices[0].message.audio.data
+```
+
+```javascript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "@vertex-ai/gemini-2.5-flash-tts",
+    messages: [
+        {
+            role: "user",
+            content: "Say the following warmly: Thank you for using our service today!"
+        }
+    ],
+    audio: {
+        voice: "Aoede"
+    }
+});
+
+const audioData = response.choices[0].message.audio.data;
+```
+
+</CodeGroup>
+
+### Response Format
+
+The audio is returned in the response as base64-encoded PCM 16-bit 24kHz audio:
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "audio": {
+          "id": "audio-xxx",
+          "data": "UklGRk...base64-encoded-audio..."
+        }
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 25,
+    "completion_tokens": 100,
+    "total_tokens": 125
+  }
+}
+```
+
+### Multi-Speaker Synthesis
+
+Generate conversations with multiple speakers using `multi_speaker_voice_config`:
+
+<CodeGroup>
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@vertex-ai/gemini-2.5-flash-tts",
+    "messages": [
+      {
+        "role": "user",
+        "content": "TTS the following conversation between Alice and Bob:\nAlice: Hi Bob, how are you today?\nBob: I am doing great, thanks for asking!"
+      }
+    ],
+    "speech_config": {
+      "language_code": "en-US",
+      "multi_speaker_voice_config": {
+        "speaker_voice_configs": [
+          {
+            "speaker": "Alice",
+            "voice_config": {
+              "prebuilt_voice_config": {
+                "voice_name": "Kore"
+              }
+            }
+          },
+          {
+            "speaker": "Bob",
+            "voice_config": {
+              "prebuilt_voice_config": {
+                "voice_name": "Charon"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }' \
+  | jq -r '.choices[0].message.audio.data' \
+  | base64 -d \
+  | ffmpeg -f s16le -ar 24k -ac 1 -i - conversation.wav
+```
+
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+response = client.chat.completions.create(
+    model="@vertex-ai/gemini-2.5-flash-tts",
+    messages=[
+        {
+            "role": "user",
+            "content": """TTS the following conversation between Alice and Bob:
+Alice: Hi Bob, how are you today?
+Bob: I am doing great, thanks for asking!"""
+        }
+    ],
+    extra_body={
+        "speech_config": {
+            "language_code": "en-US",
+            "multi_speaker_voice_config": {
+                "speaker_voice_configs": [
+                    {
+                        "speaker": "Alice",
+                        "voice_config": {
+                            "prebuilt_voice_config": {
+                                "voice_name": "Kore"
+                            }
+                        }
+                    },
+                    {
+                        "speaker": "Bob",
+                        "voice_config": {
+                            "prebuilt_voice_config": {
+                                "voice_name": "Charon"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    }
+)
+```
+
+```javascript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY"
+});
+
+const response = await portkey.chat.completions.create({
+    model: "@vertex-ai/gemini-2.5-flash-tts",
+    messages: [
+        {
+            role: "user",
+            content: `TTS the following conversation between Alice and Bob:
+Alice: Hi Bob, how are you today?
+Bob: I am doing great, thanks for asking!`
+        }
+    ],
+    speech_config: {
+        language_code: "en-US",
+        multi_speaker_voice_config: {
+            speaker_voice_configs: [
+                {
+                    speaker: "Alice",
+                    voice_config: {
+                        prebuilt_voice_config: {
+                            voice_name: "Kore"
+                        }
+                    }
+                },
+                {
+                    speaker: "Bob",
+                    voice_config: {
+                        prebuilt_voice_config: {
+                            voice_name: "Charon"
+                        }
+                    }
+                }
+            ]
+        }
+    }
+});
+```
+
+</CodeGroup>
+
+---
+
+## Method 2: Cloud Text-to-Speech API
+
+This method uses [Google's Cloud Text-to-Speech API](https://cloud.google.com/text-to-speech/docs/gemini-tts#use-cloud-text-to-speech-api) through the OpenAI-compatible `/audio/speech` endpoint. It supports both Gemini TTS and Chirp voices with more audio encoding options.
+
+### Basic Usage
+
+<CodeGroup>
+
+```sh cURL
+curl https://api.portkey.ai/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@vertex-ai/gemini-2.5-flash-tts",
+    "input": "Hello! This is a test of the text to speech system.",
+    "voice": "Kore",
+    "response_format": "mp3"
+  }' \
+  --output speech.mp3
+```
+
+```python Python
+from pathlib import Path
+from portkey_ai import Portkey
+
+client = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+speech_file_path = Path("speech.mp3")
+
+response = client.audio.speech.create(
+    model="@vertex-ai/gemini-2.5-flash-tts",
+    voice="Kore",
+    input="Hello! This is a test of the text to speech system.",
+    response_format="mp3"
+)
+
+with open(speech_file_path, "wb") as f:
+    f.write(response.content)
+```
+
+```javascript NodeJS
+import fs from 'fs';
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY"
+});
+
+const response = await portkey.audio.speech.create({
+    model: "@vertex-ai/gemini-2.5-flash-tts",
+    voice: "Kore",
+    input: "Hello! This is a test of the text to speech system.",
+    response_format: "mp3"
+});
+
+const buffer = Buffer.from(await response.arrayBuffer());
+fs.writeFileSync("speech.mp3", buffer);
+```
+
+</CodeGroup>
+
+### With Style Instructions
+
+Use the `instructions` parameter to control the speaking style:
+
+<CodeGroup>
+
+```sh cURL
+curl https://api.portkey.ai/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@vertex-ai/gemini-2.5-flash-tts",
+    "input": "Welcome to our podcast! Today we have an exciting episode for you.",
+    "voice": "Aoede",
+    "instructions": "Speak in an enthusiastic and energetic podcast host voice",
+    "response_format": "mp3"
+  }' \
+  --output podcast_intro.mp3
+```
+
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+response = client.audio.speech.create(
+    model="@vertex-ai/gemini-2.5-flash-tts",
+    voice="Aoede",
+    input="Welcome to our podcast! Today we have an exciting episode for you.",
+    instructions="Speak in an enthusiastic and energetic podcast host voice",
+    response_format="mp3"
+)
+
+with open("podcast_intro.mp3", "wb") as f:
+    f.write(response.content)
+```
+
+```javascript NodeJS
+import fs from 'fs';
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "YOUR_PORTKEY_API_KEY"
+});
+
+const response = await portkey.audio.speech.create({
+    model: "@vertex-ai/gemini-2.5-flash-tts",
+    voice: "Aoede",
+    input: "Welcome to our podcast! Today we have an exciting episode for you.",
+    instructions: "Speak in an enthusiastic and energetic podcast host voice",
+    response_format: "mp3"
+});
+
+const buffer = Buffer.from(await response.arrayBuffer());
+fs.writeFileSync("podcast_intro.mp3", buffer);
+```
+
+</CodeGroup>
+
+### Supported Audio Formats
+
+| Format | Content Type | Description |
+|--------|-------------|-------------|
+| `mp3` | audio/mpeg | Compressed, widely compatible |
+| `opus` | audio/ogg | High quality, efficient compression |
+| `wav` | audio/wav | Uncompressed LINEAR16 |
+| `pcm` | audio/L16 | Raw PCM audio |
+| `alaw` | audio/alaw | A-law encoded audio |
+| `mulaw` | audio/basic | μ-law encoded audio |
+
+---
+
+## Voice Options
+
+Gemini TTS offers [30 distinct voices](https://cloud.google.com/text-to-speech/docs/gemini-tts#voice_options):
+
+| Voice Name | Gender | Voice Name | Gender |
+|------------|--------|------------|--------|
+| Achernar | Female | Laomedeia | Female |
+| Achird | Male | Leda | Female |
+| Algenib | Male | Orus | Male |
+| Algieba | Male | Pulcherrima | Female |
+| Alnilam | Male | Puck | Male |
+| Aoede | Female | Rasalgethi | Male |
+| Autonoe | Female | Sadachbia | Male |
+| Callirrhoe | Female | Sadaltager | Male |
+| Charon | Male | Schedar | Male |
+| Despina | Female | Sulafat | Female |
+| Enceladus | Male | Umbriel | Male |
+| Erinome | Female | Vindemiatrix | Female |
+| Fenrir | Male | Zephyr | Female |
+| Gacrux | Female | Zubenelgenubi | Male |
+| Iapetus | Male | Kore | Female |
+
+---
+
+## Supported Languages
+
+Gemini TTS supports [24+ languages in GA and 50+ in Preview](https://cloud.google.com/text-to-speech/docs/gemini-tts#available_languages). Common GA languages include:
+
+| Language | Code | Language | Code |
+|----------|------|----------|------|
+| English (US) | en-US | Japanese | ja-JP |
+| English (India) | en-IN | Korean | ko-KR |
+| French | fr-FR | Portuguese (Brazil) | pt-BR |
+| German | de-DE | Spanish | es-ES |
+| Hindi | hi-IN | Italian | it-IT |
+
+---
+
+## Choosing the Right Method
+
+| Feature | Chat Completions (Vertex AI API) | Audio Speech (Cloud TTS API) |
+|---------|----------------------------------|------------------------------|
+| **Endpoint** | `/v1/chat/completions` | `/v1/audio/speech` |
+| **Audio Format** | PCM 16-bit 24kHz only | MP3, WAV, Opus, PCM, etc. |
+| **Temperature Control** | ✅ Supported | ❌ Not supported |
+| **Style Instructions** | Via message content | Via `instructions` param |
+| **Multi-Speaker** | ✅ Full control | ❌ Single speaker only |
+| **Streaming** | ✅ Via SSE | ❌ Not supported |
+| **Text Input Streaming** | Single request only | Multiple chunks supported |
+| **Best For** | Real-time apps, multi-speaker | Simple TTS, format flexibility |
+
+### When to Use Vertex AI API (Chat Completions)
+
+- You need temperature control for creative/diverse output
+- You want multi-speaker conversations
+- You're already using Vertex AI for other models
+- You need streaming audio output
+
+### When to Use Cloud TTS API (Audio Speech)
+
+- You need specific audio encoding formats (MP3, WAV, etc.)
+- You want a simpler OpenAI-compatible interface
+- You're migrating from OpenAI TTS
+- You need to stream text input in multiple chunks
+
+---
+
+## Prompting Tips
+
+For detailed prompting strategies, see [Google's prompting tips](https://cloud.google.com/text-to-speech/docs/gemini-tts#prompting_tips).
+
+### Style Prompts
+
+Control the speaking style through your message content:
+
+```
+Say the following in a calm, professional tone: [your text]
+```
+
+```
+Narrate this like an audiobook narrator: [your text]
+```
+
+```
+Speak with excitement and energy: [your text]
+```
+
+### Markup Tags (Preview)
+
+Use [bracketed tags](https://cloud.google.com/text-to-speech/docs/gemini-tts#markup_tag_guide) for specific effects:
+
+| Tag | Effect |
+|-----|--------|
+| `[sigh]` | Inserts a sigh sound |
+| `[laughing]` | Inserts a laugh |
+| `[uhm]` | Inserts a hesitation |
+| `[whispering]` | Decreases volume |
+| `[shouting]` | Increases volume |
+| `[extremely fast]` | Speeds up speech |
+| `[short pause]` | ~250ms pause |
+| `[long pause]` | ~1000ms+ pause |
+
+Example:
+```
+Say: [sigh] I can't believe it's Monday again. [long pause] Well, let's get started!
+```
+
+---
+
+## Limits
+
+| Description | Limit |
+|-------------|-------|
+| Text field | ≤ 4,000 bytes |
+| Prompt field | ≤ 4,000 bytes |
+| Combined text + prompt | ≤ 8,000 bytes |
+| Output audio duration | ~655 seconds max |
+
+<Note>
+If input text results in audio longer than 655 seconds, the audio will be truncated.
+</Note>

@@ -1,0 +1,198 @@
+---
+title: "Model Pricing and Cost Management"
+description: "Learn how Portkey handles pricing data, cost calculations, and pricing updates across different deployment modes."
+---
+
+Portkey tracks pricing for all providers and models for which it has pricing support, providing real-time cost visibility and budget management capabilities. The platform automatically handles pricing updates and supports custom pricing configurations for enterprise customers.
+
+## How Pricing Data Works
+
+### Pricing JSON System
+
+Portkey uses a centralized pricing JSON system to maintain accurate cost information:
+
+- **Automatic Updates**: If you're on the latest versions, this JSON updates automatically with the latest numbers
+- **Caching Strategy**: Pricing data is cached for 24 hours, after which the latest values are pulled from the central control plane
+- **Version Requirements**: This automatic pricing update feature is available in gateway version 1.12 series and later
+
+### Cost Calculation
+
+For token-based budgets, Portkey tracks both input and output tokens across all supported models. Cost calculations include:
+
+- Input token costs based on provider pricing
+- Output token costs with different rates where applicable
+- Real-time cost tracking per request
+- Aggregated cost reporting across time periods
+
+## Deployment-Specific Pricing Management
+
+Portkey supports two deployment modes for new customers, each with different pricing update mechanisms. Air-gapped is documented below for existing deployments only.
+
+### 1. SaaS Deployment (Portkey Cloud)
+
+- **Update Frequency**: Instant pricing updates
+- **Management**: Fully managed by Portkey
+- **Maintenance**: No action required from customers
+
+### 2. Hybrid Deployment
+
+- **Update Frequency**: Automatic updates every 24 hours
+- **Gateway Version**: Requires version 1.12\+ for automatic updates
+- **Maintenance**: Minimal - pricing JSON updates automatically from central control plane
+- **Manual Updates**: Only required when new pricing features are introduced
+
+### 3. Air-Gapped Deployment (Legacy)
+
+<Note>
+Air-gapped deployment is no longer offered for new customers. This section applies to existing air-gapped deployments, which remain supported.
+</Note>
+
+- **Update Frequency**: Configurable — can be automatic (with outbound access) or manual
+- **Management**: Customer-managed pricing sources
+- **Process**: Pricing data can be fetched from Portkey's hosted config service, loaded from a log store, or mounted as local files. See the [Air-Gapped Model Pricing guide](/self-hosting/airgapped/model-pricing) for setup options
+- **Requirements**: Helm chart `app-1.5.0+`, Backend `v1.7.0+`, Enterprise Gateway `v2.0.0+`
+
+## Model Catalog and Custom Pricing
+
+### Upgrading to Model Catalog
+
+The [Model Catalog](/aigw/product/model-catalog) is the evolution of Virtual Keys, providing a centralized and powerful way to manage, discover, and use AI models within your workspace. Key benefits include:
+
+- **Centralized Management**: Create a single (or multiple) provider integration at the organization level, and securely provision it to multiple workspaces
+- [**Custom Pricing Support**](/aigw/product/model-catalog/custom-models): Update pricing for models directly from the UI
+- [**Model Overrides**](/aigw/product/model-catalog/model-overrides): Create custom models with specific pricing configurations
+
+### Custom Model Pricing
+
+For customers with preferential pricing from providers, Portkey offers:
+
+- **UI-Based Updates**: Modify pricing for existing models through the dashboard
+- [**Custom Models**](/aigw/product/model-catalog/custom-models): Create new model entries with specific pricing
+- [**Model Overrides**](/aigw/product/model-catalog/model-overrides): Override default pricing for specific use cases
+- [**Pricing Adjustments**](/aigw/product/model-catalog/pricing-adjustments): Apply a discount or markup multiplier across an entire Integration
+
+## Cost Tracking and Analytics
+
+### Real-Time Monitoring
+
+The AI gateway records real-time API requests, including cost and guardrail violations, providing:
+
+- Per-request cost visibility
+- Token usage tracking
+- Provider-specific cost breakdown
+- Time-based cost analysis
+
+### Analytics Dashboard
+
+You can track your spending and token usage for any specific providers and model by navigating to the [Analytics tab](/aigw/product/observability/analytics) and filtering by the desired key and timeframe.
+
+**Available Metrics**:
+
+- Total spend across providers
+- Cost per model/provider/token
+- Usage patterns and trends
+- Budget utilization tracking
+
+## Pricing Support Coverage
+
+### Supported Models
+
+Budget limits currently apply to all providers and models for which Portkey has pricing support. This includes:
+
+- All major LLM providers (OpenAI, Claude, etc.)
+- Vision and multimodal models
+- Audio processing models
+- Image generation models
+
+### Unsupported Models
+
+If a specific request log shows 0 cents in the COST column, it means that Portkey does not currently track pricing for that model, and it will not count towards the provider's budget limit.
+
+For models without pricing support:
+
+- Cost tracking shows \$0.00
+- Budget limits don't apply
+- Manual cost tracking may be required
+
+## Troubleshooting Pricing Issues
+
+### Common Issues and Solutions
+
+**Q: Pricing data seems outdated**
+
+- **A**: Ensure you're running gateway version 1.12\+. Pricing updates automatically every 24 hours.
+
+**Q: Custom pricing not reflecting in dashboard**
+
+- **A**: Upgrade to Model Catalog for UI-based pricing management. Contact enterprise support for custom pricing configuration.
+
+**Q: Token count and cost show as 0 for streaming requests**
+
+- **A**: When `stream: true`, the provider does not return usage data by default — no token counts means no cost calculation. Add `stream_options: { include_usage: true }` to your request:
+
+<CodeGroup>
+```python Python
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello"}],
+    stream=True,
+    stream_options={"include_usage": True}
+)
+```
+
+```js JavaScript
+const response = await client.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "user", content: "Hello" }],
+    stream: true,
+    stream_options: { include_usage: true }
+})
+```
+</CodeGroup>
+
+This applies to all OpenAI-compatible providers (including Azure OpenAI). Non-streaming requests include usage data automatically and are unaffected.
+
+**Q: Budget limits not working for specific models**
+
+- **A**: Verify that Portkey has pricing support for those models. Unsupported models show \$0.00 in cost tracking.
+
+**Q: Air-gapped deployment has stale pricing**
+
+- **A**: Configure dynamic pricing fetching via the [Air-Gapped Model Pricing guide](/self-hosting/airgapped/model-pricing). You can pull from Portkey's hosted config service, maintain a local copy from the [Portkey Models repo](https://github.com/Portkey-AI/models), or mount pricing files as volumes.
+
+### Enterprise Support
+
+For enterprise customers requiring:
+
+- Custom pricing configurations
+- Advanced budget management
+- Pricing data exports
+- Integration assistance
+
+Contact: [support@portkey.ai](mailto:support@portkey.ai)
+
+## Best Practices
+
+### Cost Optimization
+
+1. **Use Budget Limits**: Set appropriate spending limits to prevent overages
+2. **Monitor Usage**: Regularly review cost analytics to identify optimization opportunities
+3. **Model Selection**: Use cost-effective models for appropriate use cases
+4. **Caching**: Leverage Portkey's caching features to reduce redundant API calls
+
+### Pricing Management
+
+1. **Stay Updated**: Keep gateway versions current for automatic pricing updates
+2. **Regular Reviews**: Monitor pricing changes across providers
+3. **Custom Pricing**: Configure preferential rates when available
+4. **Budget Planning**: Set realistic budgets based on usage patterns
+
+## Support and Resources
+
+### Community Resources
+
+- [GitHub repository](https://github.com/portkey-ai/gateway) for technical issues
+
+---
+
+_This documentation covers Portkey's pricing management capabilities. For the most current information about specific model pricing or enterprise features, please [Contact support](mailto:support@portkey.ai)._

@@ -1,0 +1,111 @@
+---
+title: "Fallbacks"
+description: Automatically switch to backup LLMs when the primary fails.
+---
+
+<Info>
+Available on all Portkey [plans](https://portkey.ai/pricing).
+</Info>
+
+Specify a prioritized list of providers/models. If the primary LLM fails, Portkey automatically falls back to the next in line.
+
+## Examples
+
+<CodeGroup>
+
+```json Between Models
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "override_params": { "model": "@openai-prod/gpt-4o" } },
+    { "override_params": { "model": "@anthropic-prod/claude-3-5-sonnet-20241022" } }
+  ]
+}
+```
+
+```json Between Providers (model from request)
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@azure-prod" }
+  ]
+}
+```
+
+```json On Rate Limit Only (429)
+{
+  "strategy": { "mode": "fallback", "on_status_codes": [429] },
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@azure-prod" }
+  ]
+}
+```
+
+```json Multi-tier Fallback
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "override_params": { "model": "@openai-prod/gpt-4o" } },
+    { "override_params": { "model": "@anthropic-prod/claude-3-5-sonnet-20241022" } },
+    { "override_params": { "model": "@google-prod/gemini-1.5-pro" } }
+  ]
+}
+```
+
+</CodeGroup>
+
+<Info>
+The `@provider-slug/model-name` format automatically routes to the correct provider. Set up providers in [Model Catalog](https://app.portkey.ai/model-catalog).
+</Info>
+
+[Create](/aigw/product/ai-gateway/configs#creating-configs) and [use](/aigw/product/ai-gateway/configs#using-configs) configs in your requests.
+
+## Trigger on Specific Status Codes
+
+By default, fallback triggers on any **non-2xx** status code.
+
+Customize with `on_status_codes`:
+
+```json
+{
+  "strategy": { "mode": "fallback", "on_status_codes": [429, 503] },
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@azure-prod" }
+  ]
+}
+```
+
+## Tracing Fallback Requests
+
+Portkey logs all requests in a fallback chain. To trace:
+
+1. Filter logs by `Config ID` to see all requests using that config
+2. Filter by `Trace ID` to see all attempts for a single request
+
+## Combine with Other Strategies
+
+Fallback targets are fully composable — each target can be a load balancer, a conditional router, or another fallback. Any strategy can nest inside any other.
+
+<CardGroup cols={2}>
+  <Card title="Fallback When the Whole Cluster Goes Down" icon="scale-balanced" href="/guides/use-cases/combining-routing-strategies#fallback-when-the-whole-cluster-goes-down">
+    The primary target is a load balancer cluster. Individual endpoint failures stay within the cluster — only a full provider outage triggers the cross-model backup.
+  </Card>
+  <Card title="Smart Failover by Request Context" icon="code-branch" href="/guides/use-cases/combining-routing-strategies#smart-failover-by-request-context">
+    When the primary fails, a conditional router picks the best backup based on request context — keeping EU users on EU infrastructure even during outages.
+  </Card>
+  <Card title="Isolate Failures Between Model Families" icon="layer-group" href="/guides/use-cases/combining-routing-strategies#isolate-failures-between-model-families">
+    Give each load-balanced slot its own independent fallback chain. One model family failing doesn't trigger another family's backup.
+  </Card>
+  <Card title="All Patterns Together" icon="diagram-project" href="/guides/use-cases/combining-routing-strategies#the-full-config">
+    See a complete config combining conditional routing, load balancing, and fallbacks across four model families.
+  </Card>
+</CardGroup>
+
+## Considerations
+
+- Ensure fallback LLMs are compatible with your use case
+- A single request may invoke multiple LLMs
+- Each LLM has different latency and pricing

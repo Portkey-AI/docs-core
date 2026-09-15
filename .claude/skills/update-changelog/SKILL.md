@@ -117,10 +117,10 @@ If a doc page **doesn't yet exist** for the feature, do NOT auto-create one — 
 ### 4a. Extract factual assertions
 
 Before writing any prose, write down the discrete facts the release establishes. Save to
-`prisma-airs/_project/releases/<repo-short>@<tag>.yaml`.
+`aigw/_project/releases/<repo-short>@<tag>.yaml`.
 
 This is the input to the KB contribution step (added once KB MCP access exists — see
-`prisma-airs/_project/README.md`, "Changelog contribution path"). Until then it stands on its own as
+`aigw/_project/README.md`, "Changelog contribution path"). Until then it stands on its own as
 a review artifact: it makes the release's factual content inspectable separately from how it
 was worded.
 
@@ -232,7 +232,7 @@ So:
 
 Once KB MCP access exists, step 4b (submit assertions to the KB) slots in here, and the guide
 patches additionally wait on KB acceptance while the changelog entry does not. See
-`prisma-airs/_project/README.md` under "Changelog contribution path".
+`aigw/_project/README.md` under "Changelog contribution path".
 
 ### 8. Report back
 

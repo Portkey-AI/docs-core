@@ -1,0 +1,919 @@
+---
+title: "GCP"
+description: This enterprise-focused document provides comprehensive instructions for deploying the Portkey software in a hybrid mode on Google Kubernetes Engine clusters, designed to meet the needs of large-scale, mission-critical applications. It includes specific recommendations for component sizing, high availability, and integration with monitoring systems.
+---
+
+## Components and Sizing Recommendations
+
+| Component                               | Options                                                                   | Sizing Recommendations                                                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------                    |
+| AI Gateway                              | Deploy in your GKE cluster using Helm charts.                             | Use GKE worker nodes, each providing at least 2 vCPUs and 4 GiB of memory. For high availability, deploy them across multiple Availability Zones. |
+| Logs Store (optional)                   | Google Cloud Storage or S3-compatible Storage                             | Each log document is \~10kb in size (uncompressed)                                                                                                                  |
+| Cache (Prompts, Configs & Providers)    | Built-in Redis, Google Memorystore Redis or Valkey                        | Deployed within the same VPC as the Portkey Gateway.                                                                                                                  |
+
+## Prerequisites
+
+Ensure that following tools and resources are installed and available:
+
+* A running [GKE cluster](https://docs.cloud.google.com/kubernetes-engine/docs/deploy-app-cluster) with at least 2 worker nodes. ( **Best Practice:** Use 2 nodes, with 1 node in each Availability Zone, to ensure high availability.)
+* VPC which host GKE cluster must have `ACTIVE` subnet with purpose `REGIONAL_MANAGED_PROXY`.
+* [gcloud CLI](https://docs.cloud.google.com/sdk/docs/install-sdk)
+* [Kubectl](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl)
+* [Helm (v3 or above)](https://helm.sh/docs/intro/install/)
+
+## Create a Portkey Account
+- Go to the [Portkey](https://app.portkey.ai) website.
+- Sign up for a Portkey account.
+- Once logged in, locate and save your `Organisation ID` for future reference. You can find it in the browser URL:
+  `https://app.portkey.ai/organisation/<organisation_id>/`
+- Contact the Portkey AI team and provide your Organisation ID and the email address used during signup.
+- The Portkey team will share the following information with you:
+    - Docker credentials for the Gateway images (username and password).
+    - License: Client Auth Key.
+
+## Setup Project Environment
+```sh
+CLUSTER_NAME=<GKE_CLUSTER_NAME>       # Specify the name of the GKE cluster where the gateway will be deployed.
+NAMESPACE=<NAMESPACE>                 # Specify the namespace where the gateway should be deployed (for example, portkeyai).
+KSA=<KSA>                             # Provide a name for the Service Account to be associated with Gateway Pod (for example, gateway-sa)
+
+mkdir portkey-gateway
+cd portkey-gateway
+touch values.yaml
+```
+
+### Image Credentials Configuration
+```yaml
+# Update the values.yaml file
+imageCredentials:
+  - name: portkey-enterprise-registry-credentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <PROVIDED BY PORTKEY>
+    password: <PROVIDED BY PORTKEY>
+
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: <SERVICE_NAME>                       # Specify a name for the service
+    PORTKEY_CLIENT_AUTH: <PROVIDED BY PORTKEY>
+    ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>           # This is obtained after signing up for a Portkey account.
+```
+
+## Configure Components
+Based on the choice of components and their configuration update the `values.yaml`.
+
+### MCP Gateway (Optional)
+By default, only the AI Gateway is enabled in the deployment. To enable the MCP Gateway, add the following configuration to `values.yaml`:
+```yaml
+environment:
+  data:
+    SERVER_MODE: "mcp/all"
+    MCP_PORT: "8788"
+    MCP_GATEWAY_BASE_URL: "<This must be set to MCP LoadBalancer URL or Domain pointing to MCP Service>"
+```
+
+**Note:**
+- `MCP_GATEWAY_BASE_URL` must include the protocol prefix — either `http://` or `https://`.
+- This value is not required for the initial deployment. After the first deployment, once the MCP Load Balancer is provisioned and a hostname is mapped to the MCP Service, set this value and redeploy.
+
+**Server Modes**
+1. `""` (empty or not provided): Deploys only the AI Gateway. This is the default configuration.
+2. `"mcp"`: Deploys only the MCP Gateway.
+3. `"all"`: Deploys both the AI Gateway and MCP Gateway.
+
+### Cache Store
+The Portkey Gateway deployment includes a Redis instance pre-installed by default. You can either use this built-in Redis or connect to an external cache like `Google Memorystore Redis` or `Valkey`.
+
+#### Built-in Redis
+
+No additional permissions or network configurations are required.
+
+```yaml
+## To use the built-in Redis, add the following configuration to the values.yaml file.
+environment:
+  data:
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+```
+
+#### Google Memorystore
+
+To enable the gateway to work with a Memorystore cache, ensure that network access from GKE cluster on required port.
+<Tabs>
+  <Tab title="No Auth">
+  ```yaml
+  ## To use Google Memorystore Redis or Valkey, add the following configuration in the values.yaml file.
+  environment:
+    data:
+      CACHE_STORE: gcp-memory-store
+      REDIS_URL: "redis://<GCP_MEMORY_STORE_IP>:<Port>"
+      REDIS_TLS_ENABLED: "false"                            ## "true"/"false"
+      REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled on Memorystore
+  ```
+  </Tab>
+  <Tab title="AUTH String">
+  ```yaml
+  environment:
+    data:
+      CACHE_STORE: gcp-memory-store
+      REDIS_URL: "redis://<MEMORY_STORE_IP>:<Port>"
+      REDIS_TLS_ENABLED: "false"                             ## "true"/"false"
+      REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled on Memorystore
+      REDIS_PASSWORD: <MEMORY_STORE_AUTH_STRING>
+  ```
+  </Tab>
+  <Tab title="Workload Identity Federation">
+  To set up IAM-based authentication for Portkey Gateway to GCP Memorystore, follow the [steps](#setting-up-iam-permission) and add the following configuration to `values.yaml`.
+  ```yaml
+  serviceAccount:
+    create: true
+    automount: true
+    name: <KSA>
+    annotations:
+      iam.gke.io/gcp-service-account: <GSA>@<PROJECT_ID>.iam.gserviceaccount.com
+
+  environment:
+    data:
+      CACHE_STORE: gcp-memory-store
+      GCP_REDIS_AUTH_MODE: workload
+      REDIS_URL: "redis://<MEMORY_STORE_IP>:<Port>"
+      REDIS_TLS_ENABLED: "false"                             ## "true"/"false"
+      REDIS_MODE: cluster                                   ## Add this parameter only if cluster mode is enabled on Memorystore
+  ```
+  </Tab>
+</Tabs>
+
+**TLS (Optional)**
+
+If TLS is enabled on your GCP Memorystore Redis instance, you must provide the self-signed certificate to the Gateway to enable SSL/TLS connections.
+
+1. Download the certificate file `server-ca.pem` from your GCP Memorystore Redis cluster.
+2. Create a Kubernetes secret to store the Memorystore certificate:
+    ```sh
+    kubectl create secret generic memorystore-tls-certs  --from-file=server-ca.pem -n $NAMESPACE
+    ```
+3. Add the following configuration to `values.yaml`:
+    ```yaml
+    environment:
+      data:
+        REDIS_TLS_CERTS: /etc/ssl/certs/server-ca.pem
+        REDIS_TLS_ENABLED: "true"
+    volumes:
+      - name: memorystore-tls-certs
+        secret:
+          secretName: memorystore-tls-certs
+
+    volumeMounts:
+      - name: memorystore-tls-certs
+        mountPath: /etc/ssl/certs/server-ca.pem
+        subPath: server-ca.pem
+    ```
+
+### Log Store
+#### Google Cloud Storage
+
+1. Create a GCS bucket for storing LLM access logs.
+
+2. Set up access to the log store. The Gateway supports the following methods for connecting to GCS bucket for log storage:
+    - Workload Identity Federation
+    - HMAC
+
+    Depending on the chosen GCS access method, update `values.yaml` with the following configuration.
+    <Tabs>
+      <Tab title="Workload Identity Federation">
+        To set up IAM-based authentication for Portkey Gateway to GCP bucket, follow the [steps](#setting-up-iam-permission) and add following configuration in `values.yaml`.
+
+        ```yaml
+        ## To enable `Workload Identity Federation` update values.yaml with the following details:-
+        serviceAccount:
+          create: true
+          automount: true
+          # Provide the name of service account. Must be same as the name you provide while binding GSA and KSA during workload identity permission setup.
+          name: <KSA>
+          annotations:
+          # Replace <GSA> and <PROJECT_ID_A> with Google Service Account name and Project ID of service account respectively.
+            iam.gke.io/gcp-service-account: <GSA>@<PROJECT_ID_A>.iam.gserviceaccount.com
+
+        environment:
+          data:
+            LOG_STORE: gcs_assume
+            GCP_AUTH_MODE: workload
+            LOG_STORE_REGION: <GCS_BUCKET_REGION>                     # Specify the GCP region where the GCS log bucket resides (e.g., us-east1).
+            LOG_STORE_GENERATIONS_BUCKET: <GCS_BUCKET_NAME>           # Specify the name of GCS log bucket.
+        ```
+      </Tab>
+      <Tab title="HMAC Keys">
+        ```yaml
+        ## To enable HMAC based access update values.yaml with following details:-
+        serviceAccount:
+          create: true
+          automount: true
+          name: <KSA>
+
+        environment:
+          data:
+            LOG_STORE: gcs
+            LOG_STORE_REGION: <GCS_BUCKET_REGION>                     # Specify the GCP region where the GCS log bucket resides (e.g., us-east1).
+            LOG_STORE_GENERATIONS_BUCKET: <GCS_BUCKET_NAME>           # Specify the name of GCS log bucket.
+            LOG_STORE_ACCESS_KEY: <HMAC_ACCESS_KEY>                   # Specify the HMAC access key of service account.
+            LOG_STORE_SECRET_KEY: <HMAC_SECRET_KEY>                   # Specify the HMAC secret key of service account.
+        ```
+      </Tab>
+    </Tabs>
+
+3. (Optional) Configure log path format using `LOG_STORE_FILE_PATH_FORMAT`. See [Log Object Path Format](/aigw/product/enterprise-offering/components#log-object-path-format) for details.
+
+### Data Service (Optional)
+The Data Service is a component of the Portkey deployment responsible for batch processing, fine-tuning, and log exports.
+
+To enable Data Service, add the following configuration to the `values.yaml` file.
+
+```yaml
+dataservice:
+  name: "dataservice"
+  enabled: true
+  env:
+    DEBUG_ENABLED: false
+    SERVICE_NAME: "portkeyenterprise-dataservice"
+  serviceAccount:
+    create: true
+    name: <KSA>
+```
+
+## Network Configuration
+
+### Set Up External Access
+
+To make the Gateway service accessible externally, you can set up either of the following:
+
+* **GCS Application Load Balancer** with Kubernetes `Ingress`
+* **GCS Network Load Balancer** with Kubernetes `Service`
+
+**Prerequisites**
+- GKE cluster must have [HTTP Load Balancing add-on](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/container-native-load-balancing) enabled.
+- Load Balancers require an active subnet with purpose `REGIONAL_MANAGED_PROXY`. If you don't have one, create it:
+```sh
+  # Replace <GKE_CLUSTER_REGION> with the region in which GKE cluster is created.
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/23 etc
+
+  gcloud compute networks subnets create lb-subnet \
+    --purpose=REGIONAL_MANAGED_PROXY \
+    --role=ACTIVE \
+    --region=<GKE_CLUSTER_REGION> \
+    --network=<VPC_NAME> \
+    --range=<SUBNET_CIDR>
+  ```
+#### GCP Load Balancer Ingress
+
+To create Application Load Balancer Ingress update the `values.yaml` file with following configuration:
+```yaml
+ingress:
+  enabled: true
+  ingressClassName: gce                                           # 'gce-internal' for creating internal ALB
+  # hostname: "<AI Gateway Hostname>"
+  # hostBased: true
+  # mcpHostname: "<MCP Gateway Hostname>"
+  annotations:
+    kubernetes.io/ingress.class : gce                             # 'gce-internal' for creating internal ALB
+    ingress.gcp.kubernetes.io/healthcheck-path: /v1/health
+```
+**Note:** If `SERVER_MODE` is set to `all` (i.e., both AI Gateway and MCP Gateway are enabled), you must enable host-based routing by setting `hostBased` to `true` and provide the hostname on which the AI Gateway and MCP Gateway will be accessible.
+
+GCP Load Balancer Controller provides additional annotations (like TLS, custom health checks etc ) for managing Ingress Load Balancer. For a comprehensive list of available annotations, refer to the [GCP Ingress Load Balancer](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/ingress).
+
+#### GCP Load Balancer Service
+To create Load Balancer update the `values.yaml` with following configuration:
+```yaml
+service:
+  type: LoadBalancer
+  port: 80                                                                                          # NLB listener port
+  containerPort: 8787
+  annotations:
+    cloud.google.com/l4-rbs: "enabled"                              # Use this annotation for creating external Load Balancer.
+    # networking.gke.io/load-balancer-type: "Internal"              # Use this annotation for creating internal Load Balancer.
+    spec.loadBalancerSourceRanges: "<X.X.X.X/Y>"
+```
+
+GCP Load Balancer Controller provides additional annotations (like TLS, custom health checks etc ) for managing Service Load Balancer. For a comprehensive list of available annotations, refer to the [GCP Service Load Balancer](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/service-load-balancer-parameters).
+
+## Deploying Portkey Gateway
+```sh
+# Add the Portkey AI Gateway helm repository
+helm repo add portkey-ai https://portkey-ai.github.io/helm
+helm repo update
+
+# Install the chart
+helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml -n ${NAMESPACE} --create-namespace
+```
+
+## Verify the deployment
+To confirm that the deployment was successful, follow these steps:
+
+-  Verify that all pods are running correctly.
+  ```sh
+  #
+  kubectl get pods -n ${NAMESPACE}
+  # You should see all pods with a 'STATUS' of 'Running'.
+  ```
+  **Note:** If pods are in a Pending, CrashLoopBackOff, or other error state, inspect the [pod logs](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/) and [events](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_events/) to diagnose potential issues.
+
+- Test Gateway by sending a cURL request.
+    1.  Port-forward the Gateway pod
+      ```sh
+        kubectl port-forward  <POD_NAME> -n ${NAMESPACE} 9000:8787       # Replace <POD_NAME> with your Gateway pod's actual name.
+      ```
+
+    2. Once port forwarding is active, open a new terminal window or tab and send a test request by running:
+
+      ```sh
+      # Specify LLM provider and Portkey API keys
+      OPENAI_API_KEY=<OPENAI_API_KEY>                           # Replace <OPENAI_API_KEY> with an actual API key
+      PORTKEY_API_KEY=<PORTKEY_API_KEY>                         # Replace <PORTKEY_API_KEY> with Portkey API key which can be created from Portkey website(https://app.portkey.ai/api-keys).
+
+      # Configure and send the curl request
+      curl 'http://localhost:9000/v1/chat/completions' \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $OPENAI_API_KEY"  \
+      -H "x-portkey-provider: openai" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY"  \
+      -d '{
+          "model": "gpt-4o-mini",
+          "messages": [{"role": "user","content": "What is a fractal?"}]
+      }'
+      ```
+    3. Test gateway service integration with Load Balancer.
+      ```sh
+      # Replace <LOAD_BALANCER_IP> and <LB_LISTENER_PORT_NUMBER> with the DNS name and listener port of the created load balancer, respectively.
+      curl 'http://<LOAD_BALANCER_IP>:<LB_LISTENER_PORT_NUMBER>/v1/chat/completions' \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $OPENAI_API_KEY"  \
+      -H "x-portkey-provider: openai" \
+      -H "x-portkey-api-key: $PORTKEY_API_KEY"  \
+      -d '{
+          "model": "gpt-4o-mini",
+          "messages": [{"role": "user","content": "What is a fractal?"}]
+      }'
+      ```
+
+## Integrating Gateway with Control Plane
+
+**Outbound Connectivity (Data Plane to Control Plane)**
+
+Portkey supports the following methods for integrating the Data Plane with the Control Plane for outbound connectivity:
+- GCP Private Service Connect
+- Over the Internet
+
+**Ensure Outbound Network Access**
+
+By default, Kubernetes allows full outbound access, but if your cluster has NetworkPolicies that restrict egress, configure them to allow outbound traffic.
+
+Example NetworkPolicy for Outbound Access:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+  namespace: portkeyai
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: <X.X.X.X/Y>
+```
+
+This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Portkey Control Plane.
+
+#### GCP Private Service Connect
+
+Establishes a secure, private connection between the Control Plane and Data Plane within the GCP network.
+
+**Steps to establish GCP Private Service Connect connectivity:**
+
+1. **(Optional)** Create a subnet in region `us-east4` if you don't already have one.
+  ```sh
+  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/28 etc
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  gcloud compute networks subnets create psc-endpoint-subnet \
+    --network=<VPC_NAME> \
+    --range=<SUBNET_CIDR> \
+    --region=us-east4
+  ```
+2. Create an IP address for the PSC endpoint.
+  ```sh
+  # If you already had a subnet in us-east4 and you skipped step 1,
+  # replace psc-endpoint-subnet with the name of your existing subnet.
+  gcloud compute addresses create psc-endpoint-ip \
+    --region=us-east4 \
+    --subnet=psc-endpoint-subnet
+  ```
+3. Contact the Portkey team, share your GCP Project ID, and request private connectivity.
+4. Once your project has been whitelisted and Portkey has shared the `SERVICE_ATTACHMENT_URI`, create the forwarding rule for the Control Plane's private endpoint.
+  ```sh
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  # Replace <SERVICE_ATTACHMENT_URI> with URI you received from Portkey.
+  gcloud compute forwarding-rules create portkey-cp-pvt-endpoint-rule \
+    --region=us-east4 \
+    --network=<VPC_NAME> \
+    --address=psc-endpoint-ip \
+    --target-service-attachment=<SERVICE_ATTACHMENT_URI>
+  ```
+5. **(Optional)** If your GKE cluster is in a different region from `us-east4`, enable global access on the PSC endpoint.
+  ```sh
+  gcloud compute forwarding-rules update portkey-cp-pvt-endpoint-rule \
+    --region=us-east4 \
+    --allow-psc-global-access
+  ```
+6. Fetch Connection ID of PSC endpoint and share it with the Portkey for connection approval.
+  ```sh
+  gcloud compute forwarding-rules describe portkey-cp-pvt-endpoint-rule \
+      --region=us-east4 \
+      --format="value(pscConnectionId)"
+  ```
+7. Once Portkey confirms approval, verify the connection status:
+  ```sh
+  gcloud compute forwarding-rules describe portkey-cp-pvt-endpoint-rule \
+    --region=us-east4 \
+    --format="get(pscConnectionStatus)"
+
+  # Should return "ACCEPTED"
+  ```
+8. Fetch Private IP of PSC endpoint.
+  ```sh
+  PSC_IP=$(gcloud compute addresses describe psc-endpoint-ip \
+    --region=us-east4 \
+    --format="value(address)")
+  echo ${PSC_IP}
+  ```
+9. Create a Private DNS Zone for DNS resolution of Control Plane PSC endpoint.
+  ```sh
+  # Replace <VPC_NAME> with VPC name of GKE cluster.
+  gcloud dns managed-zones create portkey-control-plane-pdz \
+    --dns-name="privatelink-gcp.portkey.ai." \
+    --description="Hosted Zone for DNS resolution of Portkey control plane endpoint" \
+    --visibility="private" \
+    --networks="<VPC_NAME>"
+  ```
+10. Create a DNS record to point to Portkey PSC endpoint IP.
+  ```sh
+  gcloud dns record-sets create "us-east4-gcp-cp.privatelink-gcp.portkey.ai." \                                                         130 ↵
+    --rrdatas="${PSC_IP}" \
+    --type="A" \
+    --ttl=300 \
+    --zone="portkey-control-plane-pdz"
+  ```
+11. If connection status changes to `ACCEPTED`, update the `values.yaml` file with the following environment variables.
+  ```yaml
+  environment:
+    create: true
+    secret: true
+    data:
+        ALBUS_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/albus"
+        CONTROL_PLANE_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/v1"
+        SOURCE_SYNC_API_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/v1/sync"
+        CONFIG_READER_PATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/model-configs"
+  ```
+12. Re-deploy the gateway.
+    ```sh
+    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n ${NAMESPACE}  --create-namespace
+    ```
+13. Check the Gateway pod logs to verify that no errors related to connection timeout or DNS resolution appear.
+
+#### Over the Internet
+
+Ensure Gateway has access to following endpoints over the internet.
+- `https://api.portkey.ai`
+- `https://albus.portkey.ai`
+
+### Inbound Connectivity (Control Plane to Data Plane)
+
+- GCP Private Service Connect
+- IP Whitelisting
+
+#### GCP Private Service Connect
+
+Establishes a secure, private connection between the Control Plane and Data Plane within the GCP network.
+
+**Prerequisites:**
+
+- Portkey Gateway must be exposed via either:
+  - Regional internal Application Load Balancer, or
+  - Regional internal proxy Network Load Balancer
+
+- A Private DNS Zone assocated to GKE VPC network and `A` record pointing to internal Load Balancer's Private IP.
+  ```
+  domain                Type    IP
+  gateway.example.com     A   x.x.x.x
+  mcp.example.com         A   x.x.x.x
+  ```
+- PSC requires an active subnet with purpose `PRIVATE_SERVICE_CONNECT`. If you don't have one, create it:
+```sh
+  # Replace <GKE_CLUSTER_REGION> with the region in which GKE cluster is created.
+  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
+  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/28 etc
+
+  gcloud compute networks subnets create psc-nat-subnet \
+    --purpose=PRIVATE_SERVICE_CONNECT \
+    --role=ACTIVE \
+    --region=<GKE_CLUSTER_REGION> \
+    --network=<VPC_NAME> \
+    --range=<SUBNET_CIDR>
+  ```
+
+**Steps to establish GCP Private Service Connect connectivity:**
+1. Go to **Private Service Connect** > **Published services** and click **Publish service**.
+
+2. Under **Target details**, select the **Load Balancer** option:
+    - If you exposed the Gateway using Ingress in `values.yaml`, select **Regional internal Application Load Balancer**.
+    - Otherwise, select **Regional internal proxy Network Load Balancer**.
+
+3. Select the Portkey Gateway's Load Balancer and the forwarding rule associated with it.
+
+4. Under **Service details**:
+   - Provide a name for the service (e.g., `<org_name>-gateway-psc`).
+   - Select the subnet that was created for PSC.
+
+5. Under **Connections preference**, select **Accept connections for selected projects** and add project `pk-production-project` to the accepted projects list.
+
+6. Once the PSC service is created, copy the **Service attachment** and share it with the Portkey team so they can initiate a connection request. In addition to that also share AI Gateway URL (e.g., https://gateway.example.com).
+
+7. Once the connection is initiated from the Control Plane, go to your PSC Published Service and approve the connection request.
+
+8. To verify connectivity from the Control Plane to the Data Plane, send a test request to the Gateway and check if you can view the full log details on the Portkey app after clicking a log entry.
+
+#### IP Whitelisting
+
+Allows control plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Control Plane. This method requires the Data Plane to have a publicly accessible endpoint.
+To whitelist, add an inbound rule to the VPC Firewall allowing connections from the Portkey Control Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on Load Balancer listner port.
+
+To integrate the Control Plane with the Data Plane, contact the Portkey team and provide the **Public Endpoint** of the Data Plane.
+
+## Verifying Gateway Integration with the Control Plane
+
+- Send a test request to Gateway using `curl`.
+- Go to [Portkey website](https://app.portkey.ai/) -> **Logs**.
+- Verify that the test request appears in the logs and that you can view its full details by selecting the log entry.
+
+## Uninstalling Portkey Gateway
+```sh
+helm uninstall portkey-ai -n ${NAMESPACE}
+```
+
+## Setting up IAM Permission
+
+Follow the steps below to configure permissions based on your chosen access method.
+
+### Create Google Service Account
+
+1. Specify the details:
+    ```sh
+    PROJECT_ID_A=<SERVICE_ACCOUNT_PROJECT_ID>     # Specify id of project in which service account is to be created
+    GSA=<GSA_NAME>                                # Specify name of Google Service Account to be created
+    ```
+
+2. Create a Google Service Account.
+    ```sh
+    gcloud iam service-accounts create ${GSA} \
+      --display-name="Portkey Gateway Service Account"
+    ```
+
+3. Create an IAM Policy binding to bind GSA to Gateway's KSA (Workload Identity).
+    ```sh
+    gcloud iam service-accounts \
+      add-iam-policy-binding ${GSA}@${PROJECT_ID_A}.iam.gserviceaccount.com \
+      --role roles/iam.workloadIdentityUser  \
+      --member "serviceAccount:${PROJECT_ID_A}.svc.id.goog[${NAMESPACE}/${KSA}]"
+    ```
+
+### Attach Permissions to GSA
+
+Once the Google Service Account is created and bound to the KSA, grant the required permissions based on the GCP services your gateway needs to access.
+
+#### Google Memorystore (Optional)
+To allow the Portkey Gateway to authenticate with Google Memorystore using IAM, grant `roles/redis.dbConnectionUser` to the GSA.
+
+**Same Project Access**
+```sh
+gcloud projects add-iam-policy-binding ${PROJECT_ID_A} \
+  --member="serviceAccount:${GSA}@${PROJECT_ID_A}.iam.gserviceaccount.com" \
+  --role="roles/redis.dbConnectionUser"
+```
+**Cross Project Access**
+```sh
+PROJECT_ID_B=<PROJECT_B_ACCOUNT_ID>       # Project ID in which Memorystore instance exists
+gcloud projects add-iam-policy-binding ${PROJECT_ID_B} \
+  --member="serviceAccount:${GSA}@${PROJECT_ID_A}.iam.gserviceaccount.com" \
+  --role="roles/redis.dbConnectionUser"
+```
+
+#### GCS Bucket
+To allow the Portkey Gateway to access a GCS bucket for log storage, grant `roles/storage.objectAdmin` (or a custom role with `storage.objects.create` and `storage.objects.get`) to the GSA.
+
+**Same Project Access**
+```sh
+gcloud projects add-iam-policy-binding ${PROJECT_ID_A} \
+  --member="serviceAccount:${GSA}@${PROJECT_ID_A}.iam.gserviceaccount.com" \
+  --role="roles/storage.objectAdmin"
+```
+**Cross Project Access**
+```sh
+PROJECT_ID_B=<PROJECT_B_ACCOUNT_ID>       # Project ID in which GCS bucket is created
+gcloud projects add-iam-policy-binding ${PROJECT_ID_B} \
+  --member="serviceAccount:${GSA}@${PROJECT_ID_A}.iam.gserviceaccount.com" \
+  --role="roles/storage.objectAdmin"
+```
+
+#### Vertex AI (Optional)
+To allow the Portkey Gateway to invoke Vertex AI models, grant `roles/aiplatform.user` to the GSA.
+
+**Same Project Access**
+```sh
+gcloud projects add-iam-policy-binding ${PROJECT_ID_A} \
+  --member="serviceAccount:${GSA}@${PROJECT_ID_A}.iam.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
+```
+**Cross Project Access**
+```sh
+PROJECT_ID_B=<PROJECT_B_ACCOUNT_ID>       # Project ID in which Vertex AI is to be called
+gcloud projects add-iam-policy-binding ${PROJECT_ID_B} \
+  --member="serviceAccount:${GSA}@${PROJECT_ID_A}.iam.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
+```
+
+## Examples
+
+**Built-in Redis with GCS (Workload Identity)**
+
+The following sample `values.yaml` shows how to configure the built-in Redis cache and GCS for log storage using Workload Identity Federation.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+serviceAccount:
+  create: true
+  automount: true
+  name: <KSA>
+  annotations:
+    iam.gke.io/gcp-service-account: <GSA>@<PROJECT_ID>.iam.gserviceaccount.com
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>
+    PORT: "8787"
+
+    # Built-in Redis
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+
+    # GCS with Workload Identity
+    LOG_STORE: gcs_assume
+    GCP_AUTH_MODE: workload
+    LOG_STORE_REGION: <GCS_BUCKET_REGION>
+    LOG_STORE_GENERATIONS_BUCKET: <GCS_BUCKET_NAME>
+
+service:
+  type: LoadBalancer
+  port: 80
+  containerPort: 8787
+  annotations:
+    cloud.google.com/l4-rbs: "enabled"
+    spec.loadBalancerSourceRanges: "<X.X.X.X/Y>"
+```
+
+**Memorystore with GCS (Workload Identity) and Private Service Connect**
+
+The following sample `values.yaml` shows how to configure Google Memorystore for caching, GCS for log storage using Workload Identity Federation, and GCP Private Service Connect for outbound connectivity to the Control Plane.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+serviceAccount:
+  create: true
+  automount: true
+  name: <KSA>
+  annotations:
+    iam.gke.io/gcp-service-account: <GSA>@<PROJECT_ID>.iam.gserviceaccount.com
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>
+    PORT: "8787"
+
+    # Google Memorystore
+    CACHE_STORE: memory-store
+    REDIS_URL: "redis://<MEMORY_STORE_IP>:<Port>"
+    REDIS_TLS_ENABLED: "true"
+
+    # GCS with Workload Identity
+    LOG_STORE: gcs_assume
+    GCP_AUTH_MODE: workload
+    LOG_STORE_REGION: <GCS_BUCKET_REGION>
+    LOG_STORE_GENERATIONS_BUCKET: <GCS_BUCKET_NAME>
+
+    # Private Service Connect outbound connectivity to Control Plane
+    ALBUS_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/albus"
+    CONTROL_PLANE_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/v1"
+    SOURCE_SYNC_API_BASEPATH: "us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/v1/sync"
+    CONFIG_READER_PATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/model-configs"
+
+dataservice:
+  name: "dataservice"
+  enabled: true
+  env:
+    DEBUG_ENABLED: false
+    SERVICE_NAME: "portkeyenterprise-dataservice"
+
+service:
+  type: LoadBalancer
+  port: 80
+  containerPort: 8787
+  annotations:
+    networking.gke.io/load-balancer-type: "Internal"
+```
+
+**Built-in Redis with GCS (HMAC) and ALB Ingress**
+
+The following sample `values.yaml` shows how to configure the built-in Redis cache, GCS for log storage using HMAC keys, and a GCP Application Load Balancer Ingress.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+serviceAccount:
+  create: true
+  automount: true
+  name: <KSA>
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>
+    PORT: "8787"
+
+    # Built-in Redis
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+
+    # GCS with HMAC keys
+    LOG_STORE: gcs
+    LOG_STORE_REGION: <GCS_BUCKET_REGION>
+    LOG_STORE_GENERATIONS_BUCKET: <GCS_BUCKET_NAME>
+    LOG_STORE_ACCESS_KEY: <HMAC_ACCESS_KEY>
+    LOG_STORE_SECRET_KEY: <HMAC_SECRET_KEY>
+
+ingress:
+  enabled: true
+  ingressClassName: gce
+  annotations:
+    kubernetes.io/ingress.class: gce
+    ingress.gcp.kubernetes.io/healthcheck-path: /v1/health
+```
+
+**AI Gateway + MCP Gateway with Host-Based Routing**
+
+The following sample `values.yaml` shows how to deploy both AI Gateway and MCP Gateway with host-based routing using a GCP Application Load Balancer, built-in Redis, and GCS with Workload Identity.
+```yaml
+images:
+  gatewayImage:
+    repository: "docker.io/portkeyai/gateway_enterprise"
+    pullPolicy: Always
+    tag: "latest"
+  dataserviceImage:
+    repository: "docker.io/portkeyai/data-service"
+    pullPolicy: Always
+    tag: "latest"
+  redisImage:
+    repository: "docker.io/redis"
+    pullPolicy: IfNotPresent
+    tag: "7.2-alpine"
+imageCredentials:
+  - name: portkeyenterpriseregistrycredentials
+    create: true
+    registry: https://index.docker.io/v1/
+    username: <DOCKER_USERNAME>
+    password: <DOCKER_PASSWORD>
+
+serviceAccount:
+  create: true
+  automount: true
+  name: <KSA>
+  annotations:
+    iam.gke.io/gcp-service-account: <GSA>@<PROJECT_ID>.iam.gserviceaccount.com
+
+environment:
+  create: true
+  secret: true
+  data:
+    ANALYTICS_STORE: control_plane
+    SERVICE_NAME: gateway
+    PORTKEY_CLIENT_AUTH: <CLIENT_AUTH>
+    ORGANISATIONS_TO_SYNC: <ORGANISATION_ID>
+    PORT: "8787"
+    SERVER_MODE: "all"
+    MCP_PORT: "8788"
+    MCP_GATEWAY_BASE_URL: "https://mcp.example.com"
+
+    # Built-in Redis
+    CACHE_STORE: redis
+    REDIS_URL: "redis://redis:6379"
+    REDIS_TLS_ENABLED: "false"
+
+    # GCS with Workload Identity
+    LOG_STORE: gcs_assume
+    GCP_AUTH_MODE: workload
+    LOG_STORE_REGION: <GCS_BUCKET_REGION>
+    LOG_STORE_GENERATIONS_BUCKET: <GCS_BUCKET_NAME>
+
+ingress:
+  enabled: true
+  hostname: "gateway.example.com"
+  hostBased: true
+  mcpHostname: "mcp.example.com"
+  ingressClassName: gce
+  annotations:
+    kubernetes.io/ingress.class: gce
+    ingress.gcp.kubernetes.io/healthcheck-path: /v1/health
+```

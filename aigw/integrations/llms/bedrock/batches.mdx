@@ -1,0 +1,699 @@
+---
+title: Batches
+description: Perform batch inference with Bedrock
+---
+
+Portkey lets you run Bedrock batch jobs without any manual S3 wrangling—simply upload an [OpenAI-format .jsonl file](https://platform.openai.com/docs/guides/batch#1-preparing-your-batch-file) and Portkey converts it on-the-fly to the Bedrock format.
+
+Supported batch endpoints:
+- **Chat Completions** (`/v1/chat/completions`)
+- **Embeddings** (`/v1/embeddings`)
+
+This is the most efficient way to
+- Test your data with different foundation models
+- Perform A/B testing with different foundation models
+- Perform batch inference with different foundation models
+
+<Info>
+Portkey supports **two modes** on Bedrock:
+* **[Provider Batch API](#using-bedrock-batch-api-through-portkey)** (cheapest, completion_window: `24h`, `48h`, etc.)
+* **[Portkey Batch API  ⭐️](/aigw/product/ai-gateway/batches#portkey-batch-api-mode)** (fast, provider-agnostic, completion_window: `immediate`)
+</Info>
+
+## Before You Start
+
+1. **Portkey API key** (`$PORTKEY_API_KEY`).
+2. **Bedrock credentials** — either a Portkey *Provider from Model Catalog* or explicit AWS keys (`aws_access_key_id`, `aws_secret_access_key`, `aws_region`, optional `aws_session_token`).
+3. **S3 bucket** with read/write access for inputs and outputs.
+4. **IAM roles** (see *Permissions & IAM* below).
+5. Optional: a **Portkey File** (`input_file_id`) — **required only when you set `completion_window:"immediate"`** (Portkey-Batch mode).
+
+## Using Bedrock Batch API through Portkey
+
+### Create Batch Job
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+    provider="bedrock",
+    aws_access_key_id="YOUR_AWS_ACCESS_KEY_ID",
+    aws_secret_access_key="YOUR_AWS_SECRET_ACCESS_KEY",
+    aws_region="YOUR_AWS_REGION",
+    aws_s3_bucket="YOUR_AWS_S3_BUCKET",
+    aws_s3_object_key="YOUR_AWS_S3_OBJECT_KEY",
+    aws_bedrock_model="YOUR_AWS_BEDROCK_MODEL"
+)
+
+start_batch_response = portkey.batches.create(
+  input_file_id="file_id", # file id of the input file
+  endpoint="endpoint", # ex: /v1/chat/completions
+  completion_window="completion_window", # ex: 24h
+  metadata={}, # metadata for the batch,
+  role_arn="arn:aws:iam::12312:role/BedrockBatchRole", # the role to use for creating the batch job
+  model="anthropic.claude-3-5-sonnet-20240620-v1:0", # the model to use for the batch
+  output_data_config={
+    "s3OutputDataConfig": {
+      "s3Uri": "s3://generations-raw/",
+      "s3EncryptionKeyId": "arn:aws:kms:us-west-2:517194595696:key/89b483cb-130d-497b-aa37-7db177e7cd32" # this is optional, if you want to use a KMS key to encrypt the output data
+    }
+  }, # output_data_config is optional, if you want to specify a different output location for the batch job, default is the same as the input file
+  job_name="anthropi-requests-test" # optional
+)
+
+print(start_batch_response)
+```
+
+```javascript Typescript
+import { Portkey } from 'portkey-ai';
+
+// Initialize the Portkey client
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
+    provider="bedrock",
+    awsAccessKeyId="YOUR_AWS_ACCESS_KEY_ID",
+    awsSecretAccessKey="YOUR_AWS_SECRET_ACCESS_KEY",
+    awsRegion="YOUR_AWS_REGION",
+    awsS3Bucket="YOUR_AWS_S3_BUCKET",
+    awsS3ObjectKey="YOUR_AWS_S3_OBJECT_KEY",
+    awsBedrockModel="YOUR_AWS_BEDROCK_MODEL"
+});
+
+const startBatch = async () => {
+  const startBatchResponse = await portkey.batches.create({
+    input_file_id: "file_id", // file id of the input file
+    endpoint: "endpoint", // ex: /v1/chat/completions
+    completion_window: "completion_window", // ex: 24h
+    metadata: {}, // metadata for the batch
+    role_arn: "arn:aws:iam::12312:role/BedrockBatchRole", // the role to use for creating the batch job
+    model: "anthropic.claude-3-5-sonnet-20240620-v1:0", // the model to use for the batch
+    output_data_config: {
+      s3OutputDataConfig: {
+        s3Uri: "s3://generations-raw/",
+        s3EncryptionKeyId: "arn:aws:kms:us-west-2:517194595696:key/89b483cb-130d-497b-aa37-7db177e7cd32" // this is optional, if you want to use a KMS key to encrypt the output data
+      }
+    }, // output_data_config is optional, if you want to specify a different output location for the batch job, default is the same as the input file
+    job_name: "anthropi-requests-test" // optional
+  });
+
+  console.log(startBatchResponse);
+}
+
+await startBatch();
+
+```
+
+```bash curl
+curl --location 'https://api.portkey.ai/v1/batches' \
+--header 'x-portkey-api-key: <portkey_api_key>' \
+--header 'x-portkey-aws-access-key-id: {YOUR_AWS_ACCESS_KEY_ID}' \
+--header 'x-portkey-aws-secret-access-key: {YOUR_AWS_SECRET_ACCESS_KEY}' \
+--header 'x-portkey-aws-region: {YOUR_AWS_REGION}' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "meta.llama3-1-8b-instruct-v1:0",
+    "input_file_id": "s3%3A%2F%2Fgenerations-raw-west-2%2Fbatch_files%2Fllama2%2Fbatch_chat_completions_101_requests.jsonl",
+    "role_arn": "arn:aws:iam::12312:role/BedrockBatchRole", // the role to use for creating the batch job
+    "output_data_config": {            // output_data_config is optional, if you want to specify a different output location for the batch job, default is the same as the input file
+        "s3OutputDataConfig": {
+            "s3Uri": "s3://generations-raw/",
+            "s3EncryptionKeyId": "arn:aws:kms:us-west-2:517194595696:key/89b483cb-130d-497b-aa37-7db177e7cd32" // this is optional, if you want to use a KMS key to encrypt the output data
+        }
+    },
+    "job_name": "anthropi-requests" // optional
+}'
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from 'openai'; // We're using the v4 SDK
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "openai",
+    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+    awsAccessKeyId: "YOUR_AWS_ACCESS_KEY_ID",
+    awsSecretAccessKey: "YOUR_AWS_SECRET_ACCESS_KEY",
+    awsRegion: "YOUR_AWS_REGION",
+    awsS3Bucket: "YOUR_AWS_S3_BUCKET",
+    awsS3ObjectKey: "YOUR_AWS_S3_OBJECT_KEY",
+    awsBedrockModel: "YOUR_AWS_BEDROCK_MODEL"
+  })
+});
+
+const startBatch = async () => {
+  const startBatchResponse = await openai.batches.create({
+    input_file_id: "file_id", // file id of the input file
+    endpoint: "endpoint", // ex: /v1/chat/completions
+    completion_window: "completion_window", // ex: 24h
+    metadata: {}, // metadata for the batch
+    role_arn: "arn:aws:iam::12312:role/BedrockBatchRole", // the role to use for creating the batch job
+    model: "anthropic.claude-3-5-sonnet-20240620-v1:0", // the model to use for the batch
+    output_data_config: {
+      s3OutputDataConfig: {
+        s3Uri: "s3://generations-raw/",
+        s3EncryptionKeyId: "arn:aws:kms:us-west-2:517194595696:key/89b483cb-130d-497b-aa37-7db177e7cd32" // this is optional, if you want to use a KMS key to encrypt the output data
+      }
+    }, // output_data_config is optional, if you want to specify a different output location for the batch job, default is the same as the input file
+    job_name: "anthropi-requests-test" // optional
+  });
+
+  console.log(startBatchResponse);
+}
+
+await startBatch();
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='PLACEHOLDER_NOT_USED',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY",
+        aws_access_key_id="YOUR_AWS_ACCESS_KEY_ID",
+        aws_secret_access_key="YOUR_AWS_SECRET_ACCESS_KEY",
+        aws_region="YOUR_AWS_REGION",
+        aws_s3_bucket="YOUR_AWS_S3_BUCKET",
+        aws_s3_object_key="YOUR_AWS_S3_OBJECT_KEY",
+        aws_bedrock_model="YOUR_AWS_BEDROCK_MODEL"
+    )
+)
+
+start_batch_response = openai.batches.create(
+  input_file_id="file_id", # file id of the input file
+  endpoint="endpoint", # ex: /v1/chat/completions
+  completion_window="completion_window", # ex: 24h
+  metadata={}, # metadata for the batch
+  role_arn="arn:aws:iam::12312:role/BedrockBatchRole", # the role to use for creating the batch job
+  model="anthropic.claude-3-5-sonnet-20240620-v1:0", # the model to use for the batch
+  output_data_config={
+    "s3OutputDataConfig": {
+      "s3Uri": "s3://generations-raw/",
+      "s3EncryptionKeyId": "arn:aws:kms:us-west-2:517194595696:key/89b483cb-130d-497b-aa37-7db177e7cd32" // this is optional, if you want to use a KMS key to encrypt the output data
+    }
+  }, # output_data_config is optional, if you want to specify a different output location for the batch job, default is the same as the input file
+  job_name="anthropi-requests-test" # optional
+)
+print(start_batch_response)
+```
+</CodeGroup>
+
+### List Batch Jobs
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+    provider="bedrock",
+    aws_access_key_id="YOUR_AWS_ACCESS_KEY_ID",
+    aws_secret_access_key="YOUR_AWS_SECRET_ACCESS_KEY",
+    aws_region="YOUR_AWS_REGION",
+)
+
+batches = portkey.batches.list()
+
+print(batches)
+```
+
+```javascript Typescript
+import { Portkey } from 'portkey-ai';
+
+// Initialize the Portkey client
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
+    provider="bedrock",
+    awsAccessKeyId="YOUR_AWS_ACCESS_KEY_ID",
+    awsSecretAccessKey="YOUR_AWS_SECRET_ACCESS_KEY",
+    awsRegion="YOUR_AWS_REGION",
+});
+
+const listBatches = async () => {
+  const batches = await portkey.batches.list();
+
+  console.log(batches);
+}
+
+await listBatches();
+
+```
+
+```bash curl
+curl --location 'https://api.portkey.ai/v1/batches' \
+--header 'x-portkey-api-key: <portkey_api_key>' \
+--header 'x-portkey-provider: @provider' \
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from 'openai'; // We're using the v4 SDK
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "openai",
+    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+    awsAccessKeyId: "YOUR_AWS_ACCESS_KEY_ID",
+    awsSecretAccessKey: "YOUR_AWS_SECRET_ACCESS_KEY",
+    awsRegion: "YOUR_AWS_REGION"
+  })
+});
+
+const listBatches = async () => {
+  const batches = await openai.batches.list();
+
+  console.log(batches);
+}
+
+await listBatches();
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='PLACEHOLDER_NOT_USED',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY",
+        aws_access_key_id="YOUR_AWS_ACCESS_KEY_ID",
+        aws_secret_access_key="YOUR_AWS_SECRET_ACCESS_KEY",
+        aws_region="YOUR_AWS_REGION"
+    )
+)
+
+batches = openai.batches.list()
+
+print(batches)
+```
+</CodeGroup>
+
+### Get Batch Job Details
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+    provider="@PROVIDER",
+)
+
+batch = portkey.batches.retrieve(batch_id="batch_id")
+
+print(batch)
+```
+
+```javascript Typescript
+import { Portkey } from 'portkey-ai';
+
+// Initialize the Portkey client
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
+    provider:"@PROVIDER",
+});
+
+const getBatch = async () => {
+  const batch = await portkey.batches.retrieve(batch_id="batch_id");
+
+  console.log(batch);
+}
+
+await getBatch();
+
+```
+
+```bash curl
+curl --location 'https://api.portkey.ai/v1/batches/<batch_id>' \
+--header 'x-portkey-api-key: <portkey_api_key>' \
+--header 'x-portkey-provider: @provider' \
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from 'openai'; // We're using the v4 SDK
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "openai",
+    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+    provider:"@BEDROCK_PROVIDER",
+  })
+});
+
+const getBatch = async () => {
+  const batch = await openai.batches.retrieve(batch_id="batch_id");
+
+  console.log(batch);
+}
+
+await getBatch();
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='PLACEHOLDER_NOT_USED',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY",
+        provider:"@BEDROCK_PROVIDER",
+    )
+)
+
+batch = openai.batches.retrieve(batch_id="batch_id")
+
+print(batch)
+```
+</CodeGroup>
+
+### Get Batch Output
+<CodeGroup>
+```bash curl
+curl --location 'https://api.portkey.ai/v1/batches/<batch_id>/output' \
+--header 'x-portkey-api-key: <portkey_api_key>' \
+--header 'x-portkey-provider: @provider' \
+```
+</CodeGroup>
+
+### List Batch Jobs
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+    provider="@PROVIDER",
+)
+
+batches = portkey.batches.list()
+
+print(batches)
+```
+
+```javascript Typescript
+import { Portkey } from 'portkey-ai';
+
+// Initialize the Portkey client
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
+    provider:"@PROVIDER",
+});
+
+const listBatchingJobs = async () => {
+  const batching_jobs = await portkey.batches.list();
+
+  console.log(batching_jobs);
+}
+
+await listBatchingJobs();
+
+```
+
+```bash curl
+curl --location 'https://api.portkey.ai/v1/batches' \
+--header 'x-portkey-api-key: <portkey_api_key>' \
+--header 'x-portkey-provider: @provider' \
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from 'openai'; // We're using the v4 SDK
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "openai",
+    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+    provider:"@BEDROCK_PROVIDER",
+  })
+});
+
+const listBatchingJobs = async () => {
+  const batching_jobs = await openai.batches.list();
+
+  console.log(batching_jobs);
+}
+
+await listBatchingJobs();
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='PLACEHOLDER_NOT_USED',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY",
+        provider:"@BEDROCK_PROVIDER",
+    )
+)
+
+batching_jobs = openai.batches.list()
+
+print(batching_jobs)
+```
+</CodeGroup>
+
+### Cancel Batch Job
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
+    provider="@PROVIDER",
+)
+
+cancel_batch_response = portkey.batches.cancel(batch_id="batch_id")
+
+print(cancel_batch_response)
+```
+
+```javascript Typescript
+import { Portkey } from 'portkey-ai';
+
+// Initialize the Portkey client
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
+    provider:"@PROVIDER",
+});
+
+const cancelBatch = async () => {
+  const cancel_batch_response = await portkey.batches.cancel(batch_id="batch_id");
+
+  console.log(cancel_batch_response);
+}
+
+await cancelBatch();
+
+```
+
+```bash curl
+curl --request POST --location 'https://api.portkey.ai/v1/batches/<batch_id>/cancel' \
+--header 'x-portkey-api-key: <portkey_api_key>' \
+--header 'x-portkey-provider: @provider' \
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from 'openai'; // We're using the v4 SDK
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
+
+const openai = new OpenAI({
+  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    provider: "openai",
+    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
+    provider:"@BEDROCK_PROVIDER",
+  })
+});
+
+const cancelBatch = async () => {
+  const cancel_batch_response = await openai.batches.cancel(batch_id="batch_id");
+
+  console.log(cancel_batch_response);
+}
+
+await cancelBatch();
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='PLACEHOLDER_NOT_USED',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY",
+        provider:"@BEDROCK_PROVIDER",
+    )
+)
+
+cancel_batch_response = openai.batches.cancel(batch_id="batch_id")
+
+print(cancel_batch_response)
+```
+</CodeGroup>
+
+## Information about Permissions and IAM Roles
+
+<Accordion title="For Principal Role (Used in Provider)">
+  These are the minimum permissions required to use the Bedrock Batch APIs. (Bedrock Docs](https://docs.aws.amazon.com/bedrock/latest/userguide/batch-inference-permissions.html))
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "bedrock:ListFoundationModels",
+                "bedrock:GetFoundationModel",
+                "bedrock:ListInferenceProfiles",
+                "bedrock:GetInferenceProfile",
+                "bedrock:ListCustomModels",
+                "bedrock:GetCustomModel",
+                "bedrock:TagResource",
+                "bedrock:UntagResource",
+                "bedrock:ListTagsForResource",
+                "bedrock:CreateModelInvocationJob",
+                "bedrock:GetModelInvocationJob",
+                "bedrock:ListModelInvocationJobs",
+                "bedrock:StopModelInvocationJob"
+            ],
+            "Resource": [
+                "arn:aws:bedrock:<region>:<account_id>:model-invocation-job/*",
+                "arn:aws:bedrock:<region>:<account_id>:custom-model/*", // Can be a custom model available for batching (optional)
+                "arn:aws:bedrock:<region>::foundation-model/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket",
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:GetObjectAttributes"
+            ],
+            "Resource": [
+                "arn:aws:s3:::<bucket>",
+                "arn:aws:s3:::<bucket>/*"
+            ]
+        },
+        {
+            "Action": [
+                "iam:PassRole"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::<account_id>:role/<service_role_name>",
+            "Condition": {
+                "StringEquals": {
+                    "iam:PassedToService": [
+                        "bedrock.amazonaws.com"
+                    ]
+                }
+            }
+        }
+    ]
+}
+  ```
+</Accordion>
+
+<Accordion title="For Service Role (role_arn) used for creating and executing the batch job">
+  These are the minimum permissions required to use the Bedrock Batch APIs.
+
+  Trust relationship:
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "bedrock.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole",
+            "Condition": {
+                "StringEquals": {
+                    "aws:SourceAccount": "<account_id>"
+                },
+                "ArnEquals": {
+                    "aws:SourceArn": "arn:aws:bedrock:<region>:<account_id>:model-invocation-job/*"
+                }
+            }
+    ]
+  }
+  ```
+  Permission Policy:
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::<bucket>",
+                "arn:aws:s3:::<bucket>/*"
+            ]
+        }
+    ]
+  }
+  ```
+</Accordion>
+
+## Defaults & Limits (Bedrock Native)
+
+| Property            | Default | Notes                        |
+| ------------------- | ------- | ---------------------------- |
+| `completion_window` | `24h`   | Fixed by Bedrock.            |
+| Job quota           | 50k/day | Subject to your AWS account. |
+| Max input file size | 10 GB   | Across all `.jsonl` objects. |
+
+[Portkey-Batch mode](/aigw/product/ai-gateway/batches) inherits the Gateway defaults (**25 req / 5 s**) and retries (**3×**) per request.
+
+---
+
+## Glossary
+
+| Term                               | Meaning                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| **Batch Job**                      | Collection of asynchronous completions.                                        |
+| **Portkey File** (`input_file_id`) | File uploaded to Portkey and re-uploaded to the provider for batch processing. |
+| **Provider Slug**                  | Bedrock credential stored in Portkey via Model Catalog; referenced by slug.    |
+| **Completion Window**              | `immediate` → Portkey-Batch; `24h` → Bedrock native.                           |
+
+---
+
+## See Also
+
+* [Unified Batch Guide](/aigw/product/ai-gateway/batches)
