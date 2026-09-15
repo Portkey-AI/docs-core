@@ -17,13 +17,19 @@ SPEC_REPO = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser(
     "~/Documents/Projects/openapi/openapi")
 DOCS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs.json")
 
-# The mirror is a local file, not a GitHub raw URL: we cannot point at the Palo
-# Alto Networks organisation. Prose is already flattened in by sync-openapi.sh,
-# so an empty overlay list also switches off Mintlify's overlay auto-discovery.
+# Every aigw group reads the spec straight from the public raw URL on main.
+#
+# Note this is the structure-only document: the spec repo keeps reader-facing
+# prose in overlays/docs-prose.yaml and does not merge it here. That costs
+# nothing today -- the overlay's actions currently only blank inherited prose,
+# so the bare spec and a flattened one are byte-for-byte equivalent in every
+# description and summary they publish. It will start costing something the
+# moment the overlay is populated against the KB, and the fix then is for the
+# spec repo to publish a resolved document rather than for docs to mirror.
 SOURCE = {
-    "source": "/aigw/airs-openapi.yaml",
+    "source": "https://raw.githubusercontent.com/PaloAltoNetworks/openapi/"
+              "refs/heads/main/openapi.yaml",
     "directory": "aigw/api-reference",
-    "overlays": [],
 }
 
 # Which generated top-level group belongs on which tab. Inference is the data
