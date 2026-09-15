@@ -1,0 +1,278 @@
+---
+title: "OpenAI Agent Builder (TypeScript)"
+description: "Add Prisma AIRS AI Gateway to visual agent workflows exported from OpenAI Agent Builder."
+---
+
+OpenAI Agent Builder is a visual canvas for creating multi-step agent workflows. Export production-ready TypeScript code and add the AI Gateway for:
+
+- Complete observability of agent workflows
+- Cost tracking and optimization
+- Reliability features (fallbacks, retries)
+- Access to 1600+ LLMs
+- Guardrails for safe agent behavior
+
+## Quick Start
+
+<Steps>
+<Step title="Design in Agent Builder">
+Open [OpenAI Agent Builder](https://platform.openai.com/playground/agent-builder) and create your workflow using the visual canvas.
+
+</Step>
+
+<Step title="Export Code">
+Click **Code** → **Agents SDK** to get the TypeScript implementation.
+
+</Step>
+
+<Step title="Install Packages">
+```bash
+npm install @openai/agents openai portkey-ai
+```
+</Step>
+
+<Step title="Add the AI Gateway">
+Replace the OpenAI client with the AI Gateway:
+
+```typescript
+import { Agent, run, setDefaultOpenAIClient, setOpenAIAPI } from '@openai/agents';
+import { OpenAI } from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const client = new OpenAI({
+    baseURL: PORTKEY_GATEWAY_URL,
+    apiKey: 'YOUR_PORTKEY_API_KEY',
+    defaultHeaders: createHeaders({ provider: '@openai-prod' })
+});
+setDefaultOpenAIClient(client);
+setOpenAIAPI('chat_completions');
+
+// Your Agent Builder workflow code continues as exported...
+```
+
+<Note>
+Update the `model` field to use the AI Gateway's format: `@openai-prod/gpt-4o`
+</Note>
+</Step>
+</Steps>
+
+## Setup
+
+<Steps>
+<Step title="Add Provider in Model Catalog">
+Go to [Model Catalog → Add Provider](https://stratacloudmanager.paloaltonetworks.com/). Select your provider (OpenAI, Anthropic, etc.), enter API keys, and name it (e.g., `openai-prod`).
+
+Your provider slug is `@openai-prod`.
+</Step>
+
+<Step title="Get AI Gateway API Key">
+Create an API key at [stratacloudmanager.paloaltonetworks.com](https://stratacloudmanager.paloaltonetworks.com/).
+
+**Pro tip:** Attach a [config](https://stratacloudmanager.paloaltonetworks.com/) for fallbacks, caching, and guardrails—applies automatically.
+</Step>
+</Steps>
+
+## Production Features
+
+### Observability
+
+All workflow executions are logged:
+
+Add trace IDs and metadata for filtering:
+
+```typescript
+defaultHeaders: createHeaders({
+    provider: '@openai-prod',
+    traceId: 'workflow-session-123',
+    metadata: {
+        workflow_type: 'research',
+        _user: 'user_123',
+        environment: 'production'
+    }
+})
+```
+
+### Reliability
+
+Enable fallbacks via [Configs](https://stratacloudmanager.paloaltonetworks.com/):
+
+```typescript
+const client = new OpenAI({
+    baseURL: PORTKEY_GATEWAY_URL,
+    apiKey: 'YOUR_PORTKEY_API_KEY',
+    defaultHeaders: createHeaders({
+        config: {
+            strategy: { mode: 'fallback' },
+            targets: [
+                { override_params: { model: '@openai-prod/gpt-4o' } },
+                { override_params: { model: '@anthropic-prod/claude-sonnet-4' } }
+            ]
+        }
+    })
+});
+```
+
+<CardGroup cols="2">
+  <Card title="Automatic Retries" icon="rotate" href="/aigw/product/ai-gateway/automatic-retries">
+    Handles temporary failures automatically
+  </Card>
+  <Card title="Load Balancing" icon="scale-balanced" href="/aigw/product/ai-gateway/load-balancing">
+    Distribute across multiple keys
+  </Card>
+  <Card title="Conditional Routing" icon="route" href="/aigw/product/ai-gateway/conditional-routing">
+    Route based on request attributes
+  </Card>
+  <Card title="Fallbacks" icon="shield" href="/aigw/product/ai-gateway/fallbacks">
+    Switch to backup providers automatically
+  </Card>
+</CardGroup>
+
+### Guardrails
+
+Add input/output validation:
+
+```typescript
+defaultHeaders: createHeaders({
+    provider: '@openai-prod',
+    config: {
+        input_guardrails: ['guardrail-id-xxx'],
+        output_guardrails: ['guardrail-id-yyy']
+    }
+})
+```
+
+Guardrails can:
+- Detect and redact PII
+- Filter harmful content
+- Validate response formats
+- Apply custom business rules
+
+<Card title="Guardrails Guide" icon="shield-check" href="/aigw/product/guardrails">
+  PII detection, content filtering, and custom rules
+</Card>
+
+### Caching
+
+Reduce costs with response caching:
+
+```typescript
+defaultHeaders: createHeaders({
+    provider: '@openai-prod',
+    config: { cache: { mode: 'semantic' } }
+})
+```
+
+### Prompt Templates
+
+Use the AI Gateway's prompt management for versioned prompts:
+
+```typescript
+import { Portkey } from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: 'YOUR_PORTKEY_API_KEY' });
+
+const promptData = await portkey.prompts.render({
+    promptId: 'YOUR_PROMPT_ID',
+    variables: { task: 'research' }
+});
+
+const agent = new Agent({
+    name: 'Assistant',
+    instructions: promptData.data.messages[0].content,
+    model: '@openai-prod/gpt-4o'
+});
+```
+
+## Switching Providers
+
+Use any of 1600+ models:
+
+```typescript
+// OpenAI
+createHeaders({ provider: '@openai-prod' })
+
+// Anthropic
+createHeaders({ provider: '@anthropic-prod' })
+
+// Google
+createHeaders({ provider: '@google-prod' })
+```
+
+<Card title="Supported Providers" icon="server" href="/aigw/integrations/llms">
+  See all 1600+ supported models
+</Card>
+
+## Enterprise Governance
+
+Set up centralized control for your workflows.
+
+<Steps>
+<Step title="Add Provider with Budget">
+Go to [Model Catalog](https://stratacloudmanager.paloaltonetworks.com/) → Add Provider. Set budget limits and rate limits.
+</Step>
+
+<Step title="Create Config">
+Go to [Configs](https://stratacloudmanager.paloaltonetworks.com/):
+
+```json
+{
+  "override_params": { "model": "@openai-prod/gpt-4o" }
+}
+```
+</Step>
+
+<Step title="Create Team API Keys">
+Go to [API Keys](https://stratacloudmanager.paloaltonetworks.com/). Create keys per team, attach configs.
+</Step>
+
+<Step title="Distribute to Teams">
+Teams use their AI Gateway API key:
+
+```typescript
+const client = new OpenAI({
+    baseURL: PORTKEY_GATEWAY_URL,
+    apiKey: 'TEAM_PORTKEY_API_KEY'  // Config attached to key
+});
+```
+</Step>
+</Steps>
+
+<Card title="Enterprise Features" icon="building" href="/aigw/product/enterprise-offering">
+  Governance, security, and compliance
+</Card>
+
+## FAQ
+
+<AccordionGroup>
+  <Accordion title="Can I use the AI Gateway with existing Agent Builder workflows?">
+    Yes. Export your workflow, add AI Gateway client initialization, and your code works unchanged.
+  </Accordion>
+
+  <Accordion title="Does the AI Gateway work with all Agent Builder features?">
+    Yes. Handoffs, tools, guardrails—all work with the AI Gateway observability and reliability.
+  </Accordion>
+
+  <Accordion title="How do I track workflow costs?">
+    Add metadata to your requests. Filter by workflow type, user, or environment in the dashboard.
+  </Accordion>
+
+  <Accordion title="Can I use my own API keys?">
+    Yes. The AI Gateway stores your provider keys securely. Rotate keys without code changes.
+  </Accordion>
+</AccordionGroup>
+
+## Resources
+
+<CardGroup cols="2">
+  <Card title="OpenAI Agents SDK" icon="robot" href="/aigw/integrations/agents/openai-agents-ts">
+    Full SDK integration guide
+  </Card>
+  <Card title="Configs" icon="gear" href="/aigw/product/ai-gateway/configs">
+    Fallbacks, caching, and routing
+  </Card>
+  <Card title="OpenAI Agents Docs" icon="book" href="https://openai.github.io/openai-agents-js/">
+    Official documentation
+  </Card>
+  <Card title="Book a Demo" icon="calendar" href="https://www.paloaltonetworks.com/ai-security/ai-gateway#:~:text=See%20Prisma%20AIRS%20AI%20Gateway%20in%20Action">
+    Get implementation guidance
+  </Card>
+</CardGroup>

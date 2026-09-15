@@ -1,0 +1,232 @@
+---
+title: "SCIM Group Management"
+description: "Map SCIM groups to Prisma AIRS AI Gateway workspaces and roles without naming restrictions."
+---
+
+# SCIM Group Management
+
+The AI Gateway now supports flexible group-to-workspace mapping, allowing you to provision groups from your identity provider (Okta or Azure Entra) with any naming convention and then map them to one or more AI Gateway workspaces and roles directly from the Management Plane.
+
+---
+
+## Overview
+
+Previously, SCIM group provisioning required groups to follow a specific naming format (`ws-{group}-role-{role}`) to automatically map to AI Gateway workspaces. This restriction has been removed.
+
+With the new group management feature, you can:
+
+- **Provision groups with any name** from your identity provider
+- **Map a single group to one or more workspaces** after provisioning
+- **Assign roles** to all members of a group
+- **Manage mappings** directly from Management Plane
+- **Configure custom prefix and separator** for automatic group-to-workspace mapping (optional)
+
+---
+
+## Workflow
+
+The group mapping process follows these steps:
+
+1. **Provision the group** from your identity provider (Okta or Azure Entra)
+2. **Map the group** to an AI Gateway workspace and assign a role from Management Plane
+3. **Users are automatically assigned** to the workspace with the specified role when added to the group
+
+<Warning>
+Groups must be provisioned from your identity provider **first** before they can be mapped in the AI Gateway. You cannot map a group that hasn't been provisioned yet.
+</Warning>
+
+---
+
+## Provisioning Groups from Identity Provider
+
+Before mapping groups in the AI Gateway, ensure the groups are provisioned from your identity provider.
+
+### For Okta Users
+
+1. Navigate to your Okta application settings
+2. Go to the **Push Groups** tab
+3. Push the groups you want to map to the AI Gateway
+4. Verify the groups appear in the AI Gateway after provisioning
+
+For detailed instructions, refer to the [Okta Group Provisioning](/aigw/product/enterprise-offering/org-management/scim/okta#group-provisioning-with-okta) section.
+
+### For Azure Entra Users
+
+1. Navigate to your Azure Entra application
+2. Go to the **Provisioning** page
+3. Ensure groups are assigned to the application
+4. Verify the groups are provisioned to the AI Gateway
+
+For detailed instructions, refer to the [Azure Entra Group Provisioning](/aigw/product/enterprise-offering/org-management/scim/azure-ad#group-workspace-provisioning) section.
+
+---
+
+## Configuring Group Naming Format (Optional)
+
+If you prefer automatic group-to-workspace mapping based on naming conventions, you can configure a custom prefix and separator to match your organisation's group naming format.
+
+### Default Format
+
+By default, the AI Gateway expects groups to follow this format:
+- **Format:** `ws-{Workspace}-role-{admin,manager,member}`
+- **Prefix:** `ws`
+- **Role Separator:** `-role-`
+
+**Example:**
+- `ws-Sales-role-admin`
+- `ws-Engineering-role-manager`
+- `ws-Marketing-role-member`
+- `ws-Complex Workspace-role-admin`
+
+### Custom Configuration
+
+You can configure your own prefix and separator to match your group naming conventions:
+
+1. Navigate to **Admin Settings > Authentication Settings > SCIM Provisioning** in Management Plane
+2. Find the **Pattern Based SCIM Grouping** section
+3. Configure the following fields:
+   - **Workspace Prefix**: The prefix used in your group names (e.g., `ws-`, `portkey-`, `org-`)
+   - **Role Separator**: The character used to separate the role from the workspace (e.g., `-role-`, `_role_`, `.role.`)
+4. Click **Save** to apply the configuration
+
+<Info>
+The format will be: `{prefix}{Workspace}{role_separator}{admin,manager,member}`
+Once configured, groups matching this format will automatically map to workspaces with the specified role, without requiring manual mapping in the SCIM Mappings List.
+</Info>
+---
+
+## Mapping Groups to Workspaces
+
+Once groups are provisioned from your identity provider, you can map them to AI Gateway workspaces. A single SCIM group can be mapped to **multiple workspaces**; every member of the group is automatically provisioned into each mapped workspace with the configured role.
+
+1. Navigate to **Admin Settings > Authentication Settings > SCIM Provisioning** in Management Plane
+2. Find the **SCIM Mappings List** section
+3. Click on the **Add New Mapping** button
+4. Select the appropriate fields from the dropdowns:
+    - **SCIM Group Name**: The name of the group from your identity provider. The dropdown supports search and paginates results, so groups remain easy to locate even with hundreds provisioned.
+    - **AI Gateway Workspace**: The workspace to map the group to
+    - **Role**: The role to assign to the group members
+5. Click **Save** to complete the mapping
+6. To map the same group to another workspace, repeat the steps above and pick a different workspace. The same group can appear in the mappings list once per workspace.
+
+<Info>
+The role you select will be applied to **all members** added to the group, across **every** workspace the group is mapped to. All users in the group will have the same role in each mapped workspace.
+</Info>
+
+<Warning>
+A SCIM group can only be mapped with a **single role** across all of its workspaces. If a group is already mapped to one workspace as `manager`, attempting to map it to another workspace as `admin` will be rejected. Delete the existing mapping(s) first if you need to change the role.
+</Warning>
+
+---
+
+### Supported Roles
+
+| Role | Description |
+|------|-------------|
+| **Admin** | Full workspace access with management capabilities, including workspace settings and member management |
+| **Manager** | Can manage workspace resources, view analytics, and manage members |
+| **Member** | Standard workspace access with read and write permissions to workspace resources |
+
+<Info>
+Role names are **case-insensitive**. For example, `Admin`, `admin`, and `ADMIN` are all treated as the same role. This applies to both organisation roles and workspace roles in SCIM provisioning.
+</Info>
+
+<Warning>
+A role must be selected when mapping a group. The mapping cannot be saved without selecting a role.
+</Warning>
+
+---
+
+## Group-Based User Provisioning
+
+By default, when a SCIM group update includes an archived (deprovisioned) user, the AI Gateway will **not** reactivate that user. This is because some identity providers (like Okta) send the full member list on every group update, which could unintentionally reactivate users that were removed.
+
+If your identity provider (such as **JumpCloud**) expects group membership updates to reactivate archived users, you can enable the `group_based_user_provisioning` setting.
+
+### Enabling Group-Based User Provisioning
+
+1. Navigate to **Admin Settings > Authentication Settings > SCIM Provisioning** in Management Plane
+2. Enable the **Group-Based User Provisioning** toggle
+3. Click **Save**
+
+When enabled:
+- Archived users will be **automatically reactivated** when they are included in a SCIM group membership update
+- The user will be added back to the workspace mapped to that group with the configured role
+
+<Warning>
+Only enable this setting if your identity provider requires it. Enabling this with providers like Okta that send full member lists on every update may cause unintended user reactivations.
+</Warning>
+
+---
+
+## Managing Group Mappings
+
+### Viewing Existing Mappings
+
+You can view all group-to-workspace mappings in the **SCIM Mappings List** section of SCIM Provisioning settings. The list is paginated and each mapping displays:
+
+- Group name (from identity provider)
+- Mapped workspace
+- Assigned role
+
+A group that is mapped to multiple workspaces appears as one row per workspace, all sharing the same role.
+
+### Removing Mappings
+
+To remove a group mapping:
+
+1. Navigate to the **SCIM Mappings List** section
+2. Find the group mapping you want to remove
+3. Click on the **Delete** icon next to the mapping
+
+Deleting a mapping from the AI Gateway only unlinks the SCIM group from that workspace. **Users already provisioned into the workspace remain as workspace members**, and the workspace itself is **not** archived. Future updates to the SCIM group will simply stop affecting that workspace. Other workspaces the group is still mapped to continue to operate normally.
+
+<Info>
+Workspace and user cleanup only happen when the SCIM group is **deleted at the identity provider** (which sends `DELETE /v1/scim/Groups/{id}` to the AI Gateway). In that path:
+- All of the group's workspace mappings are archived
+- For each affected workspace, if no other active mapping remains, users provisioned by the deleted mapping's role are archived
+- The workspace itself is archived only if it is **not** the organisation's default/shared workspace
+
+If you need to remove users from a workspace through the UI, remove them via workspace member management — deleting the mapping alone will not do it.
+</Info>
+
+---
+
+## User-Based Group Management Mode (AirGapped only)
+
+By default, group memberships are managed through the SCIM `/Groups` endpoint. For identity providers that manage group assignments through user attributes (e.g., Azure Entra), you can enable **User-Based Group Management Mode**.
+
+When this mode is enabled:
+- Group memberships can be managed via the SCIM `/Users` endpoint (create, update, and patch operations)
+- The `groups` attribute on SCIM user responses includes the user's current group memberships
+- Group member operations on the `/Groups` PATCH endpoint are skipped to avoid conflicts
+
+### Enabling User-Based Group Management
+
+Set the following environment variable on your backend deployment:
+
+```
+SCIM_MEMBERSHIP_USER_MODE=ON
+```
+
+This mode is useful when your identity provider pushes group membership updates as part of user provisioning rather than group provisioning operations.
+
+---
+
+## Benefits
+
+The flexible group management feature provides several advantages:
+
+- **No naming restrictions** - Use any group naming convention that fits your organisation
+- **Flexible mapping** - Map groups to workspaces after provisioning
+- **One group, many workspaces** - Map a single SCIM group to multiple AI Gateway workspaces in one go, with one role applied uniformly across all of them
+- **Simplified management** - Manage all mappings from Management Plane
+- **Role consistency** - All group members automatically receive the same role across every mapped workspace
+- **Custom naming format** - Configure prefix and separator to match your existing group naming conventions for automatic mapping
+- **User-based management** - Optionally manage group memberships via the `/Users` endpoint for providers that require it
+
+---
+
+## Support
+
+If you encounter any issues with group management or need assistance with mapping groups to workspaces, please contact our support team at [support@portkey.ai](mailto:support@portkey.ai).

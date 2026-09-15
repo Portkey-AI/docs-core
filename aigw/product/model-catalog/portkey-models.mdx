@@ -1,0 +1,645 @@
+---
+title: "Prisma AIRS AI Gateway Models"
+description: "Open-source pricing and configuration database for 2,300+ LLMs across 35+ providers"
+api: "GET https://aigw.portkey.ai/model-configs/pricing/{provider}/{model}"
+authMethod: "none"
+---
+
+<Info>
+**AI Gateway Models** is a free, open-source pricing database for LLMs. No API key required — just query any model's pricing directly.
+</Info>
+
+<CardGroup cols={3}>
+  <Card title="Explore Models" icon="magnifying-glass" href="https://portkey.ai/models">
+    Browse 2,300+ models
+  </Card>
+  <Card title="Model Rankings" icon="ranking-star" href="https://portkey.ai/rankings">
+    Top models by usage
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/Portkey-AI/models">
+    View source & contribute
+  </Card>
+</CardGroup>
+
+---
+
+## Quick Start
+
+Get pricing for any model with a single API call:
+
+<CodeGroup>
+
+```bash cURL
+curl https://aigw.portkey.ai/model-configs/pricing/openai/gpt-4o
+```
+
+```javascript JavaScript
+const response = await fetch(
+  'https://aigw.portkey.ai/model-configs/pricing/anthropic/claude-3-5-sonnet-20241022'
+);
+const pricing = await response.json();
+
+console.log(pricing.pay_as_you_go.request_token.price);  // Input cost
+console.log(pricing.pay_as_you_go.response_token.price); // Output cost
+```
+
+```python Python
+import requests
+
+pricing = requests.get(
+    'https://aigw.portkey.ai/model-configs/pricing/google/gemini-2.0-flash-001'
+).json()
+
+input_cost = pricing['pay_as_you_go']['request_token']['price']
+output_cost = pricing['pay_as_you_go']['response_token']['price']
+```
+
+</CodeGroup>
+
+<Tip>
+**Need to discover all models for a provider?** Instead of querying each model individually, you can fetch pricing for all models at once:
+
+```bash
+curl https://configs.portkey.ai/pricing/{provider}.json
+```
+
+[See detailed documentation below ↓](#get-all-models-for-a-provider)
+</Tip>
+
+---
+
+## Understanding Pricing Units
+
+<Warning>
+**Prices are in cents per token, not dollars.**
+</Warning>
+
+| API Response | Per 1K Tokens | Per 1M Tokens |
+|--------------|---------------|---------------|
+| `0.003` | $0.03 | $30 |
+| `0.00025` | $0.0025 | $2.50 |
+| `0.0001` | $0.001 | $1.00 |
+
+**Calculate cost in dollars:**
+
+```javascript
+const costInDollars = (tokens * priceFromAPI) / 100;
+```
+
+---
+
+## API Reference
+
+### Get Model Pricing
+
+Returns pricing configuration for a specific model.
+
+```
+GET https://aigw.portkey.ai/model-configs/pricing/{provider}/{model}
+```
+
+#### Path Parameters
+
+<ParamField path="provider" type="string" required>
+  Provider identifier. Use lowercase with hyphens.
+
+  Examples: `openai`, `anthropic`, `google`, `azure-openai`, `bedrock`, `together-ai`, `groq`, `deepseek`, `x-ai`, `mistral-ai`, `cohere`, `fireworks-ai`, `perplexity-ai`, `anyscale`, `deepinfra`, `cerebras`
+</ParamField>
+
+<ParamField path="model" type="string" required>
+  Model identifier. Use the exact model name as specified by the provider.
+
+  Examples: `gpt-4o`, `gpt-4-turbo`, `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229`, `gemini-2.0-flash-001`, `gemini-1.5-pro`
+</ParamField>
+
+#### Response Schema
+
+<ResponseField name="pay_as_you_go" type="object">
+  Token-based pricing. All prices in USD **cents per token**.
+
+  <Expandable title="properties">
+    <ResponseField name="request_token" type="object">
+      Input token pricing.
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token. Example: `0.00025` = $0.0025 per 1K tokens
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="response_token" type="object">
+      Output token pricing.
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="cache_read_input_token" type="object">
+      Prompt cache read pricing (when available).
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="cache_write_input_token" type="object">
+      Prompt cache write pricing (when available).
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="request_audio_token" type="object">
+      Audio input token pricing (for multimodal models).
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="response_audio_token" type="object">
+      Audio output token pricing (for multimodal models).
+      <Expandable title="properties">
+        <ResponseField name="price" type="number">
+          Price in USD cents per token.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="additional_units" type="object">
+      Provider-specific pricing for features beyond tokens.
+
+      Common units:
+      - `web_search` — Web search tool usage
+      - `file_search` — File search tool usage
+      - `thinking_token` — Chain-of-thought reasoning tokens
+      - `image_token` — Image generation/processing
+      - `video_duration_seconds_*` — Video generation (by resolution)
+    </ResponseField>
+
+    <ResponseField name="image" type="object">
+      Image generation pricing by quality and size (for image models).
+
+      Structure: `{ "quality": { "resolution": { "price": number } } }`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="calculate" type="object">
+  Cost calculation formulas for complex pricing scenarios.
+
+  <Expandable title="properties">
+    <ResponseField name="request" type="object">
+      Formula for calculating request (input) cost.
+    </ResponseField>
+    <ResponseField name="response" type="object">
+      Formula for calculating response (output) cost.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="currency" type="string">
+  Currency code. Always `USD`.
+</ResponseField>
+
+<ResponseField name="finetune_config" type="object">
+  Fine-tuning pricing (when available).
+
+  <Expandable title="properties">
+    <ResponseField name="pay_per_token" type="object">
+      Training cost per token.
+    </ResponseField>
+    <ResponseField name="pay_per_hour" type="object">
+      Training cost per hour.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example Responses
+
+<CodeGroup>
+
+```json OpenAI GPT-4o
+{
+  "pay_as_you_go": {
+    "request_token": { "price": 0.00025 },
+    "response_token": { "price": 0.001 },
+    "cache_write_input_token": { "price": 0 },
+    "cache_read_input_token": { "price": 0.000125 },
+    "additional_units": {
+      "web_search": { "price": 1 },
+      "file_search": { "price": 0.25 }
+    }
+  },
+  "calculate": {
+    "request": {
+      "operation": "sum",
+      "operands": [
+        { "operation": "multiply", "operands": [{ "value": "input_tokens" }, { "value": "rates.request_token" }] },
+        { "operation": "multiply", "operands": [{ "value": "cache_write_tokens" }, { "value": "rates.cache_write_input_token" }] },
+        { "operation": "multiply", "operands": [{ "value": "cache_read_tokens" }, { "value": "rates.cache_read_input_token" }] }
+      ]
+    },
+    "response": {
+      "operation": "multiply",
+      "operands": [{ "value": "output_tokens" }, { "value": "rates.response_token" }]
+    }
+  },
+  "currency": "USD"
+}
+```
+
+```json Anthropic Claude 3.5 Sonnet
+{
+  "pay_as_you_go": {
+    "request_token": { "price": 0.0003 },
+    "response_token": { "price": 0.0015 },
+    "cache_read_input_token": { "price": 0.00003 },
+    "cache_write_input_token": { "price": 0.000375 }
+  },
+  "currency": "USD"
+}
+```
+
+```json Google Gemini 2.5 Pro
+{
+  "pay_as_you_go": {
+    "request_token": { "price": 0.000125 },
+    "response_token": { "price": 0.001 },
+    "additional_units": {
+      "thinking_token": { "price": 0.001 },
+      "web_search": { "price": 3.5 },
+      "search": { "price": 3.5 }
+    }
+  },
+  "currency": "USD"
+}
+```
+
+```json OpenAI DALL-E 3 (Image Model)
+{
+  "pay_as_you_go": {
+    "image": {
+      "standard": {
+        "1024x1024": { "price": 4 },
+        "1024x1792": { "price": 8 },
+        "1792x1024": { "price": 8 }
+      },
+      "hd": {
+        "1024x1024": { "price": 8 },
+        "1024x1792": { "price": 12 },
+        "1792x1024": { "price": 12 }
+      }
+    }
+  },
+  "currency": "USD"
+}
+```
+
+</CodeGroup>
+
+---
+
+### Get Model Configuration
+
+Returns general configuration and capabilities for a specific model.
+
+```
+GET https://aigw.portkey.ai/model-configs/general/{provider}/{model}
+```
+
+#### Path Parameters
+
+<ParamField path="provider" type="string" required>
+  Provider identifier (e.g., `openai`, `anthropic`, `google`)
+</ParamField>
+
+<ParamField path="model" type="string" required>
+  Model identifier (e.g., `gpt-4o`, `claude-3-opus`)
+</ParamField>
+
+#### Response Schema
+
+<ResponseField name="params" type="array">
+  Model parameters with their constraints.
+
+  <Expandable title="item properties">
+    <ResponseField name="key" type="string">
+      Parameter name (e.g., `max_tokens`, `temperature`, `top_p`)
+    </ResponseField>
+    <ResponseField name="defaultValue" type="any">
+      Default value for the parameter.
+    </ResponseField>
+    <ResponseField name="minValue" type="number">
+      Minimum allowed value.
+    </ResponseField>
+    <ResponseField name="maxValue" type="number">
+      Maximum allowed value.
+    </ResponseField>
+    <ResponseField name="type" type="string">
+      Parameter type (e.g., `boolean`, `string`, `array-of-strings`)
+    </ResponseField>
+    <ResponseField name="options" type="array">
+      Available options for enum-type parameters.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="type" type="object">
+  Model type classification.
+
+  <Expandable title="properties">
+    <ResponseField name="primary" type="string">
+      Primary model type: `chat`, `text`, `embedding`, `image`, `audio`, `moderation`
+    </ResponseField>
+    <ResponseField name="supported" type="array">
+      Supported features: `tools`, `image`, `cache_control`, `json_mode`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="messages" type="object">
+  Message configuration.
+
+  <Expandable title="properties">
+    <ResponseField name="options" type="array">
+      Supported message roles: `system`, `user`, `assistant`, `developer`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="disablePlayground" type="boolean">
+  If `true`, model is not available in the AI Gateway playground.
+</ResponseField>
+
+<ResponseField name="isDefault" type="boolean">
+  If `true`, this is the default model for the provider.
+</ResponseField>
+
+#### Example Responses
+
+<CodeGroup>
+
+```json OpenAI GPT-4o
+{
+  "params": [
+    {
+      "key": "max_tokens",
+      "maxValue": 16384
+    },
+    {
+      "key": "response_format",
+      "defaultValue": null,
+      "options": [
+        { "value": null, "name": "Text" },
+        { "value": "json_object", "name": "JSON Object" },
+        { "value": "json_schema", "name": "JSON Schema" }
+      ],
+      "type": "string"
+    },
+    {
+      "key": "temperature",
+      "minValue": 0,
+      "maxValue": 2,
+      "defaultValue": 1
+    }
+  ],
+  "type": {
+    "primary": "chat",
+    "supported": ["tools", "image"]
+  }
+}
+```
+
+```json Anthropic Claude 3 Opus
+{
+  "params": [
+    {
+      "key": "max_tokens",
+      "maxValue": 4096
+    }
+  ],
+  "type": {
+    "primary": "chat",
+    "supported": ["tools", "image", "cache_control"]
+  },
+  "messages": {
+    "options": ["system", "user", "assistant"]
+  }
+}
+```
+
+</CodeGroup>
+
+---
+
+### Get All Models for a Provider
+
+Returns pricing configuration for all models from a specific provider in a single response.
+
+```
+GET https://configs.portkey.ai/pricing/{provider}.json
+```
+
+<Info>
+Use this endpoint to discover all available models and their pricing for a provider, instead of querying each model individually.
+</Info>
+
+#### Path Parameters
+
+<ParamField path="provider" type="string" required>
+  Provider identifier. Use lowercase with hyphens.
+
+  Examples: `openai`, `anthropic`, `google`, `bedrock`, `azure-openai`, `together-ai`, `groq`, `deepseek`, `x-ai`, `mistral-ai`
+</ParamField>
+
+#### Response Schema
+
+Returns a JSON object where:
+- Keys are model identifiers
+- Values contain `pricing_config` objects with the same structure as the individual model pricing endpoint
+- A `default` key provides the base pricing template
+
+<ResponseField name="{model-id}" type="object">
+  Pricing configuration for a specific model.
+
+  <Expandable title="properties">
+    <ResponseField name="pricing_config" type="object">
+      Contains the same pricing structure as the individual model endpoint: `pay_as_you_go`, `calculate`, `currency`, etc.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Example Response
+
+<CodeGroup>
+
+```bash cURL
+curl --request GET \
+  --url https://configs.portkey.ai/pricing/bedrock.json
+```
+
+```javascript JavaScript
+const response = await fetch('https://configs.portkey.ai/pricing/bedrock.json');
+const allModels = await response.json();
+
+// Access specific model pricing
+const claudePrice = allModels['anthropic.claude-3-5-sonnet-20241022-v2:0'];
+console.log(claudePrice.pricing_config.pay_as_you_go);
+```
+
+```python Python
+import requests
+
+all_models = requests.get(
+    'https://configs.portkey.ai/pricing/bedrock.json'
+).json()
+
+# List all available models
+for model_id in all_models.keys():
+    if model_id != 'default':
+        print(model_id)
+```
+
+</CodeGroup>
+
+<Accordion title="Sample Response (Bedrock)">
+
+```json
+{
+  "default": {
+    "pricing_config": {
+      "pay_as_you_go": {
+        "request_token": { "price": 0 },
+        "response_token": { "price": 0 }
+      },
+      "calculate": {
+        "request": {
+          "operation": "multiply",
+          "operands": [
+            { "value": "input_tokens" },
+            { "value": "rates.request_token" }
+          ]
+        },
+        "response": {
+          "operation": "multiply",
+          "operands": [
+            { "value": "output_tokens" },
+            { "value": "rates.response_token" }
+          ]
+        }
+      },
+      "currency": "USD"
+    }
+  },
+  "anthropic.claude-3-5-sonnet-20241022-v2:0": {
+    "pricing_config": {
+      "pay_as_you_go": {
+        "request_token": { "price": 0.0003 },
+        "response_token": { "price": 0.0015 },
+        "cache_write_input_token": { "price": 0.000375 },
+        "cache_read_input_token": { "price": 0.00003 }
+      }
+    }
+  },
+  "anthropic.claude-3-haiku-20240307-v1:0": {
+    "pricing_config": {
+      "pay_as_you_go": {
+        "request_token": { "price": 0.000025 },
+        "response_token": { "price": 0.000125 }
+      }
+    }
+  },
+  "meta.llama3-1-405b-instruct-v1:0": {
+    "pricing_config": {
+      "pay_as_you_go": {
+        "request_token": { "price": 0.000532 },
+        "response_token": { "price": 0.0016 }
+      }
+    }
+  },
+  "amazon.nova-pro-v1:0": {
+    "pricing_config": {
+      "pay_as_you_go": {
+        "request_token": { "price": 0.00008 },
+        "response_token": { "price": 0.00002 },
+        "cache_read_input_token": { "price": 0.00004 },
+        "cache_write_input_token": { "price": 0.00016 }
+      }
+    }
+  }
+}
+```
+
+</Accordion>
+
+---
+
+## Additional Units Reference
+
+Provider-specific pricing for features beyond standard token costs:
+
+| Unit | Description | Providers | Price Range (¢) |
+|------|-------------|-----------|-----------------|
+| `web_search` | Web search tool usage | OpenAI, Azure, Google, Vertex AI, Perplexity | 0.5 - 3.5 |
+| `file_search` | File search tool usage | OpenAI, Azure | 0.25 |
+| `search` | Google search grounding | Google, Vertex AI | 1.4 - 3.5 |
+| `thinking_token` | Chain-of-thought reasoning | Google, Vertex AI | 0.00004 - 0.0012 |
+| `image_token` | Image processing tokens | Google, Vertex AI | 0.003 |
+| `image_1k` | Image generation (1K units) | Google | 3.9 |
+| `megapixels` | Image generation by megapixel | Together AI | 0.0027 - 0.08 |
+| `video_seconds` | Video generation | Vertex AI | 10 - 50 |
+| `video_duration_seconds_720_1280` | Video (720p) | OpenAI Sora | 10 - 30 |
+| `video_duration_seconds_1080_1920` | Video (1080p) | OpenAI Sora | 50 |
+| `routing_units` | Azure OpenAI routing | Azure OpenAI | 0.000014 |
+| `input_image` | Image input | Vertex AI | 0.01 |
+| `input_video_essential` | Video input (essential) | Vertex AI | 0.05 |
+| `input_video_standard` | Video input (standard) | Vertex AI | 0.1 |
+| `input_video_plus` | Video input (plus) | Vertex AI | 0.2 |
+
+<Accordion title="Perplexity Context-Based Pricing">
+
+Perplexity has context-dependent web search pricing:
+
+| Unit | Price (¢) |
+|------|-----------|
+| `web_search_low_context` | 0.5 - 0.6 |
+| `web_search_medium_context` | 0.8 - 1.0 |
+| `web_search_high_context` | 1.2 - 1.4 |
+
+</Accordion>
+
+---
+
+## Supported Providers
+
+<Accordion title="40+ providers supported">
+
+AI21, Anthropic, Anyscale, Azure AI, Azure OpenAI, AWS Bedrock, Cerebras, Cohere, Dashscope, Deepbricks, DeepInfra, DeepSeek, Fireworks AI, GitHub, Google, Groq, Inference.net, Jina, Lambda, Lemonfox AI, Mistral AI, MonsterAPI, Nebius, Nomic, Novita AI, OpenAI, OpenRouter, Oracle, PaLM, Perplexity AI, Predibase, Reka AI, Sagemaker, Segmind, Stability AI, Together AI, Vertex AI, Workers AI, X.AI, Zhipu
+
+</Accordion>
+
+---
+
+## Use with AI Gateway Portkey Models powers automatic cost tracking for all requests through the AI Gateway. When you make requests via the AI Gateway, costs are calculated automatically using this pricing data.
+
+<CardGroup cols={2}>
+  <Card title="Cost Analytics" icon="chart-line" href="/aigw/product/observability/analytics">
+    View real-time spend across all your LLM usage
+  </Card>
+  <Card title="Budget Limits" icon="dollar-sign" href="/aigw/product/model-catalog/integrations#3-budget--rate-limits">
+    Set spending caps that automatically enforce limits
+  </Card>
+</CardGroup>
+
+If you have negotiated enterprise rates, you can override the default pricing:
+
+<Card title="Custom Pricing" icon="pen-to-square" href="/aigw/product/model-catalog/model-overrides">
+  Set custom input/output costs to match your contracts
+</Card>

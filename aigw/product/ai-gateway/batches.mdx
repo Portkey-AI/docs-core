@@ -1,0 +1,232 @@
+---
+title: "Unified Batch Inference"
+description: "Run large‑scale inference jobs through one consistent endpoint"
+---
+
+<Info>
+  **Enterprise Feature** <br/> Batch inference is available on **Enterprise** hybrid and self-hosted plans only. Contact Prisma AIRS AI Gateway team to enable it for your Organisation.
+</Info>
+
+AI Gateway lets you send a single request that fan‑outs to hundreds—or millions—of completions. Choose the mode that best fits cost, latency, and provider support.
+
+## Choose Your Batching Mode
+
+| Mode                   | When to pick it | Works with |
+| ---------------------- | -------------------------- | ------------ |
+| **[Provider Batch API](#provider-batch-api-mode)** | *Cheapest* for overnight or offline jobs. Uses the provider's native batch endpoint & limits.| `OpenAI`, `Azure OpenAI`, `Bedrock`, `Vertex` |
+| **[AI Gateway Batch API](#portkey-batch-api-mode)**  | *Fastest* and provider‑agnostic. Batches at the Gateway layer; ideal when a provider has no native batch support or you need cross‑provider jobs. | Any provider supported by AI Gateway |
+
+<Tip>
+<strong>Quick rule of thumb →</strong> <br/> Need low latency or multi‑provider batching? **AI Gateway Batch API**. Otherwise, stick with the provider's native batch for cost savings.
+</Tip>
+
+---
+
+## Before You Start
+
+Have the following ready to start making batch requests:
+1. **Strata Cloud Manager account & API key**.
+2. [Data Service](/aigw/changelog/data-service) to be enabled — required for **AI Gateway Managed Batching** or when **cost-attribution** is needed.
+3. **Provider credentials** for each downstream model (OpenAI key, Bedrock IAM role, etc.).
+4. A **AI Gateway File** (`input_file_id`) - **required only when using the AI Gateway Batch API (Mode #2)**. See [Files](/aigw/product/ai-gateway/files) to upload one.
+5. Optional: Familiarity with the [Create Batch OpenAPI spec](https://portkey.ai/docs/api-reference/inference-api/batch/create-batch).
+
+---
+
+## Provider Batch API Mode
+Used to run batch jobs with the provider's native batch endpoint. Providers usually offer a cheaper rate for batch jobs, but you'll be limited by the provider's quota and limits. Most completion windows are about 24 hours.
+
+<Note>
+**Polling for batch status**: The AI Gateway's gateway is stateless and does not poll for completion status of batches on the provider side. You must poll the batch status manually using the unified API with the same signature for all supported providers. See [Retrieve Batch](/api-reference/inference-api/batch/retrieve-batch) for details.
+</Note>
+
+### Quickstart (OpenAI example)
+
+<CodeGroup>
+
+```bash curl
+curl -X POST https://aigw.portkey.ai/v1/batches \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-provider: $@YOUR_PROVIDER_SLUG" \
+  -d '{
+    "input_file_id": "file_abc123",
+    "completion_window": "24h",
+    "endpoint": "/v1/chat/completions",
+}'
+```
+
+```javascript Typescript
+import Portkey from 'portkey-ai';
+
+const client = new Portkey({
+  apiKey: 'PORTKEY_API_KEY',
+  provider: '@YOUR_PROVIDER_SLUG'
+});
+
+async function main() {
+  const batch = await client.batches.create({
+    input_file_id: "file-abc123",
+    endpoint: "/v1/chat/completions",
+    completion_window: "24h"
+  });
+
+  console.log(batch);
+}
+
+main();
+
+```
+
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(
+  api_key = "PORTKEY_API_KEY",
+  provider = "@YOUR_PROVIDER_SLUG"
+)
+
+client.batches.create(
+  input_file_id="file-abc123",
+  endpoint="/v1/chat/completions",
+  completion_window="24h"
+)
+```
+
+</CodeGroup>
+
+> 🔗 Full schema: see the [OpenAPI reference](/api-reference/inference-api/batch/create-batch).
+
+### Supported Providers & Endpoints
+
+| Provider                                                | Endpoints                                       |
+| ------------------------------------------------------- | ----------------------------------------------- |
+| [OpenAI](/aigw/integrations/llms/openai/batches)             | `completions`, `chat completions`, `embeddings` |
+| [Azure OpenAI](/aigw/integrations/llms/azure-openai/batches) | `completions`, `chat completions`, `embeddings` |
+| [Bedrock](/aigw/integrations/llms/bedrock/batches)           | `chat completions`                              |
+| [Vertex AI](/aigw/integrations/llms/vertex-ai/batches)       | `chat completions`, `embeddings`                |
+
+<Tip>
+Need to redact PII or filter requests/responses on a provider batch? See [Guardrails for Batches](/aigw/product/guardrails/guardrails-for-batches) — pass a config with `input_guardrails`/`output_guardrails` via `portkey_options` and the AI Gateway applies them around the upstream batch.
+</Tip>
+
+### Defaults & Limits
+
+| Property            | Default          | Notes                                          |
+| ------------------- | ---------------- | ---------------------------------------------- |
+| `completion_window` | `24h`            | Set by provider (cannot be shorter).           |
+| Provider quota      | Per provider     | e.g., OpenAI ≤ 50k jobs/day.                   |
+| Retries             | Provider‑defined | The AI Gateway surfaces job status; no Gateway retry. |
+
+---
+
+## AI Gateway Managed Batching
+
+AI Gateway Managed Batching is a feature that allows you to manage batches across multiple providers with minimal effort and a unified API.
+
+Read more about portkey file [here](/aigw/product/ai-gateway/files).
+
+### How It Works
+
+1. Submit a batch request to the AI Gateway with portkey file and provider information.
+   - Batch requests respect metadata, budgets, and other batch request parameters.
+2. The AI Gateway will automatically upload and start the batch with provider.
+3. The AI Gateway will periodically check the batch status and update the batch status in the AI Gateway.
+4. Once batch is completed, portkey will read the batch output for the following details which will be added to your portkey analytics.
+    - Token count
+    - Cost
+    - Success Request count
+    - Failed Request count
+    - Total Request count
+
+<Note>
+**Note**: The automatic status polling and analytics described above apply only to **AI Gateway Managed Batching**. For **Provider Batch API Mode** (Unified Batch Inference), you must poll the batch status manually.
+</Note>
+
+## AI Gateway Custom Batching  ⭐️
+
+The AI Gateway custom batching is a feature that allows you to batch requests to the provider which doesn't have a native batch endpoint.
+
+<Warning>
+The AI Gateway custom batching is not a discounted rate.
+</Warning>
+
+### How It Works
+
+Set `completion_window` to `immediate` and the AI Gateway aggregates your requests in memory, then fires them to the target provider in fixed buckets.
+
+| Gateway default | Value                                                   |
+| --------------- | ------------------------------------------------------- |
+| Batch size      | **25** requests                                         |
+| Batch interval  | **5 s** between flushes                                 |
+| Retries         | **3** per request (configurable via `x-portkey-config`) |
+
+*Coming soon*: configurable `batch_size`, `batch_interval`, and `max_retries`.
+
+### Quickstart (provider‑agnostic)
+
+```bash
+curl -X POST https://aigw.portkey.ai/v1/batches \
+  -H "Authorization: Bearer <PORTKEY_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input_file_id": "pk_file_...",
+    "completion_window": "immediate",
+    "endpoint": "/v1/chat/completions",
+    "portkey_options": {
+      "x-portkey-config": "pc-example-config",
+      "x-portkey-metadata": "{\"_user\": \"user_123\"}"
+    }
+}'
+```
+
+Because the AI Gateway orchestrates the batching, this works even for providers without a native batch endpoint.
+
+### Response & Monitoring
+
+Identical to Provider mode; the difference is that `provider_job_id` is absent and cost is computed from individual calls.
+
+### About AI Gateway Files
+
+Portkey Files are files uploaded to the AI Gateway that are then automatically uploaded to the provider. They're useful when you want to make multiple batch completions using the same file. The AI Gateway will:
+
+- Automatically upload the file to the provider on your behalf
+- Reuse the content in your batch requests
+- Check batch progress and provide post-batch analysis including token and cost calculations
+- Make batch outputs available via the `GET /batches/<batch_id>/output` endpoint
+
+---
+
+## Error Handling & Retries
+
+| Layer                   | What the AI Gateway does                 | How to override                                    |
+| ----------------------- | --------------------------------- | -------------------------------------------------- |
+| Gateway (AI Gateway Batch) | Retries **3×** on network/429/5xx | `x-portkey-config: {"retry": {"max_attempts": 5}}` |
+| Provider (native batch) | Provider rules                    | Not configurable via the AI Gateway                       |
+
+---
+
+## Security & IAM
+
+* **Files** are encrypted at rest (AES‑256) and custom encryption key is supported, if required.
+* the AI Gateway uploads on your behalf using *least‑privilege* scoped credentials; no long‑lived secrets are stored.
+* Access to batch status & outputs is gated by your workspace role (`completions.write`).
+
+---
+
+## Glossary
+
+| Term                               | Meaning                                                                                                   |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Batch Job**                      | A collection of completion requests executed asynchronously.                                              |
+| **AI Gateway File** (`input_file_id`) | Files uploaded to the AI Gateway that are automatically uploaded to the provider for batch processing. Useful for reusing the same file across multiple batch completions. |
+| **Provider Slug**                  | A unique identifier for your AI provider (e.g., `@openai-prod`). Set up in [Model Catalog](https://stratacloudmanager.paloaltonetworks.com/). |
+| **Completion Window**              | Time frame in which the job must finish. `immediate` → handled by the AI Gateway; `24h` → delegated to provider. |
+
+---
+
+## Roadmap
+
+* Custom `batch_size`, `batch_interval`, `max_retries` (Q3 2025)
+* Real‑time progress webhooks
+* UI for canceling or pausing jobs

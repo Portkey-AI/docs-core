@@ -1,0 +1,431 @@
+---
+title: "Batches"
+description: "Perform batch inference with Vertex AI"
+---
+
+With Prisma AIRS AI Gateway, you can perform batch inference operations with Vertex AI models. This is the most efficient way to:
+- Process large volumes of data with Vertex AI models
+- Test your data with different foundation models
+- Perform A/B testing with different foundation models
+
+## Before You Start
+1. **AI Gateway API key** and a **Vertex AI provider** configured in Model Catalog.
+2. A **GCS bucket** in the same region as your model + `aiplatform-service-agent` permission on the file.
+3. *(Only for gateway-native batching)* A **AI Gateway File** (`input_file_id`).
+4. Familiarity with the [Create Batch OpenAPI spec](/api-reference/inference-api/batch/create-batch).
+
+<Info>
+The AI Gateway supports **two modes** on Vertex:
+* **[Provider Batch API](#using-vertex-batch-api-through-portkey)** (cheapest, completion_window: `24h`, `48h`, etc.)
+* **[AI Gateway Batch API](/aigw/product/ai-gateway/batches#portkey-batch-api-mode)** (fast, provider-agnostic, completion_window: `immediate`)
+</Info>
+
+## Using Vertex Batch API through the AI Gateway
+
+### Upload a file for batch inference
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY", # Replace with your Portkey API key
+    provider="@VERTEX_PROVIDER",
+    vertex_storage_bucket_name="your_bucket_name", # Specify the GCS bucket name
+    provider_file_name="your_file_name.jsonl", # Specify the file name in GCS
+    provider_model="gemini-1.5-flash-001" # Specify the model to use
+)
+
+# Upload a file for batch inference
+file = portkey.files.create(
+    file=open("dataset.jsonl", "rb"),
+    purpose="batch"
+)
+
+print(file)
+```
+
+```javascript Typescript
+import { Portkey } from "portkey-ai";
+import * as fs from 'fs';
+
+// Initialize the Portkey client
+const portkey = Portkey({
+    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
+    provider:"@VERTEX_PROVIDER",
+    vertexStorageBucketName: "your_bucket_name", // Specify the GCS bucket name
+    providerFileName: "your_file_name.jsonl", // Specify the file name in GCS
+    providerModel: "gemini-1.5-flash-001" // Specify the model to use
+});
+
+(async () => {
+    // Upload a file for batch inference
+    const file = await portkey.files.create({
+        file: fs.createReadStream("dataset.jsonl"),
+        purpose: "batch"
+    });
+
+    console.log(file);
+})();
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='OPENAI_API_KEY',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@VERTEX_PROVIDER",
+        api_key="PORTKEY_API_KEY",
+        vertex_storage_bucket_name="your_bucket_name",
+        provider_file_name="your_file_name.jsonl",
+        provider_model="gemini-1.5-flash-001"
+    )
+)
+
+# Upload a file for batch inference
+file = openai.files.create(
+    file=open("dataset.jsonl", "rb"),
+    purpose="batch"
+)
+
+print(file)
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+import * as fs from 'fs';
+
+const openai = new OpenAI({
+    apiKey: 'OPENAI_API_KEY',
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider:"@VERTEX_PROVIDER",
+        apiKey: "PORTKEY_API_KEY",
+        vertexStorageBucketName: "your_bucket_name",
+        providerFileName: "your_file_name.jsonl",
+        providerModel: "gemini-1.5-flash-001"
+    })
+});
+
+(async () => {
+    // Upload a file for batch inference
+    const file = await openai.files.create({
+        file: fs.createReadStream("dataset.jsonl"),
+        purpose: "batch"
+    });
+
+    console.log(file);
+})();
+```
+
+```bash curl
+curl -X POST --header 'Authorization: Bearer <portkey_api_key>' \
+ --header 'x-portkey-provider: @your-vertex-provider' \
+ --header 'x-portkey-vertex-storage-bucket-name: <bucket_name>' \
+ --header 'x-portkey-provider-file-name: <file_name>.jsonl' \
+ --header 'x-portkey-provider-model: <model_name>' \
+ --form 'purpose="batch"' \
+ --form 'file=@dataset.jsonl' \
+ 'https://aigw.portkey.ai/v1/files'
+```
+</CodeGroup>
+
+### Create a batch job
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY", # Replace with your Portkey API key
+    provider="@VERTEX_PROVIDER"
+)
+
+# Create a batch inference job
+batch_job = portkey.batches.create(
+    input_file_id="<file_id>", # File ID from the upload step
+    endpoint="/v1/chat/completions", # API endpoint to use
+    completion_window="24h", # Time window for completion
+    model="gemini-1.5-flash-001"
+)
+
+print(batch_job)
+```
+
+```javascript Typescript
+import { Portkey } from "portkey-ai";
+
+// Initialize the Portkey client
+const portkey = Portkey({
+    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
+    provider:"@VERTEX_PROVIDER"
+});
+
+(async () => {
+    // Create a batch inference job
+    const batchJob = await portkey.batches.create({
+        input_file_id: "<file_id>", // File ID from the upload step
+        endpoint: "/v1/chat/completions", // API endpoint to use
+        completion_window: "24h", // Time window for completion
+        model:"gemini-1.5-flash-001"
+    });
+
+    console.log(batchJob);
+})();
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='OPENAI_API_KEY',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@VERTEX_PROVIDER",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+# Create a batch inference job
+batch_job = openai.batches.create(
+    input_file_id="<file_id>", # File ID from the upload step
+    endpoint="/v1/chat/completions", # API endpoint to use
+    completion_window="24h", # Time window for completion
+    model="gemini-1.5-flash-001"
+)
+
+print(batch_job)
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+    apiKey: 'OPENAI_API_KEY',
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider:"@VERTEX_PROVIDER",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+(async () => {
+    // Create a batch inference job
+    const batchJob = await openai.batches.create({
+        input_file_id: "<file_id>", // File ID from the upload step
+        endpoint: "/v1/chat/completions", // API endpoint to use
+        completion_window: "24h", // Time window for completion
+        model:"gemini-1.5-flash-001"
+    });
+
+    console.log(batchJob);
+})();
+```
+
+```bash curl
+curl -X POST --header 'Content-Type: application/json' \
+ --header 'Authorization: Bearer <portkey_api_key>' \
+ --header 'x-portkey-provider: @your-vertex-provider' \
+ --data \
+ $'{"input_file_id": "<file_id>", "endpoint": "/v1/chat/completions", "completion_window": "24h", "model":"gemini-1.5-flash-001"}' \
+'https://aigw.portkey.ai/v1/batches'
+```
+</CodeGroup>
+
+### List batch jobs
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY", # Replace with your Portkey API key
+    provider="@VERTEX_PROVIDER"
+)
+
+# List all batch jobs
+jobs = portkey.batches.list(
+    limit=10  # Optional: Number of jobs to retrieve (default: 20)
+)
+
+print(jobs)
+```
+
+```javascript Typescript
+import { Portkey } from "portkey-ai";
+
+// Initialize the Portkey client
+const portkey = Portkey({
+    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
+    provider:"@VERTEX_PROVIDER"
+});
+
+(async () => {
+    // List all batch jobs
+    const jobs = await portkey.batches.list({
+        limit: 10  // Optional: Number of jobs to retrieve (default: 20)
+    });
+
+    console.log(jobs);
+})();
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='OPENAI_API_KEY',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@VERTEX_PROVIDER",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+# List all batch jobs
+jobs = openai.batches.list(
+    limit=10  # Optional: Number of jobs to retrieve (default: 20)
+)
+
+print(jobs)
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+    apiKey: 'OPENAI_API_KEY',
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider:"@VERTEX_PROVIDER",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+(async () => {
+    // List all batch jobs
+    const jobs = await openai.batches.list({
+        limit: 10  // Optional:
+    });
+
+    console.log(jobs);
+})();
+```
+
+```bash curl
+curl -X GET --header 'Authorization: Bearer <portkey_api_key>' \
+--header 'x-portkey-provider: @your-vertex-provider' \
+'https://aigw.portkey.ai/v1/batches'
+```
+</CodeGroup>
+
+### Get a batch job
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+# Initialize the Portkey client
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY", # Replace with your Portkey API key
+    provider="@VERTEX_PROVIDER"
+)
+
+# Retrieve a specific batch job
+job = portkey.batches.retrieve(
+    "job_id"  # The ID of the batch job to retrieve
+)
+
+print(job)
+```
+
+```javascript Typescript
+import { Portkey } from "portkey-ai";
+
+// Initialize the Portkey client
+const portkey = Portkey({
+    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
+    provider:"@VERTEX_PROVIDER"
+});
+
+(async () => {
+    // Retrieve a specific batch job
+    const job = await portkey.batches.retrieve(
+        "job_id"  // The ID of the batch job to retrieve
+    );
+
+    console.log(job);
+})();
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+
+openai = OpenAI(
+    api_key='OPENAI_API_KEY',
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="@VERTEX_PROVIDER",
+        api_key="PORTKEY_API_KEY"
+    )
+)
+
+# Retrieve a specific batch job
+job = openai.batches.retrieve(
+    "job_id"  # The ID of the batch job to retrieve
+)
+
+print(job)
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from 'openai';
+import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
+
+const openai = new OpenAI({
+    apiKey: 'OPENAI_API_KEY',
+    baseURL: PORTKEY_GATEWAY_URL,
+    defaultHeaders: createHeaders({
+        provider:"@VERTEX_PROVIDER",
+        apiKey: "PORTKEY_API_KEY"
+    })
+});
+
+(async () => {
+    // Retrieve a specific batch job
+    const job = await openai.batches.retrieve(
+        "job_id"  // The ID of the batch job to retrieve
+    );
+
+    console.log(job);
+})();
+```
+
+```bash curl
+curl -X GET --header 'Authorization: Bearer <portkey_api_key>' \
+--header 'x-portkey-provider: @your-vertex-provider' \
+'https://aigw.portkey.ai/v1/batches/<job_id>'
+```
+</CodeGroup>
+
+### Get batch job output
+
+<CodeGroup>
+```bash curl
+curl -X GET --header 'Authorization: Bearer <portkey_api_key>' \
+--header 'x-portkey-provider: @your-vertex-provider' \
+'https://aigw.portkey.ai/v1/batches/<job_id>/output'
+```
+</CodeGroup>

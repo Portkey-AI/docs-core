@@ -1,0 +1,122 @@
+---
+title: "Fine-tuning"
+description: "Run your fine-tuning jobs with Prisma AIRS AI Gateway"
+---
+
+<Note>
+  [Data Service](/aigw/changelog/data-service) must be enabled for **AI Gateway Managed Fine-tuning** or when **cost-attribution** is required.
+</Note>
+
+AI Gateway supports fine-tuning in two ways:
+
+1. Fine-tuning with portkey as a provider, supports multiple providers with a single unified API.
+2. Fine-tuning with the AI Gateway as a client, supports following providers:
+   - [OpenAI](/aigw/integrations/llms/openai/fine-tuning)
+   - [Bedrock](/aigw/integrations/llms/bedrock/fine-tuning)
+   - [Azure OpenAI](/aigw/integrations/llms/azure-openai/fine-tuning)
+   - [Fireworks](/aigw/integrations/llms/fireworks/fine-tuning)
+   - [Vertex](/aigw/integrations/llms/vertex-ai/fine-tuning)
+
+## 1. Fine-tuning with the AI Gateway as a client
+
+With the AI Gateway acting as a client, gives you the following benefits:
+
+1. Provider specific fine-tuning.
+2. More control over the fine-tuning process.
+3. Unified API for all providers.
+
+## 2. Fine-tuning with the AI Gateway as a provider
+
+With the AI Gateway acting as provider, gives you the following benefits:
+
+1. Unified API for all providers
+2. No need to manage multiple endpoints and keys
+3. Easy to switch between providers with limited changes
+4. Easier integration with the AI Gateway's other features like batching, etc.
+
+## How to use fine-tuning
+
+The AI Gateway supports a Unified Fine-tuning API for all providers which is based on OpenAI's Fine-tuning API.
+
+While the signature of API is same for all providers, there are places where a specific provider require some more information which can be passed via headers if used as a client, or by `portkey_options` params if used as a provider.
+
+### Fine-tuning with the AI Gateway as a client
+
+**Upload a File**
+
+```sh
+curl -X POST --header 'Authorization: Bearer <portkey_api_key>' \
+ --form 'file=@dataset.jsonl' \
+ --form 'purpose=fine-tune' \
+ 'https://aigw.portkey.ai/v1/files'
+```
+
+<Info>Learn more about [files](/aigw/product/ai-gateway/files)</Info>
+
+**Create a Fine-tuning Job**
+
+```sh
+curl -X POST --header 'Content-Type: application/json' \
+ --header 'Authorization: Bearer <portkey_api_key>' \
+ --data \
+ $'{"model": "<base_model>", "suffix": "<finetune_name>", "training_file": "<file_id>", "portkey_options": {"x-portkey-provider": "@openai-prod"}, "method": {"type": "supervised", "supervised": {"hyperparameters": {"n_epochs": 1}}}}\n' \
+'https://aigw.portkey.ai/v1/fine_tuning/jobs'
+```
+
+<Tip>
+  `portkey_options` supports all the options that are supported by each provider
+  in the gateway. Values can be provider specific, refer to provider's
+  documentation for each provider's specific options required for fine-tuning.
+</Tip>
+
+**List Fine-tuning Jobs**
+
+```sh
+curl -X GET --header 'Authorization: Bearer <portkey_api_key>' \
+'https://aigw.portkey.ai/v1/fine_tuning/jobs'
+```
+
+**Get Fine-tuning Job**
+
+```sh
+curl -X GET --header 'Authorization: Bearer <portkey_api_key>' \
+'https://aigw.portkey.ai/v1/fine_tuning/jobs/<job_id>'
+```
+
+**Cancel Fine-tuning Job**
+
+```sh
+curl -X POST --header 'Authorization: Bearer <portkey_api_key>' \
+'https://aigw.portkey.ai/v1/fine_tuning/jobs/<job_id>/cancel'
+```
+
+When you use the AI Gateway as a provider for fine-tuning, everything is managed by the AI Gateway hosted solution, this includes job submission with provider, monitoring job status and able to use the fine-tuned model with the AI Gateway's Prompt Playground.
+
+<Note>
+  Providers like OpenAI, Azure OpenAPI does provider a straight forward approach
+  to use the fine-tuned model for inference whereas providers like `Bedrock` abd
+  `Vertex` does require you to manually provide compute which is hard for
+  portkey to manage.
+</Note>
+
+**Notes**:
+
+- For `Bedrock`, `model` param should point to the `modelId` from `portkey` and the `modelId` to submit to the provider should be passed via `provider_options`. Example is available below.
+
+```sh
+  curl -X POST --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer <portkey_api_key>' \
+  --data \
+  $'{"model": "amazon.titan-text-lite-v1:0", "suffix": "<finetune_name>", "training_file": "<file_id>", "provider_options": {"model": "amazon.titan-text-lite-v1:0:4k"}, "method": {"type": "supervised", "supervised": {"hyperparameters": {"n_epochs": 1}}}}\n' \
+  'https://aigw.portkey.ai/v1/fine_tuning/jobs'
+```
+
+> For more info about `modelId`, please refer to the provider's documentation.
+
+Please refer to the provider's documentation for fine-tuning with the AI Gateway as a gateway.
+
+1. [OpenAI](/aigw/integrations/llms/openai/fine-tuning)
+2. [Bedrock](/aigw/integrations/llms/bedrock/fine-tuning)
+3. [Azure OpenAI](/aigw/integrations/llms/azure-openai/fine-tuning)
+4. [Fireworks](/aigw/integrations/llms/fireworks/fine-tuning)
+5. [Vertex](/aigw/integrations/llms/vertex-ai/fine-tuning)

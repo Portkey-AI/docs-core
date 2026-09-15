@@ -1,0 +1,1041 @@
+---
+title: "Azure AI Foundry"
+description: "Learn how to integrate Azure AI Foundry with Prisma AIRS AI Gateway to access a wide range of AI models with enhanced observability and reliability features."
+---
+
+Azure AI Foundry provides a unified platform for enterprise AI operations, model building, and application development. With the AI Gateway, you can seamlessly integrate with various models available on Azure AI Foundry and take advantage of features like observability, prompt management, fallbacks, and more.
+
+## Quick Start
+
+<CodeGroup>
+
+```python Python icon="python"
+from portkey_ai import Portkey
+
+# 1. Install: pip install portkey-ai
+# 2. Add @azure-foundry provider in Model Catalog
+# 3. Use it:
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@azure-foundry"
+)
+
+response = portkey.chat.completions.create(
+    model="DeepSeek-V3-0324",  # Your deployed model name
+    messages=[{"role": "user", "content": "Tell me about cloud computing"}]
+)
+
+print(response.choices[0].message.content)
+```
+
+```js Javascript icon="square-js"
+import Portkey from "portkey-ai";
+
+// 1. Install: npm install portkey-ai
+// 2. Add @azure-foundry provider in Model Catalog
+// 3. Use it:
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "@azure-foundry",
+});
+
+const response = await portkey.chat.completions.create({
+  model: "DeepSeek-V3-0324", // Your deployed model name
+  messages: [{ role: "user", content: "Tell me about cloud computing" }],
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```sh cURL icon="square-terminal"
+# 1. Add @azure-foundry provider in Model Catalog
+# 2. Use it:
+
+curl https://aigw.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -d '{
+    "model": "DeepSeek-V3-0324",
+    "messages": [{"role": "user", "content": "Tell me about cloud computing"}]
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Add Provider in Model Catalog
+
+To integrate Azure AI Foundry with the AI Gateway, you'll create a provider in the Model Catalog. This securely stores your Azure AI Foundry credentials, allowing you to use a simple identifier in your code instead of handling sensitive authentication details directly.
+
+<Card href="/integrations/llms/azure-openai" title="OpenAI models on Azure">
+  If you're specifically looking to use OpenAI models on Azure, you should use
+  [Azure OpenAI](/integrations/llms/azure-openai) instead, which is optimized
+  for OpenAI models.
+</Card>
+
+---
+
+### Understanding Azure AI Foundry Deployments
+
+Azure AI Foundry offers three different ways to deploy models, each with unique endpoints and configurations:
+
+1. **AI Services**: Azure-managed models accessed through Azure AI Services endpoints
+2. **Managed**: User-managed deployments running on dedicated Azure compute resources
+3. **Serverless**: Seamless, scalable deployment without managing infrastructure
+
+You can learn more about the Azure AI Foundry deployment [here](https://learn.microsoft.com/en-us/azure/ai-foundry/concepts/deployments-overview).
+
+---
+
+## Creating Your Azure AI Foundry Provider
+
+Integrate Azure AI Foundry with the AI Gateway to centrally manage your AI models and deployments. This guide walks you through setting up the provider using API key authentication.
+
+### Prerequisites
+
+Before creating your provider, you'll need:
+
+- An active Azure AI Foundry account
+- Access to your Azure AI Foundry portal
+- A deployed model on Azure Foundry
+
+### Step 1: Navigate to Model Catalog
+
+Go to [**Model Catalog → Add Provider**](https://stratacloudmanager.paloaltonetworks.com/) and select **Azure AI Foundry** as your provider.
+
+### Step 2: Configure Provider Details
+
+Fill in the basic information for your provider:
+
+- **Name**: A descriptive name for this provider (e.g., "Azure AI Production")
+- **Short Description**: Optional context about this provider's purpose
+- **Slug**: A unique identifier used in API calls (e.g., "@azure-ai-prod")
+
+### Step 3: Set Up Authentication
+
+The AI Gateway supports three authentication methods for Azure AI Foundry. For most use cases, we recommend using the **Default (API Key)** method.
+
+<Tabs>
+  <Tab title="Default (API Key)">
+    ### Gather Your Azure Credentials
+
+    From your Azure AI Foundry portal, you'll need to collect:
+
+    1. Navigate to your model deployment in Azure AI Foundry
+    2. Click on the deployment to view details
+    3. Copy the **API Key** from the authentication section
+    4. Copy the **Target URI** - this is your endpoint URL
+    5. Note the **API Version** from your deployment URL
+    6. **Azure Deployment Name** (Optional): Only required for Managed Services deployments
+
+  </Tab>
+
+   <Tab title="Azure Managed Entity">
+  For managed Azure deployments:
+
+Required parameters:
+
+- **Azure Managed ClientID**: Your managed client ID
+- **Azure Foundry URL**: The base endpoint URL for your deployment, formatted according to your deployment type:
+  - For AI Services: `https://your-resource-name.services.ai.azure.com/models`
+  - For project-scoped OpenAI v1 deployments: `https://your-resource-name.services.ai.azure.com/api/projects/your-project-name/openai/v1`
+  - For Managed: `https://your-model-name.region.inference.ml.azure.com/score`
+  - For Serverless: `https://your-model-name.region.models.ai.azure.com`
+
+- **Azure API Version**: The API version to use (e.g., "2024-05-01-preview"). This is required if you have api version in your deployment url.
+  **Examples:**
+  - If your URL is `https://mycompany-ai.westus2.services.ai.azure.com/models?api-version=2024-05-01-preview`, the API version is `2024-05-01-preview`
+- **Azure Deployment Name**: (Optional) Required only when a single resource contains multiple deployments.
+
+</Tab>
+
+  <Tab title="Azure Entra ID">
+      To use this authentication your azure application need to have the role of: `conginitive services user`.
+      Enterprise-level authentication with Azure Entra ID:
+
+Required parameters:
+
+- **Azure Entra ClientID**: Your Azure Entra client ID
+- **Azure Entra Secret**: Your client secret
+- **Azure Entra Tenant ID**: Your tenant ID
+- **Azure Foundry URL**: The base endpoint URL for your deployment, formatted according to your deployment type:
+  - For AI Services: `https://your-resource-name.services.ai.azure.com/models`
+  - For project-scoped OpenAI v1 deployments: `https://your-resource-name.services.ai.azure.com/api/projects/your-project-name/openai/v1`
+  - For Managed: `https://your-model-name.region.inference.ml.azure.com/score`
+  - For Serverless: `https://your-model-name.region.models.ai.azure.com`
+
+- **Azure API Version**: The API version to use (e.g., "2024-05-01-preview"). This is required if you have api version in your deployment url.
+  **Examples:**
+  - If your URL is `https://mycompany-ai.westus2.services.ai.azure.com/models?api-version=2024-05-01-preview`, the API version is `2024-05-01-preview`
+- **Azure Deployment Name**: (Optional) Required only when a single resource contains multiple deployments. Common in Managed deployments.
+
+You can Learn more about these [Azure Entra Resources here](https://learn.microsoft.com/en-us/azure/ai-services/authentication)
+
+  </Tab>
+
+</Tabs>
+
+For project-scoped OpenAI v1 deployments, enter the full URL ending with `/api/projects/<project-name>/openai/v1`, such as `https://your-resource-name.services.ai.azure.com/api/projects/your-project-name/openai/v1`, exactly as shown in Azure AI Foundry. The AI Gateway appends the request route, such as `/chat/completions`, when sending traffic to the deployment.
+
+## Adding Multiple Models to Your Azure AI Foundry Provider
+
+You can deploy multiple models through a single Azure AI Foundry provider by using the AI Gateway's custom models feature.
+
+### Steps to Add Additional Models
+
+1. Navigate to your Azure AI Foundry provider in Model Catalog
+2. Select the **Model Provisioning** step
+3. Click **Add Model** in the top-right corner
+
+#### Configure Your Model
+
+Enter the following details for your Azure deployment:
+
+**Model Slug**: Use your Azure Model Deployment name exactly as it appears in Azure AI Foundry
+
+**Short Description**: Optional description for team reference
+
+**Model Type**: Select "Custom model"
+
+**Base Model**: Choose the model that matches your deployment's API structure (e.g., select `gpt-4` for GPT-4 deployments)
+
+<Note>
+  This is just for reference. If you can't find the particular model, you can
+  just choose a similar model.
+</Note>
+
+**Custom Pricing**: Enable to track costs with your negotiated rates
+
+Once configured, this model will be available alongside others in your provider, allowing you to manage multiple Azure deployments through a single set of credentials.
+
+## Using Anthropic Models on Azure AI Foundry
+
+Azure AI Foundry supports Anthropic models (Claude) through a slightly different configuration process. Follow these steps to integrate Anthropic models with the AI Gateway.
+
+### Step 1: Create an Azure Foundry Provider
+
+When creating the provider for Anthropic models, you'll need to configure the following:
+
+1. **Azure API Key**: Copy this from your Azure Foundry console
+2. **Azure Target URI**: From your Foundry console, you'll get a URL like:
+
+   ```
+   https://resource-name-swedencentral.services.ai.azure.com/anthropic/v1/messages
+   ```
+
+   You need to strip your URL till `/anthropic`:
+
+   ```
+   https://resource-name-swedencentral.services.ai.azure.com/anthropic
+   ```
+
+<Note>
+  For Anthropic models on Azure Foundry, you don't need to provide the **Azure
+  API Version** or **Deployment Name** fields.
+</Note>
+
+### Step 2: Configure Workspace Provisioning
+
+After setting up the provider credentials, proceed with the workspace provisioning step as usual.
+
+### Step 3: Add Your Anthropic Model
+
+In the **Model Provisioning** step:
+
+1. Click the **\+ Add Model** button at the top
+2. Configure the model with these details:
+   - **Model Slug**: Enter your deployment name from the Azure Foundry console
+   - **Base Model**: Search for and select your Anthropic model (e.g., `claude-opus-4-5-20251101`, `claude-sonnet-4-5-20250929`, `claude-haiku-4-5-20251001`, `claude-opus-4-1-20250805`)
+3. Save the configuration
+
+### Making Requests to Anthropic Models
+
+Once configured, you can call your Anthropic model using the Model Slug you saved:
+
+<Tabs>
+  <Tab title="NodeJS">
+    ```javascript
+    import Portkey from 'portkey-ai';
+
+    const client = new Portkey({
+      apiKey: 'PORTKEY_API_KEY',
+      provider: '@AZURE_FOUNDRY_ANTHROPIC_PROVIDER'
+    });
+
+    const response = await client.chat.completions.create({
+      messages: [{ role: "user", content: "Hello, Claude!" }],
+      model: "your-azure-deployment-name", // Use the Model Slug you configured
+    });
+
+    console.log(response.choices[0].message.content);
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    from portkey_ai import Portkey
+
+    client = Portkey(
+      api_key="PORTKEY_API_KEY",
+      provider="@AZURE_FOUNDRY_ANTHROPIC_PROVIDER"
+    )
+
+    response = client.chat.completions.create(
+      model="your-azure-deployment-name", # Use the Model Slug you configured
+      messages=[
+        {"role": "user", "content": "Hello, Claude!"}
+      ]
+    )
+
+    print(response.choices[0].message.content)
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```sh
+    curl https://aigw.portkey.ai/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: $AZURE_FOUNDRY_ANTHROPIC_PROVIDER" \
+      -d '{
+        "model": "your-azure-deployment-name",
+        "messages": [
+          { "role": "user", "content": "Hello, Claude!" }
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+### Using the /messages Route with Azure Foundry Anthropic Models
+
+Access Anthropic models on Azure AI Foundry through Anthropic's native `/messages` endpoint using the AI Gateway's SDK or Anthropic's SDK.
+
+<Note>
+  The `/messages` route provides access to Anthropic-native features like
+  extended thinking, prompt caching, and native streaming formats when using
+  Claude models on Azure AI Foundry.
+</Note>
+
+<Tabs>
+  <Tab title="cURL">
+    ```sh
+    curl --location 'https://aigw.portkey.ai/v1/messages' \
+    --header 'Content-Type: application/json' \
+    --header 'Authorization: Bearer YOUR_PORTKEY_API_KEY' \
+    --data-raw '{
+        "model": "@your-azure-foundry-anthropic-provider/your-azure-deployment-name",
+        "max_tokens": 1024,
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hello, Claude!"
+          }
+        ]
+      }'
+    ```
+  </Tab>
+  <Tab title="Anthropic Python SDK">
+    ```python
+    import anthropic
+
+    client = anthropic.Anthropic(
+        api_key="dummy", # we will use portkey's provider slug
+        default_headers={"Authorization": "Bearer YOUR_PORTKEY_API_KEY"},
+        base_url="https://aigw.portkey.ai"
+    )
+
+    message = client.messages.create(
+        model="@your-azure-foundry-anthropic-provider/your-azure-deployment-name",
+        max_tokens=1024,
+        messages=[
+            {"role": "user", "content": "Hello, Claude!"}
+        ],
+    )
+    print(message.content)
+    ```
+
+  </Tab>
+  <Tab title="Anthropic TS SDK">
+    ```typescript
+    import Anthropic from '@anthropic-ai/sdk';
+
+    const anthropic = new Anthropic({
+      apiKey: 'PORTKEY_API_KEY', // we will use portkey's provider slug
+      baseURL: "https://aigw.portkey.ai",
+    });
+
+    const msg = await anthropic.messages.create({
+      model: "@your-azure-foundry-anthropic-provider/your-azure-deployment-name",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "Hello, Claude!" }],
+    });
+    console.log(msg);
+    ```
+
+  </Tab>
+</Tabs>
+
+## Using the Responses API with Azure AI Foundry
+
+The AI Gateway supports the [Responses API](/aigw/product/ai-gateway/responses-api) on Azure AI Foundry in **two modes**. Pick the one that matches your Azure deployment.
+
+| Mode | Default? | How it works | When to use |
+| --- | --- | --- | --- |
+| **Gateway Transformation** | Yes | The AI Gateway converts Responses → Chat Completions → Responses around your Azure deployment | Any model deployed on Azure AI Foundry (DeepSeek, Cohere, Llama, Mistral, etc.) |
+| **Direct (Proxy)** | Opt-in via header | The AI Gateway forwards your Responses payload as-is to Azure's native `/responses` endpoint | Azure deployments that natively support `/responses` (e.g. Azure AI Agents) |
+
+In both modes, the AI Gateway logging, tracing, guardrails, caching, retries, and fallbacks continue to work.
+
+### Mode 1 - Gateway Transformation (Default)
+
+This is the default behaviour and requires no extra configuration. The AI Gateway accepts the request at `/v1/responses`, adapts the payload to Chat Completions, calls Azure AI Foundry's `/chat/completions` endpoint, and translates the response back to the Responses API format before returning it to you.
+
+Because the call is made over Chat Completions on Azure's side, **every model on your Azure AI Foundry provider works** — even ones that don't natively expose a Responses endpoint.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@AZURE_FOUNDRY_PROVIDER"
+)
+
+response = portkey.responses.create(
+    model="DeepSeek-V3-0324",  # Any model on your Azure AI Foundry provider
+    input="Explain the difference between AKS and ACI in one paragraph."
+)
+
+print(response.output_text)
+```
+
+```js JavaScript
+import Portkey from "portkey-ai";
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "@AZURE_FOUNDRY_PROVIDER",
+});
+
+const response = await portkey.responses.create({
+  model: "DeepSeek-V3-0324",
+  input: "Explain the difference between AKS and ACI in one paragraph.",
+});
+
+console.log(response.output_text);
+```
+
+```sh cURL
+curl https://aigw.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @AZURE_FOUNDRY_PROVIDER" \
+  -d '{
+    "model": "DeepSeek-V3-0324",
+    "input": "Explain the difference between AKS and ACI in one paragraph."
+  }'
+```
+</CodeGroup>
+
+<Note>
+Features that rely on Azure storing response state — `previous_response_id`, `store`, retrieve/delete on `/v1/responses/:id`, and built-in tools like `web_search` — are **not** available in this mode. Use multi-turn `input` arrays to carry conversation history. See [Open Responses → Native-Only Features](/aigw/product/ai-gateway/responses-api#native-only-features).
+</Note>
+
+### Mode 2 - Direct Responses (Proxy)
+
+When your Azure AI Foundry deployment exposes a native `/responses` endpoint (for example, **Azure AI Agents**), set the `x-portkey-provider-responses-proxy` header to `true`. The AI Gateway will skip the Chat Completions transformation and forward the request body **exactly as-is** to Azure's native Responses endpoint.
+
+This is required to use Azure-specific parameters such as `agent_reference`, which targets a deployed Azure AI Agent.
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@AZURE_FOUNDRY_PROVIDER",
+    # Forwards the request directly to Azure's native /responses endpoint
+    provider_responses_proxy=True,
+)
+
+response = portkey.responses.create(
+    model="gpt-4.1",  # Your Azure deployment name
+    input="Summarise the latest Q3 sales numbers for the EMEA region.",
+    agent_reference="asst_abc123",  # Azure AI Agent reference
+)
+
+print(response.output_text)
+```
+
+```js JavaScript
+import Portkey from "portkey-ai";
+
+const portkey = new Portkey({
+  apiKey: "PORTKEY_API_KEY",
+  provider: "@AZURE_FOUNDRY_PROVIDER",
+  providerResponsesProxy: true,
+});
+
+const response = await portkey.responses.create({
+  model: "gpt-4.1",
+  input: "Summarise the latest Q3 sales numbers for the EMEA region.",
+  agent_reference: "asst_abc123",
+});
+
+console.log(response.output_text);
+```
+
+```sh cURL
+curl https://aigw.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @AZURE_FOUNDRY_PROVIDER" \
+  -H "x-portkey-provider-responses-proxy: true" \
+  -d '{
+    "model": "gpt-4.1",
+    "input": "Summarise the latest Q3 sales numbers for the EMEA region.",
+    "agent_reference": "asst_abc123"
+  }'
+```
+</CodeGroup>
+
+<Note>
+Direct mode forwards the payload verbatim. Your Azure deployment must accept the Responses API schema — if it doesn't, requests will fail. Use Gateway Transformation (Mode 1) for everything else.
+</Note>
+
+### Choosing the right mode
+
+- Use **Gateway Transformation** for general-purpose Responses API calls against any Azure-deployed model.
+- Use **Direct (Proxy)** when calling **Azure AI Agents** or any Azure deployment that exposes the native Responses endpoint and you need Azure-specific parameters (`agent_reference`, server-side response storage, etc.).
+
+For a deep dive into the Responses API itself — streaming, tool calling, reasoning, vision, structured output — see the [Open Responses](/aigw/product/ai-gateway/responses-api) guide.
+
+## Sample Request
+
+Once you've created your provider, you can start making requests to Azure AI Foundry models through the AI Gateway.
+
+<Tabs>
+  <Tab title="NodeJS">
+    Install the AI Gateway SDK with npm
+
+    ```sh
+    npm install portkey-ai
+    ```
+
+    ```js
+    import Portkey from 'portkey-ai';
+
+    const client = new Portkey({
+      apiKey: 'PORTKEY_API_KEY',
+      provider:'@AZURE_FOUNDRY_PROVIDER'
+    });
+
+    async function main() {
+      const response = await client.chat.completions.create({
+        messages: [{ role: "user", content: "Tell me about cloud computing" }],
+        model: "DeepSeek-V3-0324", // Replace with your deployed model name
+      });
+
+      console.log(response.choices[0].message.content);
+    }
+
+    main();
+    ```
+
+  </Tab>
+  <Tab title="Python">
+    Install the AI Gateway SDK with pip
+
+    ```sh
+    pip install portkey-ai
+    ```
+
+    ```python
+    from portkey_ai import Portkey
+
+    client = Portkey(
+      api_key = "PORTKEY_API_KEY",
+      provider = "@AZURE_FOUNDRY_PROVIDER"
+    )
+
+    response = client.chat.completions.create(
+      model="DeepSeek-V3-0324", # Replace with your deployed model name
+      messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Tell me about cloud computing"}
+      ]
+    )
+
+    print(response.choices[0].message.content)
+    ```
+
+  </Tab>
+  <Tab title="cURL">
+    ```sh
+    curl https://aigw.portkey.ai/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: $AZURE_FOUNDRY_PROVIDER" \
+      -d '{
+        "model": "DeepSeek-V3-0324",
+        "messages": [
+          { "role": "user", "content": "Tell me about cloud computing" }
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+## Advanced Features
+
+### Function Calling
+
+Azure AI Foundry supports function calling (tool calling) for compatible models. Here's how to implement it with the AI Gateway:
+
+<CodeGroup>
+
+```python Python icon="python"
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "getWeather",
+        "description": "Get the current weather",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City and state"},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+            },
+            "required": ["location"]
+        }
+    }
+}]
+
+response = portkey.chat.completions.create(
+    model="DeepSeek-V3-0324",  # Use a model that supports function calling
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What's the weather like in Delhi?"}
+    ],
+    tools=tools,
+    tool_choice="auto"
+)
+
+print(response.choices[0])
+```
+
+```js Javascript icon="square-js"
+const tools = [
+  {
+    type: "function",
+    function: {
+      name: "getWeather",
+      description: "Get the current weather",
+      parameters: {
+        type: "object",
+        properties: {
+          location: { type: "string", description: "City and state" },
+          unit: { type: "string", enum: ["celsius", "fahrenheit"] },
+        },
+        required: ["location"],
+      },
+    },
+  },
+];
+
+const response = await portkey.chat.completions.create({
+  model: "DeepSeek-V3-0324", // Use a model that supports function calling
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: "What's the weather like in Delhi?" },
+  ],
+  tools,
+  tool_choice: "auto",
+});
+
+console.log(response.choices[0]);
+```
+
+</CodeGroup>
+
+### Vision Capabilities
+
+Process images alongside text using Azure AI Foundry's vision capabilities:
+
+<CodeGroup>
+
+```python Python icon="python"
+response = portkey.chat.completions.create(
+    model="Llama-4-Scout-17B-16E",  # Use a model that supports vision
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                }
+            ]
+        }
+    ],
+    max_tokens=500
+)
+
+print(response.choices[0].message.content)
+```
+
+```js Javascript icon="square-js"
+const response = await portkey.chat.completions.create({
+  model: "Llama-4-Scout-17B-16E", // Use a model that supports vision
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "What's in this image?" },
+        {
+          type: "image_url",
+          image_url:
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+        },
+      ],
+    },
+  ],
+  max_tokens: 500,
+});
+
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+### Structured Outputs
+
+Get consistent, parseable responses in specific formats:
+
+<CodeGroup>
+
+```python Python icon="python"
+import json
+
+response = portkey.chat.completions.create(
+    model="cohere-command-a",  # Use a model that supports response formats
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "List the top 3 cloud providers with their main services"}
+    ],
+    response_format={"type": "json_object"},
+    temperature=0
+)
+
+print(json.loads(response.choices[0].message.content))
+```
+
+```js Javascript icon="square-js"
+const response = await portkey.chat.completions.create({
+  model: "cohere-command-a", // Use a model that supports response formats
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    {
+      role: "user",
+      content: "List the top 3 cloud providers with their main services",
+    },
+  ],
+  response_format: { type: "json_object" },
+  temperature: 0,
+});
+
+console.log(JSON.parse(response.choices[0].message.content));
+```
+
+</CodeGroup>
+
+---
+
+## AI Gateway Features
+
+The AI Gateway provides advanced gateway features for Azure AI Foundry deployments:
+
+### Fallbacks
+
+Create fallback configurations to ensure reliability when working with Azure AI Foundry models:
+
+```json
+{
+  "strategy": {
+    "mode": "fallback"
+  },
+  "targets": [
+    {
+      "provider": "@azure-foundry-prod",
+      "override_params": {
+        "model": "DeepSeek-V3-0324"
+      }
+    },
+    {
+      "provider": "@openai-prod",
+      "override_params": {
+        "model": "gpt-4o"
+      }
+    }
+  ]
+}
+```
+
+### Load Balancing
+
+Distribute requests across multiple models for optimal performance:
+
+```json
+{
+  "strategy": {
+    "mode": "loadbalance"
+  },
+  "targets": [
+    {
+      "provider": "@azure-foundry-prod-1",
+      "override_params": {
+        "model": "DeepSeek-V3-0324"
+      },
+      "weight": 0.7
+    },
+    {
+      "provider": "@azure-foundry-prod-2",
+      "override_params": {
+        "model": "cohere-command-a"
+      },
+      "weight": 0.3
+    }
+  ]
+}
+```
+
+### Conditional Routing
+
+Route requests based on specific conditions like user type or content requirements:
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "metadata.user_type": { "$eq": "premium" } },
+        "then": "high-performance-model"
+      },
+      {
+        "query": { "metadata.content_type": { "$eq": "code" } },
+        "then": "code-specialized-model"
+      }
+    ],
+    "default": "standard-model"
+  },
+  "targets": [
+    {
+      "name": "high-performance-model",
+      "provider": "@azure-foundry-prod-1",
+      "override_params": {
+        "model": "Llama-4-Scout-17B-16E"
+      }
+    },
+    {
+      "name": "code-specialized-model",
+      "provider": "@azure-foundry-prod-2",
+      "override_params": {
+        "model": "DeepSeek-V3-0324"
+      }
+    },
+    {
+      "name": "standard-model",
+      "provider": "@azure-foundry-prod-3",
+      "override_params": {
+        "model": "cohere-command-a"
+      }
+    }
+  ]
+}
+```
+
+---
+
+## Managing Prompts
+
+You can manage all prompts to Azure AI Foundry in the Prompt Library. Once you've created and tested a prompt in the library, use the `portkey.prompts.completions.create` interface to use the prompt in your application.
+
+<CodeGroup>
+
+```python Python icon="python"
+prompt_completion = portkey.prompts.completions.create(
+    prompt_id="Your Prompt ID",
+    variables={
+       # The variables specified in the prompt
+    }
+)
+```
+
+```js Javascript icon="square-js"
+const promptCompletion = await portkey.prompts.completions.create({
+  promptID: "Your Prompt ID",
+  variables: {
+    // The variables specified in the prompt
+  },
+});
+```
+
+</CodeGroup>
+
+---
+
+## Rerank
+
+Azure AI Foundry supports reranking through Cohere models deployed on the platform. Use the AI Gateway unified `/rerank` endpoint with the `cohere.` model prefix:
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(
+api_key="PORTKEY_API_KEY",
+provider="@azure-foundry"
+)
+
+result = client.post(
+"/v1/rerank",
+body={
+"model": "cohere.Cohere-rerank-v4.0-pro",
+"query": "What is deep learning?",
+"documents": [
+"Deep learning is a subset of machine learning",
+"The weather is sunny today",
+"Neural networks have multiple layers"
+]
+}
+)
+
+print(result)
+
+```
+
+```sh cURL
+curl https://aigw.portkey.ai/v1/rerank \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @azure-foundry" \
+  -d '{
+    "model": "cohere.Cohere-rerank-v4.0-pro",
+    "query": "What is deep learning?",
+    "documents": [
+      "Deep learning is a subset of machine learning",
+      "The weather is sunny today",
+      "Neural networks have multiple layers"
+    ]
+  }'
+```
+
+</CodeGroup>
+
+The `cohere.` prefix in the model name is automatically stripped before forwarding to the provider.
+
+---
+
+## OCR (Document Processing)
+
+Azure AI Foundry supports Mistral OCR models for extracting text and structured content from PDFs and images. Use the `/v1/ocr` endpoint:
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+client = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@azure-foundry"
+)
+
+result = client.post(
+    "/v1/ocr",
+    body={
+        "model": "mistral-ocr-4-0",
+        "document": {
+            "type": "document_url",
+            "document_url": "data:application/pdf;base64,<BASE64_PDF>"
+        },
+        "include_image_base64": True
+    }
+)
+
+for page in result["pages"]:
+    print(f"Page {page['index']}: {page['markdown'][:100]}")
+```
+
+```sh cURL
+curl https://aigw.portkey.ai/v1/ocr \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @azure-foundry" \
+  -d '{
+    "model": "mistral-ocr-4-0",
+    "document": {
+      "type": "document_url",
+      "document_url": "data:application/pdf;base64,<BASE64_PDF>"
+    },
+    "include_image_base64": true
+  }'
+```
+
+</CodeGroup>
+
+**Supported Models:** `mistral-ocr-4-0`, `mistral-document-ai-2505`, `mistral-document-ai-2512`
+
+<Note>
+Azure AI Foundry does not support external URLs for OCR. Documents must be sent as base64-encoded data URIs (e.g. `data:application/pdf;base64,...`).
+</Note>
+
+<Info>
+The native `/v1/ocr` endpoint requires gateway version **2.18.0** or higher for hybrid (self-hosted) deployments.
+</Info>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="SDK Reference" icon="code" href="/api-reference/sdk/list">
+  Complete SDK documentation and API reference
+</Card>
+
+<Card
+  title="Azure OpenAI"
+  icon="microsoft"
+  href="/integrations/llms/azure-openai"
+>
+  Use Azure OpenAI for OpenAI-specific models
+</Card>
+
+<Card title="Add Metadata" icon="tag" href="/aigw/product/observability/metadata">
+  Add custom metadata to your Azure AI Foundry requests
+</Card>
+
+<Card title="Gateway Configs" icon="sliders" href="/aigw/product/ai-gateway/configs">
+  Configure advanced gateway features
+</Card>
+
+<Card
+  title="Request Tracing"
+  icon="chart-line"
+  href="/aigw/product/observability/traces"
+>
+  Trace your Azure AI Foundry requests
+</Card>
+
+<Card
+  title="Setup Fallbacks"
+  icon="shield"
+  href="/aigw/product/ai-gateway/fallbacks"
+>
+  Create fallback configurations between providers
+</Card>
+
+</CardGroup>

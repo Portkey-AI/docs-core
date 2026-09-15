@@ -1,0 +1,270 @@
+---
+title: 'Claude Code with Amazon Bedrock'
+description: 'Route Claude Code through Amazon Bedrock via Prisma AIRS AI Gateway for observability, governance, and reliability'
+---
+
+import AdvancedFeatures from '/snippets/aigw/portkey-advanced-features.mdx';
+
+Route [Claude Code](https://code.claude.com/docs/en/overview) through Amazon Bedrock via the AI Gateway. Get full observability, cost tracking, budget controls, and cross-region inference support.
+
+See [Claude Code overview](/aigw/integrations/libraries/claude-code) for why platform teams use the AI Gateway.
+
+<Note>
+**Important:** Always use the latest version of Claude Code. Older versions may not work with the AI Gateway's gateway.
+</Note>
+
+## Quick Start
+
+<Steps>
+<Step title="Add Bedrock Provider in the AI Gateway">
+
+Go to [AI Providers](https://stratacloudmanager.paloaltonetworks.com/) → **Add Provider** → Select **Amazon Bedrock**.
+
+Enter your AWS credentials:
+- AWS Access Key ID
+- AWS Secret Access Key
+- AWS Region (e.g., `us-east-1`)
+
+Create a slug like `bedrock-prod`.
+
+</Step>
+
+<Step title="Get Your AI Gateway API Key">
+
+Go to [API Keys](https://stratacloudmanager.paloaltonetworks.com/) → Generate a new key.
+
+</Step>
+
+<Step title="Configure Claude Code">
+
+Edit `~/.claude/settings.json` (user-level) or `.claude/settings.json` (project-level):
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://aigw.portkey.ai",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "Authorization: Bearer YOUR_PORTKEY_API_KEY\nx-portkey-provider: @bedrock-prod",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-4-20250514-v1:0",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-20250514-v1:0"
+  },
+  "model": "us.anthropic.claude-sonnet-4-20250514-v1:0"
+}
+```
+
+Replace:
+- `YOUR_PORTKEY_API_KEY` with your AI Gateway API key
+- `@bedrock-prod` with your provider slug
+
+<Warning>
+**Model names are required.** Bedrock uses different model IDs than Anthropic Direct API. Without these settings, requests will fail.
+</Warning>
+
+<Info>
+**Cross-region inference:** The `us.` prefix enables cross-region inference, routing requests to the nearest available region. Remove the prefix to use a specific region.
+</Info>
+</Step>
+</Steps>
+
+That's it! All Claude Code requests now route through Bedrock via the AI Gateway. Monitor usage in the [Strata Cloud Manager](https://stratacloudmanager.paloaltonetworks.com/).
+
+<Info>
+The AI Gateway automatically handles `anthropic-beta` headers for Bedrock: unsupported beta flags are filtered, provider-specific values are remapped, and supported flags are forwarded upstream. You do not need `forward_headers` in your config for Claude Code to work.
+
+To bypass this filtering and pass `anthropic-beta` through unchanged, add `"forward_headers": ["anthropic-beta"]` to your [AI Gateway Config](/aigw/product/ai-gateway/configs).
+</Info>
+
+## Trace Requests
+
+Add trace IDs to group and debug requests in Strata Cloud Manager:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://aigw.portkey.ai",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "Authorization: Bearer YOUR_PORTKEY_API_KEY\nx-portkey-provider: @bedrock-prod\nx-portkey-trace-id: claude-code-session-123"
+  }
+}
+```
+
+Use trace IDs to:
+- Group all requests from a coding session
+- Debug issues by filtering logs
+- Track usage per project or task
+
+## Advanced Configuration
+
+### Fallbacks
+
+Route to backup providers when Bedrock fails. Create a config with fallback targets:
+
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@bedrock-prod" },
+    { "provider": "@anthropic-prod" },
+    { "provider": "@vertex-prod" }
+  ]
+}
+```
+
+### Load Balancing
+
+Distribute requests across multiple providers or regions:
+
+```json
+{
+  "strategy": { "mode": "loadbalance" },
+  "targets": [
+    { "provider": "@bedrock-us-east", "weight": 0.5 },
+    { "provider": "@bedrock-us-west", "weight": 0.5 }
+  ]
+}
+```
+
+### Caching
+
+Reduce costs and latency for repeated queries:
+
+```json
+{
+  "provider": "@bedrock-prod",
+  "cache": { "mode": "simple" }
+}
+```
+
+### Retries
+
+Automatically retry failed requests:
+
+```json
+{
+  "provider": "@bedrock-prod",
+  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] }
+}
+```
+
+## Budget Limits
+
+Set spending controls at the provider level:
+
+1. Go to [Model Catalog](https://stratacloudmanager.paloaltonetworks.com/) → Select your Bedrock integration
+2. Click **Set Now**
+3. Configure:
+   - **Cost limit**: Maximum spend (e.g., $500/month)
+   - **Token limit**: Maximum tokens (e.g., 10M tokens/week)
+   - **Rate limit**: Requests per minute/hour
+
+Budget limits prevent runaway costs from agentic coding sessions.
+
+## Troubleshooting
+
+### Error: `API Error: 500 Message: fetch failed`
+
+**Cause:** Using the wrong base URL or environment variables.
+
+**Fix:** Ensure you're using:
+- `ANTHROPIC_BASE_URL` (not `ANTHROPIC_BEDROCK_BASE_URL`)
+- `https://aigw.portkey.ai` (not `https://aigw.portkey.ai/v1`)
+
+❌ **Wrong:**
+```json
+{
+  "env": {
+    "ANTHROPIC_BEDROCK_BASE_URL": "https://aigw.portkey.ai/v1",
+    "CLAUDE_CODE_USE_BEDROCK": "1"
+  }
+}
+```
+
+✅ **Correct:**
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://aigw.portkey.ai",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "Authorization: Bearer YOUR_PORTKEY_API_KEY\nx-portkey-provider: @bedrock-prod"
+  }
+}
+```
+
+### Lightning Symbol (⚡) in Logs
+
+**Cause:** Requests are going through as passthrough, meaning the AI Gateway isn't handling them properly.
+
+**Fix:**
+1. Remove `/v1` from the base URL — use `https://aigw.portkey.ai`
+2. Ensure `x-portkey-provider` or `x-portkey-config` is set in headers
+3. Verify your AI Gateway API key is correct
+
+### Claude Code Version Issues
+
+**Cause:** Older versions of Claude Code may not be compatible.
+
+**Fix:** Update to the latest version:
+```bash
+claude update
+```
+
+Or reinstall:
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+### Error: `403 AccessDeniedException` with non-Claude Bedrock models
+
+**Cause:** Claude Code sends Anthropic-specific `cache_control` fields and `anthropic-beta` headers with every request. Models on Bedrock that are not Anthropic Claude (for example, `moonshotai.kimi-k2.5`) do not support these features and return a 403.
+
+**Fix:** Add the following to `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "DISABLE_PROMPT_CACHING": "1",
+    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
+  }
+}
+```
+
+- `DISABLE_PROMPT_CACHING=1` removes all `cache_control` fields from the request body.
+- `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` strips the `anthropic-beta` request headers.
+
+<Note>
+Claude Code will show a startup warning when `DISABLE_PROMPT_CACHING` is set. This is expected and does not affect functionality.
+</Note>
+
+## Complete Example
+
+Full configuration with all features enabled:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://aigw.portkey.ai",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "Authorization: Bearer YOUR_PORTKEY_API_KEY\nx-portkey-config: YOUR_CONFIG_ID\nx-portkey-trace-id: my-project",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "us.anthropic.claude-opus-4-20250514-v1:0",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "us.anthropic.claude-haiku-4-20250514-v1:0"
+  },
+  "model": "us.anthropic.claude-sonnet-4-20250514-v1:0"
+}
+```
+
+With AI Gateway Config:
+```json
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "provider": "@bedrock-prod" },
+    { "provider": "@anthropic-prod" }
+  ],
+  "cache": { "mode": "simple" },
+  "retry": { "attempts": 3, "on_status_codes": [429, 500, 502, 503] }
+}
+```
+
+<AdvancedFeatures />

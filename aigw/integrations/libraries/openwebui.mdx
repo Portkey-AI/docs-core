@@ -1,0 +1,447 @@
+---
+title: "Open WebUI"
+description: "Enterprise-grade cost tracking, observability, and more for Open WebUI"
+---
+
+Add Prisma AIRS AI Gateway to Open WebUI to get:
+- **Unified access to 1600+ LLMs** through a single API
+- **Real-time cost tracking** and per-user attribution
+- **Enterprise governance** with budget limits and access controls
+- **Reliability features** like fallbacks, caching, and retries
+
+<Warning>
+**Important:** Open WebUI doesn't support custom headers, so you can't pass `x-portkey-config` per request.
+
+**Solution:** Attach a default config to your AI Gateway API key. All requests with that key automatically use the config. For different configs per user/use case, create separate API keys. See [Default Configs](/aigw/product/administration/enforce-default-config).
+</Warning>
+
+## Choose Your Integration Path
+
+| Path | Best For |
+|------|----------|
+| **Direct OpenAI-compatible connection** | Quick setup, using Model Catalog models in Open WebUI |
+| **AI Gateway Manifold Pipe** | Enterprise deployments needing per-user attribution with shared API keys |
+
+<Note>
+Individual users: complete the workspace setup and one integration option below.
+</Note>
+
+## 1. Prepare Your AI Gateway Workspace
+
+<Steps>
+  <Step title="Add Provider">
+    Go to [Model Catalog → AI Providers](https://stratacloudmanager.paloaltonetworks.com/) and add your provider (OpenAI, Anthropic, etc.) with your API credentials.
+  </Step>
+
+  <Step title="Get Model Slugs">
+    Go to **Model Catalog → Models** and copy the slugs for models you want to use.
+    Format: `@provider-slug/model-name` (e.g., `@openai-prod/gpt-4o`)
+  </Step>
+
+  <Step title="Create AI Gateway API Key">
+    Go to [API Keys](https://stratacloudmanager.paloaltonetworks.com/) → **Create New API Key**. Optionally attach a default config for advanced features.
+  </Step>
+</Steps>
+
+---
+
+## 2. Connect Open WebUI to the AI Gateway
+
+### Option A: Direct OpenAI-Compatible Connection
+
+<Steps>
+  <Step title="Access Admin Panel">
+    Open WebUI → **Admin Panel** → **Settings** → **Connections**
+  </Step>
+
+  <Step title="Enable Direct Connections">
+    Turn on **Direct Connections** and **OpenAI API** toggle, then click **+** next to *Manage OpenAI API Connections*.
+  </Step>
+
+  <Step title="Configure AI Gateway Connection">
+    | Field | Value |
+    |-------|-------|
+    | **URL** | `https://aigw.portkey.ai/v1` |
+    | **Key** | Your AI Gateway API key |
+    | **Prefix ID** | `portkey` |
+    | **Model IDs** | `@openai-prod/gpt-4o`, `@anthropic-prod/claude-3-sonnet` (or leave empty to auto-fetch) |
+
+    <Note>
+    **Anthropic models** require Max Tokens. Set it in the settings icon (top right).
+    </Note>
+  </Step>
+</Steps>
+
+Monitor requests and costs in the [Strata Cloud Manager](https://stratacloudmanager.paloaltonetworks.com/).
+
+### Option B: AI Gateway Manifold Pipe (Enterprise)
+
+The Manifold Pipe solves a critical enterprise problem: **per-user attribution with shared API keys**.
+
+In typical deployments, a shared API key means all requests appear anonymous in logs. The Manifold Pipe automatically forwards Open WebUI user context (email, name, role) to the AI Gateway, enabling true per-user cost tracking and governance.
+
+<CardGroup cols={2}>
+  <Card title="Per-User Attribution" icon="user">
+    Track which user made each request—even with shared API keys.
+  </Card>
+  <Card title="Structured Metadata" icon="tags">
+    Forward user context (email, name, role, chat ID) for filtering and analytics.
+  </Card>
+  <Card title="Auto Model Discovery" icon="magnifying-glass">
+    Automatically populate model dropdown from your Model Catalog.
+  </Card>
+  <Card title="Built-in Retries" icon="shield">
+    Exponential backoff for non-streaming requests.
+  </Card>
+</CardGroup>
+
+**Download:** [portkey_manifold_pipe.py](https://raw.githubusercontent.com/Portkey-AI/docs-core/refs/heads/main/integrations/libraries/openwebui-portkey-pipe.py)
+
+<AccordionGroup>
+  <Accordion title="portkey_manifold_pipe.py">
+
+```python title="portkey_manifold_pipe.py"
+"""
+title: Portkey Manifold Pipe
+author: Portkey
+version: 0.8.0
+license: MIT
+documentation: https://portkey.ai/docs/integrations/libraries/openwebui
+"""
+
+from pydantic import BaseModel, Field
+from typing import Union, Generator, Iterator
+import json
+import requests
+
+class Pipe:
+    class Valves(BaseModel):
+        PORTKEY_API_KEY: str = Field(
+            default="",
+            description="Your Portkey API key (required).",
+        )
+        PORTKEY_API_BASE_URL: str = Field(
+            default="https://aigw.portkey.ai/v1",
+            description="Base URL for Portkey API.",
+        )
+        AUTO_DISCOVER_MODELS: bool = Field(
+            default=True,
+            description="Auto-fetch models from Portkey.",
+        )
+        PORTKEY_MODELS: str = Field(
+            default="@openai-slug/gpt-4o, @anthropic-slug/claude-sonnet-latest",
+            description="Comma-separated model IDs (used when auto-discovery is off or as fallback).",
+        )
+
+    def __init__(self):
+        self.type = "manifold"
+        self.valves = self.Valves()
+        self.name = "PORTKEY"
+
+    def pipes(self) -> list:
+        model_ids = []
+
+        # Auto-discover models from Portkey
+        if self.valves.AUTO_DISCOVER_MODELS and self.valves.PORTKEY_API_KEY:
+            try:
+                r = requests.get(
+                    f"{self.valves.PORTKEY_API_BASE_URL}/models",
+                    headers={"Authorization": f"Bearer {self.valves.PORTKEY_API_KEY}"},
+                    timeout=10,
+                )
+                if r.status_code == 200:
+                    data = r.json().get("data", [])
+                    model_ids = [
+                        m["id"] for m in data if isinstance(m, dict) and "id" in m
+                    ]
+            except:
+                pass  # Fallback to manual list
+
+        # Add manual models
+        if self.valves.PORTKEY_MODELS:
+            manual = [
+                m.strip() for m in self.valves.PORTKEY_MODELS.split(",") if m.strip()
+            ]
+            model_ids.extend(manual)
+
+        # Deduplicate
+        seen = set()
+        unique = []
+        for m in model_ids:
+            if m not in seen:
+                seen.add(m)
+                unique.append(m)
+
+        return [{"id": m, "name": m} for m in unique]
+
+    def pipe(self, body: dict, __user__: dict) -> Union[str, Generator, Iterator]:
+        if not self.valves.PORTKEY_API_KEY:
+            raise Exception("PORTKEY_API_KEY is required.")
+
+        # Clean model ID (remove Open WebUI prefix)
+        full_model_id = body.get("model", "")
+        actual_model_id = (
+            full_model_id.split(".", 1)[-1] if "." in full_model_id else full_model_id
+        )
+
+        payload = {**body, "model": actual_model_id}
+
+        # Build headers with metadata
+        headers = {
+            "Authorization": f"Bearer {self.valves.PORTKEY_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        metadata = {}
+        if __user__:
+            if "email" in __user__:
+                metadata["_user"] = __user__["email"]  # Special key for User column
+                metadata["email"] = __user__["email"]
+            if "name" in __user__:
+                metadata["name"] = __user__["name"]
+            if "id" in __user__:
+                metadata["user_id"] = __user__["id"]
+            if "role" in __user__:
+                metadata["role"] = __user__["role"]
+            if "chat_id" in __user__:
+                metadata["chat_id"] = __user__["chat_id"]
+
+        if metadata:
+            headers["x-portkey-metadata"] = json.dumps(metadata)
+
+        try:
+            r = requests.post(
+                url=f"{self.valves.PORTKEY_API_BASE_URL}/chat/completions",
+                json=payload,
+                headers=headers,
+                stream=body.get("stream", True),
+            )
+            r.raise_for_status()
+            return r.iter_lines() if body.get("stream", True) else r.json()
+
+        except requests.HTTPError as e:
+            error_msg = f"Portkey API Error: {e.response.status_code}"
+            try:
+                error_details = e.response.json()
+                error_msg += f" - {json.dumps(error_details)}"
+            except:
+                pass
+            raise Exception(error_msg)
+
+        except Exception as e:
+            raise Exception(f"Error: {str(e)}")
+
+```
+
+  </Accordion>
+</AccordionGroup>
+
+<Steps>
+  <Step title="Install the Pipe">
+    1. Open WebUI → **Admin Panel** → **Functions** tab
+    2. Click **+** to create a new function
+    3. Paste the code from the accordion above
+    4. Name it **AI Gateway Function** and save
+  </Step>
+
+  <Step title="Configure Valves">
+    Select the `PORTKEY` pipe and configure:
+
+    | Setting | Value |
+    |---------|-------|
+    | **PORTKEY_API_KEY** | Your AI Gateway API key (required) |
+    | **PORTKEY_API_BASE_URL** | `https://aigw.portkey.ai/v1` (default) |
+    | **AUTO_DISCOVER_MODELS** | `true` (recommended) |
+    | **PORTKEY_MODELS** | Manual fallback: `@openai-prod/gpt-4o, @anthropic-prod/claude-sonnet-latest` |
+  </Step>
+
+  <Step title="Verify User Attribution">
+    Chat in Open WebUI, then check [AI Gateway Logs](https://stratacloudmanager.paloaltonetworks.com/). User email, name, and role appear in request metadata—filter by user, track costs per team member.
+  </Step>
+</Steps>
+
+#### What You'll See in AI Gateway User emails appear directly in the **User column** of your logs—no need to click into individual entries.
+
+**Captured metadata:** User email, name, role, chat ID, user ID. Filter logs by user, attribute costs to departments, maintain audit trails—all without individual API keys per user.
+
+---
+
+### How the Manifold Pipe Works
+
+<CodeGroup>
+```text Without Manifold Pipe
+Open WebUI (User A, User B, User C...)
+  ↓
+Shared Portkey API Key
+  ↓
+Portkey Logs: All requests appear anonymous
+
+❌ No cost attribution, usage tracking, or audit trails
+```
+
+```text With Manifold Pipe
+Open WebUI User A → Pipe adds metadata → Portkey
+  Headers: {"x-portkey-metadata": {"email": "user-a@company.com", "role": "admin"}}
+
+Open WebUI User B → Pipe adds metadata → Portkey
+  Headers: {"x-portkey-metadata": {"email": "user-b@company.com", "role": "user"}}
+
+✅ Full per-user attribution with a single shared API key
+```
+</CodeGroup>
+
+The pipe uses Open WebUI's `__user__` context object and formats it as [AI Gateway metadata](/aigw/product/observability/metadata).
+
+## 3. Enterprise Governance
+
+<AccordionGroup>
+  <Accordion title="Budget Controls & Rate Limits">
+    Create providers per team with [budget & rate limits](/aigw/product/model-catalog/integrations#3-budget-%26-rate-limits) in [Model Catalog](https://stratacloudmanager.paloaltonetworks.com/).
+  </Accordion>
+
+  <Accordion title="Model Access Rules">
+    Use Model Catalog to provision which models are exposed to each workspace.
+    Attach default configs to API keys (Open WebUI doesn't support custom headers).
+  </Accordion>
+
+  <Accordion title="Routing Configuration">
+    Create configs for load balancing, fallbacks, and caching:
+
+```json
+{"strategy": {"mode": "loadbalance"}, "targets": [{"override_params": {"model": "@openai-prod/gpt-4o"}}, {"override_params": {"model": "@anthropic-prod/claude-sonnet-4-20250514"}}]}
+```
+
+    Attach configs to API keys in [Configs Library](https://stratacloudmanager.paloaltonetworks.com/). Update anytime without redeploying Open WebUI.
+  </Accordion>
+
+  <Accordion title="Team-Specific API Keys">
+    Create API keys with metadata for tracking and scoped permissions:
+
+```python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_ADMIN_API_KEY")
+
+api_key = portkey.api_keys.create(
+    name="frontend-engineering",
+    type="organisation",
+    workspace_id="YOUR_WORKSPACE_ID",
+    defaults={
+        "config_id": "your-config-id",
+        "metadata": {"department": "engineering", "team": "frontend"}
+    },
+    scopes=["logs.view", "configs.read"]
+)
+```
+  </Accordion>
+</AccordionGroup>
+
+## 4. Image Generation
+
+<Steps>
+  <Step title="Configure Image Settings">
+    Open WebUI → **Admin Panel** → **Settings** → **Images**
+
+    | Setting | Value |
+    |---------|-------|
+    | **Image Generation** | ON |
+    | **Engine** | Default (Open AI) |
+    | **OpenAI API Config** | `https://aigw.portkey.ai/v1` |
+    | **API Key** | Your AI Gateway API key |
+    | **Default Model** | `@openai-prod/dall-e-3` |
+
+  </Step>
+
+  <Step title="Model-Specific Sizes">
+    | Model | Supported Sizes |
+    |-------|-----------------|
+    | DALL·E 2 | 256x256, 512x512, 1024x1024 |
+    | DALL·E 3 | 1024x1024, 1792x1024, 1024x1792 |
+    | GPT-Image-1 | auto, 1024x1024, 1536x1024, 1024x1536 |
+  </Step>
+</Steps>
+
+Track image generation costs and usage in [AI Gateway Logs](https://stratacloudmanager.paloaltonetworks.com/).
+
+<Note>
+For other providers (Gemini, Vertex AI), add parameters via `override_params` in a [default config](/aigw/product/administration/enforce-default-config).
+</Note>
+
+## AI Gateway Features
+
+<CardGroup cols={2}>
+  <Card title="Observability" icon="chart-line" href="/aigw/product/observability">
+    Track 40+ metrics: cost, tokens, latency. Filter by custom metadata.
+  </Card>
+  <Card title="1600+ LLMs" icon="layer-group" href="/aigw/integrations/llms">
+    Switch providers by changing the model slug in your config.
+  </Card>
+  <Card title="Guardrails" icon="shield-check" href="/aigw/product/guardrails">
+    PII detection, content filtering, compliance controls.
+  </Card>
+  <Card title="Custom Metadata" icon="tags" href="/aigw/product/observability/metadata">
+    Filter logs, track usage, attribute costs by team.
+  </Card>
+</CardGroup>
+
+### Reliability
+
+<CardGroup cols={3}>
+  <Card title="Fallbacks" icon="life-ring" href="/aigw/product/ai-gateway/fallbacks">
+    Auto-switch to backup on failure.
+  </Card>
+  <Card title="Load Balancing" icon="scale-balanced" href="/aigw/product/ai-gateway/load-balancing">
+    Distribute requests by weight.
+  </Card>
+  <Card title="Caching" icon="database" href="/aigw/product/ai-gateway/cache-simple-and-semantic">
+    Reduce costs with response caching.
+  </Card>
+  <Card title="Retries" icon="rotate" href="/aigw/product/ai-gateway/automatic-retries">
+    Exponential backoff on failures.
+  </Card>
+  <Card title="Conditional Routing" icon="route" href="/aigw/product/ai-gateway/conditional-routing">
+    Route by metadata conditions.
+  </Card>
+  <Card title="Budget Limits" icon="coins" href="/aigw/product/model-catalog/integrations#3-budget-%26-rate-limits">
+    Control spending per team.
+  </Card>
+</CardGroup>
+
+### Enterprise
+
+<CardGroup cols={2}>
+  <Card title="SSO" icon="key" href="/aigw/product/enterprise-offering/org-management/sso">
+    SAML 2.0, Okta, Azure AD support.
+  </Card>
+  <Card title="Organisation Management" icon="building" href="/aigw/product/enterprise-offering/org-management">
+    Workspaces, teams, RBAC.
+  </Card>
+  <Card title="Audit Logs" icon="shield-check" href="/aigw/product/enterprise-offering/access-control-management#audit-logs">
+    Access control and compliance tracking.
+  </Card>
+  <Card title="Budget Controls" icon="coins" href="/aigw/product/model-catalog/integrations#3-budget-%26-rate-limits">
+    Granular spending limits.
+  </Card>
+</CardGroup>
+
+## FAQs
+
+<AccordionGroup>
+  <Accordion title="Can I use multiple LLM providers with the same API key?">
+    Yes. Create multiple providers in Model Catalog, add them to a single config, and attach that config to your API key.
+  </Accordion>
+  <Accordion title="How do I track costs for different teams?">
+    Create separate providers per team, use metadata tags in configs, or set up team-specific API keys. Monitor in the analytics dashboard.
+  </Accordion>
+  <Accordion title="What happens if a team exceeds their budget limit?">
+    Requests are blocked, admins notified, usage stats remain visible. Adjust limits as needed.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- [GitHub Repository](https://github.com/Portkey-AI)
+
+<Note>
+For enterprise support, contact our [enterprise team](https://www.paloaltonetworks.com/ai-security/ai-gateway#:~:text=See%20Prisma%20AIRS%20AI%20Gateway%20in%20Action
+</Note>

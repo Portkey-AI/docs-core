@@ -1,0 +1,150 @@
+---
+title: 'LibreChat'
+description: 'Cost tracking, observability, and more for LibreChat'
+---
+
+Add Prisma AIRS AI Gateway to LibreChat to get:
+- **Unified access to 1600+ LLMs** through a single API
+- **Real-time observability** with 40+ metrics and detailed logs
+- **Enterprise governance** with budget limits and RBAC
+- **Security guardrails** for PII detection and content filtering
+
+<Note>
+For enterprise governance setup, see [Enterprise Governance](#3-enterprise-governance).
+</Note>
+
+## 1. Setup the AI Gateway
+
+<Steps>
+<Step title="Add Provider">
+Go to [Model Catalog → AI Providers](https://stratacloudmanager.paloaltonetworks.com/) and add your provider (OpenAI, Anthropic, etc.) with your API credentials.
+
+</Step>
+
+<Step title="Create Config (Optional)">
+Go to [Configs](https://stratacloudmanager.paloaltonetworks.com/) and create a config for routing, fallbacks, or other features:
+
+```json
+{"override_params": {"model": "@openai-prod/gpt-4o"}}
+```
+
+</Step>
+
+<Step title="Create AI Gateway API Key">
+Go to [API Keys](https://stratacloudmanager.paloaltonetworks.com/) → **Create New API Key**. Optionally attach your config from Step 2.
+
+</Step>
+</Steps>
+
+## 2. Integrate with LibreChat
+
+### Configure Files
+
+**docker-compose.override.yml** ([docs](https://www.librechat.ai/docs/quick_start/custom_endpoints))
+
+```yaml docker-compose.override.yml
+services:
+  api:
+    volumes:
+    - type: bind
+      source: ./librechat.yaml
+      target: /app/librechat.yaml
+```
+
+**.env**
+
+```env .env
+PORTKEY_API_KEY=YOUR_PORTKEY_API_KEY
+PORTKEY_GATEWAY_URL=https://aigw.portkey.ai/v1
+```
+
+**librechat.yaml** - Choose one option:
+
+<CodeGroup>
+```yaml With Config
+version: 1.1.4
+cache: true
+endpoints:
+  custom:
+    - name: "Portkey"
+      apiKey: "dummy"
+      baseURL: ${PORTKEY_GATEWAY_URL}
+      headers:
+        Authorization: "Bearer ${PORTKEY_API_KEY}"
+        x-portkey-config: "pc-libre-xxx"
+      models:
+        default: ["@openai-prod/gpt-4o"]
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      modelDisplayLabel: "Portkey"
+```
+
+```yaml With Provider Slug
+version: 1.1.4
+cache: true
+endpoints:
+  custom:
+    - name: "Portkey"
+      apiKey: "dummy"
+      baseURL: ${PORTKEY_GATEWAY_URL}
+      headers:
+        Authorization: "Bearer ${PORTKEY_API_KEY}"
+        x-portkey-provider: "@openai-prod"
+      models:
+        default: ["gpt-4o"]
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      modelDisplayLabel: "Portkey:OpenAI"
+```
+</CodeGroup>
+
+<Note>
+LibreChat requires an `apiKey` field—use `"dummy"` since auth is via AI Gateway headers.
+</Note>
+
+<Note>
+For per-user cost tracking in centralized deployments, see [this community guide](https://github.com/timmanik/librechat-for-portkey).
+</Note>
+
+### Gemini models
+
+Gemini models are not fully compatible with OpenAI chat completions in certain cases like tool calling where thought signature is required for the Gemini models but not supported by OpenAI signature. Here is the recommended configuration:
+
+```yaml librechat.yaml
+# Definition of custom endpoints
+endpoints:
+  custom:
+    - name: "Gemini through Portkey"
+      apiKey: "dummy"
+      baseURL: 'https://aigw.portkey.ai/v1'
+      headers:
+        Authorization: "Bearer asdT"
+        x-portkey-provider: "@gemini-prod"
+      models:
+        default: ['gemini-3-pro-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-preview']
+        fetch: false
+      customParams:
+        defaultParamsEndpoint: 'google'
+      titleConvo: true
+      titleModel: 'current_model'
+      summarize: false
+      summaryModel: 'current_model'
+      forcePrompt: false
+      modelDisplayLabel: 'Portkey'
+      iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+```
+
+The key difference from the regular configuration is:
+
+```yaml
+customParams:
+  defaultParamsEndpoint: 'google'
+```
+
+This instructs LibreChat to send the payload in Gemini format.
+
+import AdvancedFeatures from '/snippets/aigw/portkey-advanced-features.mdx';
+
+<AdvancedFeatures />

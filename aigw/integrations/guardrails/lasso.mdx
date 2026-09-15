@@ -1,0 +1,158 @@
+---
+title: "Lasso Security"
+description: "Lasso Security is the leading genAI security platform that autonomously monitors interactions, detects risks in real-time, and empowers organisations to adopt AI safely."
+---
+
+[Lasso Security](https://www.lasso.security/) is the leading genAI security platform that autonomously monitors interactions, detects risks in real-time, and empowers organisations to adopt AI safely.
+
+To get started with Lasso Security, visit their documentation:
+<Card title="Get Started with Lasso Security" href="https://www.lasso.security/"/>
+
+## Using Lasso with Prisma AIRS AI Gateway
+
+### 1. Add Lasso Credentials to the AI Gateway
+
+* Navigate to the `Integrations` page under `Settings`
+* Click on the edit button for the Lasso integration
+* Add your **API Key** (find it in the [Lasso dashboard](https://app.lasso.security/organization-settings))
+* Optionally set a custom **API Endpoint** if you are running a self-hosted Lasso deployment (defaults to `https://server.lasso.security`)
+
+### 2. Add Lasso's Guardrail Check
+
+* Navigate to the `Guardrails` page and click the `Create` button
+* Search for "Scan Content" or "Classifier" and click `Add`
+* Configure the parameters for your chosen check
+* Set any `actions` you want on your check, and create the Guardrail!
+
+<Note>
+    Guardrail Actions allow you to orchestrate your guardrails logic. You can learn more about them [here](/aigw/product/guardrails#there-are-6-types-of-guardrail-actions)
+</Note>
+
+### Available Checks
+
+| Check Name | Description | Parameters | Supported Hooks |
+|------------|-------------|------------|-----------------|
+| Scan Content | Lasso Security's Deputies analyze content for various security risks including jailbreak attempts, custom policy violations, sexual content, hate speech, illegal content, and more. Returns structured findings with action levels (BLOCK, AUTO_MASKING, WARN). | `Timeout` (number) | `beforeRequestHook` |
+| Classifier | Classify text to detect sensitive information and risks using Lasso's Deputies v3 API. Returns detailed findings with action types (BLOCK, WARN, AUTO_MASKING) and severity levels. | `messages` (required), `conversationId`, `userId`, `Timeout` | `beforeRequestHook`, `afterRequestHook` |
+
+#### Classifier Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `messages` | array | Yes | Array of message objects with `role` (`system`, `user`, `assistant`) and `content` fields |
+| `conversationId` | string | No | Valid ULID to group related API calls into a single dialogue |
+| `userId` | string | No | User identifier for tracking individual usage (UUID, ULID, email, or number string) |
+| `timeout` | number | No | Timeout in milliseconds (default: 5000) |
+
+### 3. Add Guardrail ID to a Config and Make Your Request
+
+* When you save a Guardrail, you'll get an associated Guardrail ID - add this ID to the `input_guardrails` or `output_guardrails` params in your AI Gateway Config
+* Create these Configs in Strata Cloud Manager, save them, and get an associated Config ID to attach to your requests. [More here](/aigw/product/ai-gateway/configs).
+
+Here's an example config:
+
+```json
+{
+  "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
+  "output_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"]
+}
+```
+
+<Tabs>
+  <Tab title="NodeJS">
+
+```js
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    config: "pc-***" // Supports a string config id or a config object
+});
+```
+  </Tab>
+  <Tab title="Python">
+
+```py
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    config="pc-***" # Supports a string config id or a config object
+)
+```
+  </Tab>
+  <Tab title="OpenAI NodeJS">
+
+```js
+const openai = new OpenAI({
+  apiKey: 'OPENAI_API_KEY',
+  baseURL: PORTKEY_GATEWAY_URL,
+  defaultHeaders: createHeaders({
+    apiKey: "PORTKEY_API_KEY",
+    config: "CONFIG_ID"
+  })
+});
+```
+  </Tab>
+  <Tab title="OpenAI Python">
+
+```py
+client = OpenAI(
+    api_key="OPENAI_API_KEY", # defaults to os.environ.get("OPENAI_API_KEY")
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        provider="openai",
+        api_key="PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+        config="CONFIG_ID"
+    )
+)
+```
+  </Tab>
+<Tab title="cURL">
+
+```sh
+curl https://aigw.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: $CONFIG_ID" \
+  -d '{
+    "model": "gpt-3.5-turbo",
+    "messages": [{
+        "role": "user",
+        "content": "Hello!"
+      }]
+  }'
+```
+  </Tab>
+</Tabs>
+
+For more, refer to the [Config documentation](/aigw/product/ai-gateway/configs).
+
+Your requests are now guarded by Lasso Security's protective measures, and you can see the verdict and any actions taken directly in your AI Gateway logs!
+
+## Key Security Features
+
+Lasso Security's Deputies analyze content for various security risks across multiple categories:
+
+1. **Prompt Injections**: Detects attempts to manipulate AI behavior through crafted inputs
+2. **Data Leaks**: Prevents sensitive information from being exposed through AI interactions
+3. **Jailbreak Attempts**: Identifies attempts to bypass AI safety mechanisms
+4. **Custom Policy Violations**: Enforces your organisation's specific security policies
+5. **Harmful Content Detection**: Flags sexual content, hate speech, illegal content, and more
+
+The integration returns structured **findings** for each deputy, including the finding name, category, action level (`BLOCK`, `AUTO_MASKING`, or `WARN`), and severity. Requests are blocked when any finding has a `BLOCK` action.
+
+### Supported Request Types
+
+Lasso works across multiple request types:
+- **Chat Completions** (`/v1/chat/completions`)
+- **Messages** (Anthropic-style)
+- **Completions** (`/v1/completions`)
+- **Embeddings** (`/v1/embeddings`)
+
+### Self-Hosted Lasso Endpoint
+
+If you are running a self-hosted Lasso deployment, you can configure a custom `apiEndpoint` in your Lasso credentials to point to your own instance instead of the default Lasso cloud.
+
+Learn more about Lasso Security's features [here](https://www.lasso.security).
+
+## Get Support
+
+If you face any issues with the Lasso Security integration, reach out to [support@portkey.ai](mailto:support@portkey.ai) for assistance.
