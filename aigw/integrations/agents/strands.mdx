@@ -182,27 +182,6 @@ All requests from this agent will be grouped under the same trace, making it eas
   <Tab title="Custom Metadata">
 Add business context to your agent runs for better filtering and analysis:
 
-```python {8-13}
-from portkey_ai import createHeaders
-
-model = OpenAIModel(
-    client_args={
-        "api_key": "YOUR_PORTKEY_API_KEY",
-        "base_url": PORTKEY_GATEWAY_URL,
-        "default_headers": createHeaders(
-            trace_id="customer_support_bot",
-            metadata={
-                "agent_type": "customer_support",
-                "user_tier": "premium",
-                "session_id": "sess_789",
-                "department": "billing"
-            }
-        )
-    },
-    model_id="gpt-4o",
-    params={"temperature": 0.3}  # Lower temperature for support tasks
-)
-```
 
 This metadata appears in Strata Cloud Manager, allowing you to filter logs and analyze performance by user type, session, or any custom dimension.
   </Tab>
@@ -229,30 +208,6 @@ It's simple to enable fallback in your Strands Agents by using an AI Gateway Con
 <Tab title="Automatic Fallbacks">
 Configure multiple providers so your agents keep working even when one provider fails:
 
-```python {7-18}
-from portkey_ai import createHeaders
-
-model = OpenAIModel(
-    client_args={
-        "api_key": "YOUR_PORTKEY_API_KEY",
-        "base_url": PORTKEY_GATEWAY_URL,
-        "default_headers": createHeaders(
-            config={
-                "strategy": {
-                    "mode": "fallback",
-                    "on_status_codes": [429, 503, 502]  # Rate limits and server errors
-                },
-                "targets": [
-                    { "provider":"@openai-key-primary" },   # Try OpenAI first
-                    { "provider":"@anthropic-key-backup" }  # Fall back to Claude
-                ]
-            }
-        )
-    },
-    model_id="gpt-4o",  # Will map to equivalent models on each provider
-    params={"temperature": 0.7}
-)
-```
 
 If OpenAI returns a rate limit error (429), the AI Gateway automatically retries the request with Anthropic's Claude, using default model mappings.
 
@@ -261,27 +216,6 @@ If OpenAI returns a rate limit error (429), the AI Gateway automatically retries
 <Tab title="Load Balancing">
 Distribute requests across multiple API keys to stay within rate limits:
 
-```python {7-15}
-from portkey_ai import createHeaders
-
-model = OpenAIModel(
-    client_args={
-        "api_key": "YOUR_PORTKEY_API_KEY",
-        "base_url": PORTKEY_GATEWAY_URL,
-        "default_headers": createHeaders(
-            config={
-                "strategy": {"mode": "loadbalance"},
-                "targets": [
-                    { "provider":"@openai-key-1", "weight": 70 },
-                    { "provider":"@openai-key-2", "weight": 30 }
-                ]
-            }
-        )
-    },
-    model_id="gpt-4o",
-    params={"temperature": 0.7}
-)
-```
 
 Requests will be distributed 70/30 across your two OpenAI keys, helping you maximize throughput without hitting individual key limits.
 
@@ -300,28 +234,6 @@ See the [Conditional Routing documentation](/aigw/product/ai-gateway/conditional
 Access 3,000+ models through the same Strands interface by changing just the provider configuration:
 
 <Tabs>
-<Tab title="Using Anthropic">
-```python
-from portkey_ai import createHeaders
-
-# Use Claude instead of GPT-4
-model = OpenAIModel(
-    client_args={
-        "api_key": "YOUR_PORTKEY_API_KEY",
-        "base_url": PORTKEY_GATEWAY_URL,
-        "default_headers": createHeaders(
-            provider="@anthropic", # Your Portkey provider
-        )
-    },
-    model_id="claude-3-7-sonnet-latest",  # Claude model ID
-    params={"max_tokens": 1000, "temperature": 0.7}
-)
-
-# Agent code remains exactly the same
-agent = Agent(model=model, tools=[calculator])
-response = agent("Explain quantum computing in simple terms")
-```
-</Tab>
 
 <Tab title="Using Multiple Providers in One Agent">
 ```python
@@ -396,82 +308,11 @@ The AI Gateway's guardrails can:
 <Tab title="Environment-Specific Settings">
 Configure different behavior for development, staging, and production:
 
-```python [expandable]
-import os
-from portkey_ai import createHeaders
-
-def create_model(environment="production"):
-    if environment == "development":
-        # Use faster, cheaper models for development
-        headers = createHeaders(
-            config={"targets": [{"provider":"@openai-dev-key"}]},
-            metadata={"environment": "dev"}
-        )
-        model_id = "gpt-4o-mini"
-        params = {"temperature": 0.5, "max_tokens": 500}
-
-    elif environment == "production":
-        # Use high-performance models with fallbacks for production
-        headers = createHeaders(
-            config={
-                "strategy": {"mode": "fallback"},
-                "targets": [
-                    {"provider":"@openai-prod-key"},
-                    {"provider":"@anthropic-prod-key"}
-                ]
-            },
-            metadata={"environment": "prod"}
-        )
-        model_id = "gpt-4o"
-        params = {"temperature": 0.7, "max_tokens": 2000}
-
-    return OpenAIModel(
-        client_args={
-            "api_key": "YOUR_PORTKEY_API_KEY",
-            "base_url": PORTKEY_GATEWAY_URL,
-            "default_headers": headers
-        },
-        model_id=model_id,
-        params=params
-    )
-
-# Use environment-specific configuration
-model = create_model(os.getenv("APP_ENV", "production"))
-agent = Agent(model=model, tools=[calculator])
-```
 </Tab>
 
 <Tab title="Request-Level Overrides">
 Override configuration for specific requests without changing the model:
 
-```python [expandable]
-from portkey_ai import createHeaders
-
-model = OpenAIModel(
-    client_args={
-        "api_key": "YOUR_PORTKEY_API_KEY",
-        "base_url": PORTKEY_GATEWAY_URL
-    },
-    model_id="gpt-4o",
-    params={"temperature": 0.7}
-)
-
-# For high-priority requests, override to use faster/more reliable providers
-agent = Agent(model=model, tools=[calculator])
-
-# Normal request
-response1 = agent("What's 2+2?")
-
-# High-priority request with overrides (if your agent supports custom headers)
-# This would require custom implementation in your agent wrapper
-response2 = agent(
-    "Critical calculation: What's the compound interest?",
-    headers=createHeaders(
-        config={"targets": [{"provider":"@premium-openai-key"}]},
-        metadata={"priority": "high"}
-    )
-)
-```
 </Tab>
 </Tabs>
 
@@ -556,29 +397,12 @@ pip install -U strands-agents strands-agents-tools openai portkey-ai
 ```
 
 Verify versions are compatible:
-```python
-import strands
-import portkey_ai
-print(f"Strands: {strands.__version__}")
-print(f"Portkey: {portkey_ai.__version__}")
-```
   </Accordion>
 
   <Accordion title="Authentication Errors">
 **Problem**: `AuthenticationError` when making requests
 
 **Solution**: Verify your AI Gateway API key and provider setup: Verify your AI Gateway API key and provider setup. Test your AI Gateway API key directly and check for common issues such as wrong API key format, misconfigured provider, and missing config attachments.
-```python
-# Test your Portkey API key directly
-from portkey_ai import Portkey
-
-portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY")
-response = portkey.chat.completions.create(
-    messages=[{"role": "user", "content": "test"}],
-    model="gpt-4o"
-)
-print(response)
-```
   </Accordion>
 
   <Accordion title="Rate Limiting">
