@@ -83,6 +83,46 @@ Ensure that the **User Identity Attribute** selected in CIE Directory Sync (UPN 
 
 ---
 
+## User Experience
+
+### First-Time Connection
+
+When a user connects an MCP client to the gateway for the first time, the MCP client opens a browser window and the CAS login page is shown.
+
+**Step 1 — Authenticate with your identity provider**
+
+The user enters their organisation credentials on the CAS Single Sign-on page. This page is hosted by Palo Alto Networks and connects to your configured identity provider.
+
+<Note>
+The login page appearance may vary depending on your configured Authentication Profile and identity provider. The example below shows the default CAS login for a local directory. Organisations using external IdPs (e.g., Entra ID, Okta) will see their IdP's login page instead.
+</Note>
+
+![CAS Single Sign-on — sample login page for a local directory configuration](/images/cas-login.png)
+
+**Step 2 — Approve access to the MCP server**
+
+After authentication, the user is shown a consent page. It displays the MCP server being requested, the workspace it belongs to, and the redirect destination. The user can approve or reject the request.
+
+<Note>
+If you are a member of multiple workspaces where the MCP server is provisioned, a workspace dropdown will appear on the consent page. Select the workspace you want the access token to be scoped to.
+</Note>
+
+![Authorization Request — consent page showing the MCP server name, workspace selection, redirect destination, and approve/reject buttons](/images/cas-consent.png)
+
+Once approved, the browser redirects back to the MCP client with an access token. The client can now make MCP requests.
+
+**Step 3 — Authorize the upstream MCP server (if required)**
+
+If the upstream MCP server uses its own OAuth (for example, GitHub), one more consent page follows: the upstream service's own authorization screen. After approving it, the gateway stores the upstream tokens and refreshes them automatically.
+
+Servers that authenticate with static credentials — headers, API keys, or client credentials configured by an admin — skip this step entirely. See [End-to-end example: GitHub MCP server](#end-to-end-example-github-mcp-server) for a full walkthrough including this step.
+
+### Subsequent Connections
+
+After the initial authentication, the MCP client uses refresh tokens to maintain access. Users are not prompted to log in again until the refresh token expires or is revoked. Approval is also remembered — subsequent connections to the same MCP server skip the consent page.
+
+---
+
 ## End-to-end example: GitHub MCP server
 
 This walkthrough connects the hosted **GitHub MCP server** as an upstream server behind MCP Gateway in SCM mode. It shows both authentication layers in action:
@@ -240,23 +280,6 @@ The browser redirects back to your MCP client and the connection succeeds. GitHu
 | GitHub consent page never appears | Upstream auth type not set to OAuth 2.1 | Edit the integration and set **Authentication Type** to OAuth 2.1 |
 | Repositories missing after authorize | Org has not approved the OAuth App | Ask a GitHub org owner to approve the app under **Third-party access** |
 | Re-prompted for GitHub authorization on every connect | `Expire user access tokens` disabled, so no refresh token is issued | Recreate/update the OAuth App with token expiry enabled |
-
----
-
-## User Experience
-
-### First-Time Connection
-
-When a user connects an MCP client to the gateway for the first time, the client opens a browser and the user completes two consent steps:
-
-1. **CAS login** — the user authenticates against your organisation's identity provider.
-2. **Gateway consent** — the user reviews the MCP server being requested, selects a workspace (if the server is provisioned to more than one), and approves.
-
-If the upstream MCP server itself uses OAuth, a third step follows: the upstream service's own authorization page. See [End-to-end example: GitHub MCP server](#end-to-end-example-github-mcp-server) for the complete flow with screenshots.
-
-### Subsequent Connections
-
-After the initial authentication, the MCP client uses refresh tokens to maintain access. Users are not prompted to log in again until the refresh token expires or is revoked. Approval is also remembered — subsequent connections to the same MCP server skip the consent page.
 
 ---
 
