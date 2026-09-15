@@ -1,6 +1,6 @@
 ---
 title: "ECS"
-description: This enterprise-focused document provides comprehensive instructions for deploying the Portkey software on Amazon Elastic Container Service (ECS), tailored to meet the needs of large-scale, mission-critical applications. It includes specific recommendations for component sizing, high availability, and integration with monitoring systems.
+description: This enterprise-focused document provides comprehensive instructions for deploying Prisma AIRS AI Gateway software on Amazon Elastic Container Service (ECS), tailored to meet the needs of large-scale, mission-critical applications. It includes specific recommendations for component sizing, high availability, and integration with monitoring systems.
 ---
 
 ## Components and Sizing Recommendations
@@ -9,7 +9,7 @@ description: This enterprise-focused document provides comprehensive instruction
 | --------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------                    |
 | AI Gateway                              | Deploy in your ECS cluster using Terraform.                               | Use Amazon ECS tasks with at least 1 vCPU (1024 CPU units) and 2 GiB of memory per task. For high availability, run tasks across multiple Availability Zones with auto-scaling enabled. |
 | Logs Store (optional)                   | Amazon S3 or S3-compatible Storage                                        | Each log document is \~10kb in size (uncompressed)                                                                                                                  |
-| Cache (Prompts, Configs & Providers)    | Built-in Redis or Amazon ElastiCache for Redis OSS or Valkey              | Deployed within the same VPC as the Portkey Gateway.                                                                                                                |
+| Cache (Prompts, Configs & Providers)    | Built-in Redis or Amazon ElastiCache for Redis OSS or Valkey              | Deployed within the same VPC as the AI Gateway.                                                                                                                |
 
 ## Prerequisites
 
@@ -19,13 +19,13 @@ Ensure the following tools and resources are installed and available:
 * [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configured with credentials.
 * [Terraform](https://developer.hashicorp.com/terraform/install) v1.13 or later.
 
-## Create a Portkey Account
-- Go to the [Portkey](https://app.portkey.ai) website.
-- Sign up for a Portkey account.
+## Create a Strata Cloud Manager account
+- Go to the [the AI Gateway](https://app.portkey.ai) website.
+- Sign up for a Strata Cloud Manager account.
 - Once logged in, locate and save your `Organisation ID` for future reference. It can be found in the browser URL:
   `https://app.portkey.ai/organisation/<organisation_id>/`
-- Contact the Portkey AI team and provide your Organisation ID and the email address used during signup.
-- The Portkey team will share the following information with you:
+- Contact the Palo Alto Networks team and provide your Organisation ID and the email address used during signup.
+- The Palo Alto Networks team will share the following information with you:
     - Docker credentials for the Gateway images (username and password).
     - License: Client Auth Key.
 
@@ -42,9 +42,9 @@ Create the required secrets in AWS Secrets Manager. You can either use the [Clou
 3. Provide the following parameters:
     - **Project Name** — e.g., `portkey-gateway`
     - **Environment** — e.g., `dev`
-    - **Docker Username / Password** — provided by Portkey
-    - **Portkey Client Auth** — provided by Portkey
-    - **Organisations** — your Portkey Organisation ID(s), comma-separated if multiple
+    - **Docker Username / Password** — provided by the AI Gateway
+    - **AI Gateway Client Auth** — provided by the AI Gateway
+    - **Organisations** — your AI Gateway Organisation ID(s), comma-separated if multiple
 4. After the stack completes, note the following outputs for use in the Terraform configuration:
     - `DockerCredentialsSecretArn`
     - `ClientOrgSecretNameArn`
@@ -353,7 +353,7 @@ The module can provision either an Application Load Balancer (ALB) or a Network 
 | ------------------------------------------------------------- | ----------- |
 | Host-based routing (required when `server_mode = "all"`)      | ALB         |
 | HTTP/HTTPS-aware routing, WAF, ALB access logs                | ALB         |
-| Layer-4 pass-through, AWS PrivateLink (Inbound Control Plane) | NLB         |
+| Layer-4 pass-through, AWS PrivateLink (Inbound Management Plane) | NLB         |
 | Lowest-latency, simple TCP forwarding                         | NLB         |
 
 #### Application Load Balancer (ALB)
@@ -492,23 +492,23 @@ gateway_task_role_policy_arns = {
 
 The module supports both **same-account** and **cross-account** Bedrock access (via `sts:AssumeRole`). For the full IAM policy documents, trust policy templates, and step-by-step setup for both modes, refer to following guide: [Bedrock Access Configuration](https://github.com/Portkey-AI/portkey-gateway-infrastructure/blob/main/terraform/ecs/docs/Bedrock.md).
 
-## Integrating Gateway with Control Plane
+## Integrating Gateway with Management Plane
 
-**Outbound Connectivity (Data Plane to Control Plane)**
+**Outbound Connectivity (Data Plane to Management Plane)**
 
-Portkey supports the following methods for integrating the Data Plane with the Control Plane for outbound connectivity:
+The AI Gateway supports the following methods for integrating the Data Plane with the Management Plane for outbound connectivity:
 - AWS PrivateLink
 - Over the Internet
 
 ### AWS PrivateLink (Outbound)
 
-Establishes a secure, private connection between the Data Plane and the Portkey Control Plane within the AWS network.
+Establishes a secure, private connection between the Data Plane and the Management Plane within the AWS network.
 
 **Steps to establish AWS PrivateLink connectivity:**
 
-1. Contact Portkey and provide your AWS account ARN so it can be whitelisted in Portkey's Control Plane.
-2. Once you receive confirmation from Portkey that your AWS account is whitelisted, go to the [VPC Console](https://console.aws.amazon.com/vpc/).
-3. Select the AWS Region where the Portkey Gateway is deployed.
+1. Contact the AI Gateway and provide your AWS account ARN so it can be whitelisted in the AI Gateway's Management Plane.
+2. Once you receive confirmation from the AI Gateway that your AWS account is whitelisted, go to the [VPC Console](https://console.aws.amazon.com/vpc/).
+3. Select the AWS Region where the AI Gateway is deployed.
 4. Navigate to the **Endpoints** section in the VPC console.
 5. Click on **Create endpoint** and enter the required details.
 6. Select the `PrivateLink Ready partner services` category and, under **Service settings**, provide the following details.
@@ -520,7 +520,7 @@ Establishes a secure, private connection between the Data Plane and the Portkey 
 8. After all details are filled in, click on **Create endpoint**.
 9. Wait for the Status to change to `Available`.
 10. Once the status changes to `Available`, click on **Actions** > **Modify private DNS name** > select **Enable for this endpoint**.
-11. Update the `main.tf` to point the Gateway to the private Control Plane endpoint:
+11. Update the `main.tf` to point the Gateway to the private Management Plane endpoint:
 
     ```hcl
     environment_variables = {
@@ -550,14 +550,14 @@ Ensure the Gateway has access to the following endpoints over the internet:
 
 No additional configuration is needed if your VPC allows outbound internet access via a NAT Gateway.
 
-### Inbound Connectivity (Control Plane to Data Plane)
+### Inbound Connectivity (Management Plane to Data Plane)
 
 - AWS PrivateLink
 - IP Whitelisting
 
 #### AWS PrivateLink (Inbound)
 
-Establishes a secure, private connection between the Control Plane and the Data Plane within the AWS network.
+Establishes a secure, private connection between the Management Plane and the Data Plane within the AWS network.
 
 **Steps to establish AWS PrivateLink connectivity:**
 
@@ -592,7 +592,7 @@ AWS VPC Endpoint Services only support **Network Load Balancers (NLB)** or Gatew
 **Create the Endpoint Service**
 
 - Navigate to the [AWS VPC Console](https://console.aws.amazon.com/vpcconsole/home#CreateVpcEndpointServiceConfiguration).
-- In the top-right corner of the AWS Console, select the region where the Portkey Gateway is deployed.
+- In the top-right corner of the AWS Console, select the region where the AI Gateway is deployed.
 - Provide the following details:
     - Name of the endpoint service
     - Select the Network Load Balancer to associate with the endpoint (the module-provisioned NLB, or the NLB you created in front of the ALB)
@@ -608,30 +608,30 @@ This step is required only if you are using a Private DNS Name.
 
 Open the created Endpoint Service > click on **Actions** > select **Verify domain ownership for private DNS name** > create the recommended record in your DNS server > click **Verify**.
 
-**Authorize Portkey's Control Plane to initiate connection requests**
+**Authorize the AI Gateway's Management Plane to initiate connection requests**
 
-- Open the Endpoint Service > click on **Actions** > select **Allow principals**, and enter the Control Plane's ARN (`arn:aws:iam::299329113195:root`).
-- Reach out to the Portkey team and share the following details:
+- Open the Endpoint Service > click on **Actions** > select **Allow principals**, and enter the Management Plane's ARN (`arn:aws:iam::299329113195:root`).
+- Reach out to the Palo Alto Networks team and share the following details:
     - **Service name**
     - **DNS names**
     - **Private DNS name**
     - **Region** selected while creating the Endpoint Service
     - Port number on which the Load Balancer is listening for connections
-- Wait for the Portkey team to initiate a connection request from the Control Plane's AWS account to your Gateway's AWS account. Navigate to the **Endpoint connections** section, and once the request appears, approve it.
+- Wait for the Palo Alto Networks team to initiate a connection request from the Management Plane's AWS account to your Gateway's AWS account. Navigate to the **Endpoint connections** section, and once the request appears, approve it.
 
 #### IP Whitelisting
 
-Allows the Control Plane to access the Data Plane over the internet by restricting inbound traffic to specific IP addresses of the Control Plane. This method requires the Data Plane to have a publicly accessible endpoint.
+Allows the Management Plane to access the Data Plane over the internet by restricting inbound traffic to specific IP addresses of the Management Plane. This method requires the Data Plane to have a publicly accessible endpoint.
 
-To whitelist, add an inbound rule to the Load Balancer's security group allowing connections from the Portkey Control Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on the listener port. Alternatively, set `allowed_lb_cidrs` in the module configuration:
+To whitelist, add an inbound rule to the Load Balancer's security group allowing connections from the AI Gateway Management Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on the listener port. Alternatively, set `allowed_lb_cidrs` in the module configuration:
 
 ```hcl
 allowed_lb_cidrs = ["54.81.226.149/32", "34.200.113.35/32", "44.221.117.129/32"]
 ```
 
-To integrate the Control Plane with the Data Plane, contact the Portkey team and provide the **Public Endpoint** of the Data Plane.
+To integrate the Management Plane with the Data Plane, contact the Palo Alto Networks team and provide the **Public Endpoint** of the Data Plane.
 
-## Verifying Gateway Integration with the Control Plane
+## Verifying Gateway Integration with the Management Plane
 
 - Send a test request to the Gateway using `curl`:
 
@@ -651,10 +651,10 @@ To integrate the Control Plane with the Data Plane, contact the Portkey team and
     }'
   ```
 
-- Go to the [Portkey website](https://app.portkey.ai/) -> **Logs**.
+- Go to the [the AI Gateway website](https://app.portkey.ai/) -> **Logs**.
 - Verify that the test request appears in the logs and that you can view its full details by selecting the log entry.
 
-## Uninstalling Portkey Gateway
+## Uninstalling AI Gateway
 
 ```sh
 terraform destroy

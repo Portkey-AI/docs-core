@@ -1,9 +1,9 @@
 ---
 title: "Snowflake MCP server"
-description: "Connect Snowflake's managed MCP server through Portkey MCP Gateway to query data, run Cortex Search/Analyst, and execute SQL—with centralized auth, access control, and observability."
+description: "Connect Snowflake's managed MCP server through Prisma AIRS AI Gateway MCP Gateway to query data, run Cortex Search/Analyst, and execute SQL—with centralized auth, access control, and observability."
 ---
 
-Snowflake's managed MCP server exposes Cortex Search, Cortex Analyst, and SQL execution as MCP tools. Portkey MCP Gateway adds centralized authentication, per-user access control, and observability on top of the Snowflake endpoint.
+Snowflake's managed MCP server exposes Cortex Search, Cortex Analyst, and SQL execution as MCP tools. AI Gateway MCP Gateway adds centralized authentication, per-user access control, and observability on top of the Snowflake endpoint.
 
 ## When should you use this server
 
@@ -20,13 +20,13 @@ Snowflake's managed MCP server exposes Cortex Search, Cortex Analyst, and SQL ex
 ## Authentication
 
 - **Method:** OAuth 2.1 with **manual OAuth metadata** (pre-registered client).
-- **Why:** Snowflake's OAuth server **does not support Dynamic Client Registration (DCR / RFC 7591)**. Portkey's default OAuth flow auto-registers a client against the upstream server, which Snowflake rejects with:
+- **Why:** Snowflake's OAuth server **does not support Dynamic Client Registration (DCR / RFC 7591)**. The AI Gateway's default OAuth flow auto-registers a client against the upstream server, which Snowflake rejects with:
 
   ```
   Incompatible auth server: does not support dynamic client registration
   ```
 
-- **The supported pattern:** front Snowflake with an IdP it trusts (this guide uses **Okta** via Snowflake **External OAuth**), pre-register a confidential OAuth client there, and give Portkey those credentials in `oauth_metadata`. Portkey then skips DCR and uses the pre-registered client for the upstream token exchange.
+- **The supported pattern:** front Snowflake with an IdP it trusts (this guide uses **Okta** via Snowflake **External OAuth**), pre-register a confidential OAuth client there, and give the AI Gateway those credentials in `oauth_metadata`. The AI Gateway then skips DCR and uses the pre-registered client for the upstream token exchange.
 
 <Note>
 With this pattern, **Okta** (not Snowflake) is the OAuth authorization server. Snowflake validates the resulting JWT and maps its `scp` claim to a Snowflake role.
@@ -42,9 +42,9 @@ https://<account>.<region>.snowflakecomputing.com/api/v2/databases/<db>/schemas/
 
 ---
 
-## Connect via Portkey MCP Gateway
+## Connect via AI Gateway MCP Gateway
 
-The setup has three parts: **Snowflake** (trust the IdP, map roles), **Okta** (issue tokens with the role scope), and **Portkey** (register the server with `oauth_metadata`).
+The setup has three parts: **Snowflake** (trust the IdP, map roles), **Okta** (issue tokens with the role scope), and **the AI Gateway** (register the server with `oauth_metadata`).
 
 <Warning>
 The token **scope** selects the Snowflake role. It must be `session:role:<role>`—defined in Okta, listed in the Okta access-policy rule, and mapped to a Snowflake role the user has been granted. Getting this scope right is the most common point of failure.
@@ -109,9 +109,9 @@ CREATE OR REPLACE SECURITY INTEGRATION OKTA_MCP
 If the `session:role:<role>` scope isn't listed in the Okta access-policy **rule**, Okta silently won't issue it → the token has no role → Snowflake rejects the request.
 </Warning>
 
-### Step 3: Register the integration in Portkey
+### Step 3: Register the integration in the AI Gateway
 
-1. In Portkey, go to **MCP Registry** → **Add MCP Integration**.
+1. In the AI Gateway, go to **MCP Registry** → **Add MCP Integration**.
 2. Set:
 
 | Field | Value |
@@ -138,9 +138,9 @@ If the `session:role:<role>` scope isn't listed in the Okta access-policy **rule
 ```
 
 <Note>
-Use `oauth_metadata` (upstream auth), **not** `external_auth_config`. With `client_id` and `client_secret` present, Portkey skips DCR and uses your pre-registered Okta client. See [OAuth Client Metadata](/aigw/product/mcp-gateway/authentication/oauth-client-metadata).
+Use `oauth_metadata` (upstream auth), **not** `external_auth_config`. With `client_id` and `client_secret` present, the AI Gateway skips DCR and uses your pre-registered Okta client. See [OAuth Client Metadata](/aigw/product/mcp-gateway/authentication/oauth-client-metadata).
 
-The `oauth_metadata` wrapper above is for the **Advanced Configuration** JSON box. If you use the dedicated **OAuth Metadata** field under **Advanced Settings** instead, paste only the inner object — a doubled `oauth_metadata` key hides your `client_id` from Portkey and DCR resumes.
+The `oauth_metadata` wrapper above is for the **Advanced Configuration** JSON box. If you use the dedicated **OAuth Metadata** field under **Advanced Settings** instead, paste only the inner object — a doubled `oauth_metadata` key hides your `client_id` from the AI Gateway and DCR resumes.
 </Note>
 
 4. Configure workspace access as needed, then save.
@@ -159,7 +159,7 @@ Gateway URL pattern: `https://mcp.portkey.ai/{slug}/mcp`.
 }
 ```
 
-On first tool use, the client opens the Okta authorization screen. After consent, Portkey exchanges the code, calls Snowflake with the resulting JWT, and stores/refreshes tokens per user.
+On first tool use, the client opens the Okta authorization screen. After consent, the AI Gateway exchanges the code, calls Snowflake with the resulting JWT, and stores/refreshes tokens per user.
 
 ---
 
@@ -167,7 +167,7 @@ On first tool use, the client opens the Okta authorization screen. After consent
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `Incompatible auth server: does not support dynamic client registration` | `oauth_metadata` missing or incomplete → Portkey fell back to DCR against Snowflake | Confirm the field is `oauth_metadata` with **both** `client_id` and `client_secret`, saved on the control plane you actually use |
+| `Incompatible auth server: does not support dynamic client registration` | `oauth_metadata` missing or incomplete → the AI Gateway fell back to DCR against Snowflake | Confirm the field is `oauth_metadata` with **both** `client_id` and `client_secret`, saved on the management plane you actually use |
 | Okta authorize URL shows `scope=session:role:all` | Snowflake's advertised `scopes_supported` overrode the configured scope | Ensure `oauth_metadata.scope` is set; confirm your deploy target has the scope-passthrough fix (SaaS and self-hosted deploy independently) |
 | `One or more scopes are not configured` | Scope doesn't exist in Okta, isn't in the access-policy rule, or doesn't map to a granted role | Re-check Step 2.2 (scope exists), 2.3 (scope in rule), Step 1 (role granted), and `EXTERNAL_OAUTH_SCOPE_MAPPING_ATTRIBUTE='scp'` |
 | Snowflake returns `401` to a direct-token test | `aud`/`iss` mismatch or `sub` doesn't map to a `LOGIN_NAME` | Compare the token's `aud`/`iss`/`sub` (jwt.io) to the SECURITY INTEGRATION fields and the user's `LOGIN_NAME` |

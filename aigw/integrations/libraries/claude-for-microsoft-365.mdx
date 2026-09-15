@@ -1,15 +1,15 @@
 ---
 title: "Claude for Microsoft 365"
-description: "Deploy the Claude add-in for Excel, Word, PowerPoint, and Outlook through Portkey with governed model routing, scoped API keys, and full observability."
+description: "Deploy the Claude add-in for Excel, Word, PowerPoint, and Outlook through Prisma AIRS AI Gateway with governed model routing, scoped API keys, and full observability."
 ---
 
-The Claude add-in for Microsoft 365 puts Claude in a task pane inside Excel, Word, PowerPoint, and Outlook. Point it at Portkey instead of Anthropic's API and every request from every user routes through one governed gateway.
+The Claude add-in for Microsoft 365 puts Claude in a task pane inside Excel, Word, PowerPoint, and Outlook. Point it at the AI Gateway instead of Anthropic's API and every request from every user routes through one governed gateway.
 
 Configuration travels in the add-in's manifest XML, so nothing is left to individual users. Generate the manifest once, deploy it from M365 Admin Center, and the whole org is online.
 
 When you're done:
 
-- Every task-pane conversation routes through Portkey
+- Every task-pane conversation routes through the AI Gateway
 - Model choice is pinned by config, not by the user
 - Budget caps, rate limits, and guardrails enforce on every request
 - Requests are attributed per user and team in Logs and Analytics
@@ -42,13 +42,13 @@ Excel / Word / PowerPoint  ──Authorization: Bearer──>  Portkey  ──> 
                                    manifest.xml
 ```
 
-Model traffic goes from the user's Office WebView straight to Portkey. Allow `pivot.claude.ai` and your gateway host through the corporate firewall.
+Model traffic goes from the user's Office WebView straight to the AI Gateway. Allow `pivot.claude.ai` and your gateway host through the corporate firewall.
 
 ## Prerequisites
 
 | Requirement | Notes |
 |---|---|
-| Portkey API key with a config attached | Steps 1–3 |
+| AI Gateway API key with a config attached | Steps 1–3 |
 | Node.js 18+ | The manifest builder runs on Node |
 | Claude Code | Hosts the manifest generator plugin |
 | M365 Global Admin or Exchange Admin | Required to upload to Integrated apps |
@@ -56,7 +56,7 @@ Model traffic goes from the user's Office WebView straight to Portkey. Allow `pi
 
 ## 1. Add a provider integration
 
-Connect the upstream model source Portkey calls on your behalf.
+Connect the upstream model source AI Gateway calls on your behalf.
 
 Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **Add Provider**.
 
@@ -178,7 +178,7 @@ Go to [API Keys](https://app.portkey.ai/api-keys) → create one key per team or
 </Steps>
 
 <Warning>
-  **Allow config override is not optional.** Left off, Portkey keeps the client's own parameters and passes the add-in's `claude-sonnet-4-5` straight through to the provider instead of replacing it with your `override_params.model`. The failure is quiet — a 200 from an unintended model, or a provider error about an unknown model, with nothing naming the config as the cause.
+  **Allow config override is not optional.** Left off, the AI Gateway keeps the client's own parameters and passes the add-in's `claude-sonnet-4-5` straight through to the provider instead of replacing it with your `override_params.model`. The failure is quiet — a 200 from an unintended model, or a provider error about an unknown model, with nothing naming the config as the cause.
 </Warning>
 
 ## 4. Verify the gateway before building anything
@@ -202,7 +202,7 @@ Check two things in the response:
 If the response echoes `claude-sonnet-4-5`, the override isn't applying. Re-check *Allow config override* on the API key.
 
 <Note>
-  **Use `authorization`, not `x-api-key`.** The add-in supports only those two header schemes, and Portkey rejects its API key on `x-api-key` with `Invalid API Key. Error Code: 03`. Portkey's native `x-portkey-api-key` works with curl but the add-in cannot send it.
+  **Use `authorization`, not `x-api-key`.** The add-in supports only those two header schemes, and the AI Gateway rejects its API key on `x-api-key` with `Invalid API Key. Error Code: 03`. The AI Gateway's native `x-portkey-api-key` works with curl but the add-in cannot send it.
 </Note>
 
 ## 5. Install the manifest generator
@@ -262,7 +262,7 @@ Run the wizard and answer its prompts. It handles everything from provider choic
 
 | Wizard step | What it asks |
 |---|---|
-| 1. Connection path | Gateway vs. Vertex/Bedrock/Foundry. **Answer gateway** — Portkey is the gateway, even though it routes to Bedrock or Vertex underneath |
+| 1. Connection path | Gateway vs. Vertex/Bedrock/Foundry. **Answer gateway** — the AI Gateway is the gateway, even though it routes to Bedrock or Vertex underneath |
 | 1b. Office apps | Excel/Word/PowerPoint, Outlook, or both |
 | 2. Admin consent | Skipped unless `entra_sso=1` is needed |
 | 3. Org-wide vs per-user | Whether the gateway token is the same for everyone |
@@ -300,15 +300,15 @@ node "$PLUGIN/scripts/build-manifest.mjs" outlook manifest-outlook.xml \
 
 ### The four gateway keys
 
-| Key | Value for Portkey |
+| Key | Value for the AI Gateway |
 |---|---|
 | `gateway_url` | `https://api.portkey.ai`, or your self-hosted gateway URL |
 | `gateway_token` | The API key from step 3 |
 | `gateway_auth_header` | `authorization` — the `x-api-key` default does not work |
-| `gateway_api_format` | `anthropic` — Portkey exposes the `/v1/messages` route |
+| `gateway_api_format` | `anthropic` — the AI Gateway exposes the `/v1/messages` route |
 
 <Tip>
-  Single-quote the token in shell. Portkey keys contain `/` and `+`; the builder percent-encodes them correctly, but an unquoted shell mangles them first.
+  Single-quote the token in shell. AI Gateway keys contain `/` and `+`; the builder percent-encodes them correctly, but an unquoted shell mangles them first.
 </Tip>
 
 Validate before uploading:
@@ -348,7 +348,7 @@ Fully quit and reopen Excel — a backgrounded app won't rescan. The add-in appe
 
 Remove a sideload with `clear-addin-cache.sh --id <GUID> --apply`. It's dry-run by default and only ever touches that one ID.
 
-### Deploy the add-in for your organization
+### Deploy the add-in for your organisation
 
 <Steps>
   <Step title="Open Integrated apps">
@@ -360,7 +360,7 @@ Remove a sideload with `clear-addin-cache.sh --id <GUID> --apply`. It's dry-run 
     Admin Center validates on upload — the same check as `office-addin-manifest validate`.
   </Step>
   <Step title="Assign users">
-    Start with **Just me** or a pilot group. Widen to **Entire organization** once verified — assignment changes don't require redeployment.
+    Start with **Just me** or a pilot group. Widen to **Entire organisation** once verified — assignment changes don't require redeployment.
 
     Assign to **Specific users/groups** if per-user config was issued, matching exactly who was provisioned. Nested groups aren't supported.
   </Step>
@@ -380,7 +380,7 @@ The add-in appears under **Home → Add-ins** in Excel, Word, and PowerPoint onc
 
 ## Update the manifest
 
-Rotating the Portkey key, changing the model list, or adding any config key means regenerating and re-uploading. Run the four commands in this order:
+Rotating the AI Gateway key, changing the model list, or adding any config key means regenerating and re-uploading. Run the four commands in this order:
 
 ### 1. Regenerate with the new values
 
@@ -426,7 +426,7 @@ Fully quit and reopen the Office app — clearing does nothing until the app re-
 
 ## Attribute requests per user and team
 
-Add `inference_headers` to the manifest to tag every request with metadata Portkey uses for filtering, cost attribution, and conditional routing:
+Add `inference_headers` to the manifest to tag every request with metadata the AI Gateway uses for filtering, cost attribution, and conditional routing:
 
 ```sh
 inference_headers='{"x-portkey-metadata": "{\"team\":\"finance\",\"env\":\"prod\",\"app\":\"m365-addin\"}"}'
@@ -493,7 +493,7 @@ Each of these is another `key=value` argument to the build command.
   <Accordion title="otlp_endpoint — send traces to your collector" icon="chart-line">
     Routes the add-in's OpenTelemetry traces to a collector you operate. Set the base HTTPS URL; the add-in appends `/v1/traces` and posts OTLP/HTTP. gRPC isn't supported — the add-in runs in a browser WebView.
 
-    Portkey also exports traces natively. See [OpenTelemetry](/aigw/product/observability/opentelemetry).
+    the AI Gateway also exports traces natively. See [OpenTelemetry](/aigw/product/observability/opentelemetry).
   </Accordion>
 </AccordionGroup>
 
@@ -503,7 +503,7 @@ Each of these is another `key=value` argument to the build command.
   **The `gateway_token` in a manifest is a shared secret distributed to every user.** It sits in plaintext in the task-pane URL, readable from any installed machine's add-in cache. Don't commit a manifest containing a live key to git.
 </Warning>
 
-Mitigate at the Portkey layer rather than trying to hide the key:
+Mitigate at the AI Gateway layer rather than trying to hide the key:
 
 - Scope each key narrowly with its own config, budget cap, and rate limit
 - Issue one key per team so revocation and rotation are surgical
@@ -539,7 +539,7 @@ For per-user tokens instead of one shared key, serve them from a bootstrap endpo
   </Accordion>
 
   <Accordion title="401 or 403 from the gateway">
-    Wrong header scheme. The add-in must use `gateway_auth_header=authorization`; Portkey rejects its key on `x-api-key`. Re-run the step 4 probe.
+    Wrong header scheme. The add-in must use `gateway_auth_header=authorization`; The AI Gateway rejects its key on `x-api-key`. Re-run the step 4 probe.
   </Accordion>
 
   <Accordion title="Updated the manifest but users see old config">
@@ -572,7 +572,7 @@ For per-user tokens instead of one shared key, serve them from a bootstrap endpo
     Roll out Claude Desktop across your org
   </Card>
   <Card title="Claude Code" icon="terminal" href="/aigw/integrations/libraries/claude-code">
-    Route Claude Code through Portkey
+    Route Claude Code through the AI Gateway
   </Card>
   <Card title="Configs" icon="sliders" href="/aigw/product/ai-gateway/configs">
     Routing, fallbacks, and caching

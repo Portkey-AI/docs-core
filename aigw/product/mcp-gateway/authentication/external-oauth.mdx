@@ -3,18 +3,18 @@ title: Bring Your Own Auth
 description: Use your own identity provider for gateway authentication.
 ---
 
-External OAuth enables using your existing identity provider (Okta, Auth0, Azure AD, Descope, Cognito) instead of Portkey's built-in authentication. Users authenticate with corporate credentials—no Portkey accounts needed.
+External OAuth enables using your existing identity provider (Okta, Auth0, Azure AD, Descope, Cognito) instead of Prisma AIRS AI Gateway's built-in authentication. Users authenticate with corporate credentials—no Strata Cloud Manager account needed.
 
 ## When to Use
 
-Organizations with existing IdPs can use External OAuth. Users authenticate through the IdP for other services, and MCP access works the same way.
+Organisations with existing IdPs can use External OAuth. Users authenticate through the IdP for other services, and MCP access works the same way.
 
 Common scenarios:
 
 - **SSO for internal developers.** Engineers use corporate credentials to access MCP servers
 - **B2B applications.** Your customers authenticate through their own IdP
 - **Compliance requirements.** Mandate use of your own identity infrastructure
-- **No Portkey accounts.** Users who aren't in Portkey need MCP access
+- **No Strata Cloud Manager account.** Users who aren't in the AI Gateway need MCP access
 
 ---
 
@@ -29,17 +29,17 @@ Common scenarios:
 5. Request proceeds with the user identity attached
 ```
 
-Step 1 establishes your organization context; the `jwt_validation` in step 4 is a per-server check layered on top of it. Portkey never handles user credentials—your IdP remains the source of truth for identity.
+Step 1 establishes your organisation context; the `jwt_validation` in step 4 is a per-server check layered on top of it. The AI Gateway never handles user credentials—your IdP remains the source of truth for identity.
 
 ---
 
 ## Configuration
 
-Configure JWT validation for your MCP server. Portkey validates incoming tokens using your IdP's public keys or introspection endpoint.
+Configure JWT validation for your MCP server. The AI Gateway validates incoming tokens using your IdP's public keys or introspection endpoint.
 
 ### Option 1: JWKS URI (Recommended)
 
-The most common setup. Portkey fetches public keys from your IdP's JWKS endpoint.
+The most common setup. The AI Gateway fetches public keys from your IdP's JWKS endpoint.
 
 ```json
 {
@@ -52,9 +52,9 @@ The most common setup. Portkey fetches public keys from your IdP's JWKS endpoint
 ```
 
 **How it works:**
-- Portkey fetches and caches your IdP's public keys
+- the AI Gateway fetches and caches your IdP's public keys
 - Keys are cached for 24 hours by default
-- If a key rotates, Portkey automatically refetches
+- If a key rotates, the AI Gateway automatically refetches
 - Validation happens locally (no network call per request)
 
 ### Option 2: Token Introspection
@@ -75,9 +75,9 @@ For opaque tokens requiring real-time validation, or for immediate revocation.
 ```
 
 **How it works:**
-- The request authenticates to the gateway first (Portkey API key or org-claim JWT); introspection runs **after** that step.
-- Portkey reads the end-user's opaque token from the header named by `headerKey` (default: `Authorization`). Use a dedicated header such as `X-Auth-Token` so it doesn't collide with the gateway credential.
-- Portkey POSTs to your `introspectEndpoint` per [RFC 7662](https://datatracker.ietf.org/doc/html/rfc7662): the token in the request body as `token=…`, and—when `introspectClientId`/`introspectClientSecret` are set—an `Authorization: Basic base64(client_id:client_secret)` header to identify Portkey to your endpoint.
+- The request authenticates to the gateway first (AI Gateway API key or org-claim JWT); introspection runs **after** that step.
+- the AI Gateway reads the end-user's opaque token from the header named by `headerKey` (default: `Authorization`). Use a dedicated header such as `X-Auth-Token` so it doesn't collide with the gateway credential.
+- AI Gateway POSTs to your `introspectEndpoint` per [RFC 7662](https://datatracker.ietf.org/doc/html/rfc7662): the token in the request body as `token=…`, and—when `introspectClientId`/`introspectClientSecret` are set—an `Authorization: Basic base64(client_id:client_secret)` header to identify the AI Gateway to your endpoint.
 - Your endpoint must return `{ "active": true, ... }`. Include a `sub` claim so the user is attributed correctly in logs and analytics.
 - Responses are cached for `introspectCacheMaxAge` seconds (default: `0`, no caching).
 
@@ -86,7 +86,7 @@ For opaque tokens requiring real-time validation, or for immediate revocation.
 - `> 0`: Better performance, but revocation takes up to the cache TTL to take effect
 
 <Note>
-Token introspection validates the **end-user's** token; it does **not** authenticate the gateway. You still need a Portkey API key or an org-claim JWT on the request (see the callout at the top of this page). An opaque token on its own is not sufficient.
+Token introspection validates the **end-user's** token; it does **not** authenticate the gateway. You still need an AI Gateway API key or an org-claim JWT on the request (see the callout at the top of this page). An opaque token on its own is not sufficient.
 </Note>
 
 See [JWT Validation](/aigw/product/mcp-gateway/authentication/jwt) for full configuration options.
@@ -95,7 +95,7 @@ See [JWT Validation](/aigw/product/mcp-gateway/authentication/jwt) for full conf
 
 ## Client Configuration
 
-Every request needs a **gateway credential** (a Portkey API key or an org-claim JWT) so Portkey can resolve your organization. When you use token introspection, the **end-user token** goes in a separate header—the one you set as `headerKey`:
+Every request needs a **gateway credential** (an AI Gateway API key or an org-claim JWT) so the AI Gateway can resolve your organisation. When you use token introspection, the **end-user token** goes in a separate header—the one you set as `headerKey`:
 
 ```json
 {
@@ -111,7 +111,7 @@ Every request needs a **gateway credential** (a Portkey API key or an org-claim 
 }
 ```
 
-If your IdP issues **JWTs that already carry Portkey org claims** (`portkey_oid` / `organisation_id`, `portkey_workspace` / `workspace_slug`), you can pass that JWT in `x-portkey-api-key` and it serves as the gateway credential on its own—see [Organization JWT Authentication](/aigw/product/enterprise-offering/org-management/jwt). In that case no separate Portkey API key is required.
+If your IdP issues **JWTs that already carry AI Gateway org claims** (`portkey_oid` / `organisation_id`, `portkey_workspace` / `workspace_slug`), you can pass that JWT in `x-portkey-api-key` and it serves as the gateway credential on its own—see [Organisation JWT Authentication](/aigw/product/enterprise-offering/org-management/jwt). In that case no separate AI Gateway API key is required.
 
 Or in code:
 
@@ -183,7 +183,7 @@ This prevents:
 
 ## Combining with Identity Forwarding
 
-External OAuth pairs naturally with identity forwarding. Portkey validates the incoming JWT, extracts user claims, and forwards them to MCP servers.
+External OAuth pairs naturally with identity forwarding. The AI Gateway validates the incoming JWT, extracts user claims, and forwards them to MCP servers.
 
 ```json
 {
@@ -366,7 +366,7 @@ Configure the IdP to issue short-lived access tokens (15-60 minutes). This limit
 
 ### 401 Unauthorized when sending only an end-user token
 
-If you send only an opaque (or IdP) token with no Portkey API key and no org-claim JWT, the gateway can't resolve your organization, so it rejects the request *before* introspection runs (your introspection endpoint is never called, and the client may fall into a browser OAuth prompt). Add a gateway credential—`x-portkey-api-key` or an org-claim JWT—and pass the end-user token in the `headerKey` header.
+If you send only an opaque (or IdP) token with no AI Gateway API key and no org-claim JWT, the gateway can't resolve your organisation, so it rejects the request *before* introspection runs (your introspection endpoint is never called, and the client may fall into a browser OAuth prompt). Add a gateway credential—`x-portkey-api-key` or an org-claim JWT—and pass the end-user token in the `headerKey` header.
 
 ### "Invalid issuer" Error
 
@@ -382,7 +382,7 @@ The token's `aud` claim doesn't match your configuration. Verify the correct API
 
 ### "JWKS fetch failed" Error
 
-Portkey couldn't fetch keys from your JWKS URI. Verify the URL is accessible and returns valid JWKS JSON.
+The AI Gateway couldn't fetch keys from your JWKS URI. Verify the URL is accessible and returns valid JWKS JSON.
 
 ---
 

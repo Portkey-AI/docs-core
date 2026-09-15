@@ -9,13 +9,13 @@ Identity forwarding sends authenticated user information to MCP servers. The ser
 
 MCP servers often need to know who is making requests—for access controls based on user roles, audit logging, or personalized responses.
 
-Without identity forwarding, the MCP server sees requests coming from Portkey, not from individual users. Identity forwarding bridges that gap.
+Without identity forwarding, the MCP server sees requests coming from Prisma AIRS AI Gateway, not from individual users. Identity forwarding bridges that gap.
 
 Common scenarios:
 
 - **Audit logging.** MCP server logs user identity for compliance
 - **Authorization.** MCP server enforces per-user permissions
-- **Multi-tenancy.** MCP server scopes data by user or organization
+- **Multi-tenancy.** MCP server scopes data by user or organisation
 - **Analytics.** Track usage patterns by user or team
 - **Personalization.** Customize responses based on user context
 
@@ -30,7 +30,7 @@ Common scenarios:
 4. MCP server uses claims for authorization/logging/personalization
 ```
 
-The MCP server doesn't need to validate tokens or implement OAuth. It receives trusted user identity from Portkey.
+The MCP server doesn't need to validate tokens or implement OAuth. It receives trusted user identity from the AI Gateway.
 
 ---
 
@@ -83,7 +83,7 @@ function getUserIdentity(request: Request) {
   </Tab>
 </Tabs>
 
-**Best for:** Internal MCP servers in trusted networks that trust Portkey's claims without cryptographic verification.
+**Best for:** Internal MCP servers in trusted networks that trust the AI Gateway's claims without cryptographic verification.
 
 ### Bearer Token Passthrough
 
@@ -109,7 +109,7 @@ The MCP server validates the token itself against the same IdP that issued it.
 
 ### Signed JWT
 
-Portkey generates a new JWT containing user claims, signed with Portkey's private key.
+The AI Gateway generates a new JWT containing user claims, signed with the AI Gateway's private key.
 
 ```json
 {
@@ -134,7 +134,7 @@ The JWT contains:
 - `iat`: Issued at timestamp
 - `exp`: Expiration timestamp
 
-**Best for:** Cryptographic proof that Portkey issued the claims. MCP servers verify the signature without trusting the network.
+**Best for:** Cryptographic proof that AI Gateway issued the claims. MCP servers verify the signature without trusting the network.
 
 ---
 
@@ -157,16 +157,16 @@ The JWT contains:
 
 ### Default Claims
 
-If you don't specify `include_claims`, Portkey includes:
+If you don't specify `include_claims`, the AI Gateway includes:
 
 | Claim | Description |
 |-------|-------------|
 | `sub` | Subject (user identifier) |
 | `email` | User's email address |
 | `username` | Username |
-| `user_id` | Portkey user ID |
+| `user_id` | AI Gateway user ID |
 | `workspace_id` | Workspace identifier |
-| `organisation_id` | Organization identifier |
+| `organisation_id` | Organisation identifier |
 | `scope` | OAuth scopes |
 | `client_id` | OAuth client ID |
 
@@ -176,7 +176,7 @@ These defaults cover common authorization and logging needs. Customize `include_
 
 ## Verifying Signed JWTs
 
-For `jwt_header`, MCP servers verify tokens using Portkey's public keys.
+For `jwt_header`, MCP servers verify tokens using the AI Gateway's public keys.
 
 ### Fetch Public Keys
 
@@ -264,19 +264,19 @@ async function verifyUserJwt(request: Request) {
 
 ### Identity Headers Are Protected
 
-Portkey adds identity headers (`X-User-Claims`, `X-User-JWT`) to the protected headers list. This means:
+The AI Gateway adds identity headers (`X-User-Claims`, `X-User-JWT`) to the protected headers list. This means:
 
 - **Clients cannot spoof identity.** If an agent sends a fake `X-User-Claims` header, it's stripped before processing.
 - **Identity headers have highest priority.** They override any other headers with the same name.
 - **Header forwarding cannot bypass this.** Even with `forward_headers: { mode: "all-except", headers: [] }`, identity headers from clients are blocked.
 
-This ensures MCP servers can trust identity information from Portkey.
+This ensures MCP servers can trust identity information from the AI Gateway.
 
 ### JWT Security Properties
 
 Signed JWTs provide:
 - **Integrity**: Claims cannot be modified without invalidating the signature
-- **Authenticity**: Only Portkey can sign with its private key
+- **Authenticity**: Only the AI Gateway can sign with its private key
 - **Expiry**: Short-lived tokens (default 5 minutes) limit replay window
 
 The signing key is RSA-2048, and JWTs use RS256 algorithm.
@@ -287,7 +287,7 @@ The signing key is RSA-2048, and JWTs use RS256 algorithm.
 
 ### JWT Caching
 
-Signing JWTs involves expensive cryptographic operations. Portkey caches signed JWTs to avoid this overhead:
+Signing JWTs involves expensive cryptographic operations. The AI Gateway caches signed JWTs to avoid this overhead:
 
 | Scenario | Latency |
 |----------|---------|
@@ -302,13 +302,13 @@ Cache details:
 
 ### JWKS Caching on MCP Server
 
-Cache Portkey's JWKS on the MCP server. Most JWT libraries handle this automatically with configurable TTL.
+Cache the AI Gateway's JWKS on the MCP server. Most JWT libraries handle this automatically with configurable TTL.
 
 ---
 
 ## Self-Hosted Setup
 
-Self-hosted Portkey deployments using `jwt_header` require a signing key.
+Self-hosted AI Gateway deployments using `jwt_header` require a signing key.
 
 ### Generate Key Pair
 
@@ -326,7 +326,7 @@ openssl rsa -in private.pem -pubout -out public.pem
 export JWT_PRIVATE_KEY="$(cat private.pem)"
 ```
 
-Portkey automatically exposes the public key at `/.well-known/jwks.json` for MCP servers to verify.
+The AI Gateway automatically exposes the public key at `/.well-known/jwks.json` for MCP servers to verify.
 
 ---
 
@@ -378,9 +378,9 @@ Authenticate via IdP and forward validated claims to MCP servers:
 
 Flow:
 1. User authenticates with your IdP, gets token
-2. User sends request to Portkey with IdP token
-3. Portkey validates token against your IdP
-4. Portkey extracts claims and forwards to MCP server
+2. User sends request to the AI Gateway with IdP token
+3. The AI Gateway validates token against your IdP
+4. The AI Gateway extracts claims and forwards to MCP server
 5. MCP server uses claims for authorization
 
 ---

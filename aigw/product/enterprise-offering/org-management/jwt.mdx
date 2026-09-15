@@ -1,15 +1,15 @@
 ---
 title: JWT Authentication
-description: Configure JWT-based authentication for your organization in Portkey
+description: Configure JWT-based authentication for your organisation in Prisma AIRS AI Gateway
 ---
 
 <Info>
-  This feature is available only on the [Enterprise Plan](/aigw/product/enterprise-offering) of Portkey.
+  This feature is available only on the [Enterprise Plan](/aigw/product/enterprise-offering) of the AI Gateway.
 </Info>
 
-Portkey supports JWT-based authentication in addition to API key authentication. Clients send a JWT in `x-portkey-api-key` or `Authorization: Bearer`; the token is validated against JWKS configured on the organisation.
+The AI Gateway supports JWT-based authentication in addition to API key authentication. Clients send a JWT in `x-portkey-api-key` or `Authorization: Bearer`; the token is validated against JWKS configured on the organisation.
 
-**Portkey Cloud** validates JWTs on the control plane. **[Hybrid](/aigw/self-hosting/hybrid-deployments/architecture) and [air-gapped](/self-hosting/airgapped/model-pricing) deployments** can optionally enable **gateway-local JWT authentication** so the AI Gateway validates tokens locally instead of delegating every request to the control plane.
+**AI Gateway Cloud** validates JWTs on the management plane. **[Hybrid](/aigw/self-hosting/hybrid-deployments/architecture) and [air-gapped](/self-hosting/airgapped/model-pricing) deployments** can optionally enable **gateway-local JWT authentication** so the AI Gateway validates tokens locally instead of delegating every request to the management plane.
 
 <Card href="/aigw/product/guardrails/list-of-guardrail-checks#basic-%E2%80%94-deterministic-guardrails" title="Validate JWT Token (Guardrail)">
     Optionally validate JWTs inside a config's hook pipeline using the JWT guardrail plugin. This is separate from gateway-local JWT auth, which replaces API key validation at the gateway.
@@ -50,7 +50,7 @@ Your JWT payload must contain the following claims:
 
 | **Claim Key**                         | **Description**                                  |
 |--------------------------------------|--------------------------------------------------|
-| `portkey_oid` / `organisation_id`    | Unique identifier for the organization.          |
+| `portkey_oid` / `organisation_id`    | Unique identifier for the organisation.          |
 | `portkey_workspace` / `workspace_slug` | Identifier for the workspace.                  |
 | `scope` / `scopes`                   | Permissions granted by the token.                |
 | `exp`                                | Expiration time (as a UNIX timestamp, in seconds). |
@@ -59,7 +59,7 @@ Your JWT payload must contain the following claims:
 - `iat` and/or `nbf` are recommended but optional.
 
 <Note>
-On Portkey Cloud, `portkey_oid` and `portkey_workspace` are required. In [gateway-local JWT auth](#gateway-local-jwt-authentication), org and workspace can be resolved from deployment configuration when you use a standard IdP token - see [Integration modes](#integration-modes).
+On AI Gateway Cloud, `portkey_oid` and `portkey_workspace` are required. In [gateway-local JWT auth](#gateway-local-jwt-authentication), org and workspace can be resolved from deployment configuration when you use a standard IdP token - see [Integration modes](#integration-modes).
 </Note>
 
 ### Optional Claims
@@ -72,7 +72,7 @@ On Portkey Cloud, `portkey_oid` and `portkey_workspace` are required. In [gatewa
 
 ### User Identification
 
-Portkey identifies users in the following order of precedence for logging and metrics:
+The AI Gateway identifies users in the following order of precedence for logging and metrics:
 
 1. `email_id`
 2. `sub`
@@ -84,7 +84,7 @@ The following example uses Node.js and the `jose` library to:
 1) generate an RSA key pair,
 2) create a JWKS containing the public key,
 3) sign a JWT with the private key,
-4) call Portkey with the JWT.
+4) call the AI Gateway with the JWT.
 
 ### 1) Prerequisites
 
@@ -147,11 +147,11 @@ node generate-and-sign-jwt.mjs
 
 This produces:
 - `jwks.json`: A JWKS containing your public key (with a `kid`).
-- `token.jwt`: A signed JWT ready to use with Portkey.
+- `token.jwt`: A signed JWT ready to use with the AI Gateway.
 
-### 3) Add Your Public Key to Portkey (JWKS)
+### 3) Add Your Public Key to the AI Gateway (JWKS)
 
-In the Portkey Admin UI:
+In the AI Gateway Admin UI:
 - Navigate to **Admin Settings** → **Organisation** → **Authentication**.
 - Choose either:
   - JWKS URL: Host `jwks.json` at a reachable HTTPS URL and paste that URL.
@@ -160,7 +160,7 @@ In the Portkey Admin UI:
 
 Ensure the `kid` in your JWT header matches a key in the configured JWKS.
 
-### 4) Call Portkey Using the Signed JWT
+### 4) Call AI Gateway Using the Signed JWT
 
 Send the JWT in the `x-portkey-api-key` header.
 
@@ -193,7 +193,7 @@ If you prefer Python for signing, you can generate the RSA key pair using your p
 
    If `x-portkey-api-key` is absent, `Authorization` is used.
 
-2. The gateway or control plane validates the JWT:
+2. The gateway or management plane validates the JWT:
    - Verifies the signature using the organisation JWKS.
    - Checks token expiry.
    - Ensures required claims are present.
@@ -201,7 +201,7 @@ If you prefer Python for signing, you can generate the RSA key pair using your p
 3. If valid, the request is authenticated and user details are extracted for authorization and logging.
 4. If invalid, the request is rejected. Common responses include **401 Unauthorized** (invalid or expired token), **403 Forbidden** (scope or workspace not allowed), **412** (usage limit exceeded), and **429** (rate limit exceeded).
 
-On hybrid and air-gapped gateways with `JWT_ENABLED=ON`, validation runs locally on the gateway. Otherwise, JWT-shaped tokens are validated by the control plane.
+On hybrid and air-gapped gateways with `JWT_ENABLED=ON`, validation runs locally on the gateway. Otherwise, JWT-shaped tokens are validated by the management plane.
 
 ## Authorization & Scopes
 
@@ -308,7 +308,7 @@ Once the JWT is validated, the server checks for the required **scope**. Scopes 
 Scopes can also be prefixed with `portkey.` (e.g., `portkey.completions.write`).
 
 <Note>
-    JWT tokens with appropriate scopes function identically to workspace API keys, providing access to workspace-specific operations. They cannot be used as organization API keys, which have broader administrative permissions across all workspaces.
+    JWT tokens with appropriate scopes function identically to workspace API keys, providing access to workspace-specific operations. They cannot be used as organisation API keys, which have broader administrative permissions across all workspaces.
 </Note>
 
 #### Example JWT Header
@@ -335,7 +335,7 @@ The `defaults` object supports the following fields:
 | `config_id`   | The ID of the config to apply as the default for all requests made with this token. |
 | `metadata`    | A JSON object with custom metadata to attach to all requests.                   |
 
-When a JWT with a `defaults.config_id` is used, Portkey validates that the config belongs to the same organization before applying it. If the config is not found or doesn't belong to the org, the default is ignored.
+When a JWT with a `defaults.config_id` is used, the AI Gateway validates that the config belongs to the same organisation before applying it. If the config is not found or doesn't belong to the org, the default is ignored.
 
 <Note>
   This follows the same precedence rules as API key default configs - if a user explicitly passes a config ID in their request headers, it will override the JWT default unless config override is disabled at the workspace level.
@@ -376,11 +376,11 @@ When a JWT with a `defaults.config_id` is used, Portkey validates that the confi
 
 ## Making API Calls with JWT Authentication
 
-Once you have a valid JWT token, you can use it to authenticate your API calls to Portkey. Below are examples showing how to use JWT authentication with different SDKs.
+Once you have a valid JWT token, you can use it to authenticate your API calls to the AI Gateway. Below are examples showing how to use JWT authentication with different SDKs.
 
 <Tabs>
 <Tab title="NodeJS">
-Install the Portkey SDK with npm
+Install the AI Gateway SDK with npm
 ```sh
 npm install portkey-ai
 ```
@@ -408,7 +408,7 @@ main();
 </CodeGroup>
 </Tab>
 <Tab title="Python">
-Install the Portkey SDK with pip
+Install the AI Gateway SDK with pip
 ```sh
 pip install portkey-ai
 ```
@@ -450,7 +450,7 @@ curl https://api.portkey.ai/v1/chat/completions \
 </CodeGroup>
 </Tab>
 <Tab title="OpenAI Python SDK">
-Install the OpenAI & Portkey SDKs with pip
+Install the OpenAI & AI Gateway SDKs with pip
 ```sh
 pip install openai portkey-ai
 ```
@@ -480,7 +480,7 @@ print(completion.choices[0].message)
 </CodeGroup>
 </Tab>
 <Tab title="OpenAI NodeJS SDK">
-Install the OpenAI & Portkey SDKs with npm
+Install the OpenAI & AI Gateway SDKs with npm
 ```sh
 npm install openai portkey-ai
 ```
@@ -519,9 +519,9 @@ main();
 - **Incorrect header usage**: Send the raw JWT in `x-portkey-api-key`, or use `Authorization: Bearer <JWT>`. Do not prefix the token with `Bearer` in `x-portkey-api-key`.
 - **Expired or missing `exp`**: The `exp` claim is required and must be in the future. Allow for small clock skew.
 - **Private vs Public key mix-up**: Your JWKS must contain only the public key parameters. The private key is used only for signing; never paste it into the JWKS JSON.
-- **Wrong org/workspace identifiers**: `portkey_oid` (or `organisation_id`) and `portkey_workspace` (or `workspace_slug`) must correspond to valid identifiers in your Portkey tenant.
+- **Wrong org/workspace identifiers**: `portkey_oid` (or `organisation_id`) and `portkey_workspace` (or `workspace_slug`) must correspond to valid identifiers in your AI Gateway tenant.
 - **Scopes missing for the API you call**: E.g., chat completions needs `completions.write`.
-- **Unreachable JWKS URL**: If using a URL, it must be publicly reachable by Portkey. For static JSON, ensure the pasted JSON is valid and includes `keys: [...]`.
+- **Unreachable JWKS URL**: If using a URL, it must be publicly reachable by the AI Gateway. For static JSON, ensure the pasted JSON is valid and includes `keys: [...]`.
 
 <Info>
   All Invalid JWT errors are logged in the Audit Logs.
@@ -540,9 +540,9 @@ Gateway-local JWT authentication is available only on **[hybrid](/aigw/self-host
 It requires gateway **2.5.0** or higher (Backend **v1.13.0** or higher for air-gapped) with `JWT_ENABLED=ON`.
 </Info>
 
-When enabled, your AI Gateway validates JWTs locally instead of sending every request to the control plane for authentication. This reduces latency and keeps authentication working even when the control plane is temporarily unreachable.
+When enabled, your AI Gateway validates JWTs locally instead of sending every request to the management plane for authentication. This reduces latency and keeps authentication working even when the management plane is temporarily unreachable.
 
-If `JWT_ENABLED` is not `ON`, JWT-shaped tokens are validated by the control plane instead.
+If `JWT_ENABLED` is not `ON`, JWT-shaped tokens are validated by the management plane instead.
 
 ### How it works
 
@@ -557,11 +557,11 @@ Choose the mode that matches how much control you have over your JWT issuer.
 
 #### Mode A - You control the JWT issuer
 
-You can add Portkey-specific claims to your tokens (`portkey_oid`, `portkey_workspace`, `usage_limits`, `rate_limits`, `defaults`, and others) and use the full JWT feature set described in this guide.
+You can add gateway-specific claims to your tokens (`portkey_oid`, `portkey_workspace`, `usage_limits`, `rate_limits`, `defaults`, and others) and use the full JWT feature set described in this guide.
 
 #### Mode B - Standard IdP token
 
-Use this when tokens come from Okta, Auth0, Entra, Cognito, or another IdP whose token schema you cannot change. Portkey handles org, workspace, and budget configuration on the server side. If your IdP cannot include Portkey scopes in tokens, set `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway instead.
+Use this when tokens come from Okta, Auth0, Entra, Cognito, or another IdP whose token schema you cannot change. The AI Gateway handles org, workspace, and budget configuration on the server side. If your IdP cannot include the AI Gateway scopes in tokens, set `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway instead.
 
 | What you need | How to configure it |
 | ------------- | ------------------- |
@@ -569,7 +569,7 @@ Use this when tokens come from Okta, Auth0, Entra, Cognito, or another IdP whose
 | Workspace | Restrict the deployment to specific workspaces, or set an org-level default workspace. See [Workspace resolution](#workspace-resolution). |
 | Scopes | Register gateway scopes (e.g. `completions.write`) in your IdP, or set `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway when IdP scope changes are not possible. Both `completions.write` and `portkey.completions.write` are accepted. |
 | Usage and rate limits | Configure limits on the workspace, or use workspace policies keyed off request metadata. |
-| User attribution in logs | The gateway uses `email_id`, `sub`, or `uid` from the token for per-user logging and metrics. When the token's email matches a Portkey user in the target workspace, the request is attributed to that user (and inherits their workspace role) instead of a generic workspace service key. |
+| User attribution in logs | The gateway uses `email_id`, `sub`, or `uid` from the token for per-user logging and metrics. When the token's email matches an AI Gateway user in the target workspace, the request is attributed to that user (and inherits their workspace role) instead of a generic workspace service key. |
 | JWKS | Point your org's JWKS URL to your IdP's discovery endpoint (e.g. `https://<tenant>/.well-known/jwks.json`) in **Admin Settings** → **Organisation** → **Authentication**. Supports a comma-separated list of URLs. |
 
 ### Enable gateway-local JWT
@@ -578,10 +578,10 @@ Use this when tokens come from Okta, Auth0, Entra, Cognito, or another IdP whose
 
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
-| `JWT_ENABLED` | **Yes** | Set to `ON` to enable gateway-local JWT auth. Any other value uses control plane validation. |
-| `ORGANISATIONS_TO_SYNC` | **Yes** | Comma-separated org UUIDs to sync from the control plane. Also restricts which orgs this gateway accepts. |
-| `PORTKEY_CLIENT_AUTH` | **Yes** | Service auth token for the gateway to sync org, workspace, and deployment settings from the control plane. |
-| `JWT_LOCAL_AUTH_DEFAULT_SCOPES` | No | Comma-separated gateway scopes to apply when the IdP token does not include `scope` or `scopes`. Use this when you cannot add Portkey scopes to tokens in your IdP. |
+| `JWT_ENABLED` | **Yes** | Set to `ON` to enable gateway-local JWT auth. Any other value uses management plane validation. |
+| `ORGANISATIONS_TO_SYNC` | **Yes** | Comma-separated org UUIDs to sync from the management plane. Also restricts which orgs this gateway accepts. |
+| `PORTKEY_CLIENT_AUTH` | **Yes** | Service auth token for the gateway to sync org, workspace, and deployment settings from the management plane. |
+| `JWT_LOCAL_AUTH_DEFAULT_SCOPES` | No | Comma-separated gateway scopes to apply when the IdP token does not include `scope` or `scopes`. Use this when you cannot add the AI Gateway scopes to tokens in your IdP. |
 
 Example:
 
@@ -620,7 +620,7 @@ Authentication fails if JWKS is not configured for the organisation.
 
 #### Example token payloads
 
-**Mode A - full Portkey-aware token:**
+**Mode A - full gateway-aware token:**
 
 ```json
 {
@@ -770,7 +770,7 @@ sequenceDiagram
 **Both modes:**
 
 - Set `JWT_ENABLED=ON`, `PORTKEY_CLIENT_AUTH`, and `ORGANISATIONS_TO_SYNC` on the gateway
-- Configure JWKS for your org in the Portkey admin UI
+- Configure JWKS for your org in the AI Gateway admin UI
 - Ensure the gateway cache is enabled (required for hybrid and air-gapped deployments)
 
 **Mode A:**
@@ -782,11 +782,11 @@ sequenceDiagram
 - Set `ORGANISATIONS_TO_SYNC` to a **single** org UUID
 - Configure scopes in your IdP, or set `JWT_LOCAL_AUTH_DEFAULT_SCOPES` on the gateway if IdP scope changes are not possible
 - Set up workspace resolution (workspace allowlist or org default workspace)
-- Configure workspace-level usage limits, rate limits, and policies in Portkey
+- Configure workspace-level usage limits, rate limits, and policies in the AI Gateway
 
 ## Caching & Token Revocation
 
-Validated JWTs are cached until they expire to reduce validation overhead. On gateway-local auth, org and workspace settings are also cached locally and refreshed during control plane sync.
+Validated JWTs are cached until they expire to reduce validation overhead. On gateway-local auth, org and workspace settings are also cached locally and refreshed during management plane sync.
 
 If you rotate signing keys:
 
