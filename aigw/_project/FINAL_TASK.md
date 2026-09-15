@@ -23,7 +23,7 @@ Judgements not stated by Vrushank. Correct any that are wrong.
 7. **Introduction renames are frontmatter only** — `title` and `sidebarTitle`. File paths mirror the root (`aigw/introduction/what-is-portkey.mdx`).
 8. **Images stay in the shared `/images/` tree.** No duplicated `aigw/images/` — moot in Phase 1 since images are removed, relevant from Phase 3.
 9. **Redirects are not added** for aigw routes. These are new URLs with no inbound links.
-10. **Both API tabs ship in Phase 1**, generated from the existing remote OpenAPI spec. Only the new Prisma AIRS spec is deferred to Phase 2 — the tabs themselves are not. Prompt operations are excluded by tag filter, not by editing the spec.
+10. **Phase 1 wires no OpenAPI binding at all.** The remote spec cannot be read from this environment, so generation is deferred entirely; Vrushank supplies the spec locally for Phase 2.
 11. **`mint validate` green is the definition of done** for each slice, `mint broken-links` on any slice that adds cross-links.
 
 ---
@@ -51,16 +51,10 @@ Copy the Docs, Integrations, Gateway APIs, Admin APIs, Changelog and Help Center
 - Rename Architecture → Overview.
 - Remove FIPS-Compliant Images and the Air-Gapped Deployments (Legacy) section.
 
-**Gateway APIs**
-- Ships in Phase 1, bound to the **existing** remote spec at `docs.json` → `api.openapi`. What moves to Phase 2 is the replacement spec, not the tab.
-- Generate operation pages via group-level `openapi` in `docs.json`. **None of the 219 stub `.mdx` files are carried over** — only the hand-written reference pages.
+**Gateway APIs and Admin APIs**
+- Both tabs ship in Phase 1 carrying **only their hand-written reference pages** — Gateway APIs keeps its API Reference group (introduction, agentic usage, supported providers, authentication, headers, error codes, response schema, config object, OpenAPI specification); Admin APIs keeps introduction and error.
+- **No operation pages.** None of the 219 stub `.mdx` files are carried over, and no OpenAPI binding is wired. Operation pages arrive in Phase 2, generated from the local spec.
 - Remove the SDK group.
-- Exclude prompt endpoints.
-
-**Admin APIs**
-- Ships in Phase 1. Same generation model and same existing spec as Gateway APIs.
-- Remove the Prompts, Prompt Partials, Prompt Labels and Prompt Collections groups.
-- Everything else unchanged.
 
 **Changelog**
 - Remove Monthly Summary, Product Releases, SDK Releases.
@@ -72,6 +66,10 @@ Copy the Docs, Integrations, Gateway APIs, Admin APIs, Changelog and Help Center
 
 **Not carried over**
 - Cookbooks.
+- All API operation pages.
+
+**Also applied**
+- Every link to Prompt Studio removed from aigw pages, since the product surface is not carried over: 50 `<Card>` blocks deleted, 16 prose links unwrapped to plain text, 2 emptied `<CardGroup>`s removed. Covers both `/product/prompt-engineering-studio` and the legacy `/product/prompt-library` routes.
 
 **Applies to every carried page**
 - Remove all screenshot images.
@@ -102,14 +100,20 @@ Copy the Docs, Integrations, Gateway APIs, Admin APIs, Changelog and Help Center
 - Decide the licensing / module labels (Enterprise, Agent Gateway, Observability Suite, Guardrails Engine, Model Catalog, Prompt Studio) as public group headings or internal-only.
 - Apply Organisation → Workspace → User/Machine throughout.
 
-**API reference**
-- Bind the generated API pages to the new Prisma AIRS OpenAPI specification in place of the current remote spec.
-- Operation page titles, ordering and grouping move into the spec via `x-mint`, since there are no stub files to carry them.
+**API reference** — narrow scope
+- Generate operation pages for Gateway APIs and Admin APIs from the **local** OpenAPI spec Vrushank supplies, via group-level `openapi` in `docs.json`. No stub `.mdx` files.
+- Exclude prompt endpoints, and the Admin API Prompts / Prompt Partials / Prompt Labels / Prompt Collections groups.
+- Operation page titles, ordering and grouping live in the spec via `x-mint`, since there are no stub files to carry them.
+- Repoint the `api-reference` links still resolving to the Latest version.
 
 ---
 
-## Phase 3 — Assets
+## Phase 3 — Assets and broader API scope
 
+**API reference — broader scope**
+- Everything beyond the narrow Phase 2 generation: full spec coverage, `x-mint.mcp` decisions, playground configuration, overlays.
+
+**Assets**
 - Prisma AIRS / Palo Alto Networks screenshot set captured and added back to the pages stripped in Phase 1.
 - Logo lockup and any brand-specific visual elements.
 - Diagrams redrawn where they carry Portkey branding.

@@ -1,0 +1,739 @@
+---
+title: Headers
+description: Header requirements and options for the Portkey API
+---
+
+Portkey API accepts 4 kinds of headers for your requests:
+| | | |
+| :-- | :-- | :-- |
+| Portkey Authentication Header | `Required` | For Portkey auth |
+| Provider Authentication Headers OR Cloud-Specific Headers | `Required` | For provider auth |
+| Additional Portkey Headers | `Optional` | To pass `config`, `metadata`, `trace id`, `cache refresh` etc. |
+| Custom Headers | `Optional` | To forward any other headers directly |
+
+## Portkey Authentication
+
+### Portkey API Key
+
+<ResponseField name="x-portkey-api-key / api_key / apiKey" required type="string">
+Authenticate your requests with your Portkey API key. Obtain API key from the [Portkey dashboard](https://app.portkey.ai/api-keys).<br />
+Environment variable: `PORTKEY_API_KEY`
+<Accordion title="Example">
+<CodeGroup>
+```sh cURL {2}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+```
+```py Python {4}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY" # defaults to os.environ.get("PORTKEY_API_KEY")
+)
+```
+```js JavaScript {4}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY' // defaults to process.env["PORTKEY_API_KEY"]
+});
+```
+</CodeGroup>
+</Accordion>
+</ResponseField>
+
+## Provider Authentication
+
+In addition to the Portkey API key, you must provide information about the AI provider you're using. There are **4** ways to do this:
+
+### 1. Provider Slug + Auth
+
+Useful if you do not want to save your API keys to Portkey vault and make direct requests.
+
+<ResponseField name="x-portkey-provider / provider" type="string">
+Specifies the provider you're using (e.g., `openai`, `anthropic`, `vertex-ai`).<br />
+List of [Portkey supported providers here](/aigw/integrations/llms).
+</ResponseField>
+<ResponseField name="Authorization" type="string">
+Pass the auth details for the specified provider as a `"Bearer $TOKEN"`.<br /><br />
+If your provider expects their auth with headers such as `x-api-key` or `api-key`, you can pass the token with the `Authorization` header directly and Portkey will convert it into the provider-specific format.
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {3,4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: openai" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+```
+
+```py Python {5,6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  provider = "openai",
+  Authorization = "Bearer OPENAI_API_KEY"
+)
+```
+
+```js JavaScript {5,6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  provider: 'openai',
+  Authorization: 'Bearer OPENAI_API_KEY'
+});
+```
+</CodeGroup>
+</Accordion>
+
+### 2. AI Provider
+
+<ResponseField name="x-portkey-provider / provider" type="string">
+Specify your AI Provider slug (from [Model Catalog](/aigw/product/model-catalog)) to route requests through a managed provider. Use the `@provider-slug` format. ([Docs](/aigw/product/model-catalog))
+
+<Note>The `x-portkey-virtual-key` / `virtual_key` / `virtualKey` parameter is the legacy equivalent and still works for backward compatibility.</Note>
+</ResponseField>
+
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {3}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+```
+
+```py Python {5}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  provider = "@openai-prod"  # Your AI Provider slug from Model Catalog
+)
+```
+
+```js JavaScript {5}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  provider: '@openai-prod'  // Your AI Provider slug from Model Catalog
+});
+```
+</CodeGroup>
+</Accordion>
+
+### 3. Config
+
+<ResponseField name="x-portkey-config / config" type="string or JSON">
+Pass your Portkey config with this header. Accepts a `JSON object` or a `config ID` that can also contain gateway configuration settings, and provider details.<br />
+* Configs can be saved in the Portkey UI and referenced by their ID ([Docs](/aigw/product/ai-gateway/configs))
+* Configs also enable other optional features like Caching, Load Balancing, Fallback, Retries, and Timeouts.
+</ResponseField>
+
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {3}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-config: openai-config" \
+```
+
+```py Python {5}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  config = "openai-config"
+# You can also send raw JSON
+# config = {"provider": "openai", "api_key": "OPENAI_API_KEY"}
+)
+```
+
+```js JavaScript {5}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  config: 'openai-config'
+// You can also send raw JSON
+// config: {"provider": "openai", "api_key": "OPENAI_API_KEY"}
+});
+```
+</CodeGroup>
+</Accordion>
+
+### 4. Custom Host
+
+<ResponseField name="x-portkey-custom-host / custom_host / customHost" type="string">
+Specifies the base URL where you want to send your request. Portkey validates custom host URLs and blocks private/reserved IP ranges by default. See [Custom hosts](/aigw/product/ai-gateway/custom-hosts) for details.
+</ResponseField>
+<ResponseField name="x-portkey-provider / provider" type="string">
+Target provider that's availabe on your base URL. If you are unsure of which target provider to set, you can set `openai`.
+</ResponseField>
+<ResponseField name="Authorization" type="string">
+Pass the auth details for the specified provider as a `"Bearer $TOKEN"`.<br /><br />
+If your provider expects their auth with headers such as `x-api-key` or `api-key`, you can pass the token with the `Authorization` header directly and Portkey will convert it into the provider-specific format.
+</ResponseField>
+
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {3-5}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-custom-host: http://124.124.124.124/v1" \
+  -H "x-portkey-provider: openai" \
+  -H "Authorization: Bearer $TOKEN" \
+```
+
+```py Python {5-7}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  custom_host = "http://124.124.124.124/v1",
+  provider = "openai",
+  Authorization = "Bearer TOKEN"
+)
+```
+
+```js JavaScript {5-7}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  customHost: "http://124.124.124.124/v1",
+  provider: "openai",
+  Authorization: "Bearer TOKEN"
+});
+```
+</CodeGroup>
+</Accordion>
+---
+
+## Additional Portkey Headers
+
+There are additional optional Portkey headers that enable various features and enhancements:
+
+### Trace ID
+<ResponseField name="x-portkey-trace-id / trace_id / traceId" type="string">
+An ID you can pass to refer to one or more requests later on. If not provided, Portkey generates a trace ID automatically for each request. ([Docs](/aigw/product/observability/traces))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "x-portkey-trace-id: test-request" \
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  provider = "@openai-prod",
+  trace_id = "test-request"
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  provider: "@openai-prod",
+  traceId: "test-request"
+});
+```
+</CodeGroup>
+</Accordion>
+
+### Metadata
+<ResponseField name="x-portkey-metadata / metadata" type="JSON">
+Allows you to attach custom metadata to your requests, which can be filtered later in the analytics and log dashboards.<br />
+You can include the special metadata type `_user` to associate requests with specific users. ([Docs](/aigw/product/observability/metadata))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "x-portkey-metadata: {'_user': 'user_id_123', 'foo': 'bar'}" \
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  provider = "@openai-prod",
+  metadata = {"_user": "user_id_123", "foo": "bar"}"
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  provider: "@openai-prod",
+  metadata: {"_user": "user_id_123", "foo": "bar"}"
+});
+```
+</CodeGroup>
+</Accordion>
+
+### Cache Force Refresh
+<ResponseField name="x-portkey-cache-force-refresh / cache_force_refresh / cacheForceRefresh" type="boolean">
+Forces a cache refresh for your request by making a new API call and storing the updated value.<br />
+Expects `true` or `false` See the caching documentation for more information. ([Docs](/aigw/product/ai-gateway/cache-simple-and-semantic))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "x-portkey-cache-force-refresh: true" \
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  provider = "@openai-prod",
+  cache_force_refresh = True
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  provider: "@openai-prod",
+  cacheForceRefresh: True
+});
+```
+</CodeGroup>
+</Accordion>
+
+### Cache Namespace
+<ResponseField name="x-portkey-cache-namespace / cache_namespace / cacheNamespace" type="string">
+Partition your cache store based on custom strings, ignoring metadata and other headers.
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "x-portkey-cache-namespace: any-string" \
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  provider = "@openai-prod",
+  cache_namespace = "any-string"
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  provider: "@openai-prod",
+  cacheNamespace: "any-string"
+});
+```
+</CodeGroup>
+</Accordion>
+
+### Request Timeout
+<ResponseField name="x-portkey-request-timeout / request_timeout / requestTimeout" type="integer">
+Set timeout after which a request automatically terminates. The time is set in milliseconds.
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "x-portkey-request-timeout: 3000" \
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  provider = "@openai-prod",
+  request_timeout = 3000
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  provider: "@openai-prod",
+  reqiestTimeout: 3000
+});
+```
+</CodeGroup>
+</Accordion>
+
+### Fetch Integrated Models
+<ResponseField name="x-portkey-fetch-integrated-models" type="boolean">
+Applies to `GET /v1/models` only. When `true`, forces the endpoint to return Portkey's integrated (Model Catalog) models even when a provider or config is passed on the request. Without this header, any provider signal causes the endpoint to proxy to the upstream provider's `/v1/models`. You can also set this as `fetch_integrated_models: true` inside a Portkey config. ([Docs](/api-reference/inference-api/models/models))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4}
+curl https://api.portkey.ai/v1/models \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "x-portkey-fetch-integrated-models: true"
+```
+
+```json Config
+{
+  "fetch_integrated_models": true,
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@anthropic-prod" }
+  ]
+}
+```
+</CodeGroup>
+</Accordion>
+
+## Custom Headers
+
+You can pass any other headers your API expects by directly forwarding them without any processing by Portkey.<br />
+This is especially useful if you want to pass send sensitive headers.
+
+### Forward Headers
+<ResponseField name="x-portkey-forward-headers / forward_headers / forwardHeaders" type="array of strings">
+Pass all the headers you want to forward directly in this array. ([Docs](https://portkey.ai/docs/welcome/integration-guides/byollm#forward-sensitive-headers-securely))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4-6}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "X-Custom-Header: ...."\
+  -H "Another-Header: ....."\
+  -H "x-portkey-forward-headers: ['X-Custom-Header', 'Another-Header']" \
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key = "PORTKEY_API_KEY", # defaults to os.environ.get("PORTKEY_API_KEY")
+  provider = "@openai-prod",
+  X_Custom_Header = "....",
+  Another_Header = "....",
+  # The values in forward_headers list must be the original header names
+  forward_headers = ['X-Custom-Header', 'Another-Header']
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY', // defaults to process.env["PORTKEY_API_KEY"]
+  provider: "@openai-prod",
+  CustomHeader: "....",
+  AnotherHeader: "....",
+  forwardHeaders: ['CustomHeader', 'AnotherHeader']
+});
+```
+</CodeGroup>
+
+<Note>
+
+#### Python Usage
+With the Python SDK, you need to transform your headers to **Snake Case** and then include them while initializing the Portkey client.
+Example: If you have a header of the format `X-My-Custom-Header`, it should be sent as `X_My_Custom_Header` in the SDK.
+
+**Note:** When using `forward_headers`, ensure the header names in the list are in their **original format** (e.g., `X-My-Custom-Header`), not the snake case format.
+
+#### JavaScript Usage
+With the JS SDK, you need to transform your headers to **Camel Case** and then include them while initializing the Portkey client.
+Example: If you have a header of the format `X-My-Custom-Header`, it should be sent as `xMyCustomHeader` in the SDK
+</Note>
+</Accordion>
+
+### Mask Sensitive Headers in Logs
+
+<ResponseField name="x-portkey-sensitive-headers / sensitive_headers / sensitiveHeaders" type="array of strings">
+List of header names whose values Portkey should mask (hash) in request, response, and trace logs. Matching is case-insensitive.
+</ResponseField>
+
+`x-portkey-sensitive-headers` only controls log masking. It does **not** forward headers to the upstream provider.
+
+If you need both behaviors, use:
+- `x-portkey-forward-headers` to forward the header upstream
+- `x-portkey-sensitive-headers` to mask that header's value in Portkey logs
+
+For organisation-wide defaults, set `ORGANISATION_HEADERS_TO_MASK` (comma-separated header names) in your gateway environment to mask matching headers across requests.
+
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {5}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "X-Internal-Token: supersecret" \
+  -H "x-portkey-sensitive-headers: X-Internal-Token"
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY",
+  provider="@openai-prod",
+  sensitive_headers=["X-Internal-Token"]
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY',
+  provider: '@openai-prod',
+  sensitiveHeaders: ['X-Internal-Token']
+});
+```
+</CodeGroup>
+</Accordion>
+
+## Cloud-Specific Headers (`Azure`, `Google`, `AWS`)
+
+Pass more configuration headers for `Azure OpenAI`, `Google Vertex AI`, or `AWS Bedrock`
+
+### Azure
+
+* `x-portkey-azure-resource-name`, `x-portkey-azure-deployment-id`, `x-portkey-azure-api-version`, `Authorization`, `x-portkey-azure-model-name`
+
+### Google Vertex AI
+
+* `x-portkey-vertex-project-id`, `x-portkey-vertex-region`, `X-Vertex-AI-LLM-Request-Type`
+
+### AWS Bedrock
+
+* `x-portkey-aws-session-token`, `x-portkey-aws-secret-access-key`, `x-portkey-aws-region`, `x-portkey-aws-session-token`
+
+---
+
+## List of All Headers
+
+The following is a comprehensive list of headers that can be used when initializing the Portkey client.
+
+Portkey adheres to language-specific naming conventions:
+* **camelCase** for **JavaScript/Node.js** parameters
+* **snake_case** for **Python** parameters
+* **hyphenated-keys** for **HTTP headers**
+
+<Tabs>
+  <Tab title="NodeJS">
+| Parameter | Type | Key |
+| :--- | :--- | :--- |
+| **API Key** Your Portkey account's API Key. | stringrequired | `apiKey` |
+| **Virtual Key** *(Legacy — use `provider` with `@provider-slug` instead)* | string | `virtualKey` |
+| **Config** The slug or [config object](/aigw/api-reference/inference-api/config-object) to use | stringobject | `config` |
+| **Provider** The AI provider to use for your calls. ([supported providers](/aigw/integrations/llms#supported-ai-providers)). | string | `provider` |
+| **Base URL** You can edit the URL of the gateway to use. Needed if you're [self-hosting the AI gateway](https://github.com/Portkey-AI/gateway/blob/main/docs/installation-deployments.md) | string | `baseURL` |
+| **Trace ID** An ID you can pass to refer to 1 or more requests later on. Generated automatically for every request, if not sent. | string | `traceID` |
+| **Metadata** Any metadata to attach to the requests. These can be filtered later on in the analytics and log dashboards Can contain `_prompt`, `_user`, `_organisation`, or `_environment` that are special metadata types in Portkey. You can also send any other keys as part of this object. | object | `metadata` |
+| **Cache Force Refresh** Force refresh the cache for your request by making a new call and storing that value. | boolean | `cacheForceRefresh` |
+| **Cache Namespace** Partition your cache based on custom strings, ignoring metadata and other headers. | string | `cacheNamespace` |
+| **Custom Host** Route to locally or privately hosted model by configuring the API URL with custom host | string | `customHost` |
+| **Forward Headers** Forward sensitive headers directly to your model's API without any processing from Portkey. | array of string | `forwardHeaders` |
+| **Azure OpenAI Headers** Configuration headers for Azure OpenAI that you can send separately | string | `azureResourceName` `azureDeploymentId` `azureApiVersion` `azureModelName` |
+| **Google Vertex AI Headers** Configuration headers for Vertex AI that you can send separately | string | `vertexProjectId` `vertexRegion` |
+| **AWS Bedrock Headers** Configuration headers for Bedrock that you can send separately | string | `awsAccessKeyId` `awsSecretAccessKey` `awsRegion` `awsSessionToken` |
+
+  </Tab>
+  <Tab title="Python">
+
+| Parameter | Type | Key |
+| :--- | :--- | :--- |
+| **API Key** Your Portkey account's API Key. | stringrequired | `api_key` |
+| **Virtual Key** *(Legacy — use `provider` with `@provider-slug` instead)* | string | `virtual_key` |
+| **Config** The slug or [config object](/aigw/api-reference/inference-api/config-object) to use | stringobject | `config` |
+| **Provider** The AI provider to use for your calls. ([supported providers](/aigw/integrations/llms#supported-ai-providers)). | string | `provider` |
+| **Base URL** You can edit the URL of the gateway to use. Needed if you're [self-hosting the AI gateway](https://github.com/Portkey-AI/gateway/blob/main/docs/installation-deployments.md) | string | `base_url` |
+| **Trace ID** An ID you can pass to refer to 1 or more requests later on. Generated automatically for every request, if not sent. | string | `trace_id` |
+| **Metadata** Any metadata to attach to the requests. These can be filtered later on in the analytics and log dashboards Can contain `_prompt`, `_user`, `_organisation`, or `_environment` that are special metadata types in Portkey. You can also send any other keys as part of this object. | object | `metadata` |
+| **Cache Force Refresh** Force refresh the cache for your request by making a new call and storing that value. | boolean | `cache_force_refresh` |
+| **Cache Namespace** Partition your cache based on custom strings, ignoring metadata and other headers. | string | `cache_namespace` |
+| **Custom Host** Route to locally or privately hosted model by configuring the API URL with custom host | string | `custom_host` |
+| **Forward Headers** Forward sensitive headers directly to your model's API without any processing from Portkey. | array of string | `forward_headers` |
+| **Azure OpenAI Headers** Configuration headers for Azure OpenAI that you can send separately | string | `azure_resource_name` `azure_deployment_id` `azure_api_version` `azure_model_name` |
+| **Google Vertex AI Headers** Configuration headers for Vertex AI that you can send separately | string | `vertex_project_id` `vertex_region` |
+| **AWS Bedrock Headers** Configuration headers for Bedrock that you can send separately | string | `aws_access_key_id` `aws_secret_access_key` `aws_region` `aws_session_token` |
+  </Tab>
+<Tab title="REST Headers">
+| Parameter | Type | Header Key |
+| :--- | :--- | :--- |
+| **API Key** Your Portkey account's API Key. | stringrequired | `x-portkey-api-key` |
+| **Virtual Key** *(Legacy — use `x-portkey-provider` with `@provider-slug` instead)* | string | `x-portkey-virtual-key` |
+| **Config** The slug or [config object](/aigw/api-reference/inference-api/config-object) to use | string | `x-portkey-config` |
+| **Provider** The AI provider to use for your calls. ([supported providers](/aigw/integrations/llms#supported-ai-providers)). | string | `x-portkey-provider` |
+| **Base URL** You can edit the URL of the gateway to use. Needed if you're [self-hosting the AI gateway](https://github.com/Portkey-AI/gateway/blob/main/docs/installation-deployments.md) | string | Change the request URL |
+| **Trace ID** An ID you can pass to refer to 1 or more requests later on. Generated automatically for every request, if not sent. | string | `x-portkey-trace-id` |
+| **Metadata** Any metadata to attach to the requests. These can be filtered later on in the analytics and log dashboards Can contain `_prompt`, `_user`, `_organisation`, or `_environment` that are special metadata types in Portkey. You can also send any other keys as part of this object. | string | `x-portkey-metadata` |
+| **Cache Force Refresh** Force refresh the cache for your request by making a new call and storing that value. | boolean | `x-portkey-cache-force-refresh` |
+| **Cache Namespace** Partition your cache based on custom strings, ignoring metadata and other headers | string | `x-portkey-cache-namespace` |
+| **Custom Host** Route to locally or privately hosted model by configuring the API URL with custom host | string | `x-portkey-custom-host` |
+| **Forward Headers** Forward sensitive headers directly to your model's API without any processing from Portkey. | array of string | `x-portkey-forward-headers` |
+| **Azure OpenAI Headers** Configuration headers for Azure OpenAI that you can send separately | string | `x-portkey-azure-resource-name`, `x-portkey-azure-deployment-id`, `x-portkey-azure-api-version`, `x-portkey-azure-model-name` |
+| **Google Vertex AI Headers** Configuration headers for Vertex AI that you can send separately | string | `x-portkey-vertex-project-id`, `x-portkey-vertex-region` |
+| **AWS Bedrock Headers** Configuration headers for Bedrock that you can send separately | string | `x-portkey-aws-session-token`, `x-portkey-aws-secret-access-key`, `x-portkey-aws-region`, `x-portkey-aws-session-token` |
+  </Tab>
+</Tabs>
+
+### Using Headers
+
+You can send these headers in multiple ways:
+
+<CodeGroup>
+```sh REST API
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "x-portkey-trace-id: your_trace_id" \
+  -H "x-portkey-metadata: {\"_user\": \"user_12345\"}" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+```python Portkey SDK
+# Python - At initialization
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@openai-prod",
+    config="CONFIG_ID"
+)
+
+# Python - At runtime
+completion = portkey.with_options(
+    trace_id="your_trace_id",
+    metadata={"_user": "user_12345"}
+).chat.completions.create(
+    messages=[{"role": "user", "content": "Hello!"}],
+    model="gpt-4o"
+)
+```
+
+```js Node.js SDK
+// Node.js - At initialization
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@openai-prod",
+    config: "CONFIG_ID"
+});
+
+// Node.js - At runtime
+const chatCompletion = await portkey.chat.completions.create(
+    {
+        messages: [{ role: 'user', content: 'Hello!' }],
+        model: 'gpt-4o'
+    },
+    {
+        traceId: "your_trace_id",
+        metadata: {"_user": "user_12345"}
+    }
+);
+```
+```python OpenAI SDK
+# Python
+from openai import OpenAI
+from portkey_ai import createHeaders
+
+# At initialization
+client = OpenAI(
+    api_key="OPENAI_API_KEY",
+    base_url="https://api.portkey.ai/v1",
+    default_headers=createHeaders({
+        "apiKey": "PORTKEY_API_KEY",
+        "provider": "@openai-prod"
+    })
+)
+
+# At runtime
+response = client.with_options(
+    extra_headers={"x-portkey-trace-id": "your_trace_id",
+                  "x-portkey-metadata": '{"_user": "user_12345"}'}
+).chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+```js OpenAI Node.js SDK
+// Node.js
+import OpenAI from "openai";
+import { createHeaders } from "portkey-ai";
+
+// At initialization
+const client = new OpenAI({
+    apiKey: "OPENAI_API_KEY",
+    baseURL: "https://api.portkey.ai/v1",
+    defaultHeaders: createHeaders({
+        apiKey: "PORTKEY_API_KEY",
+        provider: "@openai-prod"
+    })
+});
+
+// At runtime
+const response = await client.chat.completions.create(
+    {
+        model: "gpt-4o",
+        messages: [{ role: "user", content: "Hello!" }]
+    },
+    {
+        headers: {
+            "x-portkey-trace-id": "your_trace_id",
+            "x-portkey-metadata": JSON.stringify({"_user": "user_12345"})
+        }
+    }
+);
+```
+</CodeGroup>
