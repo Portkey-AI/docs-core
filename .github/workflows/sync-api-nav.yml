@@ -1,0 +1,66 @@
+name: Sync API reference navigation
+
+# The spec repo owns which tag is in which navigation group and which operations
+# are in it, and publishes exactly that as docs-navigation.json. We own where
+# those groups hang in the tabs. aigw/scripts/sync_api_nav.py applies the former
+# and leaves the latter alone.
+#
+# On a pull request it only compares, and fails on any difference -- make it a
+# required check so docs.json cannot drift. On a schedule, or on a dispatch from
+# the spec repo, it writes and opens a pull request, so a spec change lands as a
+# reviewable diff rather than a silent overwrite.
+
+on:
+  # No `paths:` filter. Drift can arrive from the spec side without docs.json
+  # changing, and a required check that is path-filtered never reports on the
+  # pull requests it skips, which blocks them instead of passing them.
+  pull_request:
+  schedule:
+    - cron: '0 6 * * *'
+  repository_dispatch:
+    types: [spec-updated]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Compare docs.json with the spec navigation
+        run: python3 aigw/scripts/sync_api_nav.py
+
+  apply:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Apply the spec navigation to docs.json
+        run: python3 aigw/scripts/sync_api_nav.py --apply
+      - name: Open a pull request if anything changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/sync-api-nav
+          base: main
+          commit-message: 'chore(aigw): sync the API reference navigation from the spec'
+          title: 'chore(aigw): sync the API reference navigation from the spec'
+          body: |
+            `aigw/scripts/sync_api_nav.py --apply` against
+            `PaloAltoNetworks/openapi@main`'s `docs-navigation.json`.
+
+            Only the `pages` arrays of the six generated API groups change. Tabs,
+            versions, group order, guides and theming are untouched.
+
+            Triggered by `${{ github.event_name }}`.
+          add-paths: docs.json
+          delete-branch: true
