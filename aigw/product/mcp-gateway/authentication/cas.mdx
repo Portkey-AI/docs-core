@@ -83,29 +83,176 @@ Ensure that the **User Identity Attribute** selected in CIE Directory Sync (UPN 
 
 ---
 
+## End-to-end example: GitHub MCP server
+
+This walkthrough connects the hosted **GitHub MCP server** as an upstream server behind MCP Gateway in SCM mode. It shows both authentication layers in action:
+
+| Layer | What happens | Who authenticates |
+|-------|--------------|-------------------|
+| **Gateway auth** | User logs in via CAS and approves gateway access | User → CAS → org IdP |
+| **Upstream auth** | Gateway exchanges an OAuth token with GitHub | Gateway → GitHub OAuth App |
+
+<Note>
+GitHub does not support Dynamic Client Registration (DCR), so you must create an OAuth App manually and supply the credentials to the gateway. Servers that support DCR (e.g., Linear, Notion) skip Steps 1–2 entirely.
+</Note>
+
+<Steps>
+
+<Step title="Create a GitHub OAuth App">
+
+Go to **GitHub** → **Settings** → **Developer settings** → **OAuth Apps** → **New OAuth App**.
+
+| Field | Value |
+|-------|-------|
+| **Application name** | A name your users will recognise (e.g., `AIGW MCP`) |
+| **Homepage URL** | Your SCM tenant URL (e.g., `https://stratacloudmanager.paloaltonetworks.com/`) |
+| **Redirect URI** | `<YOUR_MCP_GATEWAY_URL>/oauth/upstream-callback` |
+| **Expire user access tokens** | Enabled — issues a `refresh_token` so the gateway can refresh access silently |
+
+Click **Register application**.
+
+![Registering the GitHub OAuth App with the MCP Gateway upstream callback as the redirect URI](/images/cas-github-oauth-app.png)
+
+<Warning>
+The redirect URI must match your gateway's public URL exactly, including scheme and port. A mismatch causes a `redirect_uri_mismatch` error from GitHub during the upstream authorization step.
+</Warning>
+
+</Step>
+
+<Step title="Copy the client credentials">
+
+On the OAuth App page:
+
+1. Copy the **Client ID**
+2. Click **Generate a new client secret** and copy the **Client Secret**
+
+<Warning>
+GitHub shows the client secret only once. Store it securely before leaving the page.
+</Warning>
+
+</Step>
+
+<Step title="Add the MCP server in SCM">
+
+In Strata Cloud Manager, go to **AI Security** → **AI Gateway** → **Integrations** → **MCP Registry** → **Add MCP Server**.
+
+| Field | Value |
+|-------|-------|
+| **Name** | `Github Auth` (or any display name) |
+| **URL** | `https://api.githubcopilot.com/mcp/` |
+| **Server Type** | Streamable HTTP |
+| **Authentication Type** | OAuth 2.1 |
+
+![Add MCP Server form in SCM with the GitHub MCP endpoint and Streamable HTTP server type](/images/cas-scm-add-mcp-server.png)
+
+In the **OAuth Metadata** field, paste the credentials from Step 2:
+
+```json
+{
+  "client_id": "your_github_oauth_client_id",
+  "client_secret": "your_github_oauth_client_secret",
+  "token_endpoint_auth_method": "client_secret_post"
+}
+```
+
+<Note>
+`token_endpoint_auth_method` must be `client_secret_post`. GitHub does not accept HTTP Basic authentication (`client_secret_basic`) on its token endpoint, so omitting this field results in a token exchange failure.
+</Note>
+
+</Step>
+
+<Step title="Provision workspaces and create the server">
+
+Click **Next: Choose Workspace**, select the workspaces that should have access to this server, then create the MCP server.
+
+<Tip>
+If you provision the server to more than one workspace, users who belong to multiple workspaces will see a workspace selector on the consent page in Step 7.
+</Tip>
+
+</Step>
+
+<Step title="Copy the MCP URL and connect your client">
+
+Go to **AI Gateway** → **Catalogs**, open the server you just created, and copy its **MCP URL**.
+
+Add the URL to your MCP client and click **Connect**:
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "url": "<YOUR_MCP_SERVER_URL>"
+    }
+  }
+}
+```
+
+No credentials go in the client config — the gateway handles both auth layers.
+
+</Step>
+
+<Step title="Sign in with CAS">
+
+The client opens a browser and redirects you to the CAS **Single Sign-on** page. Enter your organisation credentials and click **Login**.
+
+![CAS Single Sign-on page — sample login for a local directory configuration](/images/cas-login.png)
+
+<Note>
+The login page appearance depends on your configured Authentication Profile. Organisations using an external IdP (Entra ID, Okta) see their own IdP login page instead.
+</Note>
+
+</Step>
+
+<Step title="Approve gateway access">
+
+The AI Gateway consent page opens, showing the MCP client requesting access and the redirect destination. If the server is provisioned to multiple workspaces, pick the workspace to scope the token to, then click **Approve**.
+
+![AI Gateway Authorization Request page with workspace selection and approve/reject buttons](/images/cas-consent.png)
+
+</Step>
+
+<Step title="Authorize GitHub (upstream)">
+
+Because this is the first time you are using the GitHub MCP server, you are redirected to GitHub's own authorization page. Review the requested scopes and organisation access, then click **Authorize**.
+
+![GitHub authorization page granting the OAuth App access to repositories, gists, and organisation data](/images/cas-github-consent.png)
+
+<Note>
+Organisation-owned resources may show **Disallowed by org owner** with a **Request** button. A GitHub organisation owner must approve the OAuth App before those repositories become available through the gateway.
+</Note>
+
+</Step>
+
+<Step title="Connection established">
+
+The browser redirects back to your MCP client and the connection succeeds. GitHub tools are now listed and callable through the gateway, with every call logged and governed by AI Gateway policies.
+
+</Step>
+
+</Steps>
+
+### Troubleshooting this flow
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `redirect_uri_mismatch` from GitHub | Redirect URI in the OAuth App does not match the gateway URL | Set it to exactly `<YOUR_MCP_GATEWAY_URL>/oauth/upstream-callback` |
+| Token exchange fails after GitHub authorize | Wrong client authentication method | Set `token_endpoint_auth_method` to `client_secret_post` in OAuth Metadata |
+| GitHub consent page never appears | Upstream auth type not set to OAuth 2.1 | Edit the integration and set **Authentication Type** to OAuth 2.1 |
+| Repositories missing after authorize | Org has not approved the OAuth App | Ask a GitHub org owner to approve the app under **Third-party access** |
+| Re-prompted for GitHub authorization on every connect | `Expire user access tokens` disabled, so no refresh token is issued | Recreate/update the OAuth App with token expiry enabled |
+
+---
+
 ## User Experience
 
 ### First-Time Connection
 
-When a user connects an MCP client to the gateway for the first time, the MCP client opens a browser window and the CAS login page is shown.
+When a user connects an MCP client to the gateway for the first time, the client opens a browser and the user completes two consent steps:
 
-**Step 1 — Authenticate with your identity provider**
+1. **CAS login** — the user authenticates against your organisation's identity provider.
+2. **Gateway consent** — the user reviews the MCP server being requested, selects a workspace (if the server is provisioned to more than one), and approves.
 
-The user enters their organisation credentials on the CAS Single Sign-on page. This page is hosted by Palo Alto Networks and connects to your configured identity provider.
-
-<Note>
-The login page appearance may vary depending on your configured Authentication Profile and identity provider. The example below shows the default CAS login for a local directory. Organisations using external IdPs (e.g., Entra ID, Okta) will see their IdP's login page instead.
-</Note>
-
-**Step 2 — Approve access to the MCP server**
-
-After authentication, the user is shown a consent page. It displays the MCP server being requested, the workspace it belongs to, and the redirect destination. The user can approve or reject the request.
-
-<Note>
-If you are a member of multiple workspaces where the MCP server is provisioned, a workspace dropdown will appear on the consent page. Select the workspace you want the access token to be scoped to.
-</Note>
-
-Once approved, the browser redirects back to the MCP client with an access token. The client can now make MCP requests.
+If the upstream MCP server itself uses OAuth, a third step follows: the upstream service's own authorization page. See [End-to-end example: GitHub MCP server](#end-to-end-example-github-mcp-server) for the complete flow with screenshots.
 
 ### Subsequent Connections
 
@@ -144,3 +291,4 @@ After the initial authentication, the MCP client uses refresh tokens to maintain
 | [Architecture](/aigw/self-hosting/hybrid-deployments/architecture) | Two-plane deployment architecture, identity flow and storage ownership |
 | [OAuth](/aigw/product/mcp-gateway/authentication/oauth) | AI Gateway's built-in OAuth for non-SCM deployments |
 | [External OAuth](/aigw/product/mcp-gateway/authentication/external-oauth) | Bring your own identity provider |
+| [GitHub MCP server](/aigw/integrations/mcp-servers/github-mcp-server) | Full tool reference for the GitHub MCP server |
