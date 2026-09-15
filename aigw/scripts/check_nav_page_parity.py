@@ -29,13 +29,20 @@ LEDGER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nav_retiremen
 VERSION = "Prisma AIRS"
 
 
-def nav_pages():
-    """Every page path in the Prisma AIRS version, in tree order."""
-    docs = json.load(open(DOCS))
+def nav_pages(docs_path=DOCS):
+    """Every page path in the Prisma AIRS version, in tree order.
+
+    Groups bound to an OpenAPI spec are skipped: Mintlify generates a page per
+    operation, so their `pages` entries are operation strings like
+    `POST /chat/completions`, not paths to files that exist on disk.
+    """
+    docs = json.load(open(docs_path))
     version = next(v for v in docs["navigation"]["versions"] if v["version"] == VERSION)
     found = []
 
     def walk(node):
+        if "openapi" in node:
+            return
         for page in node.get("pages", []):
             if isinstance(page, str):
                 found.append(page)
@@ -43,6 +50,8 @@ def nav_pages():
                 walk(page)
 
     for tab in version["tabs"]:
+        if "openapi" in tab:
+            continue
         for group in tab.get("groups", []):
             walk(group)
     return found
@@ -76,9 +85,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write-baseline", action="store_true",
                         help="record the current page set as the baseline")
+    parser.add_argument("--docs", default=DOCS,
+                        help="read navigation from this docs.json instead of the "
+                             "working copy; use with --write-baseline to record a "
+                             "pre-restructure tree")
     args = parser.parse_args()
 
-    nav = nav_pages()
+    nav = nav_pages(args.docs)
     disk = disk_pages()
 
     if args.write_baseline:
