@@ -1,0 +1,191 @@
+---
+title: "Simple Setup"
+sidebarTitle: "Simple Setup"
+description: "Set up Prisma AIRS AI Gateway in Strata Cloud Manager and make your first LLM request."
+---
+
+This guide takes you from an empty gateway to a working LLM request. It uses OpenAI as the
+provider because it is the shortest path; every step works the same way for Anthropic, Vertex
+AI, Bedrock, Azure OpenAI and the rest of the [supported providers](/aigw/integrations/llms).
+
+<Note>
+**Before you start.** AI Gateway must be enabled on your Strata Cloud Manager tenant.
+</Note>
+
+<Tip>
+This is the minimal path. To scan requests with Prisma AIRS, enable the plugin and attach a
+guardrail — see the [Prisma AIRS guardrail
+reference](/aigw/integrations/guardrails/palo-alto-panw-prisma) — then bind it to your key with
+a [config](/aigw/product/ai-gateway/configs).
+</Tip>
+
+## Overview
+
+<Steps>
+  <Step title="Set up a workspace" />
+  <Step title="Add an LLM integration" />
+  <Step title="Create an API key" />
+  <Step title="Make your first request" />
+  <Step title="Check the logs" />
+</Steps>
+
+---
+
+## 1. Set up a workspace
+
+Workspaces are managed under **Workspace Control**. A workspace is the unit that owns
+integrations, configs and API keys, and it is the boundary your access scopes are evaluated
+against.
+
+Use the default workspace to get started, or create one for this exercise. Everything below is
+created inside a workspace, so make a note of which one you are in.
+
+<Note>
+The tenancy model is **Organisation → Workspace → User/Machine**. Your organisation is your
+Strata Cloud Manager tenant; workspaces divide it; users and machine identities act within a
+workspace.
+</Note>
+
+## 2. Add an LLM integration
+
+Go to **Integrations → Add LLM Integration**.
+
+<Steps>
+  <Step title="Select the provider">
+    Choose **OpenAI**.
+  </Step>
+  <Step title="Supply the credential">
+    Paste your OpenAI API key. Other providers take different credential shapes — Vertex AI takes
+    a service account JSON file, Bedrock takes an IAM role or access keys.
+  </Step>
+  <Step title="Assign the integration to your workspace">
+    Only workspaces you assign here can route through this integration.
+  </Step>
+  <Step title="Select models">
+    Pick the models you want exposed, then click **Create Integration**.
+  </Step>
+</Steps>
+
+The integration gets a **provider slug** — something like `@openai-prod`. You will use it in the
+`model` parameter of every request.
+
+## 3. Create an API key
+
+Go to **Security Keys → Create New**.
+
+Create the key inside the workspace from step 1. You can attach default metadata here, which
+then shows up on every log line, and a [config](/aigw/product/ai-gateway/configs) if you have
+one — any request made with the key then picks it up without the caller passing anything extra.
+
+Copy the key. It is shown once.
+
+<Card title="API keys, authentication and authorisation" href="/aigw/product/enterprise-offering/org-management/api-keys-authn-and-authz">
+  Scopes, metadata enforcement, expiry and rotation.
+</Card>
+
+## 4. Make your first request
+
+The gateway speaks the OpenAI API. Point your existing client at
+`https://aigw.portkey.ai/v1`, authenticate with your gateway API key, and prefix the model with
+your provider slug.
+
+<CodeGroup>
+
+```sh cURL
+curl https://aigw.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-prod/gpt-4o",
+    "messages": [
+      { "role": "user", "content": "Say hello in one sentence." }
+    ]
+  }'
+```
+
+```py OpenAI Python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="YOUR_PORTKEY_API_KEY",
+    base_url="https://aigw.portkey.ai/v1",
+)
+
+completion = client.chat.completions.create(
+    model="@openai-prod/gpt-4o",
+    messages=[{"role": "user", "content": "Say hello in one sentence."}],
+)
+
+print(completion.choices[0].message.content)
+```
+
+```js OpenAI Node
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "YOUR_PORTKEY_API_KEY",
+  baseURL: "https://aigw.portkey.ai/v1",
+});
+
+const completion = await client.chat.completions.create({
+  model: "@openai-prod/gpt-4o",
+  messages: [{ role: "user", content: "Say hello in one sentence." }],
+});
+
+console.log(completion.choices[0].message.content);
+```
+
+</CodeGroup>
+
+Three things to note:
+
+- **`Authorization` carries the gateway key**, not the provider key. The gateway holds the OpenAI
+  credential from step 2 and attaches it upstream.
+- **The provider slug lives in `model`.** `@openai-prod/gpt-4o` means "the `gpt-4o` model, via the
+  `@openai-prod` integration". You do not need a provider header.
+- **Policy rides on the key.** Anything attached to the config on your API key — guardrails,
+  fallbacks, retries, caching — applies without the caller opting in.
+
+<Tip>
+To scope a config to a single request rather than to the whole API key, pass
+`-H "x-portkey-config: pc-xxxxxx"`. The header overrides the key's default.
+</Tip>
+
+## 5. Check the logs
+
+Go to **Observability → Logs**. Your request is there with the model, provider, token counts,
+cost and latency. If a guardrail is attached to the key, its verdict shows here too.
+
+To correlate a set of calls, pass a trace ID on the request:
+
+```sh
+-H "x-portkey-trace-id: my-first-session"
+```
+
+Requests sharing a trace ID are grouped as one session in the log view.
+
+Once Prisma AIRS scanning is enabled, the same trace ID resolves on the Prisma AIRS side under
+**AI Runtime → AI Sessions**, where you can see the scan results for that session.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Model Catalog" href="/aigw/product/model-catalog" icon="microchip-ai">
+    Add more providers, set budget and rate limits per workspace.
+  </Card>
+  <Card title="Guardrails" href="/aigw/product/guardrails" icon="shield-halved">
+    Guardrail actions, PII redaction, and the full check list.
+  </Card>
+  <Card title="AI Gateway" href="/aigw/product/ai-gateway" icon="network-wired">
+    Fallbacks, retries, load balancing, caching and conditional routing.
+  </Card>
+  <Card title="Observability" href="/aigw/product/observability" icon="chart-line">
+    Analytics, traces, metadata and OpenTelemetry export.
+  </Card>
+  <Card title="Coding agents" href="/aigw/integrations/libraries/claude-code" icon="terminal">
+    Route Claude Code, Cursor, Cline and Codex through the gateway.
+  </Card>
+  <Card title="Integrations" href="/aigw/integrations/overview" icon="puzzle-piece">
+    Agent frameworks, libraries, tracing providers and MCP.
+  </Card>
+</CardGroup>

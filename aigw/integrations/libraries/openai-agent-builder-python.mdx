@@ -8,7 +8,7 @@ OpenAI Agent Builder is a visual canvas for creating multi-step agent workflows.
 - Complete observability of agent workflows
 - Cost tracking and optimization
 - Reliability features (fallbacks, retries)
-- Access to 1600+ LLMs
+- Access to 3,000+ LLMs
 - Guardrails for safe agent behavior
 
 ## Quick Start
@@ -26,7 +26,7 @@ Click **Code** → **Agents SDK** to get the Python implementation.
 
 <Step title="Install Packages">
 ```bash
-pip install -U openai-agents portkey-ai
+pip install -U openai-agents
 ```
 </Step>
 
@@ -36,12 +36,11 @@ Replace the OpenAI client with the AI Gateway:
 ```python
 from agents import Agent, Runner, set_default_openai_client, set_default_openai_api
 from openai import AsyncOpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 client = AsyncOpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
+    base_url="https://aigw.portkey.ai/v1",
     api_key="YOUR_PORTKEY_API_KEY",
-    default_headers=createHeaders(provider="@openai-prod")
+    default_headers={"x-portkey-provider": "@openai-prod"}
 )
 set_default_openai_client(client, use_for_tracing=False)
 set_default_openai_api("chat_completions")
@@ -80,15 +79,16 @@ All workflow executions are logged:
 Add trace IDs and metadata for filtering:
 
 ```python
-default_headers=createHeaders(
-    provider="@openai-prod",
-    trace_id="workflow-session-123",
-    metadata={
+import json
+default_headers={
+    "x-portkey-provider": "@openai-prod",
+    "x-portkey-trace-id": "workflow-session-123",
+    "x-portkey-metadata": json.dumps({
         "workflow_type": "research",
         "_user": "user_123",
         "environment": "production"
-    }
-)
+    }),
+}
 ```
 
 ### Reliability
@@ -96,18 +96,19 @@ default_headers=createHeaders(
 Enable fallbacks via [Configs](https://stratacloudmanager.paloaltonetworks.com/):
 
 ```python
+import json
 client = AsyncOpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
+    base_url="https://aigw.portkey.ai/v1",
     api_key="YOUR_PORTKEY_API_KEY",
-    default_headers=createHeaders(
-        config={
+    default_headers={
+        "x-portkey-config": json.dumps({
             "strategy": { "mode": "fallback" },
             "targets": [
                 { "override_params": { "model": "@openai-prod/gpt-4o" } },
                 { "override_params": { "model": "@anthropic-prod/claude-sonnet-4" } }
             ]
-        }
-    )
+        }),
+    }
 )
 ```
 
@@ -131,13 +132,14 @@ client = AsyncOpenAI(
 Add input/output validation:
 
 ```python
-default_headers=createHeaders(
-    provider="@openai-prod",
-    config={
+import json
+default_headers={
+    "x-portkey-provider": "@openai-prod",
+    "x-portkey-config": json.dumps({
         "input_guardrails": ["guardrail-id-xxx"],
         "output_guardrails": ["guardrail-id-yyy"]
-    }
-)
+    }),
+}
 ```
 
 Guardrails can:
@@ -155,50 +157,31 @@ Guardrails can:
 Reduce costs with response caching:
 
 ```python
-default_headers=createHeaders(
-    provider="@openai-prod",
-    config={ "cache": { "mode": "semantic" } }
-)
+import json
+default_headers={
+    "x-portkey-provider": "@openai-prod",
+    "x-portkey-config": json.dumps({ "cache": { "mode": "semantic" } }),
+}
 ```
 
 ### Prompt Templates
 
 Use the AI Gateway's prompt management for versioned prompts:
 
-```python
-from portkey_ai import Portkey
-
-portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY")
-
-prompt_data = portkey.prompts.render(
-    prompt_id="YOUR_PROMPT_ID",
-    variables={"task": "research"}
-)
-
-agent = Agent(
-    name="Assistant",
-    instructions=prompt_data.data.messages[0]["content"],
-    model="@openai-prod/gpt-4o"
-)
-```
 
 ## Switching Providers
 
-Use any of 1600+ models:
+Use any of 3,000+ models:
 
 ```python
-# OpenAI
-createHeaders(provider="@openai-prod")
-
-# Anthropic
-createHeaders(provider="@anthropic-prod")
-
-# Google
-createHeaders(provider="@google-prod")
+# Prefix the model with the provider slug to pick the integration.
+model="@openai-prod/gpt-4o"
+model="@anthropic-prod/claude-sonnet-4-20250514"
+model="@google-prod/gemini-2.0-flash"
 ```
 
 <Card title="Supported Providers" icon="server" href="/aigw/integrations/llms">
-  See all 1600+ supported models
+  See all 3,000+ supported models
 </Card>
 
 ## Enterprise Governance
@@ -229,15 +212,15 @@ Teams use their AI Gateway API key:
 
 ```python
 client = AsyncOpenAI(
-    base_url=PORTKEY_GATEWAY_URL,
+    base_url="https://aigw.portkey.ai/v1",
     api_key="TEAM_PORTKEY_API_KEY"  # Config attached to key
 )
 ```
 </Step>
 </Steps>
 
-<Card title="Enterprise Features" icon="building" href="/aigw/product/enterprise-offering">
-  Governance, security, and compliance
+<Card title="Governance & Administration" icon="building" href="/aigw/introduction/feature-overview#governance-%26-administration">
+  Access control, encryption, and audit trails
 </Card>
 
 ## FAQ
@@ -271,8 +254,5 @@ client = AsyncOpenAI(
   </Card>
   <Card title="OpenAI Agents Docs" icon="book" href="https://openai.github.io/openai-agents-python/">
     Official documentation
-  </Card>
-  <Card title="Book a Demo" icon="calendar" href="https://www.paloaltonetworks.com/ai-security/ai-gateway#:~:text=See%20Prisma%20AIRS%20AI%20Gateway%20in%20Action">
-    Get implementation guidance
   </Card>
 </CardGroup>

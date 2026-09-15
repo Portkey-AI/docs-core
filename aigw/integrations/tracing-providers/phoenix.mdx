@@ -41,7 +41,7 @@ The AI Gateway adds caching, fallbacks, and load balancing to every request
 Install the required packages for Phoenix and AI Gateway integration:
 
 ```bash
-pip install arize-phoenix-otel openai openinference-instrumentation-openai portkey-ai
+pip install arize-phoenix-otel openai openinference-instrumentation-openai
 ```
 
 ### Step 2: Configure OpenTelemetry Export
@@ -51,7 +51,7 @@ Set up the environment variables to send traces to the AI Gateway:
 ```python
 import os
 
-# Configure Portkey endpoint and authentication
+# Configure the AI Gateway endpoint and authentication
 os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "https://aigw.portkey.ai/v1/logs/otel"
 os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = "Authorization=Bearer YOUR_PORTKEY_API_KEY"
 ```
@@ -73,20 +73,18 @@ OpenAIInstrumentor().instrument()
 
 ### Step 4: Configure AI Gateway
 
-Set up the OpenAI client with the AI Gateway's gateway:
+Set up the OpenAI client with the AI Gateway:
 
 ```python
 from openai import OpenAI
-from portkey_ai import createHeaders
 
-# Use Portkey's gateway for intelligent routing
+# Use the AI Gateway for intelligent routing
 client = OpenAI(
     api_key="PORTKEY_API_KEY",
     base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        provider="@openai-prod"  # Your AI Provider slug from Model Catalog
-    )
+    default_headers={
+        "x-portkey-provider": "@openai-prod",  # Your AI Provider slug from Model Catalog
+    }
 )
 ```
 
@@ -110,7 +108,7 @@ print(response.choices[0].message.content)
 # - Latency metrics
 # - Model parameters
 #
-# Portkey adds:
+# the AI Gateway adds:
 # - Gateway routing decisions
 # - Cache hit/miss data
 # - Fallback information
@@ -125,9 +123,8 @@ from phoenix.otel import register
 from openinference.instrumentation.openai import OpenAIInstrumentor
 import os
 from openai import OpenAI
-from portkey_ai import createHeaders
 
-# Step 1: Configure Portkey endpoint
+# Step 1: Configure the AI Gateway endpoint
 os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "https://aigw.portkey.ai/v1/logs/otel"
 os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = "Authorization=Bearer YOUR_PORTKEY_API_KEY"
 
@@ -135,14 +132,10 @@ os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = "Authorization=Bearer YOUR_PORTKEY_AP
 register(set_global_tracer_provider=False)
 OpenAIInstrumentor().instrument()
 
-# Step 3: Configure Portkey Gateway
+# Step 3: Configure the AI Gateway
 client = OpenAI(
     api_key="PORTKEY_API_KEY",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        provider="@openai-prod"
-    )
+    base_url="https://aigw.portkey.ai/v1"
 )
 
 # Step 4: Make instrumented calls
@@ -151,7 +144,7 @@ response = client.chat.completions.create(
         {"role": "system", "content": "You are a helpful AI assistant."},
         {"role": "user", "content": "Explain how observability helps in production AI systems"}
     ],
-    model="gpt-4o",
+    model="@openai-prod/gpt-4o",
     temperature=0.7
 )
 

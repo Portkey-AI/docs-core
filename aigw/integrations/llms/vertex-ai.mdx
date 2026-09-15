@@ -10,41 +10,6 @@ With the AI Gateway, you can take advantage of features like fast AI gateway acc
 
 <CodeGroup>
 
-```python Python icon="python"
-from portkey_ai import Portkey
-
-# 1. Install: pip install portkey-ai
-# 2. Add @vertex-ai provider in Model Catalog with Service Account JSON
-# 3. Use it:
-
-portkey = Portkey(api_key="PORTKEY_API_KEY")
-
-response = portkey.chat.completions.create(
-    model="@vertex-ai/gemini-3-pro-preview",
-    messages=[{"role": "user", "content": "Say this is a test"}]
-)
-
-print(response.choices[0].message.content)
-```
-
-```js Javascript icon="square-js"
-import Portkey from 'portkey-ai'
-
-// 1. Install: npm install portkey-ai
-// 2. Add @vertex-ai provider in Model Catalog with Service Account JSON
-// 3. Use it:
-
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY"
-})
-
-const response = await portkey.chat.completions.create({
-    model: "@vertex-ai/gemini-3-pro-preview",
-    messages: [{ role: "user", content: "Say this is a test" }]
-})
-
-console.log(response.choices[0].message.content)
-```
 
 ```sh cURL icon="square-terminal"
 # 1. Add @vertex-ai provider in Model Catalog with Service Account JSON
@@ -62,7 +27,7 @@ curl https://aigw.portkey.ai/v1/chat/completions \
 </CodeGroup>
 
 <Note>
-**Authentication Note:** When you configure Vertex AI in Model Catalog with **Service Account JSON** (recommended), authentication is handled automatically. If you only configure with **Project ID and Region**, you'll need to pass an OAuth2 access token with each request using the `Authorization` header. See the [Making Requests Without Model Catalog](#making-requests-without-portkeys-model-catalog) section for details.
+**Authentication Note:** When you configure Vertex AI in Model Catalog with **Service Account JSON** (recommended), authentication is handled automatically. If you only configure with **Project ID and Region**, you'll need to pass an OAuth2 access token with each request using the `Authorization` header. See the [Making Requests Without Model Catalog](#making-requests-without-the-ai-gateways-model-catalog) section for details.
 </Note>
 
 ---
@@ -140,7 +105,7 @@ Example: `@vertex-ai/meta.llama-3-8b-8192`
 Route Google's native GenAI SDK through the AI Gateway by pointing it at the AI Gateway and supplying the AI Gateway provider headers. The SDK handles the request shape; The AI Gateway handles auth, observability, and governance.
 
 <Warning>
-This flow currently supports **Gemini models only** on Vertex AI. Other Vertex AI models (Anthropic, Llama, Mistral, self-deployed, etc.) are not supported via the Google GenAI SDK — use the AI Gateway SDK or OpenAI-compatible endpoint for those.
+This flow currently supports **Gemini models only** on Vertex AI. Other Vertex AI models (Anthropic, Llama, Mistral, self-deployed, etc.) are not supported via the Google GenAI SDK — use the OpenAI-compatible endpoint for those.
 </Warning>
 
 ```python Python
@@ -214,7 +179,7 @@ This route only works with Claude models. For other models, use the standard Ope
         import anthropic
 
         client = anthropic.Anthropic(
-            api_key="dummy", # we will use portkey's provider slug
+            api_key="dummy", # auth happens via the Authorization header
             default_headers={"Authorization": "Bearer YOUR_PORTKEY_API_KEY"},
             base_url="https://aigw.portkey.ai"
         )
@@ -233,7 +198,7 @@ This route only works with Claude models. For other models, use the standard Ope
   import Anthropic from '@anthropic-ai/sdk';
 
   const anthropic = new Anthropic({
-            apiKey: 'dummy', // we will use portkey's provider slug
+            apiKey: 'dummy', // auth happens via the Authorization header
             baseURL: "https://aigw.portkey.ai/v1",
             defaultHeaders: { "Authorization": "Bearer YOUR_PORTKEY_API_KEY" }
           });
@@ -321,44 +286,6 @@ curl 'https://aigw.portkey.ai/v1/chat/completions' \
 }'
 ```
   </Tab>
-  <Tab title="Python SDK">
-```python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-)
-
-completion = portkey.chat.completions.create(
-    model="@my-vertex-ai-provider/gemini-1.5-pro-001",
-    cached_content="my-cache-display-name",
-    messages=[
-        {"role": "user", "content": "Based on the context I provided earlier, answer my question."}
-    ]
-)
-
-print(completion)
-```
-  </Tab>
-  <Tab title="NodeJS SDK">
-```javascript
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",
-});
-
-const completion = await portkey.chat.completions.create({
-    model: "@my-vertex-ai-provider/gemini-1.5-pro-001",
-    cached_content: "my-cache-display-name",
-    messages: [
-        { role: "user", content: "Based on the context I provided earlier, answer my question." }
-    ]
-});
-
-console.log(completion);
-```
-  </Tab>
 </Tabs>
 
 <Warning>
@@ -384,28 +311,6 @@ To use self-deployed models on Vertex AI through the AI Gateway:
 
 2. **Required Permissions**: The Google Cloud service account used in your AI Gateway Model Catalog must have the `aiplatform.endpoints.predict` permission.
 
-<Tabs>
-  <Tab title="NodeJS SDK">
-```js
-const chatCompletion = await portkey.chat.completions.create({
-    messages: [{ role: 'user', content: 'Say this is a test' }],
-    model: '@vertex-ai/endpoints.my_custom_llm', // Use Model Catalog slug with 'endpoints.' prefix
-});
-
-console.log(chatCompletion.choices);
-```
-  </Tab>
-  <Tab title="Python SDK">
-```python
-completion = portkey.chat.completions.create(
-    messages= [{ "role": 'user', "content": 'Say this is a test' }],
-    model= '@vertex-ai/endpoints.my_huggingface_model' # Use Model Catalog slug with 'endpoints.' prefix
-)
-
-print(completion)
-```
-  </Tab>
-</Tabs>
 
 <Info>
 **Why the prefix?** Vertex AI's product offering for self-deployed models is called "Endpoints." This naming convention indicates to the AI Gateway that it should route requests to your custom endpoint rather than a standard Vertex AI model.
@@ -429,57 +334,7 @@ Gemini Docs:
 Using the AI Gateway, here's how you can send these media files:
 
 <CodeGroup>
-```javascript JavaScript
-const chatCompletion = await portkey.chat.completions.create({
-    messages: [
-        { role: 'system', content: 'You are a helpful assistant' },
-        { role: 'user', content: [
-            {
-                type: 'image_url',
-                image_url: {
-                    url: 'gs://cloud-samples-data/generative-ai/image/scones.jpg'
-                }
-            },
-            {
-                type: 'text',
-                text: 'Describe the image'
-            }
-        ]}
-    ],
-    model: '@vertex-ai/gemini-3-pro-preview',
-    max_tokens: 200
-});
-```
 
-```python Python
-completion = portkey.chat.completions.create(
-    messages=[
-        {
-            "role": "system",
-            "content": "You are a helpful assistant"
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"
-                    }
-                },
-                {
-                    "type": "text",
-                    "text": "Describe the image"
-                }
-            ]
-        }
-    ],
-    model='@vertex-ai/gemini-3-pro-preview',
-    max_tokens=200
-)
-
-print(completion)
-```
 
 ```sh cURL
 curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
@@ -526,42 +381,6 @@ Gemini's vision capabilities excel at understanding the content of PDF documents
 Upload your PDF using the Files API to get a Google Files URL.
 
 <CodeGroup>
-```javascript NodeJS
-const chatCompletion = await portkey.chat.completions.create({
-    model: '@vertex-ai/gemini-3-pro-preview',
-    messages: [{
-        role: 'user',
-        content: [
-            {
-                type: 'image_url',
-                image_url: {
-                    url: 'https://generativelanguage.googleapis.com/v1beta/files/your-pdf-file-id'
-                }
-            },
-            { type: 'text', text: 'Summarize the key findings of this research paper.' }
-        ]
-    }],
-});
-console.log(chatCompletion.choices[0].message.content);
-```
-```python Python
-completion = portkey.chat.completions.create(
-    model='@vertex-ai/gemini-3-pro-preview',
-    messages=[{
-        "role": "user",
-        "content": [
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": "https://generativelanguage.googleapis.com/v1beta/files/your-pdf-file-id"
-                }
-            },
-            { "type": "text", "text": "Summarize the key findings of this research paper." }
-        ]
-    }],
-)
-print(completion.choices[0].message.content)
-```
 ```sh cURL
 curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
 --header 'Authorization: Bearer YOUR_PORTKEY_API_KEY' \
@@ -584,46 +403,6 @@ curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
 This is suitable for smaller, local PDF files.
 
 <CodeGroup>
-```javascript NodeJS
-import fs from 'fs';
-
-const pdfBytes = fs.readFileSync('whitepaper.pdf');
-const base64Pdf = pdfBytes.toString('base64');
-const pdfUri = `data:application/pdf;base64,${base64Pdf}`;
-
-const chatCompletion = await portkey.chat.completions.create({
-    model: '@VERTEX_PROVIDER/MODEL_NAME',
-    messages: [{
-        role: 'user',
-        content: [
-            { type: 'image_url', image_url: { url: pdfUri }},
-            { type: 'text', text: 'What is the main conclusion of this document?' }
-        ]
-    }],
-});
-console.log(chatCompletion.choices[0].message.content);
-```
-```python Python
-import base64
-
-with open("whitepaper.pdf", "rb") as pdf_file:
-    pdf_bytes = pdf_file.read()
-
-base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-pdf_uri = f"data:application/pdf;base64,{base64_pdf}"
-
-completion = portkey.chat.completions.create(
-    model='@VERTEX_PROVIDER/MODEL_NAME',
-    messages=[{
-        "role": "user",
-        "content": [
-            { "type": "image_url", "image_url": { "url": pdf_uri }},
-            { "type": "text", "text": "What is the main conclusion of this document?" }
-        ]
-    }],
-)
-print(completion.choices[0].message.content)
-```
 ```sh cURL
 # First, encode your PDF file to base64
 # For example: base64 -i whitepaper.pdf -o pdf.b64
@@ -667,42 +446,6 @@ The `media_resolution` parameter allows you to control token allocation for medi
 Apply media resolution globally to all media in the request:
 
 <CodeGroup>
-```python Python
-completion = portkey.chat.completions.create(
-    model="@vertex-ai/gemini-1.5-pro",
-    media_resolution="MEDIA_RESOLUTION_HIGH",
-    messages=[{
-        "role": "user",
-        "content": [
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg"
-                }
-            },
-            {"type": "text", "text": "Analyze this image in detail."}
-        ]
-    }]
-)
-```
-```javascript NodeJS
-const chatCompletion = await portkey.chat.completions.create({
-    model: "@vertex-ai/gemini-1.5-pro",
-    media_resolution: "MEDIA_RESOLUTION_HIGH",
-    messages: [{
-        role: "user",
-        content: [
-            {
-                type: "image_url",
-                image_url: {
-                    url: "gs://cloud-samples-data/generative-ai/image/scones.jpg"
-                }
-            },
-            {type: "text", text: "Analyze this image in detail."}
-        ]
-    }]
-});
-```
 ```sh cURL
 curl https://aigw.portkey.ai/v1/chat/completions \
   -H "Authorization: Bearer $PORTKEY_API_KEY" \
@@ -726,42 +469,6 @@ curl https://aigw.portkey.ai/v1/chat/completions \
 For Gemini 3 models, you can specify media resolution on individual media parts. Per-part settings take precedence over global settings when both are specified.
 
 <CodeGroup>
-```python Python
-completion = portkey.chat.completions.create(
-    model="@vertex-ai/gemini-3.0-pro",
-    messages=[{
-        "role": "user",
-        "content": [
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": "gs://cloud-samples-data/generative-ai/image/scones.jpg",
-                    "media_resolution": "MEDIA_RESOLUTION_HIGH"
-                }
-            },
-            {"type": "text", "text": "Analyze this image in detail."}
-        ]
-    }]
-)
-```
-```javascript NodeJS
-const chatCompletion = await portkey.chat.completions.create({
-    model: "@vertex-ai/gemini-3.0-pro",
-    messages: [{
-        role: "user",
-        content: [
-            {
-                type: "image_url",
-                image_url: {
-                    url: "gs://cloud-samples-data/generative-ai/image/scones.jpg",
-                    media_resolution: "MEDIA_RESOLUTION_HIGH"
-                }
-            },
-            {type: "text", text: "Analyze this image in detail."}
-        ]
-    }]
-});
-```
 ```sh cURL
 curl https://aigw.portkey.ai/v1/chat/completions \
   -H "Authorization: Bearer $PORTKEY_API_KEY" \
@@ -805,111 +512,45 @@ Note that you will have to set [`strict_open_ai_compliance=False`](/aigw/product
 
 ### Single turn conversation
 <CodeGroup>
-    ```py Python
-    from portkey_ai import Portkey
-
-    # Initialize the Portkey clien
-    portkey = Portkey(
-        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        strict_open_ai_compliance=False
-    )
-
-    # Create the request
-    response = portkey.chat.completions.create(
-      model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from Portkey's Model Catalog
-      max_tokens=3000,
-      thinking={
+    ```sh cURL
+    curl "https://aigw.portkey.ai/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $PORTKEY_API_KEY" \
+      -H "x-portkey-strict-open-ai-compliance: false" \
+      -d '{
+        "model": "@VERTEX_PROVIDER/MODEL_NAME_FROM_PORTKEY_MODEL_CATALOG",
+        "max_tokens": 3000,
+        "thinking": {
           "type": "enabled",
           "budget_tokens": 2030
-      },
-      stream=True,
-      messages=[
+        },
+        "stream": true,
+        "messages": [
           {
-              "role": "user",
-              "content": [
-                  {
-                      "type": "text",
-                      "text": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
-                  }
-              ]
-          }
-      ]
-    )
-    print(response)
-    # in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
-    # response = portkey.chat.completions.create(
-    #   ...same config as above but with stream: true
-    # )
-    # for chunk in response:
-    #     if chunk.choices[0].delta:
-    #         content_blocks = chunk.choices[0].delta.get("content_blocks")
-    #         if content_blocks is not None:
-    #             for content_block in content_blocks:
-    #                 print(content_block)
-    ```
-    ```ts NodeJS
-    import Portkey from 'portkey-ai';
-
-    // Initialize the Portkey client
-    const portkey = new Portkey({
-      apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
-      strictOpenAiCompliance: false
-    });
-
-    // Generate a chat completion
-    async function getChatCompletionFunctions() {
-const response = await portkey.chat.completions.create({
-          model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from Portkey's Model Catalog
-          max_tokens: 3000,
-          thinking: {
-              type: "enabled",
-              budget_tokens: 2030
-          },
-          stream: true,
-          messages: [
+            "role": "user",
+            "content": [
               {
-                  role: "user",
-                  content: [
-                      {
-                          type: "text",
-                          text: "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
-                      }
-                  ]
+                "type": "text",
+                "text": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
               }
-          ]
-        });
-        console.log(response);
-      // in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
-      // const response = await portkey.chat.completions.create({
-      //   ...same config as above but with stream: true
-      // });
-      // for await (const chunk of response) {
-      //   if (chunk.choices[0].delta?.content_blocks) {
-      //     for (const contentBlock of chunk.choices[0].delta.content_blocks) {
-      //       console.log(contentBlock);
-      //     }
-      //   }
-      // }
-      }
-    // Call the function
-    getChatCompletionFunctions();
+            ]
+          }
+        ]
+      }'
     ```
     ```js OpenAI NodeJS
     import OpenAI from 'openai'; // We're using the v4 SDK
-    import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
     const openai = new OpenAI({
       apiKey: 'PORTKEY_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-      baseURL: PORTKEY_GATEWAY_URL,
-      defaultHeaders: createHeaders({
-        strictOpenAiCompliance: false
-      })
+      baseURL: "https://aigw.portkey.ai/v1",
+      defaultHeaders: { "x-portkey-strict-open-ai-compliance": false }
     });
 
     // Generate a chat completion with streaming
     async function getChatCompletionFunctions(){
       const response = await openai.chat.completions.create({
-        model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from Portkey's Model Catalog
+        model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from the Model Catalog
         max_tokens: 3000,
         thinking: {
             type: "enabled",
@@ -946,18 +587,15 @@ const response = await portkey.chat.completions.create({
     ```
     ```py OpenAI Python
     from openai import OpenAI
-    from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
     openai = OpenAI(
         api_key='PORTKEY_API_KEY',
-        base_url=PORTKEY_GATEWAY_URL,
-        default_headers=createHeaders(
-            strict_open_ai_compliance=False
-        )
+        base_url="https://aigw.portkey.ai/v1",
+        default_headers={"x-portkey-strict-open-ai-compliance": False}
     )
 
     response = openai.chat.completions.create(
-        model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from Portkey's Model Catalog
+        model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from the Model Catalog
         max_tokens=3000,
         thinking={
             "type": "enabled",
@@ -979,32 +617,6 @@ const response = await portkey.chat.completions.create({
 
     print(response)
     ```
-    ```sh cURL
-    curl "https://aigw.portkey.ai/v1/chat/completions" \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $PORTKEY_API_KEY" \
-      -H "x-portkey-strict-open-ai-compliance: false" \
-      -d '{
-        "model": "@VERTEX_PROVIDER/MODEL_NAME_FROM_PORTKEY_MODEL_CATALOG",
-        "max_tokens": 3000,
-        "thinking": {
-          "type": "enabled",
-          "budget_tokens": 2030
-        },
-        "stream": true,
-        "messages": [
-          {
-            "role": "user",
-            "content": [
-              {
-                "type": "text",
-                "text": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
-              }
-            ]
-          }
-        ]
-      }'
-    ```
 </CodeGroup>
 
 <Note>
@@ -1021,14 +633,6 @@ const response = await portkey.chat.completions.create({
 
 Use the OpenAI-compatible `reasoning_effort` parameter as an alternative to `thinking.budget_tokens`:
 
-```python
-response = portkey.chat.completions.create(
-    model="@VERTEX_PROVIDER/google.gemini-2.5-flash-preview-04-17",
-    max_tokens=3000,
-    reasoning_effort="medium",  # Options: "none", "low", "medium", "high"
-    messages=[{"role": "user", "content": "Explain quantum computing"}]
-)
-```
 
 #### Gemini 2.5 models
 
@@ -1056,205 +660,6 @@ response = portkey.chat.completions.create(
 ### Multi turn conversation
 
 <CodeGroup>
-    ```py Python
-    from portkey_ai import Portkey
-
-    # Initialize the Portkey client
-    portkey = Portkey(
-        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        strict_open_ai_compliance=False
-    )
-
-    # Create the request
-    response = portkey.chat.completions.create(
-      model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from Portkey's Model Catalog
-      max_tokens=3000,
-      thinking={
-          "type": "enabled",
-          "budget_tokens": 2030
-      },
-      stream=True,
-      messages=[
-          {
-              "role": "user",
-              "content": [
-                  {
-                      "type": "text",
-                      "text": "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
-                  }
-              ]
-          },
-          {
-              "role": "assistant",
-              "content": [
-                      {
-                          "type": "thinking",
-                          "thinking": "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
-                          "signature": "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
-                      }
-              ]
-          },
-          {
-              "role": "user",
-              "content": "thanks that's good to know, how about to chennai?"
-          }
-      ]
-    )
-    print(response)
-    ```
-    ```ts NodeJS
-    import Portkey from 'portkey-ai';
-
-    // Initialize the Portkey client
-    const portkey = new Portkey({
-      apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
-      strictOpenAiCompliance: false
-    });
-
-    // Generate a chat completion
-    async function getChatCompletionFunctions() {
-const response = await portkey.chat.completions.create({
-          model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from Portkey's Model Catalog
-          max_tokens: 3000,
-          thinking: {
-              type: "enabled",
-              budget_tokens: 2030
-          },
-          stream: true,
-          messages: [
-              {
-                  role: "user",
-                  content: [
-                      {
-                          type: "text",
-                          text: "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
-                      }
-                  ]
-              },
-              {
-                  role: "assistant",
-                  content: [
-                          {
-                              type: "thinking",
-                              thinking: "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
-                              signature: "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
-                          }
-                  ]
-              },
-              {
-                  role: "user",
-                  content: "thanks that's good to know, how about to chennai?"
-              }
-          ]
-        });
-        console.log(response);
-      }
-    // Call the function
-    getChatCompletionFunctions();
-    ```
-    ```js OpenAI NodeJS
-    import OpenAI from 'openai'; // We're using the v4 SDK
-    import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
-
-    const openai = new OpenAI({
-      apiKey: 'PORTKEY_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-      baseURL: PORTKEY_GATEWAY_URL,
-      defaultHeaders: createHeaders({
-        strictOpenAiCompliance: false
-      })
-    });
-
-    // Generate a chat completion with streaming
-    async function getChatCompletionFunctions(){
-      const response = await openai.chat.completions.create({
-        model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from Portkey's Model Catalog
-        max_tokens: 3000,
-        thinking: {
-            type: "enabled",
-            budget_tokens: 2030
-        },
-        stream: true,
-        messages: [
-            {
-                role: "user",
-                content: [
-                    {
-                        type: "text",
-                        text: "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
-                    }
-                ]
-            },
-            {
-                role: "assistant",
-                content: [
-                        {
-                            type: "thinking",
-                            thinking: "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
-                            signature: "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
-                        }
-                ]
-            },
-            {
-                role: "user",
-                content: "thanks that's good to know, how about to chennai?"
-            }
-        ],
-      });
-
-      console.log(response)
-
-    }
-    await getChatCompletionFunctions();
-    ```
-    ```py OpenAI Python
-    from openai import OpenAI
-    from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-    openai = OpenAI(
-        api_key='PORTKEY_API_KEY',
-        base_url=PORTKEY_GATEWAY_URL,
-        default_headers=createHeaders(
-            strict_open_ai_compliance=False
-        )
-    )
-
-    response = openai.chat.completions.create(
-        model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from Portkey's Model Catalog
-        max_tokens=3000,
-        thinking={
-            "type": "enabled",
-            "budget_tokens": 2030
-        },
-        stream=True,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
-                    }
-                ]
-            },
-            {
-                "role": "assistant",
-                "content": [
-                        {
-                            "type": "thinking",
-                            "thinking": "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
-                            signature: "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
-                        }
-                ]
-            },
-            {
-                "role": "user",
-                "content": "thanks that's good to know, how about to chennai?"
-            }
-        ]
-    )
-
-    print(response)
-    ```
     ```sh cURL
     curl "https://aigw.portkey.ai/v1/chat/completions" \
       -H "Content-Type: application/json" \
@@ -1295,6 +700,103 @@ const response = await portkey.chat.completions.create({
         ]
       }'
     ```
+    ```js OpenAI NodeJS
+    import OpenAI from 'openai'; // We're using the v4 SDK
+
+    const openai = new OpenAI({
+      apiKey: 'PORTKEY_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
+      baseURL: "https://aigw.portkey.ai/v1",
+      defaultHeaders: { "x-portkey-strict-open-ai-compliance": false }
+    });
+
+    // Generate a chat completion with streaming
+    async function getChatCompletionFunctions(){
+      const response = await openai.chat.completions.create({
+        model: "@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", // your model slug from the Model Catalog
+        max_tokens: 3000,
+        thinking: {
+            type: "enabled",
+            budget_tokens: 2030
+        },
+        stream: true,
+        messages: [
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                    }
+                ]
+            },
+            {
+                role: "assistant",
+                content: [
+                        {
+                            type: "thinking",
+                            thinking: "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
+                            signature: "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
+                        }
+                ]
+            },
+            {
+                role: "user",
+                content: "thanks that's good to know, how about to chennai?"
+            }
+        ],
+      });
+
+      console.log(response)
+
+    }
+    await getChatCompletionFunctions();
+    ```
+    ```py OpenAI Python
+    from openai import OpenAI
+
+    openai = OpenAI(
+        api_key='PORTKEY_API_KEY',
+        base_url="https://aigw.portkey.ai/v1",
+        default_headers={"x-portkey-strict-open-ai-compliance": False}
+    )
+
+    response = openai.chat.completions.create(
+        model="@VERTEX_PROVIDER/anthropic.claude-3-7-sonnet@20250219", # your model slug from the Model Catalog
+        max_tokens=3000,
+        thinking={
+            "type": "enabled",
+            "budget_tokens": 2030
+        },
+        stream=True,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "when does the flight from baroda to bangalore land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                    }
+                ]
+            },
+            {
+                "role": "assistant",
+                "content": [
+                        {
+                            "type": "thinking",
+                            "thinking": "The user is asking several questions about a flight from Baroda (also known as Vadodara) to Bangalore:\n1. When does the flight land tomorrow\n2. What time does it land\n3. What is the flight number\n4. What is the baggage belt number at the arrival airport\n\nTo properly answer these questions, I would need access to airline flight schedules and airport information systems. However, I don't have:\n- Real-time or scheduled flight information\n- Access to airport baggage claim allocation systems\n- Information about specific flights between these cities\n- The ability to look up tomorrow's specific flight schedules\n\nThis question requires current, specific flight information that I don't have access to. Instead of guessing or providing potentially incorrect information, I should explain this limitation and suggest ways the user could find this information.",
+                            signature: "EqoBCkgIARABGAIiQBVA7FBNLRtWarDSy9TAjwtOpcTSYHJ+2GYEoaorq3V+d3eapde04bvEfykD/66xZXjJ5yyqogJ8DEkNMotspRsSDKzuUJ9FKhSNt/3PdxoMaFZuH+1z1aLF8OeQIjCrA1+T2lsErrbgrve6eDWeMvP+1sqVqv/JcIn1jOmuzrPi2tNz5M0oqkOO9txJf7QqEPPw6RG3JLO2h7nV1BMN6wE="
+                        }
+                ]
+            },
+            {
+                "role": "user",
+                "content": "thanks that's good to know, how about to chennai?"
+            }
+        ]
+    )
+
+    print(response)
+    ```
 </CodeGroup>
 
 ### Sending `base64` Image
@@ -1318,56 +820,13 @@ You can use any of Vertex AI's `English` and `Multilingual` models through the A
 The Gemini-specific parameter `task_type` is also supported on the AI Gateway.
 </Note>
 <Tabs>
-  <Tab title="NodeJS">
-```javascript
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",
-});
-
-// Generate embeddings
-async function getEmbeddings() {
-    const embeddings = await portkey.embeddings.create({
-        input: "embed this",
-        model: "@VERTEX_PROVIDER/text-multilingual-embedding-002", // your model slug from Portkey's Model Catalog
-        // @ts-ignore (if using typescript)
-        task_type: "CLASSIFICATION", // Optional
-    });
-
-    console.log(embeddings);
-}
-await getEmbeddings();
-```
-  </Tab>
-  <Tab title="Python">
-```python
-from portkey_ai import Portkey
-
-# Initialize the Portkey client
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-)
-
-# Generate embeddings
-def get_embeddings():
-    embeddings = portkey.embeddings.create(
-        input='The vector representation for this text',
-        model='@VERTEX_PROVIDER/text-embedding-004', # your model slug from Portkey's Model Catalog
-        task_type="CLASSIFICATION" # Optional
-    )
-    print(embeddings)
-
-get_embeddings()
-```
-</Tab>
   <Tab title="cURL">
 ```sh
  curl 'https://aigw.portkey.ai/v1/embeddings' \
     -H 'Content-Type: application/json' \
     -H 'Authorization: Bearer PORTKEY_API_KEY' \
     --data-raw '{
-        "model": "@VERTEX_PROVIDER/text-embedding-004", # your model slug from Portkey's Model Catalog
+        "model": "@VERTEX_PROVIDER/text-embedding-004", # your model slug from the Model Catalog
         "input": "A HTTP 246 code is used to signify an AI response containing hallucinations or other inaccuracies",
         "task_type": "CLASSIFICATION"
     }'
@@ -1386,7 +845,7 @@ The AI Gateway supports function calling mode on Google's Gemini Models. Explore
 
 You can manage all prompts to Google Gemini in the Prompt Library. All the models in the model garden are supported and you can easily start testing different prompts.
 
-Once you're ready with your prompt, you can use the `portkey.prompts.completions.create` interface to use the prompt in your application.
+Once you're ready with your prompt, call the `POST /v1/prompts/{promptId}/completions` endpoint to use it in your application.
 
 ## Image Generation Models
 
@@ -1401,35 +860,6 @@ curl https://aigw.portkey.ai/v1/images/generations \
     "prompt": "Cat flying to mars from moon",
     "model":"@vertex-ai/imagen-3.0-generate-001"
   }'
-```
-```py Python
-from portkey_ai import Portkey
-
-client = Portkey(
-  api_key = "PORTKEY_API_KEY",
-)
-
-client.images.generate(
-  prompt = "Cat flying to mars from moon",
-  model = "@vertex-ai/imagen-3.0-generate-001" # your model slug from Portkey's Model Catalog
-)
-```
-```ts JavaScript
-import Portkey from 'portkey-ai';
-
-const client = new Portkey({
-  apiKey: 'PORTKEY_API_KEY',
-});
-
-async function main() {
-  const image = await client.images.generate({
-    prompt: "Cat flying to mars from moon",
-    model: "@vertex-ai/imagen-3.0-generate-001" # your model slug from Portkey's Model Catalog
-  });
-
-  console.log(image.data);
-}
-main();
 ```
 </CodeGroup>
 
@@ -1468,267 +898,18 @@ Run the **request script first**; after it finishes, run the **poll script** (po
   <Tab title="Node.js">
 **1. Request script** (`veo_request.js`) – The script sends your text prompt and options (duration, resolution, etc.) to Veo’s `predictLongRunning` endpoint. The API starts the job on Google’s side and returns right away with an operation ID. The script writes that ID plus project/location/model info to `veo_operation.json` so the poll script can use it.
 
-```js
-// veo_request.js
-import { Portkey } from 'portkey-ai';
-import fs from 'fs';
-
-const projectId = 'YOUR_GCP_PROJECT_ID';
-const location = 'us-central1';
-const modelId = 'veo-3.1-generate-preview';
-
-const client = new Portkey({
-  apiKey: process.env.PORTKEY_API_KEY,
-  baseURL: 'https://aigw.portkey.ai/v1',
-  customHost: 'https://us-central1-aiplatform.googleapis.com/v1',
-  provider: '@vertex-json',
-});
-
-async function main() {
-  const urlPath = `/projects/${projectId}/locations/${location}/publishers/google/models/${modelId}:predictLongRunning`;
-  const body = {
-    instances: [
-      {
-        prompt:
-          "A close up of two people staring at a cryptic drawing on a wall, torchlight flickering. ...",
-      },
-    ],
-    parameters: {
-      durationSeconds: 4,
-      generateAudio: false,
-      resolution: '720p',
-    },
-  };
-  const operation = await client.post(urlPath, body);
-
-  const opDict =
-    typeof operation?.toJSON === 'function' ? operation.toJSON() : operation;
-
-  const operationName = opDict.name || opDict.data?.name;
-  if (!operationName) {
-    throw new Error(`Could not find operation name in: ${JSON.stringify(opDict)}`);
-  }
-
-  const payload = {
-    project_id: projectId,
-    location,
-    model_id: modelId,
-    operation_name: operationName,
-    operation: opDict,
-  };
-
-  const outputPath = 'veo_operation.json';
-  fs.writeFileSync(outputPath, JSON.stringify(payload, null, 2), 'utf8');
-  console.log(`Saved operation info to ${outputPath}. Run the poll script next.`);
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-```
 
 **2. Poll script** (`veo_poll.js`) – This script reads `veo_operation.json`, then calls `fetchPredictOperation` in a loop with the saved operation name. Each call returns the current job status; when `done` is true, the response includes the generated video(s). The script then decodes the first video from base64 and writes it to `./videos/dialogue_example.mp4`.
 
-```js
-// veo_poll.js
-import { Portkey } from 'portkey-ai';
-import fs from 'fs';
-import path from 'path';
-
-const operationPath = 'veo_operation.json';
-if (!fs.existsSync(operationPath)) {
-  throw new Error(`${operationPath} not found. Run veo_request.js first to create it.`);
-}
-
-const opInfo = JSON.parse(fs.readFileSync(operationPath, 'utf8'));
-
-const projectId = opInfo.project_id;
-const location = opInfo.location;
-const modelId = opInfo.model_id;
-
-let operationName = opInfo.operation_name;
-if (!operationName) {
-  const raw = opInfo.operation || {};
-  operationName = raw.name || raw.data?.name;
-}
-if (!operationName) {
-  throw new Error(`Could not determine operation name from: ${JSON.stringify(opInfo)}`);
-}
-
-const client = new Portkey({
-  apiKey: process.env.PORTKEY_API_KEY,
-  baseURL: 'https://aigw.portkey.ai/v1',
-  customHost: 'https://us-central1-aiplatform.googleapis.com/v1',
-  provider: '@vertex-json',
-});
-
-async function main() {
-  const pollPath = `/projects/${projectId}/locations/${location}/publishers/google/models/${modelId}:fetchPredictOperation`;
-  const pollBody = { operationName };
-
-  let checkDict;
-  while (true) {
-    const checkOperation = await client.post(pollPath, pollBody);
-
-    checkDict =
-      typeof checkOperation?.toJSON === 'function'
-        ? checkOperation.toJSON()
-        : checkOperation;
-
-    const done = checkDict.done || checkDict.data?.done;
-    if (done) break;
-
-    console.log('Still running, sleeping 50s...');
-    await new Promise((r) => setTimeout(r, 50_000));
-  }
-
-  const body = checkDict.response || checkDict.data?.response || {};
-  const videos = body.videos || [];
-  if (!videos.length) {
-    throw new Error(`No videos found in response: ${JSON.stringify(body)}`);
-  }
-
-  const generatedVideo = videos[0].bytesBase64Encoded;
-  const videosDir = './videos/';
-  fs.mkdirSync(videosDir, { recursive: true });
-
-  const videoBuffer = Buffer.from(generatedVideo, 'base64');
-  const filePath = path.join(videosDir, 'dialogue_example.mp4');
-  fs.writeFileSync(filePath, videoBuffer);
-
-  console.log(`Video saved to: ${filePath}`);
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-```
 
 Run: `node veo_request.js`, then `node veo_poll.js`.
   </Tab>
   <Tab title="Python">
 **1. Request script** (`veo_request.py`) – The script sends your text prompt and options (duration, resolution, etc.) to Veo’s `predictLongRunning` endpoint. The API starts the job on Google’s side and returns immediately with an operation ID. The script writes that ID plus project/location/model info to `veo_operation.json` for the poll script to use.
 
-```python
-# veo_request.py
-from portkey_ai import Portkey
-import json
-import os
-
-project_id = os.environ.get("VERTEX_PROJECT_ID", "YOUR_GCP_PROJECT_ID")
-location = "us-central1"
-model_id = "veo-3.1-generate-preview"
-
-client = Portkey(
-    api_key=os.environ.get("PORTKEY_API_KEY"),
-    base_url="https://aigw.portkey.ai/v1",
-    custom_host="https://us-central1-aiplatform.googleapis.com/v1",
-    provider="@vertex-json",
-)
-
-body = {
-    "instances": [
-        {
-            "prompt": "A close up of two people staring at a cryptic drawing on a wall, torchlight flickering. ...",
-        }
-    ],
-    "parameters": {
-        "durationSeconds": 4,
-        "generateAudio": False,
-        "resolution": "720p",
-    },
-}
-
-url = f"projects/{project_id}/locations/{location}/publishers/google/models/{model_id}:predictLongRunning"
-operation = client.post(url, **body)
-
-op_dict = operation.model_dump() if hasattr(operation, "model_dump") else operation
-operation_name = op_dict.get("name") or op_dict.get("data", {}).get("name")
-if not operation_name:
-    raise RuntimeError(f"Could not find operation name in: {op_dict}")
-
-payload = {
-    "project_id": project_id,
-    "location": location,
-    "model_id": model_id,
-    "operation_name": operation_name,
-    "operation": op_dict,
-}
-
-output_path = "veo_operation.json"
-with open(output_path, "w", encoding="utf-8") as f:
-    json.dump(payload, f, indent=2)
-
-print(f"Saved operation info to {output_path}. Run the poll script next.")
-```
 
 **2. Poll script** (`veo_poll.py`) – This script reads `veo_operation.json`, then calls `fetchPredictOperation` in a loop with the saved operation name. Each call returns the current job status; when `done` is true, the response includes the generated video(s). The script decodes the first video from base64 and writes it to `./videos/dialogue_example.mp4`.
 
-```python
-# veo_poll.py
-from portkey_ai import Portkey
-import base64
-import json
-import os
-import time
-
-operation_path = "veo_operation.json"
-if not os.path.exists(operation_path):
-    raise FileNotFoundError(
-        f"{operation_path} not found. Run veo_request.py first to create it."
-    )
-
-with open(operation_path, "r", encoding="utf-8") as f:
-    op_info = json.load(f)
-
-project_id = op_info["project_id"]
-location = op_info["location"]
-model_id = op_info["model_id"]
-
-operation_name = op_info.get("operation_name")
-if not operation_name:
-    raw = op_info.get("operation", {})
-    operation_name = raw.get("name") or raw.get("data", {}).get("name")
-
-if not operation_name:
-    raise RuntimeError(f"Could not determine operation name from: {op_info}")
-
-client = Portkey(
-    api_key=os.environ.get("PORTKEY_API_KEY"),
-    base_url="https://aigw.portkey.ai/v1",
-    custom_host="https://us-central1-aiplatform.googleapis.com/v1",
-    provider="@vertex-json",
-)
-
-poll_url = f"projects/{project_id}/locations/{location}/publishers/google/models/{model_id}:fetchPredictOperation"
-poll_body = {"operationName": operation_name}
-
-while True:
-    check_operation = client.post(poll_url, poll_body)
-    check_dict = check_operation.model_dump() if hasattr(check_operation, "model_dump") else check_operation
-    done = check_dict.get("done") or check_dict.get("data", {}).get("done")
-    if done:
-        break
-    print("Still running, sleeping 50s...")
-    time.sleep(50)
-
-body = check_dict.get("response") or check_dict.get("data", {}).get("response", {})
-videos = body.get("videos") or []
-if not videos:
-    raise RuntimeError(f"No videos found in response: {body}")
-
-generated_video = videos[0]["bytesBase64Encoded"]
-os.makedirs("./videos/", exist_ok=True)
-video_data = base64.b64decode(generated_video)
-file_path = os.path.join("./videos/", "dialogue_example.mp4")
-
-with open(file_path, "wb") as video_file:
-    video_file.write(video_data)
-
-print(f"Video saved to: {file_path}")
-```
 
 Run: `python veo_request.py`, then `python veo_poll.py`.
   </Tab>
@@ -1746,24 +927,6 @@ Vertex AI supports adding custom labels to your API calls for attribution.
 Pass labels in your request body or configure them in your gateway config using `override_params`. Label support is available across `chat/completions`, `embeddings`, `batches`, and `fine-tuning` endpoints.
 
 <Tabs>
-  <Tab title="Python">
-```python
-completion = portkey.chat.completions.create(
-    messages=[{"role": "user", "content": "Say this is a test"}],
-    model="@VERTEX_PROVIDER/gemini-3-pro-preview",
-    labels={"service_id": "backend-api", "environment": "production"}
-)
-```
-  </Tab>
-  <Tab title="NodeJS">
-```javascript
-const completion = await portkey.chat.completions.create({
-    messages: [{ role: 'user', content: 'Say this is a test' }],
-    model: '@VERTEX_PROVIDER/gemini-3-pro-preview',
-    labels: { service_id: "backend-api", environment: "production" }
-});
-```
-  </Tab>
   <Tab title="Config">
 ```json
 {
@@ -1822,32 +985,6 @@ curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
     "tools": [{"type": "function", "function": {"name": "google_maps"}}]
 }'
 ```
-```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY")
-
-response = portkey.chat.completions.create(
-    model="@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
-    messages=[{"role": "user", "content": "What are the best Italian restaurants near Times Square?"}],
-    tools=[{"type": "function", "function": {"name": "google_maps"}}]
-)
-
-print(response)
-```
-```typescript NodeJS
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({ apiKey: "YOUR_PORTKEY_API_KEY" });
-
-const response = await portkey.chat.completions.create({
-    model: "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
-    messages: [{ role: "user", content: "What are the best Italian restaurants near Times Square?" }],
-    tools: [{ type: "function", function: { name: "google_maps" } }]
-});
-
-console.log(response);
-```
 </CodeGroup>
 
 ### With retrieval configuration
@@ -1876,56 +1013,6 @@ curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
         }
     }]
 }'
-```
-```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY")
-
-response = portkey.chat.completions.create(
-    model="@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
-    messages=[{"role": "user", "content": "What are the best coffee shops nearby?"}],
-    tools=[{
-        "type": "function",
-        "function": {
-            "name": "google_maps",
-            "parameters": {
-                "enableWidget": True,
-                "retrievalConfig": {
-                    "latLng": {"latitude": 37.7749, "longitude": -122.4194},
-                    "languageCode": "en_US"
-                }
-            }
-        }
-    }]
-)
-
-print(response)
-```
-```typescript NodeJS
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({ apiKey: "YOUR_PORTKEY_API_KEY" });
-
-const response = await portkey.chat.completions.create({
-    model: "@YOUR_VERTEX_PROVIDER/gemini-2.5-pro",
-    messages: [{ role: "user", content: "What are the best coffee shops nearby?" }],
-    tools: [{
-        type: "function",
-        function: {
-            name: "google_maps",
-            parameters: {
-                enableWidget: true,
-                retrievalConfig: {
-                    latLng: { latitude: 37.7749, longitude: -122.4194 },
-                    languageCode: "en_US"
-                }
-            }
-        }
-    }]
-});
-
-console.log(response);
 ```
 </CodeGroup>
 
@@ -1975,119 +1062,46 @@ The image data is available in the `content_parts` field in the response and it 
 
 #### single turn conversation
 <CodeGroup>
-    ```py Python
-    from portkey_ai import Portkey
-
-    # Initialize the Portkey clien
-    portkey = Portkey(
-        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        strict_open_ai_compliance=False
-    )
-
-    # Create the request
-    response = portkey.chat.completions.create(
-      model="gemini-2.5-flash-image-preview", # your model slug from Portkey's Model Catalog
-      max_tokens=32768,
-      stream=False,
-      modalities=["text", "image"],
-      messages= [
-          {
+    ```sh cURL
+    curl "https://aigw.portkey.ai/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $PORTKEY_API_KEY" \
+      -H "x-portkey-strict-open-ai-compliance: false" \
+      -d '{
+    "model": "gemini-2.5-flash-image-preview",
+    "max_tokens": 32768,
+    "stream": false,
+    "modalities": ["text", "image"],
+    "messages": [
+        {
             "role": "system",
             "content": "You are a helpful assistant"
-          },
-          {
+        },
+        {
             "role": "user",
             "content": [
-              {
-                "type": "text",
-                "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
-              },
-              {
-                "type": "image_url",
-                "image_url": {
-                  "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                {
+                    "type": "text",
+                    "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
+                    }
                 }
-              }
             ]
-          }
-        ]
-    )
-    print(response)
-    # in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
-    # response = portkey.chat.completions.create(
-    #   ...same config as above but with stream: true
-    # )
-    # for chunk in response:
-    #     if chunk.choices[0].delta:
-    #         content_blocks = chunk.choices[0].delta.get("content_blocks")
-    #         if content_blocks is not None:
-    #             for content_block in content_blocks:
-    #                 print(content_block)
-    ```
-    ```ts NodeJS
-    import Portkey from 'portkey-ai';
-
-    // Initialize the Portkey client
-    const portkey = new Portkey({
-      apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
-      strictOpenAiCompliance: false
-    });
-
-    // Generate a chat completion
-    async function getChatCompletionFunctions() {
-const response = await portkey.chat.completions.create({
-          model: "gemini-2.5-flash-image-preview", // your model slug from Portkey's Model Catalog
-          max_tokens: 32768,
-          stream: false,
-          modalities: ["text", "image"],
-          messages: [
-          {
-            role: "system",
-            content: "You are a helpful assistant"
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
-                }
-              }
-            ]
-          }
-        ]
-        });
-        console.log(response);
-      // in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
-      // const response = await portkey.chat.completions.create({
-      //   ...same config as above but with stream: true
-      // });
-      // for await (const chunk of response) {
-      //   if (chunk.choices[0].delta?.content_blocks) {
-      //     for (const contentBlock of chunk.choices[0].delta.content_blocks) {
-      //       console.log(contentBlock);
-      //     }
-      //   }
-      // }
-      }
-    // Call the function
-    getChatCompletionFunctions();
+        }
+    ]
+}'
     ```
     ```js OpenAI NodeJS
     import OpenAI from 'openai'; // We're using the v4 SDK
-    import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
     const openai = new OpenAI({
       apiKey: 'PORTKEY_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-      baseURL: PORTKEY_GATEWAY_URL,
-      defaultHeaders: createHeaders({
-        strictOpenAiCompliance: false
-      })
+      baseURL: "https://aigw.portkey.ai/v1",
+      defaultHeaders: { "x-portkey-strict-open-ai-compliance": false }
     });
 
     async function run() {
@@ -2126,14 +1140,11 @@ const response = await portkey.chat.completions.create({
     ```
     ```py OpenAI Python
     from openai import OpenAI
-    from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
     openai = OpenAI(
         api_key='PORTKEY_API_KEY',
-        base_url=PORTKEY_GATEWAY_URL,
-        default_headers=createHeaders(
-            strict_open_ai_compliance=False
-        )
+        base_url="https://aigw.portkey.ai/v1",
+        default_headers={"x-portkey-strict-open-ai-compliance": False}
     )
 
     response = openai.chat.completions.create(
@@ -2166,39 +1177,6 @@ const response = await portkey.chat.completions.create({
 
     print(response)
     ```
-    ```sh cURL
-    curl "https://aigw.portkey.ai/v1/chat/completions" \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $PORTKEY_API_KEY" \
-      -H "x-portkey-strict-open-ai-compliance: false" \
-      -d '{
-    "model": "gemini-2.5-flash-image-preview",
-    "max_tokens": 32768,
-    "stream": false,
-    "modalities": ["text", "image"],
-    "messages": [
-        {
-            "role": "system",
-            "content": "You are a helpful assistant"
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
-                    }
-                }
-            ]
-        }
-    ]
-}'
-    ```
 </CodeGroup>
 
 ---
@@ -2221,12 +1199,11 @@ In a single-turn conversation, you make a request with tools defined, and the mo
 <CodeGroup>
 ```sh cURL
 curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
---header 'x-portkey-provider: @my-vertex-ai-provider' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: Bearer your-api-key' \
 --header 'x-portkey-strict-open-ai-compliance: false' \
 --data '{
-    "model": "gemini-3-pro-preview",
+    "model": "@my-vertex-ai-provider/gemini-3-pro-preview",
     "max_tokens": 1000,
     "stream": true,
     "messages": [
@@ -2267,125 +1244,17 @@ curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
     ]
 }'
 ```
-```py Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@VERTEX_PROVIDER",
-    strict_open_ai_compliance=False
-)
-
-response = portkey.chat.completions.create(
-    model="gemini-3-pro-preview",
-    max_tokens=1000,
-    stream=True,
-    messages=[
-        {
-            "role": "system",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "You are a helpful assistant"
-                }
-            ]
-        },
-        {
-            "role": "user",
-            "content": "What is the current time in Bombay?"
-        }
-    ],
-    tools=[
-        {
-            "type": "function",
-            "function": {
-                "name": "get_current_time",
-                "description": "Get the current time for a specific location",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "The city and state, e.g., San Francisco, CA"
-                        }
-                    },
-                    "required": [
-                        "location"
-                    ]
-                }
-            }
-        }
-    ]
-)
-print(response)
-```
-```ts NodeJS
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({
-  apiKey: 'PORTKEY_API_KEY',
-  provider: '@VERTEX_PROVIDER',
-  strictOpenAiCompliance: false
-});
-
-const response = await portkey.chat.completions.create({
-  model: 'gemini-3-pro-preview',
-  max_tokens: 1000,
-  stream: true,
-  messages: [
-    {
-      role: 'system',
-      content: [
-        {
-          type: 'text',
-          text: 'You are a helpful assistant'
-        }
-      ]
-    },
-    {
-      role: 'user',
-      content: 'What is the current time in Bombay?'
-    }
-  ],
-  tools: [
-    {
-      type: 'function',
-      function: {
-        name: 'get_current_time',
-        description: 'Get the current time for a specific location',
-        parameters: {
-          type: 'object',
-          properties: {
-            location: {
-              type: 'string',
-              description: 'The city and state, e.g., San Francisco, CA'
-            }
-          },
-          required: [
-            'location'
-          ]
-        }
-      }
-    }
-  ]
-});
-console.log(response);
-```
 ```py OpenAI Python
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 openai = OpenAI(
     api_key='PORTKEY_API_KEY',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider='@VERTEX_PROVIDER',
-        strict_open_ai_compliance=False
-    )
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-strict-open-ai-compliance": False}
 )
 
 response = openai.chat.completions.create(
-    model='gemini-3-pro-preview',
+    model='@VERTEX_PROVIDER/gemini-3-pro-preview',
     max_tokens=1000,
     stream=True,
     messages=[
@@ -2429,19 +1298,15 @@ print(response)
 ```
 ```js OpenAI NodeJS
 import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
 
 const openai = new OpenAI({
   apiKey: 'PORTKEY_API_KEY',
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: '@VERTEX_PROVIDER',
-    strictOpenAiCompliance: false
-  })
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: { "x-portkey-strict-open-ai-compliance": false }
 });
 
 const response = await openai.chat.completions.create({
-  model: 'gemini-3-pro-preview',
+  model: '@VERTEX_PROVIDER/gemini-3-pro-preview',
   max_tokens: 1000,
   stream: true,
   messages: [
@@ -2492,12 +1357,11 @@ In multi-turn conversations, you must include the `thought_signature` field in t
 <CodeGroup>
 ```sh cURL
 curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
---header 'x-portkey-provider: @my-vertex-ai-provider' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: Bearer your-api-key' \
 --header 'x-portkey-strict-open-ai-compliance: false' \
 --data '{
-    "model": "gemini-3-pro-preview",
+    "model": "@my-vertex-ai-provider/gemini-3-pro-preview",
     "max_tokens": 1000,
     "stream": true,
     "messages": [
@@ -2585,217 +1449,16 @@ curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
     ]
 }'
 ```
-```py Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@VERTEX_PROVIDER",
-    strict_open_ai_compliance=False
-)
-
-response = portkey.chat.completions.create(
-    model="gemini-3-pro-preview",
-    max_tokens=1000,
-    stream=True,
-    messages=[
-        {
-            "role": "system",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "You are a helpful assistant"
-                }
-            ]
-        },
-        {
-            "role": "user",
-            "content": "Check the time in Chennai and if it is later than 9Pm get the temperature"
-        },
-        {
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "id": "portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb",
-                    "type": "function",
-                    "function": {
-                        "name": "get_current_time",
-                        "arguments": "{\"location\":\"Chennai, India\"}",
-                        "thought_signature": "CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw="
-                    }
-                }
-            ]
-        },
-        {
-            "role": "tool",
-            "content": "{ 'time': '10PM' }",
-            "tool_call_id": "toolu_014jEfKqGbfFvRaKfiauxgPv"
-        }
-    ],
-    tools=[
-        {
-            "type": "function",
-            "function": {
-                "name": "get_current_time",
-                "description": "Get the current time for a specific location",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "The city and state, e.g., San Francisco, CA"
-                        }
-                    },
-                    "required": [
-                        "location"
-                    ]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_current_temperature",
-                "description": "Get the current temperature for a specific location",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "The city and state, e.g., San Francisco, CA"
-                        },
-                        "unit": {
-                            "type": "string",
-                            "enum": [
-                                "Celsius",
-                                "Fahrenheit"
-                            ],
-                            "description": "The temperature unit to use. Infer this from the user's location."
-                        }
-                    },
-                    "required": [
-                        "location",
-                        "unit"
-                    ]
-                }
-            }
-        }
-    ]
-)
-print(response)
-```
-```ts NodeJS
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({
-  apiKey: 'PORTKEY_API_KEY',
-  provider: '@VERTEX_PROVIDER'
-});
-
-const response = await portkey.chat.completions.create({
-  model: 'gemini-3-pro-preview',
-  max_tokens: 1000,
-  stream: true,
-  messages: [
-    {
-      role: 'system',
-      content: [
-        {
-          type: 'text',
-          text: 'You are a helpful assistant'
-        }
-      ]
-    },
-    {
-      role: 'user',
-      content: 'Check the time in Chennai and if it is later than 9Pm get the temperature'
-    },
-    {
-      role: 'assistant',
-      tool_calls: [
-        {
-          id: 'portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb',
-          type: 'function',
-          function: {
-            name: 'get_current_time',
-            arguments: '{"location":"Chennai, India"}',
-            thought_signature: 'CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw='
-          }
-        }
-      ]
-    },
-    {
-      role: 'tool',
-      content: "{ 'time': '10PM' }",
-      tool_call_id: 'toolu_014jEfKqGbfFvRaKfiauxgPv'
-    }
-  ],
-  tools: [
-    {
-      type: 'function',
-      function: {
-        name: 'get_current_time',
-        description: 'Get the current time for a specific location',
-        parameters: {
-          type: 'object',
-          properties: {
-            location: {
-              type: 'string',
-              description: 'The city and state, e.g., San Francisco, CA'
-            }
-          },
-          required: [
-            'location'
-          ]
-        }
-      }
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'get_current_temperature',
-        description: 'Get the current temperature for a specific location',
-        parameters: {
-          type: 'object',
-          properties: {
-            location: {
-              type: 'string',
-              description: 'The city and state, e.g., San Francisco, CA'
-            },
-            unit: {
-              type: 'string',
-              enum: [
-                'Celsius',
-                'Fahrenheit'
-              ],
-              description: 'The temperature unit to use. Infer this from the user\'s location.'
-            }
-          },
-          required: [
-            'location',
-            'unit'
-          ]
-        }
-      }
-    }
-  ]
-});
-console.log(response);
-```
 ```py OpenAI Python
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 openai = OpenAI(
     api_key='PORTKEY_API_KEY',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider='@VERTEX_PROVIDER'
-    )
+    base_url="https://aigw.portkey.ai/v1"
 )
 
 response = openai.chat.completions.create(
-    model='gemini-3-pro-preview',
+    model='@VERTEX_PROVIDER/gemini-3-pro-preview',
     max_tokens=1000,
     stream=True,
     messages=[
@@ -2886,18 +1549,14 @@ print(response)
 ```
 ```js OpenAI NodeJS
 import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
 
 const openai = new OpenAI({
   apiKey: 'PORTKEY_API_KEY',
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: '@VERTEX_PROVIDER'
-  })
+  baseURL: "https://aigw.portkey.ai/v1"
 });
 
 const response = await openai.chat.completions.create({
-  model: 'gemini-3-pro-preview',
+  model: '@VERTEX_PROVIDER/gemini-3-pro-preview',
   max_tokens: 1000,
   stream: true,
   messages: [
@@ -3002,65 +1661,30 @@ This uses the Gemini computer-use preview model. Set <code>strict_open_ai_compli
 
 ### Single turn conversation
 <CodeGroup>
-```ts NodeJS
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({
-  apiKey: 'PORTKEY_API_KEY',
-  provider: '@VERTEX_PROVIDER',
-  strictOpenAiCompliance: false
-});
-
-const response = await portkey.chat.completions.create({
-  model: 'gemini-2.5-computer-use-preview-10-2025',
-  stream: false,
-  messages: [
-    { role: 'system', content: 'You are a helpful assistant' },
-    { role: 'user', content: "Go to google.com and search for 'weather in New York'" }
-  ],
-  tools: [
-    {
-      type: 'function',
-      function: {
-        name: 'computer_use',
-        parameters: { environment: 'ENVIRONMENT_BROWSER' }
-      }
-    }
-  ]
-});
-console.log(response);
-```
-```py Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@VERTEX_PROVIDER",
-    strict_open_ai_compliance=False
-)
-
-response = portkey.chat.completions.create(
-    model="gemini-2.5-computer-use-preview-10-2025",
-    stream=False,
-    messages=[
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer your-api-key' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@my-vertex-ai-provider/gemini-2.5-computer-use-preview-10-2025",
+    "stream": false,
+    "messages": [
         {"role": "system", "content": "You are a helpful assistant"},
-        {"role": "user", "content": "Go to google.com and search for 'weather in New York'"}
+        {"role": "user", "content": "Go to google.com and search for '\''weather in New York'\''"}
     ],
-    tools=[{
-        "type": "function",
-        "function": {"name": "computer_use", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}
-    }]
-)
-print(response)
+    "tools": [
+        {"type": "function", "function": {"name": "computer_use", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}}
+    ]
+}'
 ```
 ```js OpenAI NodeJS
 import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
 
 const openai = new OpenAI({
   apiKey: 'PORTKEY_API_KEY',
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({ provider: 'vertex-ai', strictOpenAiCompliance: false })
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: { "x-portkey-provider": 'vertex-ai', "x-portkey-strict-open-ai-compliance": false }
 });
 
 const response = await openai.chat.completions.create({
@@ -3076,16 +1700,15 @@ console.log(response);
 ```
 ```py OpenAI Python
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 openai = OpenAI(
     api_key='PORTKEY_API_KEY',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(provider='@vertex-ai', strict_open_ai_compliance=False)
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-strict-open-ai-compliance": False}
 )
 
 response = openai.chat.completions.create(
-    model='gemini-2.5-computer-use-preview-10-2025',
+    model='@vertex-ai/gemini-2.5-computer-use-preview-10-2025',
     stream=False,
     messages=[
         {"role": "system", "content": "You are a helpful assistant"},
@@ -3095,80 +1718,34 @@ response = openai.chat.completions.create(
 )
 print(response)
 ```
-```sh cURL
-curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
---header 'x-portkey-provider: @my-vertex-ai-provider' \
---header 'Content-Type: application/json' \
---header 'Authorization: Bearer your-api-key' \
---header 'x-portkey-strict-open-ai-compliance: false' \
---data '{
-    "model": "gemini-2.5-computer-use-preview-10-2025",
-    "stream": false,
-    "messages": [
-        {"role": "system", "content": "You are a helpful assistant"},
-        {"role": "user", "content": "Go to google.com and search for '\''weather in New York'\''"}
-    ],
-    "tools": [
-        {"type": "function", "function": {"name": "computer_use", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}}
-    ]
-}'
-```
 </CodeGroup>
 
 ### Multi turn conversation
 <CodeGroup>
-```ts NodeJS
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({
-  apiKey: 'PORTKEY_API_KEY',
-  provider: '@VERTEX_PROVIDER',
-  strictOpenAiCompliance: false
-});
-
-const response = await portkey.chat.completions.create({
-  model: 'gemini-2.5-computer-use-preview-10-2025',
-  stream: false,
-  messages: [
-    { role: 'system', content: 'You are a helpful assistant' },
-    { role: 'user', content: "Go to google.com and search for 'weather in New York'" },
-    { role: 'assistant', tool_calls: [ { id: 'portkey-50925c03-b8cc-4057-948b-13a9d9de19e0', type: 'function', function: { name: 'open_web_browser', arguments: '{}' } } ] },
-    { role: 'user', content: "I've opened the browser" }
-  ],
-  tools: [{ type: 'function', function: { name: 'computerUse', parameters: { environment: 'ENVIRONMENT_BROWSER' } } }]
-});
-console.log(response);
-```
-```py Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@VERTEX_PROVIDER",
-    strict_open_ai_compliance=False
-)
-
-response = portkey.chat.completions.create(
-    model="gemini-2.5-computer-use-preview-10-2025",
-    stream=False,
-    messages=[
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer your-api-key' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@my-vertex-ai-provider/gemini-2.5-computer-use-preview-10-2025",
+    "stream": false,
+    "messages": [
         {"role": "system", "content": "You are a helpful assistant"},
         {"role": "user", "content": "Go to google.com and search for 'weather in New York'"},
         {"role": "assistant", "tool_calls": [{"id": "portkey-50925c03-b8cc-4057-948b-13a9d9de19e0", "type": "function", "function": {"name": "open_web_browser", "arguments": "{}"}}]},
         {"role": "user", "content": "I've opened the browser"}
     ],
-    tools=[{ "type": "function", "function": { "name": "computerUse", "parameters": { "environment": "ENVIRONMENT_BROWSER" } } }]
-)
-print(response)
+    "tools": [{"type": "function", "function": {"name": "computerUse", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}}]
+}'
 ```
 ```js OpenAI NodeJS
 import OpenAI from 'openai';
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai';
 
 const openai = new OpenAI({
   apiKey: 'PORTKEY_API_KEY',
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({ provider: 'vertex-ai', strictOpenAiCompliance: false })
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: { "x-portkey-provider": 'vertex-ai', "x-portkey-strict-open-ai-compliance": false }
 });
 
 const response = await openai.chat.completions.create({
@@ -3186,16 +1763,15 @@ console.log(response);
 ```
 ```py OpenAI Python
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 openai = OpenAI(
     api_key='PORTKEY_API_KEY',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(provider='@vertex-ai', strict_open_ai_compliance=False)
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-strict-open-ai-compliance": False}
 )
 
 response = openai.chat.completions.create(
-    model='gemini-2.5-computer-use-preview-10-2025',
+    model='@vertex-ai/gemini-2.5-computer-use-preview-10-2025',
     stream=False,
     messages=[
         {"role": "system", "content": "You are a helpful assistant"},
@@ -3207,134 +1783,41 @@ response = openai.chat.completions.create(
 )
 print(response)
 ```
-```sh cURL
-curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
---header 'x-portkey-provider: @my-vertex-ai-provider' \
---header 'Content-Type: application/json' \
---header 'Authorization: Bearer your-api-key' \
---header 'x-portkey-strict-open-ai-compliance: false' \
---data '{
-    "model": "gemini-2.5-computer-use-preview-10-2025",
-    "stream": false,
-    "messages": [
-        {"role": "system", "content": "You are a helpful assistant"},
-        {"role": "user", "content": "Go to google.com and search for 'weather in New York'"},
-        {"role": "assistant", "tool_calls": [{"id": "portkey-50925c03-b8cc-4057-948b-13a9d9de19e0", "type": "function", "function": {"name": "open_web_browser", "arguments": "{}"}}]},
-        {"role": "user", "content": "I've opened the browser"}
-    ],
-    "tools": [{"type": "function", "function": {"name": "computerUse", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}}]
-}'
-```
 </CodeGroup>
 
 #### multi turn conversation
 <CodeGroup>
-    ```py Python
-    from portkey_ai import Portkey
-
-    # Initialize the Portkey clien
-    portkey = Portkey(
-        api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-        strict_open_ai_compliance=False
-    )
-
-    # Create the request
-    response = portkey.chat.completions.create(
-      model="gemini-2.5-flash-image-preview", # your model slug from Portkey's Model Catalog
-      max_tokens=32768,
-      stream=False,
-      modalities=["text", "image"],
-      messages= [
-          {
+    ```sh cURL
+    curl "https://aigw.portkey.ai/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $PORTKEY_API_KEY" \
+      -H "x-portkey-strict-open-ai-compliance: false" \
+      -d '{
+    "model": "gemini-2.5-flash-image-preview",
+    "max_tokens": 32768,
+    "stream": false,
+    "modalities": ["text", "image"],
+    "messages": [
+        {
             "role": "system",
             "content": "You are a helpful assistant"
-          },
-          {
+        },
+        {
             "role": "user",
             "content": [
-              {
-                "type": "text",
-                "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
-              },
-              {
-                "type": "image_url",
-                "image_url": {
-                  "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
-                }
-              }
-            ]
-          },
-            {
-            "role": "assistant",
-            "content": [
-                    {
-                        "type": "text",
-                        "text": "Here are the croissants with chocolate drizzle and the requested text: "
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": "data:image/jpeg;base64,UKDhasdhj....."
-                        }
+                {
+                    "type": "text",
+                    "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
                     }
-                ]
-            },
-            {
-                "role": "user",
-                "content": "looking good, thanks fam"
-            }
-
-        ]
-    )
-    print(response)
-    # in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
-    # response = portkey.chat.completions.create(
-    #   ...same config as above but with stream: true
-    # )
-    # for chunk in response:
-    #     if chunk.choices[0].delta:
-    #         content_blocks = chunk.choices[0].delta.get("content_blocks")
-    #         if content_blocks is not None:
-    #             for content_block in content_blocks:
-    #                 print(content_block)
-    ```
-    ```ts NodeJS
-    import Portkey from 'portkey-ai';
-
-    // Initialize the Portkey client
-    const portkey = new Portkey({
-      apiKey: "PORTKEY_API_KEY", // Replace with your Portkey API key
-      strictOpenAiCompliance: false
-    });
-
-    // Generate a chat completion
-    async function getChatCompletionFunctions() {
-const response = await portkey.chat.completions.create({
-          model: "gemini-2.5-flash-image-preview", // your model slug from Portkey's Model Catalog
-          max_tokens: 32768,
-          stream: false,
-          modalities: ["text", "image"],
-          messages: [
-          {
-            role: "system",
-            content: "You are a helpful assistant"
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
                 }
-              }
             ]
-          },
-                  {
+        },
+        {
             "role": "assistant",
             "content": [
                     {
@@ -3354,34 +1837,16 @@ const response = await portkey.chat.completions.create({
             "content": "looking good, thanks fam"
         }
 
-        ]
-        });
-        console.log(response);
-      // in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
-      // const response = await portkey.chat.completions.create({
-      //   ...same config as above but with stream: true
-      // });
-      // for await (const chunk of response) {
-      //   if (chunk.choices[0].delta?.content_blocks) {
-      //     for (const contentBlock of chunk.choices[0].delta.content_blocks) {
-      //       console.log(contentBlock);
-      //     }
-      //   }
-      // }
-      }
-    // Call the function
-    getChatCompletionFunctions();
+    ]
+}'
     ```
     ```js OpenAI NodeJS
     import OpenAI from 'openai'; // We're using the v4 SDK
-    import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
     const openai = new OpenAI({
       apiKey: 'PORTKEY_API_KEY', // defaults to process.env["OPENAI_API_KEY"],
-      baseURL: PORTKEY_GATEWAY_URL,
-      defaultHeaders: createHeaders({
-        strictOpenAiCompliance: false
-      })
+      baseURL: "https://aigw.portkey.ai/v1",
+      defaultHeaders: { "x-portkey-strict-open-ai-compliance": false }
     });
 
     async function run() {
@@ -3439,14 +1904,11 @@ const response = await portkey.chat.completions.create({
     ```
     ```py OpenAI Python
     from openai import OpenAI
-    from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
     openai = OpenAI(
         api_key='PORTKEY_API_KEY',
-        base_url=PORTKEY_GATEWAY_URL,
-        default_headers=createHeaders(
-            strict_open_ai_compliance=False
-        )
+        base_url="https://aigw.portkey.ai/v1",
+        default_headers={"x-portkey-strict-open-ai-compliance": False}
     )
 
     response = openai.chat.completions.create(
@@ -3498,59 +1960,6 @@ const response = await portkey.chat.completions.create({
 
     print(response)
     ```
-    ```sh cURL
-    curl "https://aigw.portkey.ai/v1/chat/completions" \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $PORTKEY_API_KEY" \
-      -H "x-portkey-strict-open-ai-compliance: false" \
-      -d '{
-    "model": "gemini-2.5-flash-image-preview",
-    "max_tokens": 32768,
-    "stream": false,
-    "modalities": ["text", "image"],
-    "messages": [
-        {
-            "role": "system",
-            "content": "You are a helpful assistant"
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "Add some chocolate drizzle to the croissants. Include text across the top of the image that says \"Made Fresh Daily\"."
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "gs://cloud-samples-data/generative-ai/image/croissant.jpeg"
-                    }
-                }
-            ]
-        },
-        {
-            "role": "assistant",
-            "content": [
-                    {
-                        "type": "text",
-                        "text": "Here are the croissants with chocolate drizzle and the requested text: "
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": "data:image/jpeg;base64,UKDhasdhj....."
-                        }
-                    }
-                ]
-        },
-        {
-            "role": "user",
-            "content": "looking good, thanks fam"
-        }
-
-    ]
-}'
-    ```
 </CodeGroup>
 
 ## Safety settings
@@ -3560,59 +1969,28 @@ Gemini models support [configuring safety settings](https://cloud.google.com/ver
 Pass `safety_settings` as an array with `category` and `threshold` values:
 
 <CodeGroup>
-```typescript TypeScript
-import Portkey from 'portkey-ai';
-
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",
-});
-
-const response = await portkey.chat.completions.create({
-    model: "@my-vertex-provider/gemini-2.5-flash",
-    temperature: 0,
-    stream: false,
-    messages: [
-        {
-            role: "user",
-            content: "Speak explicitly like a gangster harassing someone for money"
-        }
-    ],
-    safety_settings: [
-        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_LOW_AND_ABOVE" },
-        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_LOW_AND_ABOVE" },
-        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_LOW_AND_ABOVE" },
-        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_LOW_AND_ABOVE" }
-    ]
-});
-
-console.log(response.choices);
-```
-```python Python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-)
-
-response = portkey.chat.completions.create(
-    model="@my-vertex-provider/gemini-2.5-flash",
-    temperature=0,
-    stream=False,
-    messages=[
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer $PORTKEY_API_KEY' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@my-vertex-provider/gemini-2.5-flash",
+    "temperature": 0,
+    "stream": false,
+    "messages": [
         {
             "role": "user",
             "content": "Speak explicitly like a gangster harassing someone for money"
         }
     ],
-    safety_settings=[
+    "safety_settings": [
         {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_LOW_AND_ABOVE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_LOW_AND_ABOVE"},
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_LOW_AND_ABOVE"},
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_LOW_AND_ABOVE"}
     ]
-)
-
-print(response.choices)
+}'
 ```
 ```js OpenAI NodeJS
 import OpenAI from "openai";
@@ -3676,29 +2054,6 @@ response = client.chat.completions.create(
 
 print(response.choices)
 ```
-```sh cURL
-curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
---header 'Content-Type: application/json' \
---header 'Authorization: Bearer $PORTKEY_API_KEY' \
---header 'x-portkey-strict-open-ai-compliance: false' \
---data '{
-    "model": "@my-vertex-provider/gemini-2.5-flash",
-    "temperature": 0,
-    "stream": false,
-    "messages": [
-        {
-            "role": "user",
-            "content": "Speak explicitly like a gangster harassing someone for money"
-        }
-    ],
-    "safety_settings": [
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_LOW_AND_ABOVE"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_LOW_AND_ABOVE"},
-        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_LOW_AND_ABOVE"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_LOW_AND_ABOVE"}
-    ]
-}'
-```
 </CodeGroup>
 
 The response includes `safetyRatings` in each choice object. Set [`strict-open-ai-compliance`](/aigw/product/ai-gateway/strict-open-ai-compliance) to `false` to receive `safetyRatings` in the response.
@@ -3714,76 +2069,6 @@ Vertex AI expects a `region`, a `project ID` and the `access token` in the reque
 ### Example Request
 
 <Tabs>
-  <Tab title="NodeJS SDK">
-    ```js
-    import Portkey from 'portkey-ai'
-
-    const portkey = new Portkey({
-        apiKey: "PORTKEY_API_KEY",
-        vertexProjectId: "sample-55646",
-        vertexRegion: "us-central1",
-        provider:"vertex-ai",
-        Authorization: "$GCLOUD AUTH PRINT-ACCESS-TOKEN"
-    })
-
-    const chatCompletion = await portkey.chat.completions.create({
-        messages: [{ role: 'user', content: 'Say this is a test' }],
-        model: 'gemini-3-pro-preview',
-    });
-
-    console.log(chatCompletion.choices);
-    ```
-  </Tab>
-  <Tab title="Python SDK">
-```python
-from portkey_ai import Portkey
-
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    vertex_project_id="sample-55646",
-    vertex_region="us-central1",
-    provider="vertex-ai",
-    Authorization="$GCLOUD AUTH PRINT-ACCESS-TOKEN"
-)
-
-completion = portkey.chat.completions.create(
-    messages= [{ "role": 'user', "content": 'Say this is a test' }],
-    model= 'gemini-3-pro-preview'
-)
-
-print(completion)
-```
-  </Tab>
-  <Tab title="OpenAI Node SDK">
-```js
-import OpenAI from "openai";
-import { PORTKEY_GATEWAY_URL, createHeaders } from "portkey-ai";
-
-const portkey = new OpenAI({
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    apiKey: "PORTKEY_API_KEY",
-    provider: "vertex-ai",
-    vertexRegion: "us-central1",
-    vertexProjectId: "xxx"
-    Authorization: "Bearer $GCLOUD AUTH PRINT-ACCESS-TOKEN",
-    // forwardHeaders: ["Authorization"] // You can also directly forward the auth token to Google
-  }),
-});
-
-async function main() {
-  const response = await portkey.chat.completions.create({
-    messages: [{ role: "user", content: "1729" }],
-    model: "gemini-3-pro-preview",
-    max_tokens: 32,
-  });
-
-  console.log(response.choices[0].message.content);
-}
-
-main();
-```
-  </Tab>
   <Tab title="cURL">
 ```sh
 curl 'https://aigw.portkey.ai/v1/chat/completions' \
@@ -3802,15 +2087,42 @@ curl 'https://aigw.portkey.ai/v1/chat/completions' \
       },
       {
         "role": "user",
-        "content": "what is a portkey?"
+        "content": "What is an AI gateway?"
       }
     ]
 }'
 ```
   </Tab>
-</Tabs>
+  <Tab title="OpenAI Node SDK">
+```js
+import OpenAI from "openai";
 
-For further questions on custom Vertex AI deployments or fine-grained access tokens, reach out to us on support@portkey.ai
+const gateway = new OpenAI({
+  apiKey: "PORTKEY_API_KEY",
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: {
+      "x-portkey-provider": "vertex-ai",
+      "x-portkey-vertex-region": "us-central1",
+      // forwardHeaders: ["Authorization"] // You can also directly forward the auth token to Google
+      "x-portkey-vertex-project-id": "xxx"
+      Authorization: "Bearer $GCLOUD AUTH PRINT-ACCESS-TOKEN",
+  },
+});
+
+async function main() {
+  const response = await gateway.chat.completions.create({
+    messages: [{ role: "user", content: "1729" }],
+    model: "gemini-3-pro-preview",
+    max_tokens: 32,
+  });
+
+  console.log(response.choices[0].message.content);
+}
+
+main();
+```
+  </Tab>
+</Tabs>
 
 ### How to Find Your Google Vertex Project Details
 
@@ -4029,10 +2341,6 @@ environment:
 ## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="SDK Reference" icon="code" href="/api-reference/sdk/list">
-Complete SDK documentation and API reference
-</Card>
 
 <Card title="Add Metadata" icon="tag" href="/aigw/product/observability/metadata">
 Add metadata to your Vertex AI requests

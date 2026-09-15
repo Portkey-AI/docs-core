@@ -15,7 +15,7 @@ from llama_index.llms.openai import OpenAI
 llm = OpenAI(
     model="@openai-prod/gpt-4o",        # Provider slug from Model Catalog
     api_base="https://aigw.portkey.ai/v1",
-    api_key="PORTKEY_API_KEY"           # Your Portkey API key
+    api_key="PORTKEY_API_KEY"           # Your AI Gateway API key
 )
 
 response = llm.complete("Tell me a joke")
@@ -52,7 +52,7 @@ LlamaIndex handles data indexing and querying. The AI Gateway adds production fe
 ### 1. Install Packages
 
 ```bash
-pip install llama-index-llms-openai portkey-ai
+pip install llama-index-llms-openai
 ```
 
 ### 2. Add Provider in Model Catalog
@@ -85,7 +85,7 @@ llm = OpenAI(
     api_key="OPENAI_API_KEY"
 )
 
-# After (via Portkey)
+# After (via the AI Gateway)
 llm = OpenAI(
     model="@openai-prod/gpt-4o",
     api_base="https://aigw.portkey.ai/v1",
@@ -211,7 +211,7 @@ asyncio.run(main())
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 from llama_index.llms.openai import OpenAI
 
-# Set up LLM with Portkey
+# Set up LLM with the AI Gateway
 llm = OpenAI(
     model="@openai-prod/gpt-4o",
     api_base="https://aigw.portkey.ai/v1",
@@ -234,23 +234,22 @@ For production features like fallbacks, caching, and load balancing, use AI Gate
 
 ```python
 from llama_index.llms.openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 llm = OpenAI(
     model="gpt-4o",  # Default model
-    api_base=PORTKEY_GATEWAY_URL,
+    api_base="https://aigw.portkey.ai/v1",
     api_key="PORTKEY_API_KEY",
-    default_headers=createHeaders(
-        config="pc_your_config_id"  # Created in Portkey dashboard
-    )
+    default_headers={
+        "x-portkey-config": "pc_your_config_id",  # Created in Strata Cloud Manager
+    }
 )
 ```
 
 ### Example: Fallbacks
 
 ```python
+import json
 from llama_index.llms.openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 config = {
     "strategy": {"mode": "fallback"},
@@ -262,9 +261,9 @@ config = {
 
 llm = OpenAI(
     model="gpt-4o",
-    api_base=PORTKEY_GATEWAY_URL,
+    api_base="https://aigw.portkey.ai/v1",
     api_key="PORTKEY_API_KEY",
-    default_headers=createHeaders(config=config)
+    default_headers={"x-portkey-config": json.dumps(config)}
 )
 
 # Automatically falls back to Anthropic if OpenAI fails
@@ -274,6 +273,7 @@ response = llm.complete("Hello!")
 ### Example: Load Balancing
 
 ```python
+import json
 config = {
     "strategy": {"mode": "loadbalance"},
     "targets": [
@@ -284,9 +284,9 @@ config = {
 
 llm = OpenAI(
     model="gpt-4o",
-    api_base=PORTKEY_GATEWAY_URL,
+    api_base="https://aigw.portkey.ai/v1",
     api_key="PORTKEY_API_KEY",
-    default_headers=createHeaders(config=config)
+    default_headers={"x-portkey-config": json.dumps(config)}
 )
 
 # Requests distributed 50/50 between OpenAI and Anthropic
@@ -296,6 +296,7 @@ response = llm.complete("Hello!")
 ### Example: Caching
 
 ```python
+import json
 config = {
     "cache": {
         "mode": "semantic",  # or "simple" for exact matches
@@ -306,9 +307,9 @@ config = {
 
 llm = OpenAI(
     model="gpt-4o",
-    api_base=PORTKEY_GATEWAY_URL,
+    api_base="https://aigw.portkey.ai/v1",
     api_key="PORTKEY_API_KEY",
-    default_headers=createHeaders(config=config)
+    default_headers={"x-portkey-config": json.dumps(config)}
 )
 
 # Responses cached for similar queries
@@ -323,24 +324,6 @@ response = llm.complete("What is machine learning?")
 
 The AI Gateway automatically logs all requests. Add custom metadata for better analytics:
 
-```python
-from llama_index.llms.openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
-
-llm = OpenAI(
-    model="@openai-prod/gpt-4o",
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="PORTKEY_API_KEY",
-    default_headers=createHeaders(
-        metadata={
-            "_user": "user_123",
-            "environment": "production",
-            "feature": "rag_query"
-        },
-        trace_id="unique_trace_id"
-    )
-)
-```
 
 Filter and analyze logs by metadata in Strata Cloud Manager.
 
@@ -352,33 +335,6 @@ Filter and analyze logs by metadata in Strata Cloud Manager.
 
 Use prompts from the AI Gateway's Prompt Library:
 
-```python
-from llama_index.llms.openai import OpenAI
-from llama_index.core.llms import ChatMessage
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders, Portkey
-
-# Render prompt from Portkey
-client = Portkey(api_key="PORTKEY_API_KEY")
-prompt_template = client.prompts.render(
-    prompt_id="pp-your-prompt-id",
-    variables={"topic": "AI"}
-).data.dict()
-
-# Use with LlamaIndex
-llm = OpenAI(
-    model="@openai-prod/gpt-4o",
-    api_base=PORTKEY_GATEWAY_URL,
-    api_key="PORTKEY_API_KEY"
-)
-
-messages = [
-    ChatMessage(content=msg["content"], role=msg["role"])
-    for msg in prompt_template["messages"]
-]
-
-response = llm.chat(messages)
-print(response.message.content)
-```
 
 ## Migration from Direct OpenAI
 
@@ -399,7 +355,7 @@ llm = OpenAI(
 llm = OpenAI(
     model="@openai-prod/gpt-4o",          # Add provider slug
     api_base="https://aigw.portkey.ai/v1",     # Add this
-    api_key="PORTKEY_API_KEY",             # Change to Portkey key
+    api_key="PORTKEY_API_KEY",             # Change to AI Gateway API key
     temperature=0.7                         # Keep existing params
 )
 ```
@@ -426,9 +382,3 @@ llm = OpenAI(
     Add PII detection and content filtering
   </Card>
 </CardGroup>
-
-For complete SDK documentation:
-
-<Card title="SDK Reference" icon="code" href="/api-reference/sdk/list">
-  Complete AI Gateway SDK documentation
-</Card>
