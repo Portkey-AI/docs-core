@@ -12,7 +12,7 @@ The AI Gateway enhances LangGraph with production-readiness features, turning yo
 - **Complete observability** of every agent step, tool use, and state transition
 - **Built-in reliability** with fallbacks, retries, and load balancing
 - **Cost tracking and optimization** to manage your AI spend
-- **Access to 1600+ LLMs** through a single integration
+- **Access to 3,000+ LLMs** through a single integration
 - **Guardrails** to keep agent behavior safe and compliant
 - **Version-controlled prompts** for consistent agent performance
 
@@ -25,7 +25,7 @@ The AI Gateway enhances LangGraph with production-readiness features, turning yo
 <Steps>
 <Step title="Install the required packages">
 ```bash
-pip install -U langgraph langchain langchain_openai portkey-ai
+pip install -U langgraph langchain langchain_openai
 ```
 
 Depending on your use case, you may also need additional packages:
@@ -40,25 +40,6 @@ Create an AI Gateway API key with optional budget/rate limits from the [Strata C
 <Step title="Configure LangChain with the AI Gateway">
 For a simple setup, configure a LangChain ChatOpenAI instance to use the AI Gateway:
 
-```python
-from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
-# Set up LangChain model with Portkey
-llm = ChatOpenAI(
-    api_key="dummy",  # This is just a placeholder
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_PROVIDER",
-        trace_id="unique-trace-id",               # Optional, for request tracing
-        metadata={                                # Optional, for request segmentation
-            "app_env": "production",
-            "_user": "user_123"                   # Optional Special _user field for user analytics
-        }
-    )
-)
-```
 </Step>
 </Steps>
 
@@ -70,7 +51,6 @@ Let's create a simple LangGraph chatbot using the AI Gateway. This example shows
 from typing import Annotated
 from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict
-from portkey_ai import createHeaders
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 
@@ -81,15 +61,14 @@ class State(TypedDict):
 # Initialize graph builder
 graph_builder = StateGraph(State)
 
-# Set up LLM with Portkey
+# Set up LLM with the AI Gateway
 llm = ChatOpenAI(
-    api_key="dummy",
+    api_key="YOUR_PORTKEY_API_KEY",
     base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_PROVIDER",
-        trace_id="chat-session-123"  # Optional
-    )
+    default_headers={
+        "x-portkey-provider": "@YOUR_PROVIDER",
+        "x-portkey-trace-id": "chat-session-123",  # Optional
+    }
 )
 
 # Define chatbot node function
@@ -140,7 +119,6 @@ from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
-from portkey_ai import createHeaders
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 class State(TypedDict):
@@ -153,15 +131,14 @@ graph_builder = StateGraph(State)
 tool = TavilySearchResults(max_results=2)
 tools = [tool]
 
-# Set up LLM with Portkey
+# Set up LLM with the AI Gateway
 llm = ChatOpenAI(
-    api_key="dummy",
+    api_key="YOUR_PORTKEY_API_KEY",
     base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_PROVIDER",
-        trace_id="search-agent-session"  # Optional
-    )
+    default_headers={
+        "x-portkey-provider": "@YOUR_PROVIDER",
+        "x-portkey-trace-id": "search-agent-session",  # Optional
+    }
 )
 # Bind tools to the LLM
 llm_with_tools = llm.bind_tools(tools)
@@ -203,7 +180,6 @@ from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
-from portkey_ai import createHeaders
 
 class State(TypedDict):
     messages: Annotated[list, add_messages]
@@ -223,14 +199,11 @@ graph_builder = StateGraph(State)
 
 tools = [multiply]
 
-# Set up LLM with Portkey
+# Set up LLM with the AI Gateway
 llm = ChatOpenAI(
-    api_key="dummy",
+    api_key="YOUR_PORTKEY_API_KEY",
     base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_PROVIDER",
-    )
+    default_headers={"x-portkey-provider": "@YOUR_PROVIDER"}
 )
 llm_with_tools = llm.bind_tools(tools)
 
@@ -264,7 +237,6 @@ from typing import Annotated
 from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search import TavilySearchResults
 from typing_extensions import TypedDict
-from portkey_ai import createHeaders
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph
@@ -275,17 +247,16 @@ class State(TypedDict):
 
 graph_builder = StateGraph(State)
 
-# Set up tools and LLM with Portkey
+# Set up tools and LLM with the AI Gateway
 tool = TavilySearchResults(max_results=2)
 tools = [tool]
 llm = ChatOpenAI(
-    api_key="dummy",
+    api_key="YOUR_PORTKEY_API_KEY",
     base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_PROVIDER",
-        trace_id="memory-agent-session"  # Optional
-    )
+    default_headers={
+        "x-portkey-provider": "@YOUR_PROVIDER",
+        "x-portkey-trace-id": "memory-agent-session",  # Optional
+    }
 )
 llm_with_tools = llm.bind_tools(tools)
 
@@ -339,16 +310,17 @@ The AI Gateway provides comprehensive observability for your LangGraph agents, h
 Traces provide a hierarchical view of your agent's execution, showing the sequence of LLM calls, tool invocations, and state transitions.
 
 ```python
-# Add trace_id to enable hierarchical tracing in Portkey
+import json
+# Add trace_id to enable hierarchical tracing in the AI Gateway
 llm = ChatOpenAI(
-    api_key="dummy",
+    api_key="YOUR_PORTKEY_API_KEY",
     base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_LLM_PROVIDER",
-        trace_id="unique-session-id",  # Add unique trace ID
-        metadata={"request_type": "user_query"}
-    )
+    default_headers={
+        "x-portkey-provider": "@YOUR_LLM_PROVIDER",
+        # Add unique trace ID
+        "x-portkey-trace-id": "unique-session-id",
+        "x-portkey-metadata": json.dumps({"request_type": "user_query"}),
+    }
 )
 ```
 
@@ -384,19 +356,19 @@ You can filter and segment all metrics by custom metadata to analyze specific ag
 Add custom metadata to your LangGraph agent calls to enable powerful filtering and segmentation:
 
 ```python
+import json
 llm = ChatOpenAI(
-    api_key="dummy",
+    api_key="YOUR_PORTKEY_API_KEY",
     base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_LLM_PROVIDER",
-        metadata={
+    default_headers={
+        "x-portkey-provider": "@YOUR_LLM_PROVIDER",
+        "x-portkey-metadata": json.dumps({
             "agent_type": "search_agent",
             "environment": "production",
             "_user": "user_123",   # Special _user field for user analytics
             "graph_id": "complex_workflow"
-        }
-    )
+        }),
+    }
 )
 ```
 
@@ -410,33 +382,6 @@ When running agents in production, things can go wrong - API rate limits, networ
 
 Enable fallback in your LangGraph agents by using an AI Gateway Config:
 
-```python
-from portkey_ai import createHeaders
-
-# Create LLM with fallback configuration
-llm = ChatOpenAI(
-    api_key="dummy",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config={
-            "strategy": {
-                "mode": "fallback"
-            },
-            "targets": [
-                {
-                    "provider":"@YOUR_OPENAI_VIRTUAL_API_KEY",
-                    "override_params": {"model": "gpt-4o"}
-                },
-                {
-                    "provider":"@YOUR_ANTHROPIC_VIRTUAL_API_KEY",
-                    "override_params": {"model": "claude-3-opus-20240229"}
-                }
-            ]
-        }
-    )
-)
-```
 
 This configuration will automatically try Claude if the GPT-4o request fails, ensuring your agent can continue operating.
 
@@ -477,42 +422,6 @@ This visual environment makes it easier to craft effective prompts for each step
   <Tab title="Using Prompt Templates">
 The Prompt Render API retrieves your prompt templates with all parameters configured:
 
-```python
-from portkey_ai import Portkey
-from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders
-
-# Initialize Portkey clients
-portkey_admin = Portkey(api_key="YOUR_PORTKEY_API_KEY")
-
-# Retrieve prompt using the render API
-prompt_data = portkey_admin.prompts.render(
-    prompt_id="YOUR_PROMPT_ID",
-    variables={
-        "user_input": "Tell me about artificial intelligence"
-    }
-).data.dict()
-
-# Set up LLM with rendered system prompt
-llm = ChatOpenAI(
-    api_key="dummy",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-    )
-)
-
-# Define chatbot node with the rendered system prompt
-def chatbot(state):
-    messages = state["messages"]
-    # Add the system prompt from Portkey to the beginning of the conversation
-    all_messages = [
-        {"role": "system", "content": prompt_data["messages"][0]["content"]},
-        *messages
-    ]
-    return {"messages": [llm.invoke(all_messages)]}
-```
   </Tab>
 
   <Tab title="Prompt Versioning">
@@ -576,24 +485,6 @@ The AI Gateway's guardrails add protection for both inputs and outputs.
 
 **Implementing Guardrails**
 
-```python
-from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders
-
-# Create LLM with guardrails
-llm = ChatOpenAI(
-    api_key="dummy",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        config={
-            "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
-            "output_guardrails": ["guardrails-id-zzz"]
-        }
-    )
-)
-```
 
 The AI Gateway's guardrails can:
 - Detect and redact PII in both inputs and outputs
@@ -614,27 +505,6 @@ Track individual users through your LangGraph agents using the AI Gateway's meta
 
 Metadata allows you to associate custom data with each request, enabling filtering, segmentation, and analytics. The special `_user` field is specifically designed for user tracking.
 
-```python
-from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders
-
-# Configure LLM with user tracking
-llm = ChatOpenAI(
-    api_key="dummy",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        metadata={
-            "_user": "user_123",  # Special _user field for user analytics
-            "user_tier": "premium",
-            "user_company": "Acme Corp",
-            "session_id": "abc-123",
-            "graph_id": "search_workflow"
-        }
-    )
-)
-```
 
 **Filter Analytics by User**
 
@@ -656,49 +526,11 @@ Implement caching to make your LangGraph agents more efficient and cost-effectiv
 
 <Tabs>
   <Tab title="Simple Caching">
-```python
-from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders
-
-# Configure LLM with simple caching
-llm = ChatOpenAI(
-    api_key="dummy",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        config={
-            "cache": {
-                "mode": "simple"
-            }
-        }
-    )
-)
-```
 
 Simple caching performs exact matches on input prompts, caching identical requests to avoid redundant model executions.
   </Tab>
 
   <Tab title="Semantic Caching">
-```python
-from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders
-
-# Configure LLM with semantic caching
-llm = ChatOpenAI(
-    api_key="dummy",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        config={
-            "cache": {
-                "mode": "semantic"
-            }
-        }
-    )
-)
-```
 
 Semantic caching considers the contextual similarity between input requests, caching responses for semantically similar inputs.
   </Tab>
@@ -708,37 +540,6 @@ Semantic caching considers the contextual similarity between input requests, cac
 
 LangGraph works with multiple LLM providers, and the AI Gateway extends this capability by providing access to over 200 LLMs through a unified interface. You can easily switch between different models without changing your core agent logic:
 
-```python
-from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders
-
-# OpenAI configuration
-openai_llm = ChatOpenAI(
-    api_key="dummy",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER"
-    )
-)
-
-# Anthropic configuration
-anthropic_llm = ChatOpenAI(
-    api_key="dummy",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_ANTHROPIC_PROVIDER"
-    )
-)
-
-# Choose which LLM to use based on your needs
-active_llm = openai_llm  # or anthropic_llm
-
-# Use in your LangGraph nodes
-def chatbot(state):
-    return {"messages": [active_llm.invoke(state["messages"])]}
-```
 
 The AI Gateway provides access to LLMs from providers including:
 
@@ -807,15 +608,11 @@ After setting up your AI Gateway API key with the attached config, connect it to
 
 ```python
 from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders
 
-# Configure LLM with your Portkey API key
+# Configure LLM with your AI Gateway API key
 llm = ChatOpenAI(
-    api_key="dummy",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY"  # The API key with attached config from step 3
-    )
+    api_key="YOUR_PORTKEY_API_KEY",  # The API key with attached config from step 3
+    base_url="https://aigw.portkey.ai/v1"
 )
 ```
 </Step>
@@ -886,25 +683,6 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
     - [API Key Management API](/api-reference/admin-api/control-plane/api-keys/create-api-key)
 
     Example using Python SDK:
-    ```python
-    from portkey_ai import Portkey
-
-    portkey = Portkey(api_key="YOUR_ADMIN_API_KEY")
-
-    api_key = portkey.api_keys.create(
-        name="engineering-team",
-        type="organisation",
-        workspace_id="YOUR_WORKSPACE_ID",
-        defaults={
-            "config_id": "your-config-id",
-            "metadata": {
-                "environment": "production",
-                "department": "engineering"
-            }
-        },
-        scopes=["logs.view", "configs.read"]
-    )
-    ```
 
     For detailed key management instructions, see our [API Keys documentation](/api-reference/admin-api/control-plane/api-keys/create-api-key).
   </Accordion>
@@ -936,7 +714,7 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
 
 <AccordionGroup>
   <Accordion title="How does the AI Gateway enhance LangGraph?">
-    the AI Gateway adds production-readiness to LangGraph through comprehensive observability (traces, logs, metrics), reliability features (fallbacks, retries, caching), and access to 1600+ LLMs through a unified interface. This makes it easier to debug, optimize, and scale your agent workflows.
+    The AI Gateway adds production-readiness to LangGraph through comprehensive observability (traces, logs, metrics), reliability features (fallbacks, retries, caching), and access to 3,000+ LLMs through a unified interface. This makes it easier to debug, optimize, and scale your agent workflows.
   </Accordion>
 
   <Accordion title="Can I use the AI Gateway with existing LangGraph applications?">
@@ -944,11 +722,11 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
   </Accordion>
 
   <Accordion title="Does the AI Gateway work with all LangGraph features?">
-    the AI Gateway supports all LangGraph features, including tools, memory, conditional routing, and complex multi-node workflows. It adds observability and reliability without limiting any of the framework's functionality.
+    The AI Gateway supports all LangGraph features, including tools, memory, conditional routing, and complex multi-node workflows. It adds observability and reliability without limiting any of the framework's functionality.
   </Accordion>
 
   <Accordion title="How do I filter logs and traces for specific graph runs?">
-    the AI Gateway allows you to add custom metadata and trace IDs to your LLM calls, which you can then use for filtering. Add fields like `graph_id`, `workflow_type`, or `session_id` to easily find and analyze specific graph executions.
+    The AI Gateway allows you to add custom metadata and trace IDs to your LLM calls, which you can then use for filtering. Add fields like `graph_id`, `workflow_type`, or `session_id` to easily find and analyze specific graph executions.
   </Accordion>
 
   <Accordion title="Can I use LangGraph's memory features with the AI Gateway?">
@@ -964,7 +742,7 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
     <p>Official LangGraph documentation</p>
   </Card>
 
-  <Card title="AI Gateway Docs" icon="book" href="https://portkey.ai/docs">
+  <Card title="AI Gateway Docs" icon="book" href="/aigw/introduction/what-is-portkey">
     <p>Official AI Gateway documentation</p>
   </Card>
 

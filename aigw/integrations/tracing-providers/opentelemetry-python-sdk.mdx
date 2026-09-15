@@ -39,7 +39,7 @@ The AI Gateway adds routing optimization and resilience to your LLM calls
 Install the required packages:
 
 ```bash
-pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http openai portkey-ai
+pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http openai
 ```
 
 ### Step 2: Configure OpenTelemetry
@@ -56,7 +56,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 provider = TracerProvider()
 trace.set_tracer_provider(provider)
 
-# Configure OTLP exporter to send to Portkey
+# Configure OTLP exporter to send to the AI Gateway
 otlp_exporter = OTLPSpanExporter(
     endpoint="https://aigw.portkey.ai/v1/otel/v1/traces",
     headers={
@@ -74,20 +74,18 @@ tracer = trace.get_tracer(__name__)
 
 ### Step 3: Configure AI Gateway
 
-Set up the OpenAI client with the AI Gateway's gateway:
+Set up the OpenAI client with the AI Gateway:
 
 ```python
 from openai import OpenAI
-from portkey_ai import createHeaders
 
-# Use Portkey's gateway for intelligent routing
+# Use the AI Gateway for intelligent routing
 client = OpenAI(
     api_key="PORTKEY_API_KEY",
     base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        provider="@openai-prod"  # Your AI Provider slug from Model Catalog
-    )
+    default_headers={
+        "x-portkey-provider": "@openai-prod",  # Your AI Provider slug from Model Catalog
+    }
 )
 ```
 
@@ -131,7 +129,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from openai import OpenAI
-from portkey_ai import createHeaders
 
 # Step 1: Setup OpenTelemetry
 provider = TracerProvider()
@@ -147,14 +144,10 @@ provider.add_span_processor(span_processor)
 
 tracer = trace.get_tracer(__name__)
 
-# Step 2: Configure Portkey Gateway
+# Step 2: Configure the AI Gateway
 client = OpenAI(
     api_key="PORTKEY_API_KEY",
-    base_url="https://aigw.portkey.ai/v1",
-    default_headers=createHeaders(
-        api_key="PORTKEY_API_KEY",
-        provider="@openai-prod"
-    )
+    base_url="https://aigw.portkey.ai/v1"
 )
 
 # Step 3: Create instrumented function
@@ -168,7 +161,7 @@ def generate_ai_response(input_text):
         # Make API call
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": input_text}],
-            model="gpt-4o",
+            model="@openai-prod/gpt-4o",
             temperature=0.7,
         )
 

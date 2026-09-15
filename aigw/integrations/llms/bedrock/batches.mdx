@@ -16,7 +16,7 @@ This is the most efficient way to
 
 <Info>
 The AI Gateway supports **two modes** on Bedrock:
-* **[Provider Batch API](#using-bedrock-batch-api-through-portkey)** (cheapest, completion_window: `24h`, `48h`, etc.)
+* **[Provider Batch API](#using-bedrock-batch-api-through-the-ai-gateway)** (cheapest, completion_window: `24h`, `48h`, etc.)
 * **[AI Gateway Batch API  ⭐️](/aigw/product/ai-gateway/batches#portkey-batch-api-mode)** (fast, provider-agnostic, completion_window: `immediate`)
 </Info>
 
@@ -26,84 +26,13 @@ The AI Gateway supports **two modes** on Bedrock:
 2. **Bedrock credentials** — either an AI Gateway *Provider from Model Catalog* or explicit AWS keys (`aws_access_key_id`, `aws_secret_access_key`, `aws_region`, optional `aws_session_token`).
 3. **S3 bucket** with read/write access for inputs and outputs.
 4. **IAM roles** (see *Permissions & IAM* below).
-5. Optional: a **AI Gateway File** (`input_file_id`) — **required only when you set `completion_window:"immediate"`** (Portkey-Batch mode).
+5. Optional: a **AI Gateway File** (`input_file_id`) — **required only when you set `completion_window:"immediate"`** (gateway-batch mode).
 
 ## Using Bedrock Batch API through the AI Gateway
 
 ### Create Batch Job
 <CodeGroup>
-```python Python
-from portkey_ai import Portkey
 
-# Initialize the Portkey client
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="bedrock",
-    aws_access_key_id="YOUR_AWS_ACCESS_KEY_ID",
-    aws_secret_access_key="YOUR_AWS_SECRET_ACCESS_KEY",
-    aws_region="YOUR_AWS_REGION",
-    aws_s3_bucket="YOUR_AWS_S3_BUCKET",
-    aws_s3_object_key="YOUR_AWS_S3_OBJECT_KEY",
-    aws_bedrock_model="YOUR_AWS_BEDROCK_MODEL"
-)
-
-start_batch_response = portkey.batches.create(
-  input_file_id="file_id", # file id of the input file
-  endpoint="endpoint", # ex: /v1/chat/completions
-  completion_window="completion_window", # ex: 24h
-  metadata={}, # metadata for the batch,
-  role_arn="arn:aws:iam::12312:role/BedrockBatchRole", # the role to use for creating the batch job
-  model="anthropic.claude-3-5-sonnet-20240620-v1:0", # the model to use for the batch
-  output_data_config={
-    "s3OutputDataConfig": {
-      "s3Uri": "s3://generations-raw/",
-      "s3EncryptionKeyId": "arn:aws:kms:us-west-2:517194595696:key/89b483cb-130d-497b-aa37-7db177e7cd32" # this is optional, if you want to use a KMS key to encrypt the output data
-    }
-  }, # output_data_config is optional, if you want to specify a different output location for the batch job, default is the same as the input file
-  job_name="anthropi-requests-test" # optional
-)
-
-print(start_batch_response)
-```
-
-```javascript Typescript
-import { Portkey } from 'portkey-ai';
-
-// Initialize the Portkey client
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
-    provider="bedrock",
-    awsAccessKeyId="YOUR_AWS_ACCESS_KEY_ID",
-    awsSecretAccessKey="YOUR_AWS_SECRET_ACCESS_KEY",
-    awsRegion="YOUR_AWS_REGION",
-    awsS3Bucket="YOUR_AWS_S3_BUCKET",
-    awsS3ObjectKey="YOUR_AWS_S3_OBJECT_KEY",
-    awsBedrockModel="YOUR_AWS_BEDROCK_MODEL"
-});
-
-const startBatch = async () => {
-  const startBatchResponse = await portkey.batches.create({
-    input_file_id: "file_id", // file id of the input file
-    endpoint: "endpoint", // ex: /v1/chat/completions
-    completion_window: "completion_window", // ex: 24h
-    metadata: {}, // metadata for the batch
-    role_arn: "arn:aws:iam::12312:role/BedrockBatchRole", // the role to use for creating the batch job
-    model: "anthropic.claude-3-5-sonnet-20240620-v1:0", // the model to use for the batch
-    output_data_config: {
-      s3OutputDataConfig: {
-        s3Uri: "s3://generations-raw/",
-        s3EncryptionKeyId: "arn:aws:kms:us-west-2:517194595696:key/89b483cb-130d-497b-aa37-7db177e7cd32" // this is optional, if you want to use a KMS key to encrypt the output data
-      }
-    }, // output_data_config is optional, if you want to specify a different output location for the batch job, default is the same as the input file
-    job_name: "anthropi-requests-test" // optional
-  });
-
-  console.log(startBatchResponse);
-}
-
-await startBatch();
-
-```
 
 ```bash curl
 curl --location 'https://aigw.portkey.ai/v1/batches' \
@@ -128,21 +57,20 @@ curl --location 'https://aigw.portkey.ai/v1/batches' \
 
 ```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
 const openai = new OpenAI({
-  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: "openai",
-    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
-    awsAccessKeyId: "YOUR_AWS_ACCESS_KEY_ID",
-    awsSecretAccessKey: "YOUR_AWS_SECRET_ACCESS_KEY",
-    awsRegion: "YOUR_AWS_REGION",
-    awsS3Bucket: "YOUR_AWS_S3_BUCKET",
-    awsS3ObjectKey: "YOUR_AWS_S3_OBJECT_KEY",
-    awsBedrockModel: "YOUR_AWS_BEDROCK_MODEL"
-  })
+  apiKey: "PORTKEY_API_KEY", // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: {
+      "x-portkey-provider": "openai",
+      // defaults to process.env["PORTKEY_API_KEY"]
+      "x-portkey-aws-access-key-id": "YOUR_AWS_ACCESS_KEY_ID",
+      "x-portkey-aws-secret-access-key": "YOUR_AWS_SECRET_ACCESS_KEY",
+      "x-portkey-aws-region": "YOUR_AWS_REGION",
+      "x-portkey-aws-s3-bucket": "YOUR_AWS_S3_BUCKET",
+      "x-portkey-aws-s3-object-key": "YOUR_AWS_S3_OBJECT_KEY",
+      "x-portkey-aws-bedrock-model": "YOUR_AWS_BEDROCK_MODEL",
+  }
 });
 
 const startBatch = async () => {
@@ -170,21 +98,11 @@ await startBatch();
 
 ```python OpenAI Python
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 openai = OpenAI(
-    api_key='PLACEHOLDER_NOT_USED',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="openai",
-        api_key="PORTKEY_API_KEY",
-        aws_access_key_id="YOUR_AWS_ACCESS_KEY_ID",
-        aws_secret_access_key="YOUR_AWS_SECRET_ACCESS_KEY",
-        aws_region="YOUR_AWS_REGION",
-        aws_s3_bucket="YOUR_AWS_S3_BUCKET",
-        aws_s3_object_key="YOUR_AWS_S3_OBJECT_KEY",
-        aws_bedrock_model="YOUR_AWS_BEDROCK_MODEL"
-    )
+    api_key="PORTKEY_API_KEY",
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-provider": "openai", "x-portkey-aws-access-key-id": "YOUR_AWS_ACCESS_KEY_ID", "x-portkey-aws-secret-access-key": "YOUR_AWS_SECRET_ACCESS_KEY", "x-portkey-aws-region": "YOUR_AWS_REGION", "x-portkey-aws-s3-bucket": "YOUR_AWS_S3_BUCKET", "x-portkey-aws-s3-object-key": "YOUR_AWS_S3_OBJECT_KEY", "x-portkey-aws-bedrock-model": "YOUR_AWS_BEDROCK_MODEL"}
 )
 
 start_batch_response = openai.batches.create(
@@ -208,44 +126,7 @@ print(start_batch_response)
 
 ### List Batch Jobs
 <CodeGroup>
-```python Python
-from portkey_ai import Portkey
 
-# Initialize the Portkey client
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="bedrock",
-    aws_access_key_id="YOUR_AWS_ACCESS_KEY_ID",
-    aws_secret_access_key="YOUR_AWS_SECRET_ACCESS_KEY",
-    aws_region="YOUR_AWS_REGION",
-)
-
-batches = portkey.batches.list()
-
-print(batches)
-```
-
-```javascript Typescript
-import { Portkey } from 'portkey-ai';
-
-// Initialize the Portkey client
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
-    provider="bedrock",
-    awsAccessKeyId="YOUR_AWS_ACCESS_KEY_ID",
-    awsSecretAccessKey="YOUR_AWS_SECRET_ACCESS_KEY",
-    awsRegion="YOUR_AWS_REGION",
-});
-
-const listBatches = async () => {
-  const batches = await portkey.batches.list();
-
-  console.log(batches);
-}
-
-await listBatches();
-
-```
 
 ```bash curl
 curl --location 'https://aigw.portkey.ai/v1/batches' \
@@ -255,18 +136,17 @@ curl --location 'https://aigw.portkey.ai/v1/batches' \
 
 ```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
 const openai = new OpenAI({
-  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: "openai",
-    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
-    awsAccessKeyId: "YOUR_AWS_ACCESS_KEY_ID",
-    awsSecretAccessKey: "YOUR_AWS_SECRET_ACCESS_KEY",
-    awsRegion: "YOUR_AWS_REGION"
-  })
+  apiKey: "PORTKEY_API_KEY", // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: {
+      "x-portkey-provider": "openai",
+      // defaults to process.env["PORTKEY_API_KEY"]
+      "x-portkey-aws-access-key-id": "YOUR_AWS_ACCESS_KEY_ID",
+      "x-portkey-aws-secret-access-key": "YOUR_AWS_SECRET_ACCESS_KEY",
+      "x-portkey-aws-region": "YOUR_AWS_REGION",
+  }
 });
 
 const listBatches = async () => {
@@ -280,18 +160,11 @@ await listBatches();
 
 ```python OpenAI Python
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 openai = OpenAI(
-    api_key='PLACEHOLDER_NOT_USED',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="openai",
-        api_key="PORTKEY_API_KEY",
-        aws_access_key_id="YOUR_AWS_ACCESS_KEY_ID",
-        aws_secret_access_key="YOUR_AWS_SECRET_ACCESS_KEY",
-        aws_region="YOUR_AWS_REGION"
-    )
+    api_key="PORTKEY_API_KEY",
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-provider": "openai", "x-portkey-aws-access-key-id": "YOUR_AWS_ACCESS_KEY_ID", "x-portkey-aws-secret-access-key": "YOUR_AWS_SECRET_ACCESS_KEY", "x-portkey-aws-region": "YOUR_AWS_REGION"}
 )
 
 batches = openai.batches.list()
@@ -302,38 +175,7 @@ print(batches)
 
 ### Get Batch Job Details
 <CodeGroup>
-```python Python
-from portkey_ai import Portkey
 
-# Initialize the Portkey client
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="@PROVIDER",
-)
-
-batch = portkey.batches.retrieve(batch_id="batch_id")
-
-print(batch)
-```
-
-```javascript Typescript
-import { Portkey } from 'portkey-ai';
-
-// Initialize the Portkey client
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
-    provider:"@PROVIDER",
-});
-
-const getBatch = async () => {
-  const batch = await portkey.batches.retrieve(batch_id="batch_id");
-
-  console.log(batch);
-}
-
-await getBatch();
-
-```
 
 ```bash curl
 curl --location 'https://aigw.portkey.ai/v1/batches/<batch_id>' \
@@ -343,16 +185,14 @@ curl --location 'https://aigw.portkey.ai/v1/batches/<batch_id>' \
 
 ```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
 const openai = new OpenAI({
-  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: "openai",
-    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
-    provider:"@BEDROCK_PROVIDER",
-  })
+  apiKey: "PORTKEY_API_KEY", // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: {
+      // defaults to process.env["PORTKEY_API_KEY"]
+      "x-portkey-provider": "@BEDROCK_PROVIDER",
+  }
 });
 
 const getBatch = async () => {
@@ -366,16 +206,11 @@ await getBatch();
 
 ```python OpenAI Python
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 openai = OpenAI(
-    api_key='PLACEHOLDER_NOT_USED',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="openai",
-        api_key="PORTKEY_API_KEY",
-        provider:"@BEDROCK_PROVIDER",
-    )
+    api_key="PORTKEY_API_KEY",
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-provider": "@BEDROCK_PROVIDER"}
 )
 
 batch = openai.batches.retrieve(batch_id="batch_id")
@@ -395,38 +230,7 @@ curl --location 'https://aigw.portkey.ai/v1/batches/<batch_id>/output' \
 
 ### List Batch Jobs
 <CodeGroup>
-```python Python
-from portkey_ai import Portkey
 
-# Initialize the Portkey client
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="@PROVIDER",
-)
-
-batches = portkey.batches.list()
-
-print(batches)
-```
-
-```javascript Typescript
-import { Portkey } from 'portkey-ai';
-
-// Initialize the Portkey client
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
-    provider:"@PROVIDER",
-});
-
-const listBatchingJobs = async () => {
-  const batching_jobs = await portkey.batches.list();
-
-  console.log(batching_jobs);
-}
-
-await listBatchingJobs();
-
-```
 
 ```bash curl
 curl --location 'https://aigw.portkey.ai/v1/batches' \
@@ -436,16 +240,14 @@ curl --location 'https://aigw.portkey.ai/v1/batches' \
 
 ```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
 const openai = new OpenAI({
-  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: "openai",
-    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
-    provider:"@BEDROCK_PROVIDER",
-  })
+  apiKey: "PORTKEY_API_KEY", // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: {
+      // defaults to process.env["PORTKEY_API_KEY"]
+      "x-portkey-provider": "@BEDROCK_PROVIDER",
+  }
 });
 
 const listBatchingJobs = async () => {
@@ -459,16 +261,11 @@ await listBatchingJobs();
 
 ```python OpenAI Python
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 openai = OpenAI(
-    api_key='PLACEHOLDER_NOT_USED',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="openai",
-        api_key="PORTKEY_API_KEY",
-        provider:"@BEDROCK_PROVIDER",
-    )
+    api_key="PORTKEY_API_KEY",
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-provider": "@BEDROCK_PROVIDER"}
 )
 
 batching_jobs = openai.batches.list()
@@ -479,38 +276,7 @@ print(batching_jobs)
 
 ### Cancel Batch Job
 <CodeGroup>
-```python Python
-from portkey_ai import Portkey
 
-# Initialize the Portkey client
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",  # Replace with your Portkey API key
-    provider="@PROVIDER",
-)
-
-cancel_batch_response = portkey.batches.cancel(batch_id="batch_id")
-
-print(cancel_batch_response)
-```
-
-```javascript Typescript
-import { Portkey } from 'portkey-ai';
-
-// Initialize the Portkey client
-const portkey = new Portkey({
-    apiKey: "PORTKEY_API_KEY",  // Replace with your Portkey API key
-    provider:"@PROVIDER",
-});
-
-const cancelBatch = async () => {
-  const cancel_batch_response = await portkey.batches.cancel(batch_id="batch_id");
-
-  console.log(cancel_batch_response);
-}
-
-await cancelBatch();
-
-```
 
 ```bash curl
 curl --request POST --location 'https://aigw.portkey.ai/v1/batches/<batch_id>/cancel' \
@@ -520,16 +286,14 @@ curl --request POST --location 'https://aigw.portkey.ai/v1/batches/<batch_id>/ca
 
 ```javascript OpenAI NodeJS
 import OpenAI from 'openai'; // We're using the v4 SDK
-import { PORTKEY_GATEWAY_URL, createHeaders } from 'portkey-ai'
 
 const openai = new OpenAI({
-  apiKey: 'PLACEHOLDER_NOT_USED', // defaults to process.env["OPENAI_API_KEY"],
-  baseURL: PORTKEY_GATEWAY_URL,
-  defaultHeaders: createHeaders({
-    provider: "openai",
-    apiKey: "PORTKEY_API_KEY", // defaults to process.env["PORTKEY_API_KEY"]
-    provider:"@BEDROCK_PROVIDER",
-  })
+  apiKey: "PORTKEY_API_KEY", // defaults to process.env["OPENAI_API_KEY"],
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: {
+      // defaults to process.env["PORTKEY_API_KEY"]
+      "x-portkey-provider": "@BEDROCK_PROVIDER",
+  }
 });
 
 const cancelBatch = async () => {
@@ -543,16 +307,11 @@ await cancelBatch();
 
 ```python OpenAI Python
 from openai import OpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
 openai = OpenAI(
-    api_key='PLACEHOLDER_NOT_USED',
-    base_url=PORTKEY_GATEWAY_URL,
-    default_headers=createHeaders(
-        provider="openai",
-        api_key="PORTKEY_API_KEY",
-        provider:"@BEDROCK_PROVIDER",
-    )
+    api_key="PORTKEY_API_KEY",
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-provider": "@BEDROCK_PROVIDER"}
 )
 
 cancel_batch_response = openai.batches.cancel(batch_id="batch_id")
@@ -690,7 +449,7 @@ print(cancel_batch_response)
 | **Batch Job**                      | Collection of asynchronous completions.                                        |
 | **AI Gateway File** (`input_file_id`) | File uploaded to the AI Gateway and re-uploaded to the provider for batch processing. |
 | **Provider Slug**                  | Bedrock credential stored in the AI Gateway via Model Catalog; referenced by slug.    |
-| **Completion Window**              | `immediate` → Portkey-Batch; `24h` → Bedrock native.                           |
+| **Completion Window**              | `immediate` → gateway batch; `24h` → Bedrock native.                           |
 
 ---
 

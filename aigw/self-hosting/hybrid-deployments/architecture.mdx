@@ -1,131 +1,268 @@
 ---
-title: "Overview"
-sidebarTitle: "Overview"
-description: "Comprehensive guide to Prisma AIRS AI Gateway's hybrid deployment architecture for enterprises"
+title: "Architecture"
+sidebarTitle: "Architecture"
+description: "How Prisma AIRS AI Gateway is deployed — the two-plane model, component roles, identity flow, request lifecycle, storage ownership, and the infrastructure it runs on."
 ---
 
-AI Gateway Enterprise offers a **secure hybrid deployment model** that balances security, flexibility, and fast deployment timelines:
+Prisma AIRS AI Gateway is deployed as a **hybrid, two-plane system**. AI traffic is processed
+inside your own environment; administration, analytics, and storage run in the Management Plane
+behind Palo Alto Networks Strata Cloud Manager.
 
-- **Data Plane** runs within your VPC, keeping sensitive LLM data and AI traffic in your environment
-- **Management Plane** hosted by the AI Gateway handles administration, configs, and analytics
+- **Customer Environment** — the AI Gateway and the LLM providers it routes to. All LLM traffic
+  is processed within your network boundary. No prompt or response data is forwarded to the
+  Management Plane directly.
+- **Management Plane** — the Dashboard, Backend, MySQL, ClickHouse, Redis, and Blob Store.
+  Handles identity resolution, configuration management, analytics, log storage, and audit
+  logging. It communicates with the Customer Environment over a private link.
 
-<Card title="Schedule an Enterprise Architecture Demo" icon="calendar" href="https://portkey.wiki/demo-27">
-  Want to learn more about our hybrid deployment model? Schedule a personalized demo with our solutions team to see how AI Gateway Enterprise can fit your security and compliance requirements.
-</Card>
+The Strata Cloud Manager API Gateway sits at the boundary between the two planes. It is the sole
+authentication authority for all requests entering the Management Plane.
 
-## Core Architecture Components
+```mermaid
+flowchart LR
+    subgraph cust["Customer Environment"]
+        app["Customer Application"] --> gw["AI Gateway"]
+        gw <--> cache["Cache Store (Redis)"]
+        gw --> logs["Log Storage (Blob Store)"]
+        gw --> llm["LLM Providers"]
+    end
 
-### Data Plane (Your VPC)
+    subgraph mp["Management Plane"]
+        scm["Strata Cloud Manager API Gateway"] --> be["Backend"]
+        dash["Dashboard"] --> scm
+        be --> mysql["MySQL"]
+        be <--> ch["ClickHouse"]
+    end
 
-The Data Plane is deployed in your cloud environment and processes all your AI traffic:
+    gw -- "Config sync (outbound HTTPS)" --> scm
+    gw -- "Metrics (outbound HTTPS)" --> ch
+    be -- "Fetch individual logs" --> logs
+```
 
-| Component | Description | Security Benefit |
-| :--------- | :----------- | :--------------- |
-| **AI Gateway** | Core engine that routes traffic across LLM providers and implements metering, access control, and guardrails | All LLM requests remain in your network perimeter |
-| **Cache Store** | Local cache storage for gateway consumption | Eliminates runtime dependency on Management Plane |
-| **Data Store** | Storage for LLM request/response logs | Keep sensitive LLM data completely in your environment |
+## Core components
 
-The AI Gateway runs as containerized workloads in your infrastructure, deployable via your preferred orchestration method (Kubernetes, ECS, etc.).
+### Customer Environment
 
-### Management Plane (AI Gateway VPC)
+| Component | Role |
+| :--- | :--- |
+| **AI Gateway** | LLM reverse proxy. Routes requests to LLM providers, enforces rate limits and quotas, applies guardrails, and produces all analytics and raw log data. Writes directly to ClickHouse (metrics) and Blob Store (raw logs). Reads from Redis for fast auth and config lookups on every request. Runs as stateless containers that scale horizontally. |
+| **Cache Store** | Local Redis cache holding configuration objects so requests are served without a round-trip to the Management Plane. Eliminates the runtime dependency on the Management Plane. |
+| **Log Storage** | Blob Store holding the full request and response payload for every LLM call. Keeps sensitive LLM data in your environment. |
+| **LLM Providers** | Upstream AI model providers — private, proprietary, or public — that the AI Gateway routes traffic to. |
 
-The Management Plane is fully managed by the AI Gateway and provides the administrative layer for your deployment:
+### Management Plane
 
-- Hosts the web dashboard for managing configurations, tracking analytics, and viewing logs
-- Maintains routing configs, provider integrations
-- Stores non-sensitive metadata and aggregated metrics
-- Automatically updates with new features and provider integrations without requiring changes to your infrastructure
+| Component | Role |
+| :--- | :--- |
+| **SCM API Gateway** | Palo Alto Networks gateway in front of the Management Plane. Terminates mTLS, authenticates end users, and injects identity context headers into every downstream request. Sole authentication authority for all Management Plane operations. |
+| **Backend** | Owns all writes to MySQL. Reads ClickHouse to serve the analytics UI and log list. Reads Blob Store to serve individual log detail views. Writes audit log entries to ClickHouse for every configuration change. Manages cache invalidation in Redis on every configuration mutation. |
+| **Dashboard** | Web interface for managing configurations, viewing logs, monitoring analytics, and administering the deployment. All Dashboard requests pass through the SCM API Gateway before reaching the Backend. |
+| **MySQL** | Relational database exclusively owned by the Backend. Stores organisations, workspaces, API keys, routing configurations, guardrail definitions, virtual keys, licensing entitlements, and tenant-to-organisation mappings. The AI Gateway never connects to MySQL directly. |
+| **ClickHouse** | Analytical database with split write ownership. The AI Gateway writes request metrics and guardrail execution results. The Backend writes management plane audit logs. The Backend reads all data to serve the analytics UI. |
+| **Redis** | In-memory cache serving the AI Gateway on every request. Caches authentication context, API key details, routing configurations, virtual keys, and guardrail definitions. Also stores rate limit counters, circuit breaker state, and semantic cache entries. |
+| **Blob Store** | Object storage holding the complete request and response body for every LLM call. The AI Gateway writes to it directly and asynchronously; the Backend reads from it when a user opens a log detail view. |
 
-## Data Flow Between Planes
+## Identity and authentication
 
-<Accordion icon="network-wired" title="AI Traffic Flow (Fully Contained in Your VPC)">
+The SCM API Gateway is the sole authentication authority. Standard session cookies are not used
+on Management Plane routes. Identity is established through three headers that the SCM API
+Gateway injects into every request it forwards:
+
+| Header | What it carries | How the Backend uses it |
+| :--- | :--- | :--- |
+| **Tenant ID** | The Palo Alto Tenant/TSG identifier for the calling organisation | Looked up in MySQL to resolve the internal organisation identity. If the tenant is unrecognised, the request is rejected before any business logic runs. |
+| **User Subject** | Opaque user identity from the JWT issued by Palo Alto | Used as the caller identity for audit log entries. Never persisted in the Backend's user store. Strata Cloud Manager manages user lifecycle entirely outside the AI Gateway. |
+| **Scope Access** | The set of workspace scopes the caller is permitted to access | Evaluated per-request to enforce workspace-level access control. Workspace membership tables are not consulted — access is entirely scope-based. |
+
+**mTLS boundary:** the load balancer between the SCM API Gateway and the Backend terminates the
+mTLS connection and forwards the verified client certificate subject. The Backend re-verifies the
+certificate CN so that gateway-injected identity headers are only trusted when the caller is the
+genuine SCM API Gateway.
+
+**Tenant-to-organisation resolution:** every request to a Management Plane route resolves the
+Tenant ID to an internal organisation identifier by querying a dedicated tenant mapping table in
+MySQL. This resolved identifier scopes all downstream database queries and enforces data
+isolation between tenants.
+
+## Request lifecycle
+
+### Synchronous path (affects response latency)
+
+1. **Entry** — the customer application sends an LLM request to the AI Gateway in the Customer
+   Environment.
+
+2. **Auth and config hydration** — the gateway checks Redis for a cached copy of the API key,
+   organisation context, and routing configuration. On a cache hit this is near-instantaneous. On
+   a cache miss the gateway calls the Backend over the private link; the Backend reads from MySQL
+   and returns the hydrated object, which the gateway then stores in Redis.
+
+3. **LLM proxying** — the gateway forwards the request, with any configured transformations, to
+   the target LLM provider. The provider response is streamed back through the gateway.
+
+4. **Response return** — the LLM response is returned to the customer application. The request
+   lifecycle ends here from the client's perspective.
+
+### Asynchronous path (non-blocking, runs after the response is returned)
+
+5. **Metrics write to ClickHouse** — the gateway writes a lightweight analytics record capturing
+   token counts, cost, latency, model, provider, cache status, and trace identifiers, along with
+   a pointer to the full log body. This write is batched and does not affect response latency.
+
+6. **Raw log write to Blob Store** — the gateway writes the complete request and response payload
+   (headers, body, token breakdown) as a structured document. The file path is the same pointer
+   stored in the ClickHouse record in step 5, letting the Backend cross-reference both stores
+   when serving log details.
+
+7. **Usage sync** — the gateway notifies the Backend of updated usage counters, API key
+   exhaustion events, and quota state. This call is non-blocking.
+
+## Data flow between planes
+
+<AccordionGroup>
+<Accordion icon="network-wired" title="AI traffic (fully contained in your environment)">
   All LLM traffic stays within your network boundary:
 
   1. Your application sends requests to the AI Gateway
-  2. The Gateway processes the request (applying routing, caching, guardrails)
-  3. The Gateway forwards the request to the appropriate LLM provider
+  2. The gateway processes the request, applying routing, caching, and guardrails
+  3. The gateway forwards the request to the appropriate LLM provider
   4. Responses from LLMs return through the same path
 
-  **Security Benefit**: Complete isolation of sensitive prompt data and responses
+  Prompt data and responses are never exposed outside your environment.
 </Accordion>
 
-<Accordion icon="database" title="Data Sync (Gateway ↔ Management Plane)">
-  The AI Gateway periodically synchronizes with the Management Plane:
+<Accordion icon="database" title="Config sync (gateway ↔ Management Plane)">
+  The AI Gateway periodically synchronises with the Management Plane:
 
   - **Frequency**: 1-minute heartbeat intervals
-  - **Data Retrieved**: Prompt templates, routing configs, integrations, providers, API keys
-  - **Process**: Deltas (changed items) are fetched, decrypted locally, and the corresponding cache entries are invalidated — they are re-fetched from the Management Plane on next use
-  - **Resilience**: Gateway operates independently between syncs using cached configs
-
-  **Security Benefit**: Continuous operation even during Management Plane disconnection
+  - **Data retrieved**: routing configs, integrations, providers, API keys
+  - **Process**: deltas (changed items) are fetched, decrypted locally, and the corresponding
+    cache entries are invalidated — they are re-fetched on next use
+  - **Resilience**: the gateway operates independently between syncs using cached configs, so it
+    continues serving traffic during a Management Plane disconnection
 </Accordion>
 
-<Accordion icon="clock" title="Cache Behavior">
-  The Gateway holds all configuration objects — API keys, virtual keys, configs, prompts, guardrails — in a local cache so every request is served without a real-time round-trip to the Management Plane. Key points:
+<Accordion icon="clock" title="Cache behaviour">
+  The gateway holds all configuration objects — API keys, virtual keys, configs, guardrails — in
+  a local cache so every request is served without a real-time round-trip to the Management
+  Plane.
 
-  - **Lazy-loaded**: items enter the cache on first use; their TTL resets to 7 days on every re-population, so actively used objects stay fresh automatically.
-  - **Delta invalidation**: every minute the Gateway fetches a list of changed items from the Management Plane and deletes the corresponding cache entries — they are re-fetched on the next request.
-  - **Eviction policy**: use `volatile-lru` so that idle entries are evicted first under memory pressure, preserving the objects your live traffic depends on.
+  - **Lazy-loaded**: items enter the cache on first use; their TTL resets to 7 days on every
+    re-population, so actively used objects stay fresh automatically.
+  - **Delta invalidation**: every minute the gateway fetches a list of changed items from the
+    Management Plane and deletes the corresponding cache entries.
+  - **Eviction policy**: use `volatile-lru` so idle entries are evicted first under memory
+    pressure, preserving the objects your live traffic depends on.
 
   <Card title="Cache Behavior" icon="database" href="/aigw/self-hosting/cache-behavior">
     TTL details, delta sync mechanics, eviction policy, and configuration reference.
   </Card>
 </Accordion>
 
-<Accordion icon="chart-line" title="Analytics Flow (Gateway → Management Plane)">
-  The Gateway sends anonymized metrics to the Analytics Store:
-
-  - **Data Sent**: Non-sensitive operational metrics (model used, token counts, response times)
-  - **Purpose**: Powers analytics dashboards for monitoring performance and costs
-  - **Example**: [View sample analytics data](#sample-files)
-
-  **Security Benefit**: Provides insights without exposing sensitive information
+<Accordion icon="chart-line" title="Analytics (gateway → Management Plane)">
+  The gateway writes anonymised operational metrics — model used, token counts, response times —
+  to ClickHouse. These power the analytics dashboards without exposing prompt or response
+  content.
 </Accordion>
 
-<Accordion icon="files" title="Log Management Options">
-  **Option A: Logs in Your VPC** (Recommended for high-security environments)
-  - Logs stored in your environment's Blob Store
-  - When viewing logs in Dashboard UI, Management Plane requests them from Gateway
+<Accordion icon="files" title="Log management options">
+  **Option A: logs in your environment** (recommended for high-security deployments)
+  - Logs stored in your own Blob Store
+  - When viewing logs in the Dashboard, the Management Plane requests them from the gateway
 
-  **Option B: Logs in AI Gateway Cloud**
-  - Gateway encrypts and sends logs to AI Gateway Log Store
-  - No connections required from the AI Gateway to your environment for viewing logs
-
-  **Security Benefit**: Flexibility to match your compliance requirements
+  **Option B: logs in the Management Plane log store**
+  - The gateway encrypts and forwards logs
+  - No inbound connections to your environment are required to view logs
 </Accordion>
+</AccordionGroup>
 
-## Deployment Architecture
+## Storage ownership
 
-AI Gateway is deployed as containerized workloads using Helm charts for Kubernetes environments, with flexible deployment options for various cloud providers.
+Which component writes and reads each store determines your network security design and access
+control.
 
-### Infrastructure Components
+| Storage System | Written by | Read by | What it holds |
+| :--- | :--- | :--- | :--- |
+| **MySQL** | Backend only | Backend only | Organisation config, workspaces, API keys, routing configs, guardrails, virtual keys, tenant-to-organisation mappings, licensing entitlements |
+| **ClickHouse** | AI Gateway (metrics, guardrail results, feedback) and Backend (audit logs) | Backend (analytics UI, log list, audit log views) | Per-request analytics, guardrail execution outcomes, user feedback scores, management plane change history |
+| **Blob Store** | AI Gateway (async, post-response) | Backend (log detail view only, via pointer from ClickHouse) | Full request and response payloads for every LLM call |
+| **Redis** | AI Gateway (post-cache-miss population, rate limit counters, circuit breaker state) and Backend (cache invalidation on config mutations) | AI Gateway (hot path lookup on every request) | Auth context, routing configs, rate limit counters, circuit breaker state, semantic cache entries |
 
-| Component | Description | Configuration Options |
-|:----------|:------------|:----------------------|
-| **AI Gateway** | Core container running the routing logic | Deployed as stateless containers that can scale horizontally |
-| **Cache System** | Stores routing configs, integrations, providers, and more | Redis (in-cluster, AWS ElastiCache, or custom endpoint) |
-| **Log Storage** | Persistence for request/response data | Multiple options (see below) |
+### ClickHouse split ownership
 
-### Storage Options
+ClickHouse has intentionally split write ownership across the two planes:
+
+- The **AI Gateway** writes to the analytics tables at high volume directly after every request.
+  These writes are asynchronous and bypass the Backend entirely, keeping the write path
+  low-latency.
+- The **Backend** writes only to the audit log table, recording every configuration change made
+  through the Dashboard or API, tagged with the caller's identity and timestamp.
+
+The Backend reads all tables to power the analytics UI, log browsing, and audit log views.
+
+### Redis
+
+Redis is the caching layer between the AI Gateway and the Backend. It is the primary mechanism by
+which the gateway avoids a synchronous Backend call on every request.
+
+**What the AI Gateway stores:**
+
+- Hydrated API key and organisation context, populated after a cache-miss Backend call
+- Routing configurations, guardrail definitions, and virtual key credentials
+- Rate limit counters, tracked as atomic per-key and per-organisation windows
+- Circuit breaker state, tracking per-provider failure and recovery status
+- Semantic cache entries for prompt similarity matching
+
+**What the Backend does:**
+
+- On every configuration mutation — an API key rotation, config update, or workspace change — the
+  Backend invalidates the relevant Redis entry, forcing the next gateway request for that key to
+  re-fetch fresh data from MySQL.
+- The Backend also uses Redis for internal background job coordination: analytics provisioning,
+  alert dispatching, and usage syncing.
+
+### Blob Store
+
+Blob Store is the raw log storage layer. It holds the full-fidelity record of every LLM
+interaction and is deliberately kept separate from ClickHouse, which holds only lightweight
+analytics metrics.
+
+Every LLM call results in a structured document containing the complete request body, response
+body, headers, and token breakdown. The gateway writes it asynchronously after returning the
+response to the caller, so the write does not affect latency, and stores the file path as a
+pointer in the corresponding ClickHouse record.
+
+The Backend does not read Blob Store in the regular request flow. It reads only on demand, when a
+user opens a log detail view: it retrieves the storage pointer from ClickHouse and fetches the
+corresponding document. The two stores are always used together for log detail retrieval; neither
+is queried in isolation.
+
+Supported backends include AWS S3, Google Cloud Storage, Azure Blob Storage, and any
+S3-compatible store such as MinIO.
+
+## Deploying the gateway
+
+The AI Gateway is deployed as containerised workloads using Helm charts for Kubernetes, with
+options for the major cloud providers.
+
+### Storage options
 
 <Tabs>
   <Tab title="Object Storage">
     S3-compatible storage options including:
     - AWS S3 (standard credentials or assumed roles)
-    - Google Cloud Storage (S3 compatible interoperability mode)
+    - Google Cloud Storage (S3-compatible interoperability mode)
     - Azure Blob Storage (key, managed identity, or Entra ID)
     - Any S3-compatible Blob Storage
   </Tab>
   <Tab title="Document DB">
-    MongoDB/DocumentDB for structured log storage with options for:
-    - Direct connection string with username/password
+    MongoDB/DocumentDB for structured log storage, with options for:
+    - Direct connection string with username and password
     - Certificate-based authentication (PEM)
     - Connection pooling configurations
   </Tab>
-
 </Tabs>
 
-### Authentication Methods
+### Authentication methods
 
 <Tabs>
   <Tab title="Cloud Provider IAM">
@@ -140,108 +277,92 @@ AI Gateway is deployed as containerized workloads using Helm charts for Kubernet
   </Tab>
 </Tabs>
 
-```mermaid
-flowchart LR
-    subgraph "Customer VPC"
-        app["Customer Application"] --> gw["AI Gateway"]
-        gw <--> cache["Cache Store"]
-        gw --> logs["Log Storage"]
-        gw --> llm["LLM Providers"]
-    end
+### Infrastructure requirements
 
-    subgraph "AI Gateway VPC"
-        cp["Control Plane"]
-    end
+- **Kubernetes cluster**: K8s 1.20+ with Helm 3.x
+- **Outbound network**: HTTPS access to Management Plane endpoints
+- **Container registry access**: for pulling gateway container images
+- **Recommended resources per gateway instance**:
+  - CPU: 1–2 cores
+  - Memory: 2–4 GB
+  - Storage: dependent on logging configuration
 
-    gw -- "Config Sync\n(Outbound HTTPS)" --> cp
-    gw -- "Anonymous Metrics\n(Outbound HTTPS)" --> cp
-    cp -- "Fetch individual logs\n(Inbound HTTPS)" --> gw
-```
-
-### Infrastructure Requirements
-
-- **Kubernetes Cluster**: K8s 1.20+ with Helm 3.x
-- **Outbound Network**: HTTPS access to Management Plane endpoints
-- **Container Registry Access**: For pulling gateway container images
-- **Recommended Resource Requirements**:
-  - CPU: 1-2 cores per gateway instance
-  - Memory: 2-4GB per gateway instance
-  - Storage: Dependent on logging configuration
-
-## Data Security & Encryption
+## Data security and encryption
 
 <Tabs>
   <Tab title="Data Residency">
-    **Your Sensitive Data Stays in Your VPC**
+    **Your sensitive data stays in your environment**
     - All prompt content and LLM responses remain within your network
-    - Only anonymized metrics data cross network boundaries
-    - Log storage location is configurable based on your requirements
+    - Only anonymised metrics cross network boundaries
+    - Log storage location is configurable
   </Tab>
   <Tab title="Encryption Methods">
-    **Multi-layered Encryption Approach**
+    **Multi-layered encryption**
     - All data in the Management Plane is encrypted at rest
-    - Communication between planes uses TLS 1.3 encryption in transit
+    - Communication between planes uses TLS 1.3 in transit
     - Sensitive data uses envelope encryption
-    - Optional BYOK (Bring Your Own Key) support with AWS KMS integration
+    - Optional BYOK (bring your own key) support with AWS KMS
   </Tab>
   <Tab title="Access Controls">
-    **Defense-in-Depth Security Model**
-    - Network-level controls limit Management Plane access to authorized IPs
-    - Role-based access control for administrative functions
+    **Defence in depth**
+    - Network-level controls limit Management Plane access to authorised IPs
+    - Scope-based access control for administrative functions
     - Audit logging of all administrative actions
     - Access tokens are short-lived with automatic rotation
   </Tab>
 </Tabs>
 
-## Advantages of Hybrid Architecture
+## Why the architecture is split this way
 
-| Benefit | Technical Implementation | Business Value |
-|:--------|:------------------------|:---------------|
-| **Security & Compliance** | - Sensitive data never leaves VPC<br />- Configurable encryption methods<br />- Flexible authentication options | - Meets data residency requirements<br />- Supports regulated industries<br />- Simplifies security reviews |
-| **Operational Efficiency** | - No database management overhead<br />- Automatic model config updates<br />- Horizontally scalable architecture | - Low operational burden<br />- Always up-to-date with LLM ecosystem<br />- Scales with your traffic patterns |
-| **Deployment Flexibility** | - Kubernetes-native deployment<br />- Support for major cloud providers<br />- Multiple storage backend options | - Fits into existing infrastructure<br />- Avoids vendor lock-in<br />- Customizable to specific needs |
-| **Developer Experience** | - OpenAI-compatible API<br />- Simple integration patterns<br />- Comprehensive observability | - Minimal code changes needed<br />- Smooth developer onboarding<br />- Full visibility into system behavior |
+<AccordionGroup>
+<Accordion title="Why the transaction database lives in the Management Plane">
+  1. **Real-time model updates**: LLM providers frequently change model parameters, pricing, and
+     availability. Centralising this data ensures every gateway operates with current
+     information.
 
-## Technical Rationale
+  2. **Feature velocity**: new capabilities can ship without requiring a customer-side
+     deployment.
 
-<Accordion title="Why Maintain Transaction DB in Management Plane?">
-  1. **Real-time Model Updates**: LLM providers frequently change model parameters, pricing, and availability. Centralizing this data ensures all gateways operate with current information.
-
-  2. **Feature Velocity**: AI landscape evolves rapidly. Management Plane architecture allows the AI Gateway to deliver new features multiple times per week without requiring customer-side deployments.
-
-  3. **Operational Efficiency**: Eliminates need for customers to maintain complex database infrastructure solely for non-sensitive object management.
+  3. **Operational efficiency**: you do not maintain database infrastructure solely for
+     non-sensitive object management.
 </Accordion>
 
-<Accordion title="Why Cache Objects Locally?">
-  1. **Performance**: Eliminates network latency during LLM requests by having all routing and configs data available locally.
+<Accordion title="Why objects are cached locally">
+  1. **Performance**: eliminates network latency during LLM requests by keeping routing and
+     config data available locally.
 
-  2. **Resilience**: Gateway continues operating even if temporarily disconnected from Management Plane.
+  2. **Resilience**: the gateway keeps operating even when temporarily disconnected from the
+     Management Plane.
 
-  3. **Security**: Reduces attack surface by minimizing runtime external dependencies.
+  3. **Security**: reduces attack surface by minimising runtime external dependencies.
 </Accordion>
+</AccordionGroup>
 
-## Sample Files
+## What SCM deployment changes
 
-These samples demonstrate the typical data patterns flowing between systems:
+The storage write paths — how the gateway writes to ClickHouse and Blob Store, and how the
+Backend writes to MySQL — are identical to a standard deployment. SCM mode changes the
+authentication model and the API surface, not the underlying data architecture.
 
-<CardGroup>
-  <Card title="Sample Log File (4KB)" href="https://github.com/Portkey-AI/docs-core/tree/main/images/enterprise/private-cloud-deployments/architecture/sample_log_file.json" icon="file-code"/>
-  <Card title="Sample Metric File (3KB)" href="https://github.com/Portkey-AI/docs-core/tree/main/images/enterprise/private-cloud-deployments/architecture/sample_metric_file.json" icon="chart-line"/>
-</CardGroup>
+| Aspect | Standard deployment | SCM deployment |
+| :--- | :--- | :--- |
+| Auth authority | Gateway-issued API keys and session cookies | SCM API Gateway injects identity headers |
+| User identity | Persisted in the Backend user store | Opaque JWT subject, never stored in the Backend |
+| Access control | Role-based membership tables per organisation and workspace | Scope-based, evaluated per-request from the injected header |
+| Organisation resolution | API key lookup | Tenant ID mapped to organisation in MySQL |
+| Licensing | Standard subscription billing | Per-tenant entitlement table with device and quota tracking |
+| mTLS boundary | Not enforced | Certificate CN verified at the Management Plane entry point |
+| User management | Managed in the gateway | Managed entirely in Strata Cloud Manager — the AI Gateway holds no user records |
+| API surface | Full standard route set | SCM-scoped workspace and admin routes only |
+| Storage mechanics | Identical to SCM | Identical to standard |
 
-## Resources & Next Steps
+## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Helm Repository" href="https://github.com/Portkey-AI/helm" icon="github"/>
-  <Card title="Enterprise Changelog" href="/aigw/changelog/enterprise" icon="clock-rotate-left"/>
-  <Card title="AWS Deployment Guide" href="/product/enterprise-offering/private-cloud-deployments/aws" icon="aws"/>
-  <Card title="Azure Deployment Guide" href="/product/enterprise-offering/private-cloud-deployments/azure" icon="microsoft"/>
+  <Card title="Gateway Registration" icon="key" href="/aigw/self-hosting/hybrid-deployments/gateway-registration" />
+  <Card title="Cache Behavior" icon="database" href="/aigw/self-hosting/cache-behavior" />
+  <Card title="AWS (EKS)" icon="aws" href="/aigw/self-hosting/hybrid-deployments/aws/eks" />
+  <Card title="Azure (AKS)" icon="microsoft" href="/aigw/self-hosting/hybrid-deployments/azure/aks" />
+  <Card title="GCP" icon="google" href="/aigw/self-hosting/hybrid-deployments/gcp" />
+  <Card title="Enterprise Changelog" icon="clock-rotate-left" href="/aigw/changelog/enterprise" />
 </CardGroup>
-
-## Have Questions?
-
-Our solution architects are available to discuss your specific deployment requirements and security needs.
-
-<Card title="Schedule Architecture Discussion" icon="calendar-check" href="https://portkey.wiki/demo-27">
-  Book a personalized consultation with our enterprise team to explore how the AI Gateway's architecture can be tailored to your organisation's specific requirements.
-</Card>

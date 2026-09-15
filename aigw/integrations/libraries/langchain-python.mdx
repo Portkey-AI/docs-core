@@ -19,7 +19,7 @@ from langchain_openai import ChatOpenAI
 model = ChatOpenAI(
     model="@openai-prod/gpt-4o",       # Provider slug from Model Catalog
     base_url="https://aigw.portkey.ai/v1",
-    api_key="PORTKEY_API_KEY"          # Your Portkey API key
+    api_key="PORTKEY_API_KEY"          # Your AI Gateway API key
 )
 
 response = model.invoke("Tell me a joke")
@@ -56,7 +56,7 @@ Langchain handles application orchestration. The AI Gateway adds production feat
 ### 1. Install Packages
 
 ```bash
-pip install langchain-openai portkey-ai
+pip install langchain-openai
 ```
 
 ### 2. Add Provider in Model Catalog
@@ -87,7 +87,7 @@ model = ChatOpenAI(
     api_key="OPENAI_API_KEY"
 )
 
-# After (via Portkey)
+# After (via the AI Gateway)
 model = ChatOpenAI(
     model="@openai-prod/gpt-4o",
     base_url="https://aigw.portkey.ai/v1",
@@ -214,10 +214,10 @@ print(response.tool_calls)
 For dynamic model routing based on query complexity or task type, use **AI Gateway Configs** with conditional routing:
 
 ```python
+import json
 from langchain_openai import ChatOpenAI
-from portkey_ai import createHeaders
 
-# Define routing config (created in Portkey dashboard)
+# Define routing config (created in Strata Cloud Manager)
 config = {
   "strategy": {
     "mode": "conditional",
@@ -249,7 +249,7 @@ model = ChatOpenAI(
     model="gpt-4o",  # Default model
     base_url="https://aigw.portkey.ai/v1",
     api_key="PORTKEY_API_KEY",
-    default_headers=createHeaders(config=config)
+    default_headers={"x-portkey-config": json.dumps(config)}
 )
 
 # Route to cheap model
@@ -324,6 +324,7 @@ story = route_by_task("Write a sci-fi story", task_type="creative")
 Use different models for different agent steps:
 
 ```python
+import json
 from langchain.agents import create_agent
 from langchain.tools import tool
 
@@ -336,7 +337,7 @@ model = ChatOpenAI(
     model="gpt-4o",
     base_url="https://aigw.portkey.ai/v1",
     api_key="PORTKEY_API_KEY",
-    default_headers=createHeaders(config=config)
+    default_headers={"x-portkey-config": json.dumps(config)}
 )
 
 agent = create_agent(model, tools=[complex_calculation])
@@ -372,15 +373,14 @@ All routing decisions are tracked in the AI Gateway with full observability—se
 For production features like fallbacks, caching, and load balancing, use AI Gateway Configs:
 
 ```python
-from portkey_ai import createHeaders
 
 model = ChatOpenAI(
     model="@openai-prod/gpt-4o",
     base_url="https://aigw.portkey.ai/v1",
     api_key="PORTKEY_API_KEY",
-    default_headers=createHeaders(
-        config="pc_your_config_id"  # Created in Portkey dashboard
-    )
+    default_headers={
+        "x-portkey-config": "pc_your_config_id",  # Created in Strata Cloud Manager
+    }
 )
 ```
 
@@ -396,56 +396,22 @@ Create embeddings via the AI Gateway:
 from langchain_openai import OpenAIEmbeddings
 
 embeddings = OpenAIEmbeddings(
-    model="text-embedding-3-small",
+    model="@openai-prod/text-embedding-3-small",
     base_url="https://aigw.portkey.ai/v1",
     api_key="PORTKEY_API_KEY",
-    default_headers={"x-portkey-provider": "@openai-prod"}
 )
 
 vectors = embeddings.embed_documents(["Hello world", "Goodbye world"])
 ```
 
 <Info>
-The AI Gateway supports OpenAI embeddings via `OpenAIEmbeddings`. For other providers (Cohere, Voyage), use the **AI Gateway SDK directly** ([docs](/api-reference/inference-api/embeddings)).
+The AI Gateway supports OpenAI embeddings via `OpenAIEmbeddings`. For other providers (Cohere, Voyage), call the [embeddings endpoint](/aigw/api-reference/inference-api/embeddings) directly.
 </Info>
 
 ## Prompt Management
 
 Use prompts from the AI Gateway's Prompt Library:
 
-```python
-import os
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
-from portkey_ai import Portkey
-
-PORTKEY_API_KEY = os.environ.get("PORTKEY_API_KEY")
-client = Portkey(api_key=PORTKEY_API_KEY)
-
-# Render prompt from Portkey
-rendered_prompt = client.prompts.render(
-    prompt_id="pp-story-generator",
-    variables={"character": "brave knight", "object": "magic sword"}
-).data
-
-# Convert to Langchain messages
-langchain_messages = []
-if rendered_prompt and rendered_prompt.prompt:
-    for msg in rendered_prompt.prompt:
-        if msg.get("role") == "user":
-            langchain_messages.append(HumanMessage(content=msg.get("content")))
-        elif msg.get("role") == "system":
-            langchain_messages.append(SystemMessage(content=msg.get("content")))
-
-# Use with Langchain model
-model = ChatOpenAI(
-    model="@openai-prod/gpt-4o",
-    base_url="https://aigw.portkey.ai/v1",
-    api_key="PORTKEY_API_KEY"
-)
-
-response = model.invoke(langchain_messages)
-```
 
 ## Migration from Direct OpenAI
 
@@ -466,7 +432,7 @@ model = ChatOpenAI(
 model = ChatOpenAI(
     model="@openai-prod/gpt-4o",      # Add provider slug
     base_url="https://aigw.portkey.ai/v1", # Add this
-    api_key="PORTKEY_API_KEY",         # Change to Portkey key
+    api_key="PORTKEY_API_KEY",         # Change to AI Gateway API key
     temperature=0.7                     # Keep existing params
 )
 ```
@@ -493,9 +459,3 @@ model = ChatOpenAI(
     Add PII detection and content filtering
   </Card>
 </CardGroup>
-
-For complete SDK documentation:
-
-<Card title="SDK Reference" icon="code" href="/api-reference/sdk/list">
-  Complete AI Gateway SDK documentation
-</Card>

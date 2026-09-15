@@ -12,7 +12,7 @@ The AI Gateway enhances CrewAI with production-readiness features, turning your 
 - **Complete observability** of every agent step, tool use, and interaction
 - **Built-in reliability** with fallbacks, retries, and load balancing
 - **Cost tracking and optimization** to manage your AI spend
-- **Access to 1600+ LLMs** through a single integration
+- **Access to 3,000+ LLMs** through a single integration
 - **Guardrails** to keep agent behavior safe and compliant
 - **Version-controlled prompts** for consistent agent performance
 
@@ -25,7 +25,7 @@ The AI Gateway enhances CrewAI with production-readiness features, turning your 
 <Steps>
 <Step title="Install the required packages">
 ```bash
-pip install -U crewai portkey-ai
+pip install -U crewai
 ```
 </Step>
 
@@ -36,34 +36,6 @@ Create an AI Gateway API key with optional budget/rate limits from the [Strata C
 <Step title="Configure CrewAI with the AI Gateway">
 The integration is simple - you just need to update the LLM configuration in your CrewAI setup:
 
-```python
-from crewai import LLM
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
-# Create an LLM instance with Portkey integration
-gpt_llm = LLM(
-    model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_LLM_PROVIDER",
-        trace_id="unique-trace-id",               # Optional, for request tracing
-    )
-)
-
-#Use them in your Crew Agents like this:
-
-	@agent
-	def lead_market_analyst(self) -> Agent:
-		return Agent(
-			config=self.agents_config['lead_market_analyst'],
-			verbose=True,
-			memory=False,
-			llm=gpt_llm
-		)
-
-```
 </Step>
 </Steps>
 
@@ -79,16 +51,14 @@ The AI Gateway provides comprehensive observability for your CrewAI agents, help
 Traces provide a hierarchical view of your crew's execution, showing the sequence of LLM calls, tool invocations, and state transitions.
 
 ```python
-# Add trace_id to enable hierarchical tracing in Portkey
+# Add trace_id to enable hierarchical tracing in the AI Gateway
 portkey_llm = LLM(
-    model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        trace_id="unique-session-id"  # Add unique trace ID
-    )
+    model="@YOUR_OPENAI_PROVIDER/gpt-4o",
+    base_url="https://aigw.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    extra_headers={
+        "x-portkey-trace-id": "unique-session-id",  # Add unique trace ID
+    }
 )
 ```
   </Tab>
@@ -122,20 +92,19 @@ You can filter and segment all metrics by custom metadata to analyze specific cr
 Add custom metadata to your CrewAI LLM configuration to enable powerful filtering and segmentation:
 
 ```python
+import json
 portkey_llm = LLM(
-    model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        metadata={
+    model="@YOUR_OPENAI_PROVIDER/gpt-4o",
+    base_url="https://aigw.portkey.ai/v1",
+    api_key="YOUR_PORTKEY_API_KEY",
+    extra_headers={
+        "x-portkey-metadata": json.dumps({
             "crew_type": "research_crew",
             "environment": "production",
             "_user": "user_123",   # Special _user field for user analytics
             "request_source": "mobile_app"
-        }
-    )
+        }),
+    }
 )
 ```
 
@@ -149,40 +118,6 @@ When running crews in production, things can go wrong - API rate limits, network
 
 It's simple to enable fallback in your CrewAI setup by using an AI Gateway Config:
 
-```python
-from crewai import LLM
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
-# Create LLM with fallback configuration
-portkey_llm = LLM(
-    model="gpt-4o",
-    max_tokens=1000,
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        config={
-            "strategy": {
-                "mode": "fallback"
-            },
-            "targets": [
-                {
-                    "provider": "openai",
-                    "api_key": "YOUR_OPENAI_API_KEY",
-                    "override_params": {"model": "gpt-4o"}
-                },
-                {
-                    "provider": "anthropic",
-                    "api_key": "YOUR_ANTHROPIC_API_KEY",
-                    "override_params": {"model": "claude-3-opus-20240229"}
-                }
-            ]
-        }
-    )
-)
-
-# Use this LLM configuration with your agents
-```
 
 This configuration will automatically try Claude if the GPT-4o request fails, ensuring your crew can continue operating.
 
@@ -223,43 +158,6 @@ This visual environment makes it easier to craft effective prompts for each step
   <Tab title="Using Prompt Templates">
 The Prompt Render API retrieves your prompt templates with all parameters configured:
 
-```python
-from crewai import Agent, LLM
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL, Portkey
-
-# Initialize Portkey admin client
-portkey_admin = Portkey(api_key="YOUR_PORTKEY_API_KEY")
-
-# Retrieve prompt using the render API
-prompt_data = portkey_client.prompts.render(
-    prompt_id="YOUR_PROMPT_ID",
-    variables={
-        "agent_role": "Senior Research Scientist",
-    }
-)
-
-backstory_agent_prompt=prompt_data.data.messages[0]["content"]
-
-# Set up LLM with Portkey integration
-portkey_llm = LLM(
-    model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER"
-    )
-)
-
-# Create agent using the rendered prompt
-researcher = Agent(
-    role="Senior Research Scientist",
-    goal="Discover groundbreaking insights about the assigned topic",
-    backstory=backstory_agent,  # Use the rendered prompt
-    verbose=True,
-    llm=portkey_llm
-)
-```
   </Tab>
 
   <Tab title="Prompt Versioning">
@@ -326,34 +224,6 @@ The AI Gateway's guardrails add protections for both inputs and outputs.
 
 **Implementing Guardrails**
 
-```python
-from crewai import Agent, LLM
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
-# Create LLM with guardrails
-portkey_llm = LLM(
-    model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        config={
-            "input_guardrails": ["guardrails-id-xxx", "guardrails-id-yyy"],
-            "output_guardrails": ["guardrails-id-zzz"]
-        }
-    )
-)
-
-# Create agent with guardrailed LLM
-researcher = Agent(
-    role="Senior Research Scientist",
-    goal="Discover groundbreaking insights about the assigned topic",
-    backstory="You are an expert researcher with deep domain knowledge.",
-    verbose=True,
-    llm=portkey_llm
-)
-```
 
 The AI Gateway's guardrails can:
 - Detect and redact PII in both inputs and outputs
@@ -374,36 +244,6 @@ Track individual users through your CrewAI agents using the AI Gateway's metadat
 
 Metadata allows you to associate custom data with each request, enabling filtering, segmentation, and analytics. The special `_user` field is specifically designed for user tracking.
 
-```python
-from crewai import Agent, LLM
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
-# Configure LLM with user tracking
-portkey_llm = LLM(
-    model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        metadata={
-            "_user": "user_123",  # Special _user field for user analytics
-            "user_tier": "premium",
-            "user_company": "Acme Corp",
-            "session_id": "abc-123"
-        }
-    )
-)
-
-# Create agent with tracked LLM
-researcher = Agent(
-    role="Senior Research Scientist",
-    goal="Discover groundbreaking insights about the assigned topic",
-    backstory="You are an expert researcher with deep domain knowledge.",
-    verbose=True,
-    llm=portkey_llm
-)
-```
 
 **Filter Analytics by User**
 
@@ -425,69 +265,11 @@ Implement caching to make your CrewAI agents more efficient and cost-effective:
 
 <Tabs>
   <Tab title="Simple Caching">
-```python
-from crewai import Agent, LLM
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
-# Configure LLM with simple caching
-portkey_llm = LLM(
-    model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        config={
-            "cache": {
-                "mode": "simple"
-            }
-        }
-    )
-)
-
-# Create agent with cached LLM
-researcher = Agent(
-    role="Senior Research Scientist",
-    goal="Discover groundbreaking insights about the assigned topic",
-    backstory="You are an expert researcher with deep domain knowledge.",
-    verbose=True,
-    llm=portkey_llm
-)
-```
 
 Simple caching performs exact matches on input prompts, caching identical requests to avoid redundant model executions.
   </Tab>
 
   <Tab title="Semantic Caching">
-```python
-from crewai import Agent, LLM
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
-# Configure LLM with semantic caching
-portkey_llm = LLM(
-    model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER",
-        config={
-            "cache": {
-                "mode": "semantic"
-            }
-        }
-    )
-)
-
-# Create agent with semantically cached LLM
-researcher = Agent(
-    role="Senior Research Scientist",
-    goal="Discover groundbreaking insights about the assigned topic",
-    backstory="You are an expert researcher with deep domain knowledge.",
-    verbose=True,
-    llm=portkey_llm
-)
-```
 
 Semantic caching considers the contextual similarity between input requests, caching responses for semantically similar inputs.
   </Tab>
@@ -497,41 +279,6 @@ Semantic caching considers the contextual similarity between input requests, cac
 
 CrewAI supports multiple LLM providers, and the AI Gateway extends this capability by providing access to over 200 LLMs through a unified interface. You can easily switch between different models without changing your core agent logic:
 
-```python
-from crewai import Agent, LLM
-from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
-
-# Set up LLMs with different providers
-openai_llm = LLM(
-    model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_OPENAI_PROVIDER"
-    )
-)
-
-anthropic_llm = LLM(
-    model="claude-3-5-sonnet-latest",
-    max_tokens=1000,
-    base_url=PORTKEY_GATEWAY_URL,
-    api_key="dummy",
-    extra_headers=createHeaders(
-        api_key="YOUR_PORTKEY_API_KEY",
-        provider="@YOUR_ANTHROPIC_PROVIDER"
-    )
-)
-
-# Choose which LLM to use for each agent based on your needs
-researcher = Agent(
-    role="Senior Research Scientist",
-    goal="Discover groundbreaking insights about the assigned topic",
-    backstory="You are an expert researcher with deep domain knowledge.",
-    verbose=True,
-    llm=openai_llm  # Use anthropic_llm for Anthropic
-)
-```
 
 The AI Gateway provides access to LLMs from providers including:
 
@@ -596,12 +343,11 @@ After setting up your AI Gateway API key with the attached config, connect it to
 
 ```python
 from crewai import Agent, LLM
-from portkey_ai import PORTKEY_GATEWAY_URL
 
 # Configure LLM with your API key
 portkey_llm = LLM(
     model="gpt-4o",
-    base_url=PORTKEY_GATEWAY_URL,
+    base_url="https://aigw.portkey.ai/v1",
     api_key="YOUR_PORTKEY_API_KEY"
 )
 
@@ -683,25 +429,6 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
     - [API Key Management API](/api-reference/admin-api/control-plane/api-keys/create-api-key)
 
     Example using Python SDK:
-    ```python
-    from portkey_ai import Portkey
-
-    portkey = Portkey(api_key="YOUR_ADMIN_API_KEY")
-
-    api_key = portkey.api_keys.create(
-        name="engineering-team",
-        type="organisation",
-        workspace_id="YOUR_WORKSPACE_ID",
-        defaults={
-            "config_id": "your-config-id",
-            "metadata": {
-                "environment": "production",
-                "department": "engineering"
-            }
-        },
-        scopes=["logs.view", "configs.read"]
-    )
-    ```
 
     For detailed key management instructions, see our [API Keys documentation](/api-reference/admin-api/control-plane/api-keys/create-api-key).
   </Accordion>
@@ -733,7 +460,7 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
 
 <AccordionGroup>
   <Accordion title="How does the AI Gateway enhance CrewAI?">
-    the AI Gateway adds production-readiness to CrewAI through comprehensive observability (traces, logs, metrics), reliability features (fallbacks, retries, caching), and access to 1600+ LLMs through a unified interface. This makes it easier to debug, optimize, and scale your agent applications.
+    The AI Gateway adds production-readiness to CrewAI through comprehensive observability (traces, logs, metrics), reliability features (fallbacks, retries, caching), and access to 3,000+ LLMs through a unified interface. This makes it easier to debug, optimize, and scale your agent applications.
   </Accordion>
 
   <Accordion title="Can I use the AI Gateway with existing CrewAI applications?">
@@ -741,7 +468,7 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
   </Accordion>
 
   <Accordion title="Does the AI Gateway work with all CrewAI features?">
-    the AI Gateway supports all CrewAI features, including agents, tools, human-in-the-loop workflows, and all task process types (sequential, hierarchical, etc.). It adds observability and reliability without limiting any of the framework's functionality.
+    The AI Gateway supports all CrewAI features, including agents, tools, human-in-the-loop workflows, and all task process types (sequential, hierarchical, etc.). It adds observability and reliability without limiting any of the framework's functionality.
   </Accordion>
 
   <Accordion title="Can I track usage across multiple agents in a crew?">
@@ -749,7 +476,7 @@ Here's a basic configuration to route requests to OpenAI, specifically using GPT
   </Accordion>
 
   <Accordion title="How do I filter logs and traces for specific crew runs?">
-    the AI Gateway allows you to add custom metadata to your LLM configuration, which you can then use for filtering. Add fields like `crew_name`, `crew_type`, or `session_id` to easily find and analyze specific crew executions.
+    The AI Gateway allows you to add custom metadata to your LLM configuration, which you can then use for filtering. Add fields like `crew_name`, `crew_type`, or `session_id` to easily find and analyze specific crew executions.
   </Accordion>
 
   <Accordion title="Can I use my own API keys with the AI Gateway?">

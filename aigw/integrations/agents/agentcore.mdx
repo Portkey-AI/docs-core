@@ -6,7 +6,7 @@ description: "Run gateway-powered agents inside Amazon Bedrock AgentCore"
 Amazon Bedrock AgentCore is AWS's agentic platform for executing, scaling, and governing AI agents. Because AgentCore can host any OpenAI-compatible framework (Strands, OpenAI Agents, LangGraph, Google ADK, custom code), you can plug Prisma AIRS AI Gateway in as the LLM gateway to unlock multi-provider routing, deep observability, and enterprise guardrails without changing your agent logic.
 
 **What you get with this integration**
-- **Unified gateway** for 1600+ models while keeping AgentCore's runtime, gateway, and memory services intact
+- **Unified gateway** for 3,000+ models while keeping AgentCore's runtime, gateway, and memory services intact
 - **Production telemetry** with traces, logs, and metrics for every AgentCore invocation via AI Gateway headers and metadata
 - **Reliability controls** (fallbacks, load balancing, timeouts) that shield your agents from provider failures
 - **Centralized governance** over provider keys, spend, and access policies using AI Gateway API keys across AgentCore environments
@@ -62,8 +62,8 @@ The CLI will scaffold your agent project with the selected framework and install
 After creation, add the AI Gateway's SDK to enable multi-provider routing:
 
 ```bash
-pip install portkey-ai    # For Python projects
-npm install portkey-ai    # For TypeScript projects
+pip install openai # For Python projects
+npm install openai # For TypeScript projects
 ```
   </Step>
   <Step title="Set up AI Gateway credentials">
@@ -109,21 +109,19 @@ Store your AI Gateway API key in AWS Secrets Manager so your AgentCore runtime c
 import os
 from agents import Agent, Runner, set_default_openai_client, set_default_openai_api
 from openai import AsyncOpenAI
-from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
-# 1. Route LLM calls through Portkey
+# 1. Route LLM calls through the AI Gateway
 # This works with any framework that accepts an OpenAI-compatible client
-portkey_client = AsyncOpenAI(
+gateway_client = AsyncOpenAI(
     base_url="https://aigw.portkey.ai/v1",
     api_key=os.environ["PORTKEY_API_KEY"],
     default_headers={
-        "x-portkey-provider": "openai",                # or anthropic, google-ai, aws-bedrock, etc.
-        "x-portkey-trace-id": "agentcore-session",     # groups all requests in Portkey logs
+        "x-portkey-trace-id": "agentcore-session",     # groups all requests in AI Gateway logs
         "x-portkey-metadata": {"agent": "support", "environment": "production"}
     }
 )
-set_default_openai_client(portkey_client, use_for_tracing=False)
+set_default_openai_client(gateway_client, use_for_tracing=False)
 set_default_openai_api("chat_completions")
 
 # 2. Define your framework-specific agent object
@@ -131,7 +129,7 @@ set_default_openai_api("chat_completions")
 agent = Agent(
     name="Support Assistant",
     instructions="Answer user questions using company knowledge.",
-    model="gpt-4o"  # model hint – actual routing is decided by Portkey config
+    model="@openai/gpt-4o"  # model hint – actual routing is decided by AI Gateway config
 )
 
 # 3. Expose an AgentCore entrypoint
@@ -205,7 +203,7 @@ Because AgentCore supports any OpenAI-compatible library, you can reuse the exac
 
 ### Observability
 Attach trace IDs and metadata directly from your AgentCore entrypoint so the AI Gateway groups every tool call, LLM exchange, and retry under a single execution record.
-Apply AI Gateway Configs for fallbacks, retries, load balancing, or conditional routing to keep AgentCore agents resilient to provider hiccups. You can attach the config globally via the API key or per-request via `createHeaders`.
+Apply AI Gateway Configs for fallbacks, retries, load balancing, or conditional routing to keep AgentCore agents resilient to provider hiccups. You can attach the config globally via the API key or per-request via the `x-portkey-config` header.
 
 ### Model interoperability
 Switch providers without touching your AgentCore business logic by swapping the AI Gateway config or provider slug (`@openai-prod`, `@anthropic-prod`, `@gemini-fast`, etc.). The agent definition stays unchanged.
