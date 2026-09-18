@@ -11,6 +11,27 @@ A gateway API key, the key you send as `Authorization: Bearer $API_KEY` on infer
 
 You obtain an Admin API token by authenticating a **service account** against the Palo Alto Networks authentication service. The token carries the ID of the tenant service group (TSG) it was scoped to, and every request made with it is routed to that tenant.
 
+```mermaid
+sequenceDiagram
+    participant Admin as Administrator
+    participant SCM as Strata Cloud Manager
+    participant App as Your script or CI job
+    participant Auth as auth.apps.paloaltonetworks.com
+    participant API as Admin API
+
+    Admin->>SCM: Create a service account
+    SCM-->>Admin: Client ID, Client Secret, TSG ID
+    Admin->>App: Store the three values as secrets
+
+    App->>Auth: POST /oauth2/access_token<br/>basic auth, scope=tsg_id:TSG_ID
+    Auth-->>App: access_token, expires_in 900
+
+    loop Within the next 15 minutes
+        App->>API: Authorization: Bearer access_token
+        API-->>App: Resources of that tenant
+    end
+```
+
 ## What you need
 
 Before you can request a token, three values must exist. All three come from Strata Cloud Manager.
@@ -67,7 +88,7 @@ Service accounts are created in Strata Cloud Manager, through Common Services Id
     {/* TODO(screenshot): Client Credentials screen with Download CSV File */}
   </Step>
   <Step title="Note the TSG ID">
-    Select **Next**. The display name of the service account is formatted as `<ServiceAccountName>@<tsg_id>.iam.panserviceaccount`.
+    Select **Next**. The display name of the service account is formatted as `<ServiceAccountName>@<tsg_id>.iam.panserviceaccount.com`.
 
     Every service account of a parent tenant carries the parent TSG ID, and every service account of a child tenant carries the child TSG ID. Take note of the `tsg_id`, because you pass it on every token request.
 
@@ -105,8 +126,18 @@ curl -d "grant_type=client_credentials&scope=tsg_id:<tsg_id>" \
 
 The service account you authenticate with must belong to the TSG named on `scope`, or to one of its ancestors.
 
+A successful response carries the token and its lifetime in seconds:
+
+```json
+{
+  "access_token": "eyJhbGciOi...",
+  "token_type": "Bearer",
+  "expires_in": 900
+}
+```
+
 <Note>
-**Access tokens have a lifespan of 15 minutes.** Request a new token rather than caching one for the life of a long-running job, and refresh it before each batch of calls in an automation.
+**Access tokens have a lifespan of 15 minutes.** Read `expires_in` rather than hard-coding the number, cache the token in memory for the life of that window, and refresh it about a minute before it lapses. Requesting a fresh token per API call is unnecessary; carrying one across a long-running job is what fails.
 </Note>
 
 ## Call an Admin API endpoint
@@ -163,18 +194,36 @@ You can do this from the multitenant UI, or with the Identity and Access Managem
 
 ```sh Grant b_svc access to Tenant 1A
 curl -d '{"role":"superuser","resource":"prn:18::::","principal":"b_svc@15.iam.panserviceaccount.com"}' \
-  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN_WITH_TSG_15>" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
-  -X POST https://api.sase.paloaltonetworks.com/access_policies
+  -X POST https://api.strata.paloaltonetworks.com/iam/v1/access_policies
 ```
 
 The token you authenticate this call with must itself be scoped to the TSG that owns the resource, `15` in the example above.
+
+The same endpoint grants a person a role on a tenant, with their email address as the principal. Three fields make up a policy:
+
+| Field | Format |
+|:--|:--|
+| `principal` | A user's email address, or a service account as `<name>@<tsg_id>.iam.panserviceaccount.com` |
+| `resource` | `prn:<tsg_id>::::<workspace>`. Leave the last segment empty for the TSG root, which Strata Cloud Manager labels **All Apps & Services** |
+| `role` | A built-in role is a bare slug, such as `superuser` or `view_only_admin`. A role defined by a tenant carries that tenant's ID, as `my_custom_role:1000000001` |
+
+`GET /iam/v1/access_policies` lists the policies on the tenant your token is scoped to, and `DELETE /iam/v1/access_policies/{id}` removes one. A duplicate `POST` returns `409`, so the call is safe to retry.
+
+<Warning>
+The access policy endpoint does not check that the principal exists. A `POST` naming an address that belongs to nobody returns `201` and a policy ID, and the policy sits in the listing doing nothing until somebody with that address appears. Validate addresses against your directory before creating policies in bulk, and review the IDs you get back.
+</Warning>
+
+<Note>
+Older Palo Alto Networks documentation shows this endpoint as `https://api.sase.paloaltonetworks.com/access_policies`. `https://api.strata.paloaltonetworks.com/iam/v1/access_policies` is the current host and path.
+</Note>
 
 ## Check your token
 
 If the credentials baked into a token are not the ones you expect, the Admin API rejects the request and the error reports an invalid authorisation code.
 
-Paste the token into [jwt.io](https://jwt.io/) to decode it and read the claims back. The decoded payload shows the `tsg_id` the token was issued for, which is the fastest way to confirm you are hitting the tenant you think you are.
+Paste the token into [jwt.io](https://jwt.io/) to decode it and read the claims back. The decoded payload shows the `tsg_id` the token was issued for, which is the fastest way to confirm you are hitting the tenant you think you are, and an `access` claim listing the roles the service account holds on it.
 
 {/* TODO(screenshot): jwt.io showing an encoded token beside its decoded payload, tsg_id highlighted */}
 
