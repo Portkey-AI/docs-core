@@ -1,44 +1,96 @@
 ---
 title: "Introduction"
-description: "This documentation provides detailed information about the various ways you can access and interact with Prisma AIRS AI Gateway - **a robust AI gateway** designed to simplify and enhance your experience with Large Language Models (LLMs) like OpenAI's GPT models. "
+description: "The inference plane — one OpenAI-compatible endpoint in front of every model you have connected"
 ---
 
-Whether you're integrating directly with OpenAI, using a framework like Langchain or LlamaIndex, or building standalone applications, the AI Gateway offers a flexible, secure, and efficient way to manage and deploy AI-powered features.
+The Gateway API runs inference. The [Admin API](/aigw/api-reference/admin-api/introduction) configures what it is allowed to do.
 
-## 2 Ways to Integrate
+Point an OpenAI-compatible client at the gateway, name a model, and the request is routed, guarded, logged and billed according to the configuration your administrators have already put in place. Nothing about routing, credentials or policy belongs in the request itself.
 
-The AI Gateway can be accessed through two primary methods, each catering to different use cases and integration requirements:
-
-### 1\. OpenAI SDK through the AI Gateway
-
-**Ideal for:** Python, Node.js, or any other application that already uses an OpenAI-compatible client. By changing the base URL and adding gateway-specific headers, you can integrate the AI Gateway's features into your existing setup. This is also how frameworks like Langchain and LlamaIndex connect to the gateway.
-
-#### Installing the SDK
-
-Choose the SDK that matches your development environment:
-
-<Tabs>
-  <Tab title="NodeJS">
 ```sh
-npm install openai
+curl https://aigw.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_KEY" \
+  -d '{
+    "model": "@openai-prod/gpt-4o",
+    "messages": [
+      { "role": "user", "content": "Hello!" }
+    ]
+  }'
 ```
 
-  </Tab>
-  <Tab title="Python">
-```sh
-pip install openai
+Two things carry the routing: the `Authorization` header holds your gateway API key, and the `model` field is prefixed with the slug of the integration to use — `@openai-prod/gpt-4o` reads as *the `gpt-4o` model, through the integration called `openai-prod`*.
+
+<Info>
+The base URL is `https://aigw.portkey.ai/v1`. MCP Gateway serves `/m` and Agent Gateway serves `/agent`.
+</Info>
+
+## Two ways in
+
+<CardGroup cols={2}>
+  <Card title="An OpenAI-compatible SDK" icon="code">
+    Change the base URL and the API key on a client you already have. This is also how Langchain, LlamaIndex and most agent frameworks connect.
+  </Card>
+  <Card title="REST" icon="terminal">
+    Call the endpoints directly. Everything the SDKs do is available over plain HTTP.
+  </Card>
+</CardGroup>
+
+### Through an OpenAI SDK
+
+Install the official client, then override two fields:
+
+<CodeGroup>
+```python Python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url="https://aigw.portkey.ai/v1",
+)
+
+response = client.chat.completions.create(
+    model="@openai-prod/gpt-4o",
+    messages=[{"role": "user", "content": "Say this is a test"}],
+)
 ```
-  </Tab>
-</Tabs>
 
-#### Usage
+```js NodeJS
+import OpenAI from 'openai';
 
-Point the client at `https://aigw.portkey.ai/v1`, authenticate with your AI Gateway API key, and prefix the model name with your provider slug.
+const client = new OpenAI({
+  apiKey: "PORTKEY_API_KEY",
+  baseURL: "https://aigw.portkey.ai/v1",
+});
 
-Learn more [here](/aigw/integrations/llms/openai).
+const response = await client.chat.completions.create({
+  model: '@openai-prod/gpt-4o',
+  messages: [{ role: 'user', content: 'Say this is a test' }],
+});
+```
+</CodeGroup>
 
-### 2\. REST API
+Gateway-specific behaviour — a saved config, request metadata, a cache directive — travels in headers, which the SDKs expose as `default_headers` / `defaultHeaders`.
 
-**Ideal for:** applications that prefer RESTful services. The base URL for all REST API requests is `https://aigw.portkey.ai/v1`, with an [authentication](/aigw/api-reference/inference-api/authentication) header.
+## Start here
 
-Learn more [here](/api-reference/inference-api/chat).
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/aigw/api-reference/inference-api/authentication">
+    API keys, and JWT as an alternative
+  </Card>
+  <Card title="Headers" icon="list" href="/aigw/api-reference/inference-api/headers">
+    Every gateway header, and what each one changes
+  </Card>
+  <Card title="Config object" icon="sliders" href="/aigw/api-reference/inference-api/config-object">
+    Routing, fallbacks, retries and caching as a single object
+  </Card>
+  <Card title="Supported providers" icon="plug" href="/aigw/api-reference/inference-api/supported-providers">
+    What can sit behind the gateway
+  </Card>
+  <Card title="Response schema" icon="brackets-curly" href="/aigw/api-reference/inference-api/response-schema">
+    What comes back, and where the gateway adds to it
+  </Card>
+  <Card title="Error codes" icon="triangle-exclamation" href="/aigw/api-reference/inference-api/error-codes">
+    Failures on the inference path
+  </Card>
+</CardGroup>

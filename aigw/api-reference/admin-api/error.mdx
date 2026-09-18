@@ -1,45 +1,64 @@
 ---
 title: Errors
-description: Error codes returned by the Admin API and how to resolve them.
+description: Every error code the Admin API returns, and what to do about it.
 ---
 
-# Admin API Error Codes
+Admin API failures carry a code in the `AB` series alongside the HTTP status. The code is the precise reason; the status is the class.
 
-Below is a list of error codes returned by Prisma AIRS AI Gateway Admin API. These help with debugging failed requests and ensuring proper authentication, permissions, and request formatting.
+## Error reference
 
-## Error Reference
+| Code | Status | Message | Type |
+|:--|:--|:--|:--|
+| `AB01` | 400 | Request Validation Error | Client Error |
+| `AB02` | 404 | Request Validation Error | Client Error |
+| `AB03` | 403 | User not allowed to access the resource | Client Error |
+| `AB04` | 500 | Internal Server Error | Server Error |
+| `AB05` | 401 | Unauthorized access | Client Error |
+| `AB06` | 429 | Rate limit exceeded | Client Error |
+| `AB07` | 409 | Resource already exists | Client Error |
+| `AB08` | 404 | Resource not found | Client Error |
+| `AB09` | 402 | Subscription exhausted | Client Error |
 
-| Error Code | HTTP Status | Message                                | Type         |
-|------------|-------------|----------------------------------------|--------------|
-| AB01       | 400         | Request Validation Error               | Client Error |
-| AB02       | 404         | Request Validation Error               | Client Error |
-| AB03       | 403         | User not allowed to access the resource | Client Error |
-| AB04       | 500         | Internal Server Error                  | Server Error |
-| AB05       | 401         | Unauthorized access                    | Client Error |
-| AB06       | 429         | Rate limit exceeded                    | Client Error |
-| AB07       | 409         | Resource already exists                | Client Error |
-| AB08       | 404         | Resource not found                     | Client Error |
-| AB09       | 402         | Subscription exhausted                 | Client Error |
+## The four you will actually hit
 
----
+<AccordionGroup>
+  <Accordion title="AB05 — Unauthorized access (401)" icon="lock">
+    The request never got as far as being authorised. In order of likelihood:
 
-## Notes on Common Errors
+    1. **A gateway API key was sent instead of an access token.** The Admin API does not accept the key your applications use for inference. Obtain a [Strata Cloud Manager access token](/aigw/api-reference/admin-api/authentication) instead.
+    2. **The token expired.** Access tokens last 15 minutes. Request a fresh one.
+    3. **The token is malformed** — truncated in an environment variable, or carrying a stray newline.
+
+    Paste the token into [jwt.io](https://jwt.io/) to confirm what it actually contains.
+  </Accordion>
+  <Accordion title="AB03 — User not allowed to access the resource (403)" icon="ban">
+    The token is valid, but it does not reach this resource.
+
+    - **Wrong tenant.** The token's `tsg_id` names a different tenant from the one that owns the resource. A token cannot cross a TSG boundary unless an [access policy](/aigw/api-reference/admin-api/authentication#grant-cross-hierarchy-access-with-an-access-policy) grants it.
+    - **Insufficient role.** The service account that obtained the token holds a role that does not cover this operation.
+    - **Wrong workspace.** The resource belongs to a workspace, and the `workspace_id` you passed points somewhere else.
+  </Accordion>
+  <Accordion title="AB01 — Request Validation Error (400)" icon="triangle-exclamation">
+    The body did not match what the endpoint expects. Usually one of:
+
+    - a required parameter is missing
+    - a value has the wrong type — a number where a string belongs
+    - a value sits outside the allowed set for an enum
+
+    The endpoint's reference page lists every field and its type.
+  </Accordion>
+  <Accordion title="AB08 — Resource not found (404)" icon="magnifying-glass">
+    The path is right and the resource is not there. Two causes dominate:
+
+    - **A slug was passed where an ID was expected**, or the reverse. Configs, integrations and providers take slugs; guardrails, MCP servers, policies and API keys take IDs.
+    - **The resource belongs to a workspace you did not name.** Pass `workspace_id` — as a query parameter on `GET`, in the body on `POST` and `PUT`.
+  </Accordion>
+</AccordionGroup>
+
 <Note>
-**AB01 – Request Validation Error (400)**
-
-This error usually happens when:
-- You're either missing required parameters
-- using incorrect data types (e.g., sending a number instead of a string)
-- passing values that are not within the allowed set (enum violations).
-
+`AB07` on a create means the resource already exists. Most creates are not idempotent, so retrying a request that timed out can produce a `409` rather than a duplicate — check before retrying blindly.
 </Note>
 
-<Note>
-**AB05 – Unauthorized Access (401)**
-
-This indicates that the user is not authorized to access the resource, often due to incorrect API key permissions.
-
-**Common Cause**: Your API key does **not have the right permissions** for this request.
-
-**Fix**: Go to [stratacloudmanager.paloaltonetworks.com](https://stratacloudmanager.paloaltonetworks.com/) → **API Keys**, and check the permissioning for your key. Ensure it includes the required scopes for the endpoint you're calling.
-</Note>
+<Card title="Authentication" icon="key" href="/aigw/api-reference/admin-api/authentication">
+  Most Admin API errors are authentication errors. Start here.
+</Card>
