@@ -6,7 +6,7 @@ description: "Authorise Admin API requests with a Strata Cloud Manager access to
 Admin API requests are authorised with a short-lived access token issued by Strata Cloud Manager, not with an AI Gateway API key.
 
 <Warning>
-A gateway API key — the key you send as `Authorization: Bearer $API_KEY` on `/chat/completions` and every other inference route — is **not** accepted on any Admin API endpoint. Inference credentials and administrative credentials are separate systems. See [Inference API authentication](/aigw/api-reference/inference-api/authentication) for the inference path.
+A gateway API key, the key you send as `Authorization: Bearer $API_KEY` on inference requests, is **not** accepted on any Admin API endpoint. See [Inference API authentication](/aigw/api-reference/inference-api/authentication) for the inference path.
 </Warning>
 
 You obtain an Admin API token by authenticating a **service account** against the Palo Alto Networks authentication service. The token carries the ID of the tenant service group (TSG) it was scoped to, and every request made with it is routed to that tenant.
@@ -22,7 +22,7 @@ Before you can request a token, three values must exist. All three come from Str
 | Client Secret | The service account's credential | Shown **once**, at creation |
 
 <Note>
-A TSG must have a service account before you can make any API call against it. If a tenant has no service account of its own, a service account belonging to one of its ancestor TSGs can be used instead — see [Token scope within a TSG hierarchy](#token-scope-within-a-tsg-hierarchy).
+A TSG must have a service account before you can make any API call against it. If a tenant has no service account of its own, a service account belonging to one of its ancestor TSGs can be used instead. See [Token scope within a TSG hierarchy](#token-scope-within-a-tsg-hierarchy).
 
 One TSG may have many service accounts, and one service account may have many tokens.
 </Note>
@@ -33,30 +33,55 @@ One TSG may have many service accounts, and one service account may have many to
 
 ## Create a service account
 
+Service accounts are created in Strata Cloud Manager, through Common Services Identity & Access. A service account is not tied to a specific user.
+
 <Steps>
-  <Step title="Open Identity & Access in Strata Cloud Manager">
-    Sign in to [Strata Cloud Manager](https://stratacloudmanager.paloaltonetworks.com/) and go to **Settings → Identity & Access → Service Accounts**.
+  <Step title="Open Identity & Access">
+    Sign in to [Strata Cloud Manager](https://stratacloudmanager.paloaltonetworks.com/) and go to **System Settings > Identity & Access**.
 
-    {/* TODO(screenshot): SCM Settings → Identity & Access → Service Accounts, empty state */}
+    {/* TODO(screenshot): SCM System Settings > Identity & Access */}
   </Step>
-  <Step title="Add a service account">
-    Select **Add Service Account** and give it a name that identifies the tenant it serves — `1a_svc` for Tenant 1A, for example. The name is how you will recognise the principal later in access policies and audit logs.
+  <Step title="Select the tenant">
+    Choose the tenant the service account belongs to.
 
-    {/* TODO(screenshot): Add Service Account dialog with the name field filled in */}
-  </Step>
-  <Step title="Assign a role">
-    Assign the role the service account needs on this TSG. A service account with no role assignment cannot obtain a token. Grant the narrowest role that covers the Admin API operations you intend to automate; `superuser` is required only for administering the tenant itself.
+    A service account added to a parent tenant is automatically added to all of that tenant's children, which is how a parent manages its children. Add it to a child tenant instead if you do not want that inheritance.
 
-    {/* TODO(screenshot): role selection step */}
+    Creating service accounts in different tenant service groups lets you assign different roles for different access permissions, and keeps the audit trail readable.
+
+    {/* TODO(screenshot): tenant selector */}
   </Step>
-  <Step title="Record the credentials">
-    On creation you are shown the **Client ID** and **Client Secret**, alongside the **TSG ID** of the tenant.
+  <Step title="Add the identity">
+    Select **Add** (or **Add Identity**), then set **Identity Type** to **Service Account**.
+
+    Give it a unique and meaningful **Service Account Name**. Optionally add a **Service Account Contact** email and a **Description**. The contact person is not added as a user.
+
+    {/* TODO(screenshot): Add Identity dialog with Identity Type set to Service Account */}
+  </Step>
+  <Step title="Save the client credentials">
+    Select **Next**. The Client Credentials screen shows the **Client ID** and **Client Secret**.
 
     <Warning>
-    The Client Secret is displayed once and cannot be retrieved afterwards. Store it in your secret manager before leaving the page; if you lose it, you must generate a new credential for the service account.
+    The Client Secret is presented once. Copy both values, or select **Download CSV File**, before leaving the screen. If you lose the secret you must issue a new credential.
     </Warning>
 
-    {/* TODO(screenshot): credentials panel showing Client ID, Client Secret and TSG ID */}
+    {/* TODO(screenshot): Client Credentials screen with Download CSV File */}
+  </Step>
+  <Step title="Note the TSG ID">
+    Select **Next**. The display name of the service account is formatted as `<ServiceAccountName>@<tsg_id>.iam.panserviceaccount`.
+
+    Every service account of a parent tenant carries the parent TSG ID, and every service account of a child tenant carries the child TSG ID. Take note of the `tsg_id`, because you pass it on every token request.
+
+    {/* TODO(screenshot): display name showing the tsg_id */}
+  </Step>
+  <Step title="Assign a role">
+    On the Assign Roles screen, select the scope (for example **All Apps & Services**) and assign the role the service account needs. A service account with no role assignment cannot obtain a token.
+
+    Grant the narrowest role that covers the Admin API operations you intend to automate. A custom role needs `iam.service_account` and `iam.custom_role` permissions if the account will manage identities itself.
+
+    {/* TODO(screenshot): Assign Roles screen */}
+  </Step>
+  <Step title="Submit">
+    Save to create the service account. You now have the Client ID, Client Secret and TSG ID needed to request a token.
   </Step>
 </Steps>
 
@@ -69,7 +94,7 @@ The authentication service runs on a different FQDN from the rest of Strata Clou
 `https://auth.apps.paloaltonetworks.com`
 </Warning>
 
-The endpoint uses basic auth — the Client ID is the username and the Client Secret is the password — and takes the TSG ID in the `scope` field:
+The endpoint uses basic auth, with the Client ID as the username and the Client Secret as the password, and takes the TSG ID in the `scope` field:
 
 ```sh Request an access token
 curl -d "grant_type=client_credentials&scope=tsg_id:<tsg_id>" \
@@ -100,7 +125,7 @@ You do not pass the TSG ID on the request. The token already contains it, and th
 
 A token issued for one TSG cannot be used against another. If you have a tenant, Tenant 1A, with a service account named `1a_svc`, then a token obtained through `1a_svc` reaches Tenant 1A and nothing else.
 
-When you run multiple tenants you organise them as a hierarchy of TSGs. You *may* create a dedicated service account for every TSG and tenant in that hierarchy — that is the simplest arrangement — but it is not necessary. **A service account belonging to a TSG can name any descendant of that TSG when it requests a token.**
+When you run multiple tenants you organise them as a hierarchy of TSGs. Creating a dedicated service account for every TSG and tenant in that hierarchy is the simplest arrangement, but it is not necessary. **A service account belonging to a TSG can name any descendant of that TSG when it requests a token.**
 
 Consider a root TSG A with two tenants, and a child TSG B with two more:
 
@@ -143,7 +168,7 @@ curl -d '{"role":"superuser","resource":"prn:18::::","principal":"b_svc@15.iam.p
   -X POST https://api.sase.paloaltonetworks.com/access_policies
 ```
 
-The token you authenticate this call with must itself be scoped to the TSG that owns the resource — `15` in the example above.
+The token you authenticate this call with must itself be scoped to the TSG that owns the resource, `15` in the example above.
 
 ## Check your token
 
@@ -159,7 +184,7 @@ Paste the token into [jwt.io](https://jwt.io/) to decode it and read the claims 
 |:--|:--|
 | Token request rejected at `/oauth2/access_token` | The Client ID or Client Secret is wrong, or the service account has no role assignment |
 | Token request rejected for the TSG on `scope` | The service account is not in that TSG or an ancestor of it. Create an [access policy](#grant-cross-hierarchy-access-with-an-access-policy) |
-| Admin API returns an authorisation error with a valid-looking token | The token has expired — they last 15 minutes — or it is scoped to a different tenant. Decode it and check `tsg_id` |
+| Admin API returns an authorisation error with a valid-looking token | The token has expired, since they last 15 minutes, or it is scoped to a different tenant. Decode it and check `tsg_id` |
 | Admin API rejects a key that works for inference | A gateway API key was sent instead of an access token. Only tokens from the authentication service are accepted |
 
 ## Related

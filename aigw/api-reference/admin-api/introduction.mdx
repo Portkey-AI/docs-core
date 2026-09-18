@@ -3,19 +3,24 @@ title: "Introduction"
 description: "Everything Strata Cloud Manager configures, available as an API"
 ---
 
-The Admin API configures the gateway. The [Gateway API](/aigw/api-reference/inference-api/introduction) runs inference through it.
+The Admin API manages the resources that make up your AI Gateway organisation: the integrations that connect model providers, the credentials behind them, the configs and guardrails applied to workspaces, the policies that cap usage, the MCP servers you expose, and the analytics you report on.
 
-Two planes, two credentials. Connecting a model provider, capping a team's spend, registering an MCP server, issuing an API key, pulling last month's cost — all of it happens here, and none of it travels on the inference request path.
+Anything an administrator sets up in Strata Cloud Manager can be set up here instead.
 
 <Warning>
-Admin API requests are authorised with a **Strata Cloud Manager access token**, not a gateway API key. A key that works on `/chat/completions` returns `401` here. See [Authentication](/aigw/api-reference/admin-api/authentication).
+Admin API requests are authorised with a **Strata Cloud Manager access token**, not a gateway API key. A key that works for inference returns `401` here. See [Authentication](/aigw/api-reference/admin-api/authentication).
 </Warning>
 
 ## Your first request
 
 <Steps>
-  <Step title="Get a token">
-    Exchange a service account's credentials for an access token scoped to your tenant.
+  <Step title="Create a service account">
+    In Strata Cloud Manager, go to **System Settings > Identity & Access**, select your tenant, and add an identity of type **Service Account**. Save the Client ID and Client Secret it issues, and note the tenant service group ID (TSG ID).
+
+    Full walkthrough with roles and inheritance: [Create a service account](/aigw/api-reference/admin-api/authentication#create-a-service-account).
+  </Step>
+  <Step title="Request an access token">
+    Exchange those three values for a token.
 
     ```sh
     curl -d "grant_type=client_credentials&scope=tsg_id:<tsg_id>" \
@@ -23,53 +28,46 @@ Admin API requests are authorised with a **Strata Cloud Manager access token**, 
       -H "Content-Type: application/x-www-form-urlencoded" \
       -X POST https://auth.apps.paloaltonetworks.com/oauth2/access_token
     ```
-
-    [Create a service account](/aigw/api-reference/admin-api/authentication#create-a-service-account) if you do not have one yet.
   </Step>
   <Step title="Call an endpoint">
-    Send the token as a bearer token. Every endpoint in this tab takes the same header.
+    Send the token as a bearer token. Every endpoint takes the same header.
 
     ```sh
     curl https://api.apps.paloaltonetworks.com/ai_gw/v2/configs \
       -H "Authorization: Bearer $ACCESS_TOKEN"
     ```
 
-    The response lists the configs belonging to the organisation the token is scoped to. No tenant identifier is sent on the request — the token carries it.
+    The response lists the configs belonging to the organisation the token is scoped to. You do not send a tenant identifier on the request, because the token carries it.
   </Step>
-  <Step title="Keep going">
-    Tokens expire after **15 minutes**. Refresh before each batch of calls rather than caching one for the life of a job.
+  <Step title="Refresh before it expires">
+    Tokens last **15 minutes**. Request a new one for each batch of calls rather than caching one for the life of a job.
   </Step>
 </Steps>
 
 ## Base URLs
 
-The Admin API is served on two base URLs, and which one an endpoint uses follows the resource, not the sidebar group it sits in:
+Which base URL an endpoint uses follows the resource, not the sidebar group it sits in.
 
 | Base URL | Serves |
 |:--|:--|
 | `https://api.apps.paloaltonetworks.com/ai_gw/v2` | Configs, workspace guardrails, providers, API keys, usage and rate limit policies, MCP servers, analytics, feedback |
 | `https://api.apps.paloaltonetworks.com/ai_gw/admin/v2` | Integrations, MCP integrations, secret references, deployments, organisation guardrails |
+| `https://aigw.portkey.ai/v1` | `POST /logs` and `GET /logs/{logId}`. Self-hosted deployments substitute their own host |
 
-<Note>
-Two exceptions worth knowing before you debug a 404.
+The organisation guardrail endpoints carry their prefix in the path instead of the base URL, as `/admin/v2/guardrails` against `https://api.apps.paloaltonetworks.com/ai_gw`. That resolves to the same place as the admin base above.
 
-The organisation guardrail endpoints carry their prefix in the path rather than the base URL — `/admin/v2/guardrails` against `https://api.apps.paloaltonetworks.com/ai_gw`, which resolves to the same place as the admin base above.
-
-`POST /logs` and `GET /logs/{logId}` are listed in this tab but served by the gateway itself, at `https://aigw.portkey.ai/v1`. Self-hosted deployments substitute their own gateway host.
-</Note>
-
-Each endpoint's reference page states its server. When the two disagree, the reference page is right — it is generated from the specification.
+Each endpoint's reference page states its server. Where the two disagree, trust the reference page, which is generated from the specification.
 
 ## How resources are scoped
 
-Every resource in the Admin API sits at one of two levels. Knowing which one you are addressing explains most 403s.
+Every resource sits at one of two levels. Knowing which one you are addressing explains most `403` responses.
 
 | Level | Addressed by | Holds |
 |:--|:--|:--|
 | **Organisation** | The TSG ID inside your token. One TSG is one organisation. | Integrations, MCP integrations, secret references, deployments, organisation guardrails |
 | **Workspace** | A `workspace_id`, passed explicitly | Configs, providers, workspace guardrails, analytics |
 
-The split is the same one the base URLs draw: organisation-level resources are served from the `admin/v2` base. API keys and limit policies straddle both — `POST /api-keys/{type}/{sub-type}` takes the level as a path parameter.
+The split matches the base URLs: organisation-level resources are served from the `admin/v2` base. API keys and limit policies span both levels, and [`POST /api-keys/{type}/{sub-type}`](/aigw/api-reference/api-keys/post-api-keys-by-type-by-sub-type) takes the level as a path parameter.
 
 To reach a workspace-level resource, pass `workspace_id` as a **query parameter** on `GET` and list requests, and in the **request body** on `POST` and `PUT`. A workspace UUID or a slug both work.
 
@@ -82,27 +80,14 @@ Omit it and the call resolves against the organisation default.
 
 ### Slugs and IDs
 
-Which identifier a path takes is not arbitrary, and mixing them up is the second most common cause of a `404`:
+Mixing these up is a common cause of `404`.
 
-- **Slugs** — the resources you name yourself: `/configs/{slug}`, `/integrations/{slug}`, `/providers/{slug}`
-- **IDs** — the resources the gateway names for you: `/guardrails/{guardrailId}`, `/mcp-servers/{mcpServerId}`, `/policies/usage-limits/{policyUsageLimitsId}`, `/api-keys/{id}`
+- **Slugs** identify the resources you name yourself: `/configs/{slug}`, `/integrations/{slug}`, `/providers/{slug}`
+- **IDs** identify the resources the gateway names for you: `/guardrails/{guardrailId}`, `/mcp-servers/{mcpServerId}`, `/policies/usage-limits/{policyUsageLimitsId}`, `/api-keys/{id}`
 
-## The map
+### Guardrails sit at both levels
 
-Six groups, mirroring the sidebar.
-
-| Group | Manages | Principal paths |
-|:--|:--|:--|
-| **Gateway Configuration** | Routing configs and the guardrails attached to a workspace | [`/configs`](/aigw/api-reference/configs/list-configs) · [`/guardrails`](/aigw/api-reference/guardrails/list-guardrails) |
-| **Providers and Credentials** | Model providers, the credentials behind them, which workspaces and models are provisioned, and references to external vaults | [`/integrations`](/aigw/api-reference/integrations/get-integrations) · [`/providers`](/aigw/api-reference/providers/get-providers) · [`/secret-references`](/aigw/api-reference/secret-references/list-secret-references) |
-| **MCP** | MCP integrations and servers, their capabilities, connections and per-user access | [`/mcp-integrations`](/aigw/api-reference/mcp-integrations/mcp-integrations-list) · [`/mcp-servers`](/aigw/api-reference/mcp-servers/mcp-servers-list) |
-| **Administration** | API keys, registered gateway deployments, organisation-wide guardrails, usage and rate limit policies | [`/api-keys`](/aigw/api-reference/api-keys/get-api-keys) · [`/deployments`](/aigw/api-reference/deployments/list-deployments) · [`/admin/v2/guardrails`](/aigw/api-reference/org-guardrails/list-org-guardrails) · [`/policies/*`](/aigw/api-reference/usage-limit-policies/list-usage-limits-policies) |
-| **Observability** | Cost, latency, token, error and cache analytics; log retrieval; feedback | [`/analytics/*`](/aigw/api-reference/analytics/graphs/get-analytics-graphs-cost) · [`/logs`](/aigw/api-reference/logs/post-logs) · [`/feedback`](/aigw/api-reference/feedback/create-feedback) |
-| **API Reference** | This page, [Authentication](/aigw/api-reference/admin-api/authentication) and [Errors](/aigw/api-reference/admin-api/error) | — |
-
-<Note>
-**Guardrails exist at both levels, on two different paths.** `/guardrails` manages the guardrails of a single workspace. `/admin/v2/guardrails` manages the organisation-wide ones that apply to every workspace unless a workspace is explicitly excluded. See [Enforcing Org Level Guardrails](/aigw/product/administration/enforce-organisation-level-guardrails).
-</Note>
+[`/guardrails`](/aigw/api-reference/guardrails/list-guardrails) manages the guardrails of a single workspace. [`/admin/v2/guardrails`](/aigw/api-reference/org-guardrails/list-org-guardrails) manages the organisation-wide ones, which apply to every workspace unless a workspace is explicitly excluded. See [Enforcing Org Level Guardrails](/aigw/product/administration/enforce-organisation-level-guardrails).
 
 ## Common tasks
 
@@ -110,38 +95,38 @@ Each of these is a sequence of calls, not a single endpoint.
 
 <AccordionGroup>
   <Accordion title="Connect a model provider and provision it to a team" icon="plug">
-    1. [`POST /integrations`](/aigw/api-reference/integrations/post-integrations) — create the integration and attach the provider credential
-    2. [`PUT /integrations/{slug}/models`](/aigw/api-reference/integrations/models/put-integrations-by-slug-models) — choose which models the integration exposes
-    3. [`PUT /integrations/{slug}/workspaces`](/aigw/api-reference/integrations/workspaces/put-integrations-by-slug-workspaces) — grant the workspaces that may use it
+    1. [`POST /integrations`](/aigw/api-reference/integrations/post-integrations) creates the integration and attaches the provider credential
+    2. [`PUT /integrations/{slug}/models`](/aigw/api-reference/integrations/models/put-integrations-by-slug-models) chooses which models it exposes
+    3. [`PUT /integrations/{slug}/workspaces`](/aigw/api-reference/integrations/workspaces/put-integrations-by-slug-workspaces) grants the workspaces that may use it
 
     Steps 2 and 3 are [model provisioning](/aigw/product/model-catalog/model-provisioning) and [workspace provisioning](/aigw/product/model-catalog/workspace-provisioning). Skip them and the integration exists but nobody can reach it.
   </Accordion>
   <Accordion title="Put an MCP server behind the gateway" icon="server">
-    1. [`POST /mcp-servers`](/aigw/api-reference/mcp-servers/mcp-servers-create) — register the server
-    2. [`GET /mcp-servers/{mcpServerId}/capabilities`](/aigw/api-reference/mcp-servers/capabilities/mcp-server-capabilities-list) — read the tools it advertises
-    3. [`PUT /mcp-servers/{mcpServerId}/capabilities`](/aigw/api-reference/mcp-servers/capabilities/mcp-server-capabilities-bulk-update) — enable only the tools you intend to expose
-    4. [`PUT /mcp-servers/{mcpServerId}/user-access`](/aigw/api-reference/mcp-servers/user-access/mcp-server-user-access-bulk-update) — decide who may call it
-    5. [`POST /mcp-servers/{mcpServerId}/test`](/aigw/api-reference/mcp-servers/mcp-servers-test) — confirm the connection before anyone depends on it
+    1. [`POST /mcp-servers`](/aigw/api-reference/mcp-servers/mcp-servers-create) registers the server
+    2. [`GET /mcp-servers/{mcpServerId}/capabilities`](/aigw/api-reference/mcp-servers/capabilities/mcp-server-capabilities-list) reads the tools it advertises
+    3. [`PUT /mcp-servers/{mcpServerId}/capabilities`](/aigw/api-reference/mcp-servers/capabilities/mcp-server-capabilities-bulk-update) enables only the tools you intend to expose
+    4. [`PUT /mcp-servers/{mcpServerId}/user-access`](/aigw/api-reference/mcp-servers/user-access/mcp-server-user-access-bulk-update) decides who may call it
+    5. [`POST /mcp-servers/{mcpServerId}/test`](/aigw/api-reference/mcp-servers/mcp-servers-test) confirms the connection before anyone depends on it
 
     See the [MCP Gateway](/aigw/product/mcp-gateway) documentation for what each capability means.
   </Accordion>
   <Accordion title="Cap what a team can spend" icon="gauge">
-    1. [`POST /policies/usage-limits`](/aigw/api-reference/usage-limit-policies/create-usage-limits-policy) — define the budget
-    2. [`GET /policies/usage-limits/{policyUsageLimitsId}/entities`](/aigw/api-reference/usage-limit-policies/list-usage-limits-policy-entities) — see what the policy currently binds to
-    3. [`PUT /policies/usage-limits/{policyUsageLimitsId}/entities/{entityId}/reset`](/aigw/api-reference/usage-limit-policies/reset-usage-limits-policy-entity) — clear consumption for one entity
+    1. [`POST /policies/usage-limits`](/aigw/api-reference/usage-limit-policies/create-usage-limits-policy) defines the budget
+    2. [`GET /policies/usage-limits/{policyUsageLimitsId}/entities`](/aigw/api-reference/usage-limit-policies/list-usage-limits-policy-entities) shows what the policy currently binds to
+    3. [`PUT /policies/usage-limits/{policyUsageLimitsId}/entities/{entityId}/reset`](/aigw/api-reference/usage-limit-policies/reset-usage-limits-policy-entity) clears consumption for one entity
 
     Rate limits work the same way under [`/policies/rate-limits`](/aigw/api-reference/rate-limit-policies/list-rate-limits-policies). Background in [Budget Limits](/aigw/product/policies/budget-limits) and [Rate Limits](/aigw/product/policies/rate-limits).
   </Accordion>
-  <Accordion title="Issue and rotate a gateway API key" icon="key">
-    1. [`POST /api-keys/{type}/{sub-type}`](/aigw/api-reference/api-keys/post-api-keys-by-type-by-sub-type) — create the key with the scopes it needs
-    2. [`POST /api-keys/{id}/rotate`](/aigw/api-reference/api-keys/post-api-keys-by-id-rotate) — rotate on a schedule or on suspicion
+  <Accordion title="Issue and rotate an API key" icon="key">
+    1. [`POST /api-keys/{type}/{sub-type}`](/aigw/api-reference/api-keys/post-api-keys-by-type-by-sub-type) creates the key with the scopes it needs
+    2. [`POST /api-keys/{id}/rotate`](/aigw/api-reference/api-keys/post-api-keys-by-id-rotate) rotates it on a schedule or on suspicion
 
-    These are the keys your applications send on **inference** requests. Creating one is an administrative act, so the call itself is authorised with an access token. Scopes are listed in [API Keys (AuthN and AuthZ)](/aigw/product/enterprise-offering/org-management/api-keys-authn-and-authz).
+    Available scopes are listed in [API Keys (AuthN and AuthZ)](/aigw/product/enterprise-offering/org-management/api-keys-authn-and-authz).
   </Accordion>
   <Accordion title="Report on last month" icon="chart-line">
-    - [`GET /analytics/graphs/cost`](/aigw/api-reference/analytics/graphs/get-analytics-graphs-cost) — spend over time
-    - [`GET /analytics/groups/ai-models`](/aigw/api-reference/analytics/groups/get-analytics-groups-ai-models) — spend broken down by model
-    - [`GET /analytics/groups/metadata/{metadataKey}`](/aigw/api-reference/analytics/groups/get-analytics-groups-metadata-by-metadata-key) — spend broken down by whatever your requests tag themselves with
+    - [`GET /analytics/graphs/cost`](/aigw/api-reference/analytics/graphs/get-analytics-graphs-cost) returns spend over time
+    - [`GET /analytics/groups/ai-models`](/aigw/api-reference/analytics/groups/get-analytics-groups-ai-models) breaks it down by model
+    - [`GET /analytics/groups/metadata/{metadataKey}`](/aigw/api-reference/analytics/groups/get-analytics-groups-metadata-by-metadata-key) breaks it down by whatever your requests tag themselves with
 
     Tagging requests with [metadata](/aigw/product/observability/metadata) is what makes the last one useful.
   </Accordion>
@@ -153,7 +138,7 @@ Each of these is a sequence of calls, not a single endpoint.
 |:--|:--|
 | `401` | The token is expired, malformed, or is actually a gateway API key |
 | `403` | The token is valid but scoped to a different tenant, or the service account's role does not cover this operation |
-| `404` | A slug was passed where an ID was expected — or the resource belongs to a workspace you did not name |
+| `404` | A slug was passed where an ID was expected, or the resource belongs to a workspace you did not name |
 | `409` | The resource already exists. Most creates are not idempotent |
 
 Every code the Admin API returns is listed on the [Errors](/aigw/api-reference/admin-api/error) page.
@@ -161,10 +146,6 @@ Every code the Admin API returns is listed on the [Errors](/aigw/api-reference/a
 ## Audit
 
 Every administrative call is recorded with the principal that made it, the action, the target resource, a timestamp, an IP address and the request details. Automation is attributable to the service account that ran it, which is a good reason to give each one a name that says what it is for.
-
-<Card title="Audit Logs" icon="shield-check" href="/aigw/product/enterprise-offering/audit-logs">
-  Read the trail of every administrative change
-</Card>
 
 ## Next
 
@@ -175,10 +156,10 @@ Every administrative call is recorded with the principal that made it, the actio
   <Card title="Errors" icon="triangle-exclamation" href="/aigw/api-reference/admin-api/error">
     Every error code, with the usual cause
   </Card>
-  <Card title="Gateway API" icon="bolt" href="/aigw/api-reference/inference-api/introduction">
-    The inference plane this API configures
+  <Card title="Audit Logs" icon="shield-check" href="/aigw/product/enterprise-offering/audit-logs">
+    The trail of every administrative change
   </Card>
-  <Card title="OpenAPI Specification" icon="file-code" href="/aigw/api-reference/inference-api/open-api-specification">
-    One specification covers both planes
+  <Card title="Organisation Management" icon="browser" href="/aigw/product/enterprise-offering/org-management">
+    The same settings, configured from Strata Cloud Manager
   </Card>
 </CardGroup>
