@@ -22,9 +22,10 @@ The gateway now logs every intermediate retry attempt, not just the final one, s
 
 ### Truncated Stream Detection Across Providers
 
-The gateway now detects when a provider's SSE stream ends mid-response without its terminal event, across all providers instead of only Anthropic. A truncated stream now returns an error to the client rather than a silent 200, is logged with its partial content retained, and is excluded from the response cache.
+Truncated SSE streams are now detected across all providers on the unified text routes (`/chat/completions`, `/completions`, `/messages`, `/responses`), instead of only on Anthropic. Terminal-event detection now covers `[DONE]`, Anthropic and Responses event lines, and `finish_reason` / `finishReason` chunks for providers like Gemini and Vertex Llama that never send `[DONE]`.
 
-[Cache (Simple & Semantic)](/product/ai-gateway/cache-simple-and-semantic)
+When a stream ends without its terminal event, the gateway appends an in-band `stream_incomplete` error event so the client can tell a cut-off response from a complete one, retains the partial content in the log, and excludes the response from the cache.
+
 
 ### Provider Updates
 
@@ -34,12 +35,13 @@ The gateway now detects when a provider's SSE stream ends mid-response without i
 
 ### Fixes and Improvements
 
-- **MCP Gateway**: An upstream OAuth error from an external MCP server now surfaces its underlying reason instead of an opaque 500, and a client is no longer registered with the external identity provider when the control plane can't be reached to check whether one already exists — preventing orphaned registrations during an outage. [Connecting External MCP Servers](/product/mcp-gateway/external-mcp-servers)
-- **MCP Gateway**: Fixed a cache key mismatch that caused revoking a server's cached tokens on a config change to silently remove nothing, and a renewed OAuth token now evicts the access token it replaced instead of remaining usable for up to 5 minutes after rotation. [External OAuth](/product/mcp-gateway/authentication/external-oauth)
-- **MCP Gateway**: A failed control-plane lookup for a server's disabled tool capabilities no longer caches an empty result, which had let a disabled tool stay callable for up to 5 minutes. [Tool Provisioning](/product/mcp-gateway/tool-provisioning)
+- **MCP Gateway**: A rejected OAuth request to an external MCP server now returns the identity provider's reason instead of a 500, and a provider that is briefly unreachable no longer invalidates the stored connection and forces users back through consent. [Connecting External MCP Servers](/product/mcp-gateway/external-mcp-servers)
+- **MCP Gateway**: A new OAuth client is now registered only when the gateway can confirm that none exists for the server, so a transient outage no longer leaves duplicate client registrations in the identity provider. [External OAuth](/product/mcp-gateway/authentication/external-oauth)
+- **MCP Gateway**: A configuration change now reliably clears a server's cached tokens, and an OAuth refresh now retires the token it replaces, so a rotated-out token stops working immediately. [External OAuth](/product/mcp-gateway/authentication/external-oauth)
+- **MCP Gateway**: Disabled tools, resources, and prompts now stay disabled when the control plane is briefly unreachable, instead of becoming callable again for up to 5 minutes. [Tool Provisioning](/product/mcp-gateway/tool-provisioning)
 - **Pricing**: OpenRouter Decisions API responses (e.g. TypeSafe Jev models) now attribute token usage correctly, instead of always logging zero units and zero cost. [OpenRouter Integration](/integrations/llms/openrouter)
 - **Security**: Fixed a path traversal vulnerability in SiliconFlow image request handling. [SiliconFlow Integration](/integrations/llms/siliconflow)
-- **Security**: The Pangea PII and Text Guard guardrails now validate the configured domain before making outbound requests, preventing requests from being redirected to an attacker-controlled host. [Pangea Guardrail](/integrations/guardrails/pangea)
+- **Security**: The Pangea PII and Text Guard guardrails now validate the configured domain before making outbound requests. [Pangea Guardrail](/integrations/guardrails/pangea)
 - **Security**: Fixed a query parameter injection vulnerability in the Cohere batch cancellation endpoint. [Cohere Integration](/integrations/llms/cohere)
 
 </Update>
