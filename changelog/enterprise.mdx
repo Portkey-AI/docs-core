@@ -1,12 +1,49 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.23.0]"
+sidebarTitle: "Enterprise Gateway [2.24.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://www.paloaltonetworks.com/ai-security/ai-gateway#:~:text=See%20Prisma%20AIRS%20AI%20Gateway%20in%20Action" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="2.24.0" description="2026-09-22">
+
+## v2.24.0
+
+---
+
+### Per-Attempt Retry Logging
+
+The gateway now logs every intermediate retry attempt, not just the final one, sharing the same trace ID and request context as the primary log. A retry chain like `500 → 404 → 429` previously logged only the last status, hiding the earlier failures that drove a fallback decision; each attempt is now its own log row distinguished by `retry_count`, `response_status`, `response_headers`, and `response_body`.
+
+[Automatic Retries](/product/ai-gateway/automatic-retries) · [Logs](/product/observability/logs)
+
+### Truncated Stream Detection Across Providers
+
+Truncated SSE streams are now detected across all providers on the unified text routes (`/chat/completions`, `/completions`, `/messages`, `/responses`), instead of only on Anthropic. Terminal-event detection now covers `[DONE]`, the Messages API and Responses API event lines (`message_stop`, `response.completed`), and `finish_reason` / `finishReason` chunks for providers like Gemini and Vertex Llama that never send `[DONE]`.
+
+When a stream ends without its terminal event, the gateway appends an in-band `stream_incomplete` error event so the client can tell a cut-off response from a complete one, retains the partial content in the log, and excludes the response from the cache.
+
+
+### Provider Updates
+
+- **Anthropic**: The `safeguards` field on Claude Code auto-mode requests is now forwarded to Anthropic instead of being dropped, so server-side classifier checks run without incurring extra classifier billing. `safeguard_results` is now also forwarded and logged on the streaming Messages path. [Claude Code Documentation](/integrations/libraries/claude-code)
+
+[Providers Documentation](/integrations/llms)
+
+### Fixes and Improvements
+
+- **MCP Gateway**: A rejected OAuth request to an external MCP server now returns the identity provider's reason instead of a 500, and a provider that is briefly unreachable no longer invalidates the stored connection and forces users back through consent. [Connecting External MCP Servers](/product/mcp-gateway/external-mcp-servers)
+- **MCP Gateway**: A new OAuth client is now registered only when the gateway can confirm that none exists for the server, so a transient outage no longer leaves duplicate client registrations in the identity provider.
+- **MCP Gateway**: A configuration change now reliably clears a server's cached tokens, and an OAuth refresh now retires the token it replaces, so a rotated-out token stops working immediately.
+- **MCP Gateway**: Disabled tools, resources, and prompts now stay disabled when the control plane is briefly unreachable, instead of becoming callable again for up to 5 minutes. [Tool Provisioning](/product/mcp-gateway/tool-provisioning)
+- **Pricing**: OpenRouter Decisions API responses (e.g. TypeSafe Jev models) now attribute token usage correctly, instead of always logging zero units and zero cost. [OpenRouter Integration](/integrations/llms/openrouter)
+- **Security**: Hardened upstream path and URL construction for SiliconFlow image requests and Cohere batch operations. [SiliconFlow Integration](/integrations/llms/siliconflow) · [Cohere Integration](/integrations/llms/cohere)
+- **Security**: Hardened credential validation for the Pangea PII and Text Guard guardrails. [Pangea Guardrail](/integrations/guardrails/pangea)
+
+</Update>
 
 <Update label="2.23.0" description="2026-09-18">
 
