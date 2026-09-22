@@ -427,10 +427,7 @@ To confirm that the deployment was successful, follow these steps:
 
 **Outbound Connectivity (Data Plane to Management Plane)**
 
-The AI Gateway supports the following methods for integrating the Data Plane with the Management Plane for outbound connectivity:
-
-- Azure Private Link
-- Over the Internet
+The Data Plane integrates with the Management Plane over the internet.
 
 **Ensure Outbound Network Access**
 
@@ -456,71 +453,6 @@ spec:
 
 This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Management Plane.
 
-#### Azure Private Link
-Establishes a secure, private connection between the Management Plane and Data Plane within the Azure network.
-
-**Steps to establish Azure Private Link connectivity:**
-1. Contact the AI Gateway and provide your Azure Subscription Id so it can be whitelisted in the AI Gateway's Management Plane.
-2. Once you get confirmation from the AI Gateway that your Azure account is whitelisted, create Azure Private Endpoint connection to Management Plane.
-  ```sh
-  # Replace <SUBNET_ID> with Subnet ID (not Subnet Name) in which Portkey gateway is deployed.
-
-  az network private-endpoint create \
-    --name portkey-cp-pvt-endpoint \
-    --resource-group ${RESOURCE_GROUP} \
-    --subnet <SUBNET_ID> \
-    --private-connection-resource-alias "portkey-privatelink-pls.4c0cb660-8f0d-49ad-beee-b234fa25cb40.eastus2.azure.privatelinkservice" \
-    --connection-name portkey-cp-pvt-connection
-  ```
-3. Retrieve Private IP of created endpoint.
-  ```sh
-  PE_IP=$(az network nic show --ids $(az network private-endpoint show --name portkey-cp-pvt-endpoint --resource-group ${RESOURCE_GROUP} --query "networkInterfaces[0].id" -o tsv) --query "ipConfigurations[0].privateIPAddress" -o tsv)
-  ```
-4. Contact the Palo Alto Networks team and share the endpoint name with them.
-5. Once the connection request is approved, create Private Hosted Zone and link it to Gateway VNet.
-  ```sh
-  # Create PHZ
-  az network private-dns zone create \
-    --resource-group ${RESOURCE_GROUP} \
-    --name privatelink-az.portkey.ai
-
-  # Create VNet Link
-  # Replace <VNET_ID> with the VNet ID (not VNet name) of AKS Node Group.
-  # IMPORTANT!! <VNET_ID> must be full Resource ID of AKS's node group's VNet.
-  # You can find it by navigating to AKS Cluster > Settings > Networking > VNet integration > Click on VNet.
-  # On Vnet console, click on JSON View and copy Resource ID
-
-  # e.g,
-  az network private-dns link vnet create \
-    --resource-group ${RESOURCE_GROUP} \
-    --zone-name privatelink-az.portkey.ai \
-    --name portkey-gateway-vnet-link \
-    --virtual-network "<VNET_ID>" \
-    --registration-enabled false
-  ```
-6. Create a record in the PHZ pointing to the AI Gateway's Private Endpoint IP.
-  ```sh
-  az network private-dns record-set a add-record \
-    --resource-group ${RESOURCE_GROUP} \
-    --zone-name privatelink-az.portkey.ai \
-    --record-set-name  azure-cp \
-    --ipv4-address ${PE_IP}
-  ```
-7. Update the `values.yaml` file with the following environment variables.
-  ```yaml
-  environment:
-    create: true
-    secret: true
-    data:
-        ALBUS_BASEPATH: "https://private.azure-cp.portkey.ai/albus"
-        CONTROL_PLANE_BASEPATH: "https://private.azure-cp.portkey.ai/api/v1"
-        SOURCE_SYNC_API_BASEPATH: "https://private.azure-cp.portkey.ai/api/v1/sync"
-        CONFIG_READER_PATH: "https://private.azure-cp.portkey.ai/api/model-configs"
-  ```
-8. Re-deploy the gateway.
-    ```sh
-    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n ${namespace}  --create-namespace
-    ```
 #### Over the Internet
 
 Ensure Gateway has access to the following endpoints over the internet.
@@ -528,44 +460,10 @@ Ensure Gateway has access to the following endpoints over the internet.
   - `https://albus.portkey.ai`
 
 ### Inbound Connectivity (Management Plane to Data Plane)
-- Azure Private Link
-- IP Whitelisting
-
-#### Azure Private Link
-Establishes a secure, private connection between the Management Plane and Data Plane within the Azure network.
-
-**Steps to establish Azure Private Link connectivity:**
-1. Create a dedicated subnet for Azure Private Link Service.
-    ```sh
-    # Replace <SUBNET_CIDR> with CIDR you want to allocate to this subnet. CIDR must be at least /27, must fall within the AKS VNet CIDR range, and must not overlap with existing subnet CIDRs.
-    # IMPORTANT!! <VNET_RESOURCE_GROUP> must be the Resource Group in which AKS Node Group exists. It starts with MC_*.
-    az network vnet subnet create \
-      --resource-group ${VNET_RESOURCE_GROUP} \
-      --vnet-name <VNET_ID> \
-      --name private-endpoints-subnet \
-      --address-prefixes <SUBNET_CIDR>
-      --private-link-service-network-policies Disabled
-    ```
-2. On the Azure Portal, navigate to `Private Link services` and click **+ Create** to create a new Private Link Service (PLS).
-
-3. Select the **Subscription** and **Resource Group**, provide a name for the PLS, and click **Next**.
-
-4. Under **Outbound settings**, select the Load Balancer created for the gateway. Then choose the appropriate **frontend IP configuration** of that Load Balancer.
-
-5. In the `Source NAT subnet` field, select the dedicated PLS subnet created earlier, and click **Next**.
-
-6. Under **Access security**, select **Restricted by subscription** and whitelist the Management Plane subscription ID (`
-1645c6d9-d399-4c91-a4b9-2673952ae803`).
-
-7. Leave all other settings as default and click **Create** to provision the Private Link Service.
-
-8. Contact the Palo Alto Networks team and share the **alias** of the created Private Link Service, along with the **Gateway URL**.
-
-9. Once the Palo Alto Networks team has raised the connection request from their end, approve it by navigating to the PLS in the Azure Portal, then go to **Private Endpoint connections** and click **Approve**.
 
 #### IP Whitelisting
 Allows management plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Management Plane. This method requires the Data Plane to have a publicly accessible endpoint.
-To whitelist, add an inbound rule to the Azure NSG or Firewall allowing connections from the AI Gateway Management Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on required port.
+To whitelist, add an inbound rule to the Azure NSG or Firewall allowing connections from the AI Gateway Management Plane's IPs on required port. Contact the Palo Alto Networks team for the current address list.
 
 To integrate the Management Plane with the Data Plane, contact the Palo Alto Networks team and provide the **Public Endpoint** of the Data Plane.
 
@@ -942,7 +840,7 @@ service:
 
 **Azure Managed Redis with Workload Identity**
 
-The following sample `values.yaml` shows how to configure Azure Managed Redis (Workload Identity) and Azure Blob Storage (Workload Identity) using a shared User-Assigned Managed Identity, with Private Link for outbound connectivity to the Management Plane.
+The following sample `values.yaml` shows how to configure Azure Managed Redis (Workload Identity) and Azure Blob Storage (Workload Identity) using a shared User-Assigned Managed Identity.
 ```yaml
 images:
   gatewayImage:
@@ -992,11 +890,6 @@ environment:
     AZURE_STORAGE_CONTAINER: <STORAGE_CONTAINER>
     AZURE_AUTH_MODE: workload
 
-    # Private Link outbound connectivity to Control Plane
-    ALBUS_BASEPATH: "https://azure-cp.privatelink-az.portkey.ai/albus"
-    CONTROL_PLANE_BASEPATH: "https://azure-cp.privatelink-az.portkey.ai/api/v1"
-    SOURCE_SYNC_API_BASEPATH: "https://azure-cp.privatelink-az.portkey.ai/api/v1/sync"
-    CONFIG_READER_PATH: "https://azure-cp.privatelink-az.portkey.ai/api/model-configs"
 
 service:
   type: LoadBalancer

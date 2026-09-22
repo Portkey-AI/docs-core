@@ -411,80 +411,7 @@ storage_config = {
 
 **Outbound Connectivity (Data Plane to Management Plane)**
 
-The AI Gateway supports the following methods for integrating the Data Plane with the Management Plane:
-
-- Azure Private Link
-- Over the Internet
-
-### Azure Private Link (Outbound)
-
-Connect your Gateway to the Management Plane privately over Azure Private Link.
-
-**Prerequisites:** VNET deployment (`network_mode = "new"` or `"existing"`).
-
-**Steps:**
-
-1. **Request whitelisting** — Share your Azure Subscription ID with the Palo Alto Networks team. Wait for confirmation that your subscription is whitelisted.
-
-2. **Deploy Private Endpoint** — Enable outbound Private Link in your Terraform configuration:
-
-Add to your `terraform.tfvars`:
-
-```hcl
-control_plane_private_link = {
-  outbound = true
-}
-```
-
-Deploy:
-
-```sh
-terraform apply
-```
-
-This creates:
-- Private Endpoint in your VNET
-- Private DNS Zone (`privatelink-az.portkey.ai`)
-- DNS A record (`azure-cp`) pointing to the Private Endpoint IP
-- VNET link for DNS resolution
-
-3. **Request connection approval** — Get the Private Endpoint resource ID and share it with the Palo Alto Networks team:
-
-```sh
-terraform output control_plane_private_endpoint_id
-```
-
-Share the output with the AI Gateway. Wait for them to approve the connection.
-
-4. **Verify approval** (optional):
-
-```sh
-az network private-endpoint show \
-  --ids $(terraform output -raw control_plane_private_endpoint_id) \
-  --query 'privateLinkServiceConnections[0].privateLinkServiceConnectionState.status' -o tsv
-# Should return: "Approved"
-```
-
-5. **Configure Private Endpoint URLs** — Update your Gateway configuration to use the private Management Plane endpoint.
-
-Update in `main.tf`:
-
-```hcl
-environment_variables = {
-  gateway = {
-    ALBUS_BASEPATH            = "https://private.azure-cp.portkey.ai/albus"
-    CONTROL_PLANE_BASEPATH    = "https://private.azure-cp.portkey.ai/api/v1"
-    SOURCE_SYNC_API_BASEPATH  = "https://private.azure-cp.portkey.ai/api/v1/sync"
-    CONFIG_READER_PATH        = "https://private.azure-cp.portkey.ai/api/model-configs"
-  }
-}
-```
-
-6. **Redeploy** — Apply the configuration changes:
-
-```sh
-terraform apply
-```
+The Data Plane integrates with the Management Plane over the internet.
 
 ### Over the Internet
 
@@ -496,57 +423,11 @@ No additional configuration needed if your network allows outbound internet acce
 
 ### Inbound Connectivity (Management Plane to Data Plane)
 
-- Azure Private Link
-- IP Whitelisting
-
-#### Azure Private Link (Inbound)
-
-Allow Management Plane to connect to your Gateway privately via Azure Private Endpoint.
-
-**Prerequisites:** Gateway deployed and running.
-
-**Steps:**
-
-1. **Share connection details** — Get your Gateway connection information and share with the Palo Alto Networks team:
-
-```sh
-# Get ACA Environment Resource ID
-terraform output container_app_environment_id
-
-# Get Gateway FQDN
-terraform output inbound_gateway_fqdn
-```
-
-Share both outputs with the AI Gateway:
-- ACA Environment Resource ID (e.g., `/subscriptions/xxx/resourceGroups/xxx/providers/Microsoft.App/managedEnvironments/xxx`)
-- Gateway FQDN (e.g., `gateway.<env-domain>.<region>.azurecontainerapps.io`)
-
-2. **Wait for connection request** — the AI Gateway creates a Private Endpoint in their subscription targeting your ACA Environment. A connection request will appear in your Azure subscription.
-
-3. **Check for pending connections:**
-
-```sh
-az network private-endpoint-connection list \
-  --id $(terraform output -raw container_app_environment_id) \
-  --type Microsoft.App/managedEnvironments \
-  --query "[].{Name:name, Status:properties.privateLinkServiceConnectionState.status, Description:properties.privateLinkServiceConnectionState.description}"
-```
-
-4. **Approve the connection:**
-
-```sh
-az network private-endpoint-connection approve \
-  --id "<connection-id-from-step-3>" \
-  --description "Approved for Portkey Control Plane"
-```
-
-Or approve via Azure Portal: Container Apps Environment → **Networking** → **Private endpoint connections** → approve the pending request.
-
 #### IP Whitelisting
 
 Allows Management Plane to access the Data Plane over the internet by restricting inbound traffic to specific IP addresses. This method requires the Data Plane to have a publicly accessible endpoint.
 
-To whitelist, add an inbound rule to the Azure NSG or Firewall allowing connections from the AI Gateway Management Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on the required port.
+To whitelist, add an inbound rule to the Azure NSG or Firewall allowing connections from the AI Gateway Management Plane's IPs on the required port. Contact the Palo Alto Networks team for the current address list.
 
 To integrate the Management Plane with the Data Plane, contact the Palo Alto Networks team and provide the **Public Endpoint** of the Data Plane.
 

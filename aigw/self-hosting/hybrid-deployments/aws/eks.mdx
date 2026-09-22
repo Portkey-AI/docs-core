@@ -371,9 +371,7 @@ To confirm that the deployment was successful, follow these steps:
 
 **Outbound Connectivity (Data Plane to Management Plane)**
 
-The AI Gateway supports the following methods for integrating the Data Plane with the Management Plane for outbound connectivity:
-- AWS PrivateLink
-- Over the Internet
+The Data Plane integrates with the Management Plane over the internet.
 
 **Ensure Outbound Network Access**
 
@@ -398,40 +396,6 @@ spec:
 ```
 This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Management Plane.
 
-#### AWS PrivateLink
-Establishes a secure, private connection between the Management Plane and Data Plane within the AWS network.
-
-**Steps to establish AWS PrivateLink connectivity:**
-
-1. Contact the AI Gateway and provide AWS account ARN so it can be whitelisted in the AI Gateway's Management Plane.
-2. Once you get confirmation from the AI Gateway that your AWS account is whitelisted, go to the [VPC Console](https://console.aws.amazon.com/vpc/).
-3. Select the AWS Region where the AI Gateway is deployed.
-4. Navigate to the **Endpoints** section in the VPC console.
-5. Click on **Create endpoint** and enter the required details.
-6. Select the `PrivateLink Ready partner services` category and, under **Service settings**, provide the following details.
-    - For **Service name**, enter `com.amazonaws.vpce.us-east-1.vpce-svc-0c2c1c323d9f56d95`
-    - (Optional) If the Gateway is deployed in a region other than `us-east-1`, select `Enable Cross Region endpoint`, choose the `us-east-1` region, and click the **Verify service** button.
-7. Under **Network settings**
-    - Select the VPC and subnets (at least two in different AZs for high availability) where the endpoint should be created. Ideally, this should be the same VPC where the Gateway is deployed.
-    - Select the security group to associate with the endpoint. The security group must allow inbound connections on port 443 from the Gateway.
-8. After all details are filled in, click on **Create endpoint**.
-9. Wait for the Status to change to `Available`.
-10. Once the status changes to `Available`, click on **Actions** > **Modify private DNS name** > Select **Enable for this endpoint**.
-11. Update the `values.yaml` file with following config.
-    ```yaml
-    environment:
-      create: true
-      secret: true
-      data:
-          ALBUS_BASEPATH: "https://aws-cp.portkey.ai/albus"
-          CONTROL_PLANE_BASEPATH: "https://aws-cp.portkey.ai/api/v1"
-          SOURCE_SYNC_API_BASEPATH: "https://aws-cp.portkey.ai/api/v1/sync"
-          CONFIG_READER_PATH: "https://aws-cp.portkey.ai/api/model-configs"
-    ```
-12. Re-deploy the gateway.
-    ```sh
-    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n portkeyai  --create-namespace
-    ```
 #### Over the Internet
 
 Ensure Gateway has access to following endpoints over the internet.
@@ -439,49 +403,10 @@ Ensure Gateway has access to following endpoints over the internet.
   - `https://albus.portkey.ai`
 
 ### Inbound Connectivity (Management Plane to Data Plane)
-- AWS PrivateLink
-- IP Whitelisting
-
-#### AWS PrivateLink
-Establishes a secure, private connection between the Management Plane and Data Plane within the AWS network.
-
-**Steps to establish AWS PrivateLink connectivity:**
-
-To use AWS PrivateLink, you must create an AWS Network Load Balancer (NLB)—either internal or internet-facing—to expose the Gateway outside the EKS cluster.
-For detailed instructions on creating and integrating an NLB, please refer to the [Networking Configuration](#network-configuration)
-
-**Create Endpoint Service**
-- Navigate to the [AWS VPC Console](https://ap-southeast-1.console.aws.amazon.com/vpcconsole/home#CreateVpcEndpointServiceConfiguration).
-- In the top-right corner of the AWS Console, select the region where the AI Gateway is deployed.
-- Provide the following details -
-    - Name of endpoint service
-    - Select Network Load Balancer to associate with Endpoint.
-    - Choose region in which endpoint service will be available.
-    - Select whether acceptance is required or not for requested connections.
-    - Choose whether to enable private DNS name - If enabled provide the Private DNS Name.
-    - Select **IPv4** under Supported IP address types.
-- Click **Create**.
-
-**(Optional) Verify ownership of Private DNS name**
-
-This step needs to be performed if you are using Private DNS Name.
-
-Open created Endpoint Service > click on **Actions** > select Verify domain ownership for private DNS name > Create the recommended record in your DNS server > Click Verify.
-
-**Authorize the AI Gateway's Management Plane to initiate connection requests**
-
-- Open to Endpoint Service > click on **Actions** > select **Allow principals**, and enter the Management Plane's ARN(`arn:aws:iam::299329113195:root`).
-Reach out to portkey team and share the following details -
-    - **Service name**
-    - **DNS names**
-    - **Private DNS name**
-    - **Region** selected while creating Endpoint Service.
-    - Port number on which Load Balancer is listening for connections.
-- Wait for the Palo Alto Networks team to initiate a connection request from the management plane's AWS account to your Gateway AWS account. Navigate to the **Endpoint connections** section and once the request appears, approve it.
 
 #### IP Whitelisting
 Allows management plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Management Plane. This method requires the Data Plane to have a publicly accessible endpoint.
-To whitelist, add an inbound rule to the Load Balancer's security group allowing connections from the AI Gateway Management Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on NLB listener port.
+To whitelist, add an inbound rule to the Load Balancer's security group allowing connections from the AI Gateway Management Plane's IPs on NLB listener port. Contact the Palo Alto Networks team for the current address list.
 
 To integrate the Management Plane with the Data Plane, contact the Palo Alto Networks team and provide the **Public Endpoint** of the Data Plane.
 
@@ -846,9 +771,9 @@ service:
     service.beta.kubernetes.io/aws-load-balancer-manage-backend-security-group-rules: "true"
 ```
 
-**ElastiCache (IAM Auth) with S3 using IRSA and PrivateLink**
+**ElastiCache (IAM Auth) with S3 using IRSA**
 
-The following sample `values.yaml` shows how to configure Amazon ElastiCache with IAM authentication, Amazon S3 for log storage using IRSA, and AWS PrivateLink for outbound connectivity to the Management Plane.
+The following sample `values.yaml` shows how to configure Amazon ElastiCache with IAM authentication, and Amazon S3 for log storage using IRSA.
 ```yaml
 images:
   gatewayImage:
@@ -896,7 +821,7 @@ environment:
     LOG_STORE_REGION: <S3_BUCKET_REGION>
     LOG_STORE_GENERATIONS_BUCKET: <S3_BUCKET_NAME>
 
-    # PrivateLink outbound connectivity to Control Plane
+    # Outbound connectivity to Control Plane
     ALBUS_BASEPATH: "https://aws-cp.portkey.ai/albus"
     CONTROL_PLANE_BASEPATH: "https://aws-cp.portkey.ai/api/v1"
     SOURCE_SYNC_API_BASEPATH: "https://aws-cp.portkey.ai/api/v1/sync"
