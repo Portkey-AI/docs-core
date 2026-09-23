@@ -1,0 +1,157 @@
+---
+title: "Connect to Internal Services"
+sidebarTitle: "Internal Services"
+description: "Allow a hybrid AI Gateway to reach MCP servers, model endpoints, and webhooks on your private network by setting TRUSTED_CUSTOM_HOSTS, then verify and troubleshoot the allowlist."
+---
+
+A self-hosted AI Gateway blocks outbound requests to private IP ranges and internal hostnames by default, to prevent [SSRF](https://owasp.org/www-community/attacks/Server_Side_Request_Forgery) attacks. To reach services on your own network, add them to the `TRUSTED_CUSTOM_HOSTS` allowlist on the gateway.
+
+You need this when the gateway calls any of these on a private address:
+
+- An [internal MCP server](/aigw/product/mcp-gateway/internal-mcp-servers) registered in the MCP Registry
+- A [custom host](/aigw/product/ai-gateway/custom-hosts) such as a self-hosted model endpoint
+- A [custom guardrail webhook](/aigw/integrations/guardrails/bring-your-own-guardrails)
+
+<Info>
+`TRUSTED_CUSTOM_HOSTS` is available only on hybrid and air-gapped deployments. On AI Gateway SaaS, upstream URLs must be publicly reachable.
+</Info>
+
+## Recognize the error
+
+When the gateway blocks a request, the log entry in **Strata Cloud Manager** → **AI Security** → **AI Gateway** → **Observability** → **Logs** looks like this:
+
+```
+request to http://mcp.example.net:8000/mcp failed, reason: Outbound request rejected by SSRF policy: mcp.example.net resolves to 10.110.2.26, which is blocked
+```
+
+MCP clients often don't see this message. An MCP `initialize` call may just return a generic error such as `Failed to restore session. Please reinitialize.`. If an internal MCP server fails to connect, check the Observability logs for the SSRF message first.
+
+## Allowlist the hostname, not the IP
+
+The allowlist is checked against the **hostname in the upstream URL**. When the hostname is trusted, the gateway also accepts whatever private IPs it resolves to. Adding only the resolved IP doesn't help if the URL uses a hostname.
+
+| Upstream URL | Add to `TRUSTED_CUSTOM_HOSTS` |
+|--------------|-------------------------------|
+| `http://mcp.example.net:8000/mcp` | `mcp.example.net` |
+| Several hosts under `example.net` (`mcp.example.net`, `docs.example.net`) | `*.example.net` |
+| `http://10.110.2.26:8000/mcp` | `10.110.2.26` |
+
+<Warning>
+The error message names the resolved IP (`resolves to 10.110.2.26, which is blocked`), but the fix is to trust the **hostname** shown before it. Copy the hostname straight from the error or the MCP Registry URL. A single-character typo leaves the host blocked.
+</Warning>
+
+Other rules to keep in mind:
+
+- **Setting the variable replaces the defaults.** When `NODE_ENV` is `production`, the allowlist is empty until you set it. If you still need `localhost`, `127.0.0.1`, `::1`, or `host.docker.internal`, include them in your list.
+- **A bare domain doesn't cover its subdomains.** `example.net` doesn't trust `mcp.example.net`. Use `*.example.net` to trust the domain and all of its subdomains.
+- **Some destinations can never be trusted.** Cloud metadata endpoints, metadata hostname suffixes such as `cluster.local`, and non-HTTP ports such as `5432` stay blocked even when listed. See [Custom hosts](/aigw/product/ai-gateway/custom-hosts#blocked-host-patterns) for the full list.
+
+## Set `TRUSTED_CUSTOM_HOSTS`
+
+Set the variable on the gateway service, which also serves the MCP Gateway when `SERVER_MODE` / `server_mode` is `mcp` or `all`. The value is a comma-separated list with no spaces. The variable is read at startup, so running containers must be restarted to pick up a change.
+
+<Tabs>
+  <Tab title="Helm (EKS, AKS, GKE)">
+    Add the variable under `environment.data` in `values.yaml`:
+
+    ```yaml
+    environment:
+      data:
+        TRUSTED_CUSTOM_HOSTS: "localhost,127.0.0.1,::1,host.docker.internal,mcp.example.net"
+    ```
+
+    Apply the change and restart the gateway pods:
+
+    ```sh
+    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml -n $namespace
+    kubectl rollout restart deployment -n $namespace
+    ```
+  </Tab>
+  <Tab title="Terraform (ECS, ACA)">
+    Add the variable to the `gateway` map in `environment_variables`:
+
+    ```hcl
+    environment_variables = {
+      gateway = {
+        SERVICE_NAME         = "gateway"
+        ANALYTICS_STORE      = "control_plane"
+        TRUSTED_CUSTOM_HOSTS = "localhost,127.0.0.1,::1,host.docker.internal,mcp.example.net"
+      }
+    }
+    ```
+
+    Then run `terraform apply`. This rolls out a new task definition (ECS) or revision (ACA) with the updated environment.
+  </Tab>
+  <Tab title="Docker Compose (EC2)">
+    When the gateway runs with Docker Compose on a VM and was set up with `setup-panw-ai-gateway.sh`, set the variable in **all three** files. The syntax differs between them:
+
+    | File | Syntax |
+    |------|--------|
+    | `values.yaml` | `TRUSTED_CUSTOM_HOSTS: "localhost,127.0.0.1,::1,host.docker.internal,mcp.example.net"` |
+    | `.env` | `TRUSTED_CUSTOM_HOSTS="localhost,127.0.0.1,::1,host.docker.internal,mcp.example.net"` |
+    | `.env.runtime` | `TRUSTED_CUSTOM_HOSTS="localhost,127.0.0.1,::1,host.docker.internal,mcp.example.net"` |
+
+    Re-run the setup script, then recreate the containers so they pick up the new environment:
+
+    ```sh
+    sudo ./setup-panw-ai-gateway.sh --from-values values.yaml
+    sudo docker compose up -d --force-recreate
+    ```
+
+    A plain `docker compose restart` doesn't reload environment files. Use `--force-recreate`.
+  </Tab>
+</Tabs>
+
+## Verify the allowlist
+
+Startup logs don't print the allowlist, so check the environment inside the running gateway container:
+
+<CodeGroup>
+```sh Kubernetes
+kubectl exec -n $namespace <GATEWAY_POD_NAME> -- printenv TRUSTED_CUSTOM_HOSTS
+```
+
+```sh Docker Compose
+docker ps --format '{{.Names}}'               # find the gateway container name
+docker exec <GATEWAY_CONTAINER_NAME> printenv TRUSTED_CUSTOM_HOSTS
+```
+
+```sh ECS
+aws ecs describe-task-definition --task-definition <TASK_DEFINITION> \
+  --query "taskDefinition.containerDefinitions[].environment[?name=='TRUSTED_CUSTOM_HOSTS']"
+```
+</CodeGroup>
+
+Compare the output character by character against the hostname in the SSRF error. Then send the request again, for example an MCP `initialize` call:
+
+```sh
+curl -s -X POST "http://<GATEWAY_HOST>:8788/<MCP_SERVER_SLUG>/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{}},"id":1}'
+```
+
+A successful response returns the server's capabilities, and the Observability log shows no SSRF error.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Still blocked after adding the IP | The URL uses a hostname, and only the IP is allowlisted | Add the hostname from the error message |
+| Still blocked after adding the hostname | Typo, or a bare domain used for a subdomain | Compare `printenv` output with the error; use `*.domain` for subdomains |
+| `printenv` shows the old value | Containers weren't restarted, or not every config file was updated | Update every file for your deployment type and recreate the containers |
+| `printenv` prints nothing | Variable set on the wrong service or in the wrong block | Set it on the gateway service, under `environment.data` (Helm) or `environment_variables.gateway` (Terraform) |
+| `localhost` or `host.docker.internal` stopped working | Your value replaced the defaults | Add the defaults back to the list |
+| Hostname trusted but still blocked | The destination is always blocked (metadata endpoint, blocked suffix, or blocked port) | Expose the service on a different hostname or an HTTP port. See [Custom hosts](/aigw/product/ai-gateway/custom-hosts#blocked-host-patterns). |
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Custom hosts" icon="shield" href="/aigw/product/ai-gateway/custom-hosts">
+    The full SSRF rule set and allowlist entry format.
+  </Card>
+  <Card title="Internal MCP servers" icon="server" href="/aigw/product/mcp-gateway/internal-mcp-servers">
+    Register a private MCP server in the MCP Registry.
+  </Card>
+</CardGroup>
