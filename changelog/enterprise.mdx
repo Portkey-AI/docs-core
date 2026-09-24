@@ -1,12 +1,58 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.24.0]"
+sidebarTitle: "Enterprise Gateway [2.25.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://www.paloaltonetworks.com/ai-security/ai-gateway#:~:text=See%20Prisma%20AIRS%20AI%20Gateway%20in%20Action" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="2.25.0" description="2026-09-24">
+
+## v2.25.0
+
+---
+
+### Decisions API: TypeSafe (Jev) Provider
+
+The gateway now supports a `/v1/decisions` endpoint for typed-judgment models, starting with TypeSafe's Jev family. Instead of a chat completion, you send a question along with structured `state` and get back a typed judgment (boolean, choice, or score) with probabilities and a calibrated confidence score.
+
+Requests and responses pass through in the provider's native format, and these calls still get the full set of gateway capabilities: authentication, routing, retries, circuit breaking, caching, logging, and cost tracking. Before-request guardrails can inspect the `state` field, just as they do for embedding requests.
+
+[Providers Documentation](/integrations/llms)
+
+### Gateway-Local JWT Auth: Workspace Selection and Membership Enforcement
+
+Requests authenticated with gateway-local JWT can now select a workspace at request time using the `x-portkey-workspace` header (slug or ID). The header is honored only when the request is attributed to a Portkey user through the token's email claim. It is ignored for service-key requests and never overrides a workspace already set in the token.
+
+Once a request resolves to a workspace, whether from a token claim, the header, or deployment settings, the gateway also verifies that the user is an active member of that workspace and returns a 403 if they are not.
+
+[Gateway-Local JWT Authentication](/product/enterprise-offering/org-management/jwt#workspace-resolution)
+
+### New Guardrail Lifecycle Stage: `startHooks`
+
+Configs now support a `startHooks` list that runs at the very start of a request, ahead of authentication, routing, and every other hook. This lets you screen and normalize incoming traffic before the gateway commits to a provider.
+
+Two new guardrail checks are available at this stage:
+
+- **Header Check**: allow or block a request based on whether its headers contain specific key-value pairs, using `all`, `any`, or `none` matching.
+- **Header Transform**: remove, set, or conditionally rewrite request headers before the request is routed. Protected headers, including `x-portkey-*`, cannot be modified.
+
+The existing `allowedRequestTypes` and `webhook` checks, along with JWT header lookup, can now also run as `startHooks`.
+
+[Guardrails Documentation](/product/guardrails)
+
+### Fixes and Improvements
+
+- **Guardrails**: The PANW Prisma AIRS guardrail now retries transient scan failures (timeouts, 429s, 5xx) with exponential backoff instead of immediately failing the check. [PANW Prisma AIRS Guardrail](/integrations/guardrails/palo-alto-panw-prisma)
+- **Pricing**: Pricing for Voyage, Lightning AI, and Scenario AI is now bundled with the gateway, so air-gapped deployments track spend for these providers correctly instead of logging zero cost. [Model Catalog](/product/model-catalog)
+- **Conditional Routing**: Routing conditions now read text form fields from multipart/form-data requests, such as image edits and audio transcriptions, in addition to JSON bodies. This applies to all providers; previously these requests carried no parameters to match against. [Conditional Routing](/product/ai-gateway/conditional-routing)
+- **Administration**: Internal routing headers used by the dashboard's logs view and playground are no longer misidentified as inline provider configuration when **Block Inline Configs** is enabled. [Enforcing Saved-Only Resources](/product/administration/enforce-saved-only-config)
+- **Security**: Hardened upstream path and URL construction for Stability AI requests. [Stability AI Integration](/integrations/llms/stability-ai)
+- **Security**: Hardened request override handling for the Prompt Render API. [Prompt Render API](/api-reference/inference-api/prompts/render)
+
+</Update>
 
 <Update label="2.24.0" description="2026-09-22">
 
