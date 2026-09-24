@@ -22,26 +22,33 @@ The gateway now exposes a `/v1/decisions` endpoint for typed-judgment providers,
 
 ### Gateway-Local JWT Auth: Workspace Hints & Membership Enforcement
 
-Gateway-local JWT authentication now accepts an `x-portkey-workspace` header (slug or id) to select a workspace at request time. The hint is honored only for requests attributed to a Portkey user via the token's email claim, is ignored for service-key requests, and never overrides a workspace already baked into the token. Whenever a request resolves to a specific workspace — from a token claim, the header hint, or deployment settings — the gateway now also enforces that the user is an active member of it, rejecting the request with a 403 otherwise.
+Gateway-local JWT authentication now accepts an `x-portkey-workspace` header (slug or id) to select a workspace at request time. The hint is honored only for requests attributed to a Portkey user via the token's email claim, is ignored for service-key requests, and never overrides a workspace already baked into the token. Whenever a request resolves to a specific workspace (from a token claim, the header hint, or deployment settings), the gateway now also enforces that the user is an active member of it, rejecting the request with a 403 otherwise.
 
 [Gateway-Local JWT Authentication](/product/enterprise-offering/org-management/jwt#workspace-resolution)
 
-### New `startHook` Stage and Header Guardrails
+### `startHooks`: Guardrails That Run Before Auth and Routing
 
-Configs gain a `startHooks` list that runs before every other hook, auth, and routing decision. Two new guardrail checks target it: **Header Check** validates that request headers do or don't contain specific key-value pairs (`all`/`any`/`none` operators), and **Header Transform** removes, sets, or conditionally rewrites request headers before routing — protected and `x-portkey-*` headers can't be touched. The existing `allowedRequestTypes` and `webhook` checks, and JWT header lookup, are now also `startHook`-compatible.
+Configs now support a `startHooks` list that runs at the very start of a request, ahead of authentication, routing, and every other hook. This lets you screen and normalize incoming traffic before the gateway commits to a provider.
+
+Two new guardrail checks are available at this stage:
+
+- **Header Check**: allow or block a request based on whether its headers contain specific key-value pairs, using `all`, `any`, or `none` matching.
+- **Header Transform**: remove, set, or conditionally rewrite request headers before the request is routed. Protected headers, including `x-portkey-*`, cannot be modified.
+
+The existing `allowedRequestTypes` and `webhook` checks, along with JWT header lookup, can now also run as `startHooks`.
 
 [Guardrails Documentation](/product/guardrails)
 
 ### Fixes and Improvements
 
-- **MCP Gateway**: A blocked agent session-init attempt against a cold or expired external OAuth connection is now recorded in the authorization logs with the agent's identity, instead of failing silently. [External MCP Servers](/product/mcp-gateway/external-mcp-servers)
-- **MCP Gateway**: Connecting to a cold external MCP upstream no longer revokes the agent's own access token; that purge is now reserved for genuine mid-session credential failures. [External MCP Servers](/product/mcp-gateway/external-mcp-servers)
+- **MCP Gateway**: A blocked agent session-init attempt against a cold or expired external OAuth connection is now recorded in the authorization logs with the agent's identity, instead of failing silently.
+- **MCP Gateway**: Connecting to a cold external MCP upstream no longer revokes the agent's own access token; that purge is now reserved for genuine mid-session credential failures.
 - **Guardrails**: The PANW Prisma AIRS guardrail now retries transient scan failures (timeouts, 429s, 5xx) with exponential backoff instead of immediately failing the check. [PANW Prisma AIRS Guardrail](/integrations/guardrails/palo-alto-panw-prisma)
 - **Pricing**: Voyage, Lightning AI, and Scenario AI pricing cards are now registered for local resolution, so private/on-prem deployments bill these providers correctly instead of silently defaulting to $0. [Model Catalog](/product/model-catalog)
 - **Azure**: Config-based conditional routing now reads request parameters from multipart/form-data image edit requests, instead of only from JSON bodies. [Conditional Routing](/product/ai-gateway/conditional-routing)
 - **Administration**: Internal routing headers used by the dashboard's logs view and playground are no longer misidentified as inline provider configuration when **Block Inline Configs** is enabled. [Enforcing Saved-Only Resources](/product/administration/enforce-saved-only-config)
-- **Security**: Fixed a path traversal vulnerability in the Stability AI provider that let a caller redirect the gateway's outgoing request — carrying the operator's API key — to arbitrary paths on Stability AI's API. [Stability AI Integration](/integrations/llms/stability-ai)
-- **Security**: The Prompt Render API now restricts request overrides to the prompt's declared parameters, closing a mass-assignment and prototype-pollution gap where a caller could inject arbitrary fields or reassign the merged object's prototype. [Prompt Render API](/api-reference/inference-api/prompts/render)
+- **Security**: Hardened upstream path and URL construction for Stability AI requests. [Stability AI Integration](/integrations/llms/stability-ai)
+- **Security**: Hardened request override handling for the Prompt Render API. [Prompt Render API](/api-reference/inference-api/prompts/render)
 
 </Update>
 
