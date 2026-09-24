@@ -353,7 +353,7 @@ The module can provision either an Application Load Balancer (ALB) or a Network 
 | ------------------------------------------------------------- | ----------- |
 | Host-based routing (required when `server_mode = "all"`)      | ALB         |
 | HTTP/HTTPS-aware routing, WAF, ALB access logs                | ALB         |
-| Layer-4 pass-through, AWS PrivateLink (Inbound Management Plane) | NLB         |
+| Layer-4 pass-through                                          | NLB         |
 | Lowest-latency, simple TCP forwarding                         | NLB         |
 
 #### Application Load Balancer (ALB)
@@ -496,51 +496,7 @@ The module supports both **same-account** and **cross-account** Bedrock access (
 
 **Outbound Connectivity (Data Plane to Management Plane)**
 
-The AI Gateway supports the following methods for integrating the Data Plane with the Management Plane for outbound connectivity:
-- AWS PrivateLink
-- Over the Internet
-
-### AWS PrivateLink (Outbound)
-
-Establishes a secure, private connection between the Data Plane and the Management Plane within the AWS network.
-
-**Steps to establish AWS PrivateLink connectivity:**
-
-1. Contact the AI Gateway and provide your AWS account ARN so it can be whitelisted in the AI Gateway's Management Plane.
-2. Once you receive confirmation from the AI Gateway that your AWS account is whitelisted, go to the [VPC Console](https://console.aws.amazon.com/vpc/).
-3. Select the AWS Region where the AI Gateway is deployed.
-4. Navigate to the **Endpoints** section in the VPC console.
-5. Click on **Create endpoint** and enter the required details.
-6. Select the `PrivateLink Ready partner services` category and, under **Service settings**, provide the following details.
-    - For **Service name**, enter `com.amazonaws.vpce.us-east-1.vpce-svc-0c2c1c323d9f56d95`
-    - (Optional) If the Gateway is deployed in a region other than `us-east-1`, select `Enable Cross Region endpoint`, choose the `us-east-1` region, and click the **Verify service** button.
-7. Under **Network settings**:
-    - Select the VPC and subnets (at least two in different AZs for high availability) where the endpoint should be created. Ideally, this should be the same VPC where the Gateway is deployed.
-    - Select the security group to associate with the endpoint. The security group must allow inbound connections on port 443 from the Gateway tasks.
-8. After all details are filled in, click on **Create endpoint**.
-9. Wait for the Status to change to `Available`.
-10. Once the status changes to `Available`, click on **Actions** > **Modify private DNS name** > select **Enable for this endpoint**.
-11. Update the `main.tf` to point the Gateway to the private Management Plane endpoint:
-
-    ```hcl
-    environment_variables = {
-      gateway = {
-        SERVICE_NAME              = "gateway"
-        ANALYTICS_STORE           = "control_plane"
-        LOG_STORE                 = "s3_assume"
-        ALBUS_BASEPATH            = "https://aws-cp.portkey.ai/albus"
-        CONTROL_PLANE_BASEPATH    = "https://aws-cp.portkey.ai/api/v1"
-        SOURCE_SYNC_API_BASEPATH  = "https://aws-cp.portkey.ai/api/v1/sync"
-        CONFIG_READER_PATH        = "https://aws-cp.portkey.ai/api/model-configs"
-      }
-    }
-    ```
-
-12. Re-deploy the Gateway:
-
-    ```sh
-    terraform apply
-    ```
+The Data Plane integrates with the Management Plane over the internet.
 
 ### Over the Internet
 
@@ -552,81 +508,15 @@ No additional configuration is needed if your VPC allows outbound internet acces
 
 ### Inbound Connectivity (Management Plane to Data Plane)
 
-- AWS PrivateLink
-- IP Whitelisting
-
-#### AWS PrivateLink (Inbound)
-
-Establishes a secure, private connection between the Management Plane and the Data Plane within the AWS network.
-
-**Steps to establish AWS PrivateLink connectivity:**
-
-AWS VPC Endpoint Services only support **Network Load Balancers (NLB)** or Gateway Load Balancers — they cannot be created directly against an ALB. Pick one of the two paths below depending on what the module provisions for you.
-
-<Tabs>
-  <Tab title="Terraform-provisioned NLB">
-    If your deployment uses `lb_type = "network"`, the module already provisions an NLB that can be associated with the Endpoint Service directly. Ensure the Gateway is exposed via that NLB:
-
-    ```hcl
-    create_lb        = true
-    internal_lb      = true                                                 # false for internet-facing NLB
-    lb_type          = "network"
-    allowed_lb_cidrs = ["<X.X.X.X/Y>"]                                      # CIDR ranges allowed to reach the NLB
-    ```
-  </Tab>
-  <Tab title="Existing ALB (NLB-in-front)">
-    If your deployment already uses an Application Load Balancer (e.g., because `server_mode = "all"` requires host-based routing), the module's ALB cannot be the target of a VPC Endpoint Service. You'll need to provision an NLB **outside this terraform** that uses the existing ALB as a target, and then create the Endpoint Service against that NLB.
-
-    High-level steps:
-
-    1. Keep the module-provisioned ALB in place (`lb_type = "application"`).
-    2. Outside this Terraform module, create a Network Load Balancer in the same VPC.
-    3. Create a target group of type `alb` and register the existing ALB as the target.
-    4. Add a listener on the NLB that forwards to that target group on the port the ALB listens on (e.g., 443).
-    5. Use this NLB as the load balancer for the Endpoint Service in the next step.
-
-    See the AWS guide on [using an ALB as a target for an NLB](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/application-load-balancer-target.html) for the full procedure.
-  </Tab>
-</Tabs>
-
-**Create the Endpoint Service**
-
-- Navigate to the [AWS VPC Console](https://console.aws.amazon.com/vpcconsole/home#CreateVpcEndpointServiceConfiguration).
-- In the top-right corner of the AWS Console, select the region where the AI Gateway is deployed.
-- Provide the following details:
-    - Name of the endpoint service
-    - Select the Network Load Balancer to associate with the endpoint (the module-provisioned NLB, or the NLB you created in front of the ALB)
-    - Choose the regions in which the endpoint service will be available
-    - Select whether acceptance is required for incoming connections
-    - Choose whether to enable a Private DNS name — if enabled, provide the Private DNS Name
-    - Select **IPv4** under Supported IP address types
-- Click **Create**.
-
-**(Optional) Verify ownership of the Private DNS name**
-
-This step is required only if you are using a Private DNS Name.
-
-Open the created Endpoint Service > click on **Actions** > select **Verify domain ownership for private DNS name** > create the recommended record in your DNS server > click **Verify**.
-
-**Authorize the AI Gateway's Management Plane to initiate connection requests**
-
-- Open the Endpoint Service > click on **Actions** > select **Allow principals**, and enter the Management Plane's ARN (`arn:aws:iam::299329113195:root`).
-- Reach out to the Palo Alto Networks team and share the following details:
-    - **Service name**
-    - **DNS names**
-    - **Private DNS name**
-    - **Region** selected while creating the Endpoint Service
-    - Port number on which the Load Balancer is listening for connections
-- Wait for the Palo Alto Networks team to initiate a connection request from the Management Plane's AWS account to your Gateway's AWS account. Navigate to the **Endpoint connections** section, and once the request appears, approve it.
-
 #### IP Whitelisting
 
 Allows the Management Plane to access the Data Plane over the internet by restricting inbound traffic to specific IP addresses of the Management Plane. This method requires the Data Plane to have a publicly accessible endpoint.
 
-To whitelist, add an inbound rule to the Load Balancer's security group allowing connections from the AI Gateway Management Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on the listener port. Alternatively, set `allowed_lb_cidrs` in the module configuration:
+To whitelist, add an inbound rule to the Load Balancer's security group allowing connections from the AI Gateway Management Plane's IPs on the listener port. Contact the Palo Alto Networks team for the current address list. Alternatively, set `allowed_lb_cidrs` in the module configuration:
 
 ```hcl
-allowed_lb_cidrs = ["54.81.226.149/32", "34.200.113.35/32", "44.221.117.129/32"]
+# Replace with the Management Plane CIDRs provided by the Palo Alto Networks team
+allowed_lb_cidrs = ["203.0.113.10/32", "203.0.113.11/32"]
 ```
 
 To integrate the Management Plane with the Data Plane, contact the Palo Alto Networks team and provide the **Public Endpoint** of the Data Plane.

@@ -377,9 +377,7 @@ To confirm that the deployment was successful, follow these steps:
 
 **Outbound Connectivity (Data Plane to Management Plane)**
 
-The AI Gateway supports the following methods for integrating the Data Plane with the Management Plane for outbound connectivity:
-- GCP Private Service Connect
-- Over the Internet
+The Data Plane integrates with the Management Plane over the internet.
 
 **Ensure Outbound Network Access**
 
@@ -405,101 +403,6 @@ spec:
 
 This allows the gateway to access LLMs hosted both within your VPC and externally. This also enables connection for the sync service to the Management Plane.
 
-#### GCP Private Service Connect
-
-Establishes a secure, private connection between the Management Plane and Data Plane within the GCP network.
-
-**Steps to establish GCP Private Service Connect connectivity:**
-
-1. **(Optional)** Create a subnet in region `us-east4` if you don't already have one.
-  ```sh
-  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/28 etc
-  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
-  gcloud compute networks subnets create psc-endpoint-subnet \
-    --network=<VPC_NAME> \
-    --range=<SUBNET_CIDR> \
-    --region=us-east4
-  ```
-2. Create an IP address for the PSC endpoint.
-  ```sh
-  # If you already had a subnet in us-east4 and you skipped step 1,
-  # replace psc-endpoint-subnet with the name of your existing subnet.
-  gcloud compute addresses create psc-endpoint-ip \
-    --region=us-east4 \
-    --subnet=psc-endpoint-subnet
-  ```
-3. Contact the Palo Alto Networks team, share your GCP Project ID, and request private connectivity.
-4. Once your project has been whitelisted and the AI Gateway has shared the `SERVICE_ATTACHMENT_URI`, create the forwarding rule for the Management Plane's private endpoint.
-  ```sh
-  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
-  # Replace <SERVICE_ATTACHMENT_URI> with URI you received from Portkey.
-  gcloud compute forwarding-rules create portkey-cp-pvt-endpoint-rule \
-    --region=us-east4 \
-    --network=<VPC_NAME> \
-    --address=psc-endpoint-ip \
-    --target-service-attachment=<SERVICE_ATTACHMENT_URI>
-  ```
-5. **(Optional)** If your GKE cluster is in a different region from `us-east4`, enable global access on the PSC endpoint.
-  ```sh
-  gcloud compute forwarding-rules update portkey-cp-pvt-endpoint-rule \
-    --region=us-east4 \
-    --allow-psc-global-access
-  ```
-6. Fetch Connection ID of PSC endpoint and share it with the AI Gateway for connection approval.
-  ```sh
-  gcloud compute forwarding-rules describe portkey-cp-pvt-endpoint-rule \
-      --region=us-east4 \
-      --format="value(pscConnectionId)"
-  ```
-7. Once the AI Gateway confirms approval, verify the connection status:
-  ```sh
-  gcloud compute forwarding-rules describe portkey-cp-pvt-endpoint-rule \
-    --region=us-east4 \
-    --format="get(pscConnectionStatus)"
-
-  # Should return "ACCEPTED"
-  ```
-8. Fetch Private IP of PSC endpoint.
-  ```sh
-  PSC_IP=$(gcloud compute addresses describe psc-endpoint-ip \
-    --region=us-east4 \
-    --format="value(address)")
-  echo ${PSC_IP}
-  ```
-9. Create a Private DNS Zone for DNS resolution of Management Plane PSC endpoint.
-  ```sh
-  # Replace <VPC_NAME> with VPC name of GKE cluster.
-  gcloud dns managed-zones create portkey-control-plane-pdz \
-    --dns-name="privatelink-gcp.portkey.ai." \
-    --description="Hosted Zone for DNS resolution of Portkey control plane endpoint" \
-    --visibility="private" \
-    --networks="<VPC_NAME>"
-  ```
-10. Create a DNS record to point to AI Gateway PSC endpoint IP.
-  ```sh
-  gcloud dns record-sets create "us-east4-gcp-cp.privatelink-gcp.portkey.ai." \                                                         130 ↵
-    --rrdatas="${PSC_IP}" \
-    --type="A" \
-    --ttl=300 \
-    --zone="portkey-control-plane-pdz"
-  ```
-11. If connection status changes to `ACCEPTED`, update the `values.yaml` file with the following environment variables.
-  ```yaml
-  environment:
-    create: true
-    secret: true
-    data:
-        ALBUS_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/albus"
-        CONTROL_PLANE_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/v1"
-        SOURCE_SYNC_API_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/v1/sync"
-        CONFIG_READER_PATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/model-configs"
-  ```
-12. Re-deploy the gateway.
-    ```sh
-    helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml  -n ${NAMESPACE}  --create-namespace
-    ```
-13. Check the Gateway pod logs to verify that no errors related to connection timeout or DNS resolution appear.
-
 #### Over the Internet
 
 Ensure Gateway has access to following endpoints over the internet.
@@ -508,64 +411,10 @@ Ensure Gateway has access to following endpoints over the internet.
 
 ### Inbound Connectivity (Management Plane to Data Plane)
 
-- GCP Private Service Connect
-- IP Whitelisting
-
-#### GCP Private Service Connect
-
-Establishes a secure, private connection between the Management Plane and Data Plane within the GCP network.
-
-**Prerequisites:**
-
-- AI Gateway must be exposed via either:
-  - Regional internal Application Load Balancer, or
-  - Regional internal proxy Network Load Balancer
-
-- A Private DNS Zone assocated to GKE VPC network and `A` record pointing to internal Load Balancer's Private IP.
-  ```
-  domain                Type    IP
-  gateway.example.com     A   x.x.x.x
-  mcp.example.com         A   x.x.x.x
-  ```
-- PSC requires an active subnet with purpose `PRIVATE_SERVICE_CONNECT`. If you don't have one, create it:
-```sh
-  # Replace <GKE_CLUSTER_REGION> with the region in which GKE cluster is created.
-  # Replace <VPC_NAME> with name of vpc in which your GKE cluster is created.
-  # Replace <SUBNET_CIDR> with CIDR to associate with subnet. CIDR MUST be part of VPC CIDR e.g., 10.0.2.0/28 etc
-
-  gcloud compute networks subnets create psc-nat-subnet \
-    --purpose=PRIVATE_SERVICE_CONNECT \
-    --role=ACTIVE \
-    --region=<GKE_CLUSTER_REGION> \
-    --network=<VPC_NAME> \
-    --range=<SUBNET_CIDR>
-  ```
-
-**Steps to establish GCP Private Service Connect connectivity:**
-1. Go to **Private Service Connect** > **Published services** and click **Publish service**.
-
-2. Under **Target details**, select the **Load Balancer** option:
-    - If you exposed the Gateway using Ingress in `values.yaml`, select **Regional internal Application Load Balancer**.
-    - Otherwise, select **Regional internal proxy Network Load Balancer**.
-
-3. Select the AI Gateway Gateway's Load Balancer and the forwarding rule associated with it.
-
-4. Under **Service details**:
-   - Provide a name for the service (e.g., `<org_name>-gateway-psc`).
-   - Select the subnet that was created for PSC.
-
-5. Under **Connections preference**, select **Accept connections for selected projects** and add project `pk-production-project` to the accepted projects list.
-
-6. Once the PSC service is created, copy the **Service attachment** and share it with the Palo Alto Networks team so they can initiate a connection request. In addition to that also share AI Gateway URL (e.g., https://gateway.example.com).
-
-7. Once the connection is initiated from the Management Plane, go to your PSC Published Service and approve the connection request.
-
-8. To verify connectivity from the Management Plane to the Data Plane, send a test request to the Gateway and check if you can view the full log details on Strata Cloud Manager after clicking a log entry.
-
 #### IP Whitelisting
 
 Allows management plane to access the Data Plane over the internet by restricting inbound traffic to specific IP address of Management Plane. This method requires the Data Plane to have a publicly accessible endpoint.
-To whitelist, add an inbound rule to the VPC Firewall allowing connections from the AI Gateway Management Plane's IPs (`54.81.226.149`, `34.200.113.35`, `44.221.117.129`) on Load Balancer listner port.
+To whitelist, add an inbound rule to the VPC Firewall allowing connections from the AI Gateway Management Plane's IPs on Load Balancer listner port. Contact the Palo Alto Networks team for the current address list.
 
 To integrate the Management Plane with the Data Plane, contact the Palo Alto Networks team and provide the **Public Endpoint** of the Data Plane.
 
@@ -724,9 +573,9 @@ service:
     spec.loadBalancerSourceRanges: "<X.X.X.X/Y>"
 ```
 
-**Memorystore with GCS (Workload Identity) and Private Service Connect**
+**Memorystore with GCS (Workload Identity)**
 
-The following sample `values.yaml` shows how to configure Google Memorystore for caching, GCS for log storage using Workload Identity Federation, and GCP Private Service Connect for outbound connectivity to the Management Plane.
+The following sample `values.yaml` shows how to configure Google Memorystore for caching, and GCS for log storage using Workload Identity Federation.
 ```yaml
 images:
   gatewayImage:
@@ -772,11 +621,6 @@ environment:
     LOG_STORE_REGION: <GCS_BUCKET_REGION>
     LOG_STORE_GENERATIONS_BUCKET: <GCS_BUCKET_NAME>
 
-    # Private Service Connect outbound connectivity to Control Plane
-    ALBUS_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/albus"
-    CONTROL_PLANE_BASEPATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/v1"
-    SOURCE_SYNC_API_BASEPATH: "us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/v1/sync"
-    CONFIG_READER_PATH: "https://us-east4-gcp-cp.privatelink-gcp.portkey.ai/api/model-configs"
 
 dataservice:
   name: "dataservice"
