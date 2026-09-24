@@ -46,9 +46,11 @@ sequenceDiagram
 
 Before CAS authentication works for your MCP Gateway:
 
-1. **CIE Directory Sync configured** — Users must be provisioned into workspaces via [CIE Directory Sync](/aigw/product/enterprise-offering/org-management/directory-sync/cie-directory-sync). CAS authenticates users, but CIE is what provisions them into the system. Without CIE sync, authenticated users cannot be resolved.
+1. **Gateway version 2.22.0 or later** — On 2.21.0 the consent screen at `GET /oauth/<slug>/authorize` returns `500` with `{"status":"failure","message":"immutable"}`, so the flow stops after client registration and before the CAS login page. Check the running version with `GET /v1/health`.
 
-2. **Authentication Profile selected** — An Auth Profile must be selected in the CIE Directory Sync configuration. This profile determines which identity provider is used for the CAS login flow. Auth Profiles are managed in the [CIE Authentication Profiles](https://docs.paloaltonetworks.com/identity/cloud-identity-engine/authenticate-users-with-the-cloud-identity-engine) console.
+2. **CIE Directory Sync configured** — Users must be provisioned into workspaces via [CIE Directory Sync](/aigw/product/enterprise-offering/org-management/directory-sync/cie-directory-sync). CAS authenticates users, but CIE is what provisions them into the system. Without CIE sync, authenticated users cannot be resolved.
+
+3. **Authentication Profile selected** — An Auth Profile must be selected in the CIE Directory Sync configuration. This profile determines which identity provider is used for the CAS login flow. Auth Profiles are managed in the [CIE Authentication Profiles](https://docs.paloaltonetworks.com/identity/cloud-identity-engine/authenticate-users-with-the-cloud-identity-engine) console.
 
 <Warning>
 CAS relies on CIE for user provisioning. If CIE Directory Sync is not configured, or no group-workspace mappings exist, users will authenticate successfully with CAS but fail to resolve — resulting in an authorization error.
@@ -330,6 +332,8 @@ The browser redirects back to your MCP client and the connection succeeds. GitHu
 
 | Issue | Cause | Resolution |
 |-------|-------|------------|
+| Client reports `Dynamic Client Registration rejected (HTTP 401)` with `Portkey Error: Invalid API Key. Error Code: 03` | The registration request reached the AI Gateway service instead of the MCP Gateway. The MCP Gateway's `/oauth/register` does not require an API key | Fix the MCP Gateway base URL or ingress routing. See [Client registration fails with "Invalid API Key"](/aigw/help-center/mcp-gateway-troubleshooting#client-registration-fails-with-invalid-api-key-error-code-03) |
+| `500` `{"status":"failure","message":"immutable"}` from `/oauth/<slug>/authorize` | Gateway 2.21.0 consent-screen bug | Upgrade the gateway to 2.22.0 or later |
 | User authenticates but gets "authorization failed" | User not provisioned via CIE | Configure [CIE Directory Sync](/aigw/product/enterprise-offering/org-management/directory-sync/cie-directory-sync) and verify group-workspace mappings |
 | "Email not found in claims" error | IdP not returning email attribute | Ensure the IdP includes the email claim. Verify the User Identity Attribute (UPN vs Mail) in CIE matches what the IdP returns |
 | Consent page shows but redirect fails | Browser blocking the redirect | Check for browser extensions or corporate policies blocking redirects to custom URI schemes (`cursor://`, `vscode://`) |
