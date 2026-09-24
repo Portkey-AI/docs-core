@@ -1,12 +1,49 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.24.0]"
+sidebarTitle: "Enterprise Gateway [2.25.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://www.paloaltonetworks.com/ai-security/ai-gateway#:~:text=See%20Prisma%20AIRS%20AI%20Gateway%20in%20Action" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Update label="2.25.0" description="2026-09-24">
+
+## v2.25.0
+
+---
+
+### Decisions API: TypeSafe (Jev) Provider
+
+The gateway now exposes a `/v1/decisions` endpoint for typed-judgment providers, starting with TypeSafe's Jev models. Callers send questions over structured `state` and get back typed judgments (boolean, choice, or score) with probabilities and calibrated confidence, rather than a chat completion. Requests and responses pass through natively, while still getting gateway auth, routing, retries, circuit breaking, caching, logging, and cost tracking. Before-request guardrails can inspect the `state` field on these requests, the same way they do for `embed`.
+
+[Providers Documentation](/integrations/llms)
+
+### Gateway-Local JWT Auth: Workspace Hints & Membership Enforcement
+
+Gateway-local JWT authentication now accepts an `x-portkey-workspace` header (slug or id) to select a workspace at request time. The hint is honored only for requests attributed to a Portkey user via the token's email claim, is ignored for service-key requests, and never overrides a workspace already baked into the token. Whenever a request resolves to a specific workspace — from a token claim, the header hint, or deployment settings — the gateway now also enforces that the user is an active member of it, rejecting the request with a 403 otherwise.
+
+[Gateway-Local JWT Authentication](/product/enterprise-offering/org-management/jwt#workspace-resolution)
+
+### New `startHook` Stage and Header Guardrails
+
+Configs gain a `startHooks` list that runs before every other hook, auth, and routing decision. Two new guardrail checks target it: **Header Check** validates that request headers do or don't contain specific key-value pairs (`all`/`any`/`none` operators), and **Header Transform** removes, sets, or conditionally rewrites request headers before routing — protected and `x-portkey-*` headers can't be touched. The existing `allowedRequestTypes` and `webhook` checks, and JWT header lookup, are now also `startHook`-compatible.
+
+[Guardrails Documentation](/product/guardrails)
+
+### Fixes and Improvements
+
+- **MCP Gateway**: A blocked agent session-init attempt against a cold or expired external OAuth connection is now recorded in the authorization logs with the agent's identity, instead of failing silently. [External MCP Servers](/product/mcp-gateway/external-mcp-servers)
+- **MCP Gateway**: Connecting to a cold external MCP upstream no longer revokes the agent's own access token; that purge is now reserved for genuine mid-session credential failures. [External MCP Servers](/product/mcp-gateway/external-mcp-servers)
+- **Guardrails**: The PANW Prisma AIRS guardrail now retries transient scan failures (timeouts, 429s, 5xx) with exponential backoff instead of immediately failing the check. [PANW Prisma AIRS Guardrail](/integrations/guardrails/palo-alto-panw-prisma)
+- **Pricing**: Voyage, Lightning AI, and Scenario AI pricing cards are now registered for local resolution, so private/on-prem deployments bill these providers correctly instead of silently defaulting to $0. [Model Catalog](/product/model-catalog)
+- **Azure**: Config-based conditional routing now reads request parameters from multipart/form-data image edit requests, instead of only from JSON bodies. [Conditional Routing](/product/ai-gateway/conditional-routing)
+- **Administration**: Internal routing headers used by the dashboard's logs view and playground are no longer misidentified as inline provider configuration when **Block Inline Configs** is enabled. [Enforcing Saved-Only Resources](/product/administration/enforce-saved-only-config)
+- **Security**: Fixed a path traversal vulnerability in the Stability AI provider that let a caller redirect the gateway's outgoing request — carrying the operator's API key — to arbitrary paths on Stability AI's API. [Stability AI Integration](/integrations/llms/stability-ai)
+- **Security**: The Prompt Render API now restricts request overrides to the prompt's declared parameters, closing a mass-assignment and prototype-pollution gap where a caller could inject arbitrary fields or reassign the merged object's prototype. [Prompt Render API](/api-reference/inference-api/prompts/render)
+
+</Update>
 
 <Update label="2.24.0" description="2026-09-22">
 
