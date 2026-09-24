@@ -1,48 +1,273 @@
 ---
 title: "fal.ai"
-description: "Integrate fal.ai models with Portkey's AI Gateway via an OpenAI-compatible API."
+description: "Use fal.ai image generation models and LLMs through Portkey"
 ---
 
-[fal.ai](https://fal.ai/) provides fast inference for 1000+ models including LLMs, image, video, and audio generation.
+[fal.ai](https://fal.ai/) is a fast inference platform for image generation models (FLUX, Ideogram, Recraft, Nano Banana, and more) plus LLMs via OpenRouter. Portkey routes image generation requests to fal's native API and chat completion requests through fal's OpenAI-compatible path.
 
 <Note>
-Provider slug: `fal-ai`. Requires Backend `v1.16.2+` in Model Catalog.
+Provider slug: **`fal-ai`**
 </Note>
 
 ## Quick Start
 
 <CodeGroup>
 
-```python Python icon="python"
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY")
+
+image = portkey.images.generate(
+    model="@fal-ai/fal-ai/flux/schnell",
+    prompt="A photorealistic mountain lake at sunrise"
+)
+
+print(image.data[0].url)
+```
+
+```javascript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
+
+const image = await portkey.images.generate({
+    model: "@fal-ai/fal-ai/flux/schnell",
+    prompt: "A photorealistic mountain lake at sunrise"
+});
+
+console.log(image.data[0].url);
+```
+
+```python OpenAI Python
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL
+)
+
+image = client.images.generate(
+    model="@fal-ai/fal-ai/flux/schnell",
+    prompt="A photorealistic mountain lake at sunrise"
+)
+
+print(image.data[0].url)
+```
+
+```javascript OpenAI NodeJS
+import OpenAI from "openai";
+import { PORTKEY_GATEWAY_URL } from "portkey-ai";
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: PORTKEY_GATEWAY_URL
+});
+
+const image = await client.images.generate({
+    model: "@fal-ai/fal-ai/flux/schnell",
+    prompt: "A photorealistic mountain lake at sunrise"
+});
+
+console.log(image.data[0].url);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@fal-ai/fal-ai/flux/schnell",
+    "prompt": "A photorealistic mountain lake at sunrise"
+  }'
+```
+
+</CodeGroup>
+
+<Tip>
+The model format is `@{provider-slug}/{fal-model-id}`. Since fal model IDs start with `fal-ai/`, the full path becomes `@fal-ai/fal-ai/flux/schnell`.
+</Tip>
+
+## Add Provider in Model Catalog
+
+1. Go to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers)
+2. Select **fal.ai**
+3. Enter your [fal.ai API key](https://fal.ai/dashboard/keys)
+4. Name your provider (e.g., `fal-ai`)
+
+<Card title="Model Catalog Setup" icon="book" href="/product/model-catalog">
+  Complete setup options and configuration
+</Card>
+
+## Chat Completions
+
+fal.ai provides LLM access via an OpenAI-compatible endpoint (powered by OpenRouter). Use `chat.completions.create` with the same client:
+
+<CodeGroup>
+
+```python Python
 from portkey_ai import Portkey
 
 portkey = Portkey(api_key="PORTKEY_API_KEY")
 
 response = portkey.chat.completions.create(
-    model="@fal-ai/fal-ai/flux/schnell",
-    messages=[{"role": "user", "content": "Hello!"}]
+    model="@fal-ai/google/gemini-2.5-flash",
+    messages=[{"role": "user", "content": "Explain diffusion models in one sentence."}]
 )
 
 print(response.choices[0].message.content)
 ```
 
-```js Javascript icon="square-js"
-import Portkey from "portkey-ai"
+```javascript NodeJS
+import Portkey from 'portkey-ai';
 
-const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" })
+const portkey = new Portkey({ apiKey: "PORTKEY_API_KEY" });
 
 const response = await portkey.chat.completions.create({
-    model: "@fal-ai/fal-ai/flux/schnell",
-    messages: [{ role: "user", content: "Hello!" }]
-})
+    model: "@fal-ai/google/gemini-2.5-flash",
+    messages: [{ role: "user", content: "Explain diffusion models in one sentence." }]
+});
 
-console.log(response.choices[0].message.content)
+console.log(response.choices[0].message.content);
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@fal-ai/google/gemini-2.5-flash",
+    "messages": [{"role": "user", "content": "Explain diffusion models in one sentence."}]
+  }'
 ```
 
 </CodeGroup>
 
-Add a **fal.ai** provider in [Model Catalog](/product/model-catalog) with your fal.ai API key, then reference it as `@<provider-slug>/<model-id>` in requests.
+LLM model IDs follow OpenRouter's format — e.g., `google/gemini-2.5-flash`, `anthropic/claude-sonnet-4`, `meta-llama/llama-4-maverick`. Browse available models at [fal.ai/models](https://fal.ai/models/openrouter/router/openai/v1/chat/completions).
 
+## Image Generation
+
+Image generation requests go to `POST /v1/images/generations`. The model ID maps to a path on `fal.run` — for example, `model="fal-ai/flux/dev"` routes to `https://fal.run/fal-ai/flux/dev`.
+
+<CodeGroup>
+
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="PORTKEY_API_KEY", provider="@fal-ai")
+
+image = portkey.images.generate(
+    model="fal-ai/flux-pro/v1.1",
+    prompt="A futuristic city at night, neon lights reflecting on wet streets",
+    n=2,
+    size="1024x1024"
+)
+
+for img in image.data:
+    print(img.url)
+```
+
+```javascript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@fal-ai"
+});
+
+const image = await portkey.images.generate({
+    model: "fal-ai/flux-pro/v1.1",
+    prompt: "A futuristic city at night, neon lights reflecting on wet streets",
+    n: 2,
+    size: "1024x1024"
+});
+
+image.data.forEach(img => console.log(img.url));
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @fal-ai" \
+  -d '{
+    "model": "fal-ai/flux-pro/v1.1",
+    "prompt": "A futuristic city at night, neon lights reflecting on wet streets",
+    "n": 2,
+    "size": "1024x1024"
+  }'
+```
+
+</CodeGroup>
+
+### Parameters
+
+Portkey maps OpenAI-style parameters to fal's API:
+
+| Parameter | fal parameter | Details |
+|---|---|---|
+| `prompt` | `prompt` | Required |
+| `n` | `num_images` | 1–4, default 1 |
+| `size` | `image_size` | See size mapping below |
+| `seed` | `seed` | For reproducible outputs |
+
+**Size mapping:**
+
+| `size` value | fal `image_size` |
+|---|---|
+| `256x256` | `square_hd` |
+| `512x512` | `square` |
+| `1024x1024` | `square_hd` |
+| `1024x1792` | `portrait_4_3` |
+| `1792x1024` | `landscape_4_3` |
+| Any other value | Passed through as-is |
+
+fal-native size strings like `landscape_16_9` or `portrait_16_9` can be passed directly.
+
+Responses always return image URLs. `response_format: "b64_json"` is not supported.
+
+<Note>
+Parameters outside the table above (`quality`, `style`, `guidance_scale`, `num_inference_steps`, etc.) are not forwarded to fal.
+</Note>
+
+## Supported Image Models
+
+| Model ID | Description |
+|---|---|
+| `fal-ai/flux/schnell` | FLUX Schnell — fastest, best for rapid iteration |
+| `fal-ai/flux/dev` | FLUX Dev — higher quality, open weights |
+| `fal-ai/flux-pro/v1.1` | FLUX Pro 1.1 — high quality, commercial use |
+| `fal-ai/flux-pro/v1.1-ultra` | FLUX Pro Ultra — highest resolution |
+| `fal-ai/flux-pro/kontext` | FLUX Kontext — context-aware generation |
+| `fal-ai/recraft-v3` | Recraft V3 |
+| `fal-ai/recraft/v4/pro/text-to-image` | Recraft V4 Pro |
+| `fal-ai/nano-banana-2` | Nano Banana 2 — fast semantic generation |
+| `fal-ai/nano-banana-pro` | Nano Banana Pro — highest quality |
+| `fal-ai/ideogram/v2` | Ideogram V2 |
+| `fal-ai/ideogram/v2/turbo` | Ideogram V2 Turbo |
+| `openai/gpt-image-2` | GPT Image 2 via fal |
+
+<Tip>
+fal.ai hosts 1000+ models. Any model on [fal.ai/models](https://fal.ai/models) that accepts a `prompt` input works with Portkey's image generation route — use its endpoint ID as the model value.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configs" icon="sliders" href="/product/ai-gateway/configs">
+    Add fallbacks, load balancing, and retries
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Monitor usage and costs across models
+  </Card>
+  <Card title="Caching" icon="database" href="/product/ai-gateway/cache-simple-and-semantic">
+    Cache image generation results
+  </Card>
+  <Card title="Metadata" icon="tag" href="/product/observability/metadata">
+    Tag requests with custom metadata
+  </Card>
+</CardGroup>
 
 import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
 
