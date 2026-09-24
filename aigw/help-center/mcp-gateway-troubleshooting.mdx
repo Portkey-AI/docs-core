@@ -212,6 +212,49 @@ If you run the gateway yourself (instead of `aigw.portkey.ai/m`):
 3. **Set `MCP_GATEWAY_BASE_URL`** to your public gateway URL (for example `https://<your-gateway-host>`). The gateway uses this to construct callback and discovery URLs—if it's wrong, OAuth and discovery fail.
 4. Make sure your ingress forwards the `Host` header so the server advertises its public URL (not an internal address).
 
+With `SERVER_MODE=unified` (gateway 2.20.0 or later), both gateways share one port: MCP servers are at `https://<your-gateway-host>/m/{slug}/mcp`, while `/.well-known/*` and `/oauth/*` stay at the root, not under `/m`.
+
+### Client registration fails with "Invalid API Key. Error Code: 03"
+
+An API key works, but connecting without one fails before any login page opens. Claude Code reports it as:
+
+```
+SDK auth failed: Dynamic Client Registration rejected (HTTP 401):
+{"status":"failure","message":"Portkey Error: Invalid API Key. Error Code: 03", ...}
+```
+
+**Why:** that response body comes from the AI Gateway, not the MCP Gateway. The MCP Gateway's `/.well-known/*`, `/oauth/register` and CORS preflight (`OPTIONS`) endpoints do not require an API key. When the MCP Gateway itself rejects a request, it answers `{"error":"unauthorized", ...}` with a `WWW-Authenticate` header. So the OAuth requests are reaching the AI Gateway service. API-key access still works because only the `/{slug}/mcp` path is routed correctly.
+
+**Confirm:**
+
+1. Fetch the authorization server metadata and check that every URL in it uses your public MCP Gateway host:
+
+   ```bash
+   curl https://<your-gateway-host>/.well-known/oauth-authorization-server/{slug}/mcp
+   ```
+
+2. Register a test client at the `registration_endpoint` it returns. Expect `201` with a `client_id`:
+
+   ```bash
+   curl -i -X POST <registration_endpoint> -H 'Content-Type: application/json' \
+     -d '{"client_name":"probe","redirect_uris":["http://localhost:33418/callback"],"token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"]}'
+   ```
+
+3. If that returns the `401` above, repeat it from inside the gateway pod, which bypasses the load balancer and ingress:
+
+   ```bash
+   kubectl exec <gateway-pod> -- wget -qO- http://localhost:8788/.well-known/oauth-authorization-server
+   ```
+
+   JSON here means the gateway is fine and the Service, load balancer or ingress is sending MCP traffic to the AI Gateway port (`8787`).
+
+**Fix:**
+
+- Set `MCP_GATEWAY_BASE_URL` to the public MCP Gateway URL, including the scheme and no path, then restart the pods. It is read at startup.
+- With `SERVER_MODE=all`, route **every** path on the MCP Gateway host to the MCP port (`8788`), not only `/{slug}/mcp`. `/.well-known/*` and `/oauth/*` must reach it too.
+- Or switch to `SERVER_MODE=unified`, which serves everything on one port and needs no host-based routing.
+- In the client, remove the server and add it again with no API key header, so it starts a fresh OAuth flow.
+
 ---
 
 ## Enterprise: `external_auth_config` returns 403
