@@ -1,0 +1,1414 @@
+---
+title: "Google Gemini"
+---
+
+The Prisma AIRS AI Gateway provides a robust and secure gateway to facilitate the integration of various Large Language Models (LLMs) into your applications, including [Google Gemini APIs](https://cloud.google.com/vertex-ai/docs/generative-ai/model-reference/gemini).
+
+With the AI Gateway, you can take advantage of features like fast AI gateway access, observability, prompt management, and more, all while ensuring the secure management of your LLM API keys through [Model Catalog](/aigw/product/model-catalog).
+
+## Quick Start
+
+<CodeGroup>
+
+
+```sh cURL icon="square-terminal"
+# 1. Add @google provider in Model Catalog
+# 2. Use it:
+
+curl https://aigw.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{"role": "user", "content": "Say this is a test"}]
+  }'
+```
+```python OpenAI Py icon="python"
+from openai import OpenAI
+
+# 1. Install: pip install openai
+# 2. Add @google provider in Model Catalog
+# 3. Use it:
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",  # AI Gateway API key
+    base_url="https://aigw.portkey.ai/v1"
+)
+
+response = client.chat.completions.create(
+    model="@google/gemini-1.5-pro",
+    messages=[{"role": "user", "content": "Say this is a test"}]
+)
+
+print(response.choices[0].message.content)
+```
+```js OpenAI JS icon="square-js"
+import OpenAI from "openai"
+
+// 1. Install: npm install openai
+// 2. Add @google provider in Model Catalog
+// 3. Use it:
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",  // AI Gateway API key
+    baseURL: "https://aigw.portkey.ai/v1"
+})
+
+const response = await client.chat.completions.create({
+    model: "@google/gemini-1.5-pro",
+    messages: [{ role: "user", content: "Say this is a test" }]
+})
+
+console.log(response.choices[0].message.content)
+```
+</CodeGroup>
+
+---
+
+## Add Provider in Model Catalog
+
+<Steps>
+
+<Step title="Navigate to Model Catalog">
+
+Go to [**Model Catalog → Add Provider**](https://stratacloudmanager.paloaltonetworks.com/) in Strata Cloud Manager.
+
+</Step>
+
+<Step title="Select Google Gemini">
+
+Find and select **Google** from the provider list.
+
+</Step>
+
+<Step title="Enter API Key">
+
+Get your API key from [Google AI Studio](https://aistudio.google.com/app/apikey) and enter it in Model Catalog.
+
+</Step>
+
+<Step title="Save and Use">
+
+Save your configuration. Your provider slug will be `@google` (or a custom name you specify).
+
+</Step>
+
+</Steps>
+
+<Note>
+The AI Gateway supports the `system_instructions` parameter for Google Gemini 1.5 - allowing you to control the behaviour and output of your Gemini-powered applications with ease.
+
+Simply include your Gemini system prompt as part of the `{"role":"system"}` message within the `messages` array of your request body. AI Gateway will automatically transform your message to ensure seamless compatibility with the Google Gemini API.
+</Note>
+
+---
+
+## Gemini Capabilities
+
+### Function Calling
+
+The AI Gateway supports function calling mode on Google's Gemini Models. Explore this cookbook for a deep dive and examples:
+
+[Function Calling](/guides/getting-started/function-calling)
+
+---
+
+## Advanced Multimodal Capabilities with Gemini
+
+Gemini models are inherently multimodal, capable of processing and understanding content from a wide array of file types. The AI Gateway streamlines the integration of these powerful features by providing a unified, OpenAI-compatible API.
+
+<Note>
+  **The AI Gateway Advantage: A Unified Format for All Media**
+
+  To simplify development, the AI Gateway uses a consistent format for all multimodal requests. Whether you're sending an image, audio, video, or document, you will use an object with `type: 'image_url'` within the user message's `content` array.
+
+  AI Gateway intelligently interprets your request—based on the URL or data URI you provide—and translates it into the precise format required by the Google Gemini API. This means you only need to learn one structure for all your media processing needs.
+</Note>
+
+### Image Processing
+
+Gemini can analyze images to describe their content, answer visual questions, or identify objects.
+
+<Card href="https://ai.google.dev/gemini-api/docs/image-understanding" title="Gemini Image Understanding Docs">
+</Card>
+
+**Method 1: Sending an Image via Google Files URL**
+
+Use the Google Files API to upload your image and get a URL. This is the recommended approach for larger files or when you need persistent storage.
+
+<Info>
+To upload files and get Google Files URLs, use the [Files API](https://ai.google.dev/gemini-api/docs/files). The URL format will be similar to: `https://generativelanguage.googleapis.com/v1beta/files/[FILE_ID]`
+</Info>
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "Describe this image in detail."
+            },
+            {
+                "type": "image_url",
+                "image_url": { "url": "https://generativelanguage.googleapis.com/v1beta/files/your-file-id" }
+            }
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+**Method 2: Sending a Local Image as Base64 Data**
+
+Use this method for local image files. The file is encoded into a Base64 string and sent as a data URI. This is ideal for smaller files when you don't want to use the Files API.
+
+The data URI format is: `data:<MIME_TYPE>;base64,<YOUR_BASE64_DATA>`
+
+<CodeGroup>
+```sh cURL
+# First, encode your image file to base64
+# For example: base64 -i local-image.png -o image.b64
+# Then use the encoded content in the request
+
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is in this picture?"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,YOUR_BASE64_IMAGE_DATA"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Info>Supported Image MIME types: `image/png`, `image/jpeg`, `image/webp`, `image/heic`, `image/heif`</Info>
+
+---
+
+### Audio Processing
+
+Gemini can transcribe speech, summarize audio content, or answer questions about sounds.
+
+<Card href="https://ai.google.dev/gemini-api/docs/audio" title="Gemini Audio Understanding Docs">
+</Card>
+
+**Method 1: Sending Audio via Google Files URL**
+
+Upload your audio file using the Files API to get a Google Files URL.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Please transcribe the speech in this audio."},
+            {"type": "image_url", "image_url": {"url": "https://generativelanguage.googleapis.com/v1beta/files/your-audio-file-id"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+**Method 2: Sending Local Audio as Base64 Data**
+
+This is the standard way to process local audio files directly through the API.
+
+<CodeGroup>
+```sh cURL
+# First, encode your audio file to base64
+# For example: base64 -i audio-example.mp3 -o audio.b64
+# Then use the encoded content in the request
+
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this audio"},
+            {"type": "image_url", "image_url": {"url": "data:audio/mp3;base64,YOUR_BASE64_AUDIO_DATA"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Info>Supported Audio MIME types: `audio/wav`, `audio/mp3`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac`, `audio/pcm`, `audio/m4a`, `audio/mpeg`, `audio/mpga`, `audio/mp4`, `audio/webm`</Info>
+
+---
+
+### Video Processing
+
+Gemini can summarize videos, answer questions about specific events, and describe scenes.
+
+<Card href="https://ai.google.dev/gemini-api/docs/video-understanding" title="Gemini Video Understanding Docs">
+</Card>
+
+**Method 1: Sending a Video via YouTube URL**
+
+YouTube is the only supported public URL source for videos. Simply provide the YouTube video URL.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this video in 3 sentences."},
+            {"type": "image_url", "image_url": {"url": "https://www.youtube.com/watch?v=9hE5-98ZeCg"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+**Method 2: Sending Local Video as Base64 Data**
+
+For smaller video files, you can encode them as base64. Note that this method has size limitations.
+
+<CodeGroup>
+```sh cURL
+# First, encode your video file to base64
+# For example: base64 -i video-example.mp4 -o video.b64
+# Then use the encoded content in the request
+
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this video"},
+            {"type": "image_url", "image_url": {"url": "data:video/mp4;base64,YOUR_BASE64_VIDEO_DATA"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+**Method 3: Sending Video via Google Files URL**
+
+For larger video files, upload them using the Files API to get a Google Files URL.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Please describe the main events in this video."},
+            {"type": "image_url", "image_url": {"url": "https://generativelanguage.googleapis.com/v1beta/files/your-video-file-id"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Info>Supported Video MIME types: `video/mp4`, `video/mpeg`, `video/mov`, `video/avi`, `video/webm`, `video/wmv`</Info>
+
+---
+
+### Document Processing (PDF)
+
+Gemini's vision capabilities excel at understanding the content of PDF documents, including text, tables, and images.
+
+<Card href="https://ai.google.dev/gemini-api/docs/document-processing" title="Gemini Documents Understanding Docs">
+</Card>
+
+**Method 1: Sending a Document via Google Files URL**
+
+Upload your PDF using the Files API to get a Google Files URL.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Summarize the key findings of this research paper."},
+            {"type": "image_url", "image_url": {"url": "https://generativelanguage.googleapis.com/v1beta/files/your-pdf-file-id"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+**Method 2: Sending a Local Document as Base64 Data**
+
+This is suitable for smaller, local PDF files.
+
+<CodeGroup>
+```sh cURL
+# First, encode your PDF file to base64
+# For example: base64 -i whitepaper.pdf -o pdf.b64
+# Then use the encoded content in the request
+
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is the main conclusion of this document?"},
+            {"type": "image_url", "image_url": {"url": "data:application/pdf;base64,YOUR_BASE64_PDF_DATA"}}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Note>While you can send other document types like `.txt` or `.html`, they will be treated as plain text. Gemini's native document vision capabilities are optimized for the `application/pdf` MIME type.</Note>
+<Note>
+**Important:** For all file uploads (except YouTube videos), it's recommended to use the [Google Files API](https://ai.google.dev/gemini-api/docs/files) to upload your files first, then use the returned file URL in your requests. This approach provides better performance and reliability for larger files.
+</Note>
+
+---
+
+## Media Resolution
+
+The `media_resolution` parameter allows you to control token allocation for media inputs (images, videos, PDFs) when using Gemini models. This helps balance between processing detail and cost/speed.
+
+### Supported values
+
+| Value | Description |
+|-------|-------------|
+| `MEDIA_RESOLUTION_LOW` | Reduced tokens for faster, cheaper processing |
+| `MEDIA_RESOLUTION_MEDIUM` | Balanced approach between detail and cost |
+| `MEDIA_RESOLUTION_HIGH` | Maximum tokens for detailed analysis |
+| `MEDIA_RESOLUTION_ULTRA_HIGH` | Highest resolution (per-part only, for specialized tasks) |
+
+### Top-level configuration
+
+Apply media resolution globally to all media in the request:
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "media_resolution": "MEDIA_RESOLUTION_HIGH",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": "https://generativelanguage.googleapis.com/v1beta/files/your-file-id"}},
+            {"type": "text", "text": "Analyze this image in detail."}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+### Per-part configuration (Gemini 3 only)
+
+For Gemini 3 models, you can specify media resolution on individual media parts. Per-part settings take precedence over global settings when both are specified.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-3.0-pro",
+    "messages": [{
+        "role": "user",
+        "content": [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "https://generativelanguage.googleapis.com/v1beta/files/your-file-id",
+                    "media_resolution": "MEDIA_RESOLUTION_HIGH"
+                }
+            },
+            {"type": "text", "text": "Analyze this image in detail."}
+        ]
+    }]
+}'
+```
+</CodeGroup>
+
+<Card href="https://ai.google.dev/gemini-api/docs/media-resolution" title="Google Gemini Media Resolution Documentation">
+</Card>
+
+---
+
+## Code Execution Tool
+
+Gemini can use a built-in code interpreter tool to solve complex computational problems, perform calculations, and generate code. To enable this, simply include the `code_execution` tool in your request. The model will automatically decide when to invoke it.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@google/gemini-1.5-pro",
+    "messages": [
+        {
+            "role": "user",
+            "content": "Calculate the 20th Fibonacci number. Then find the nearest palindrome to it."
+        }
+    ],
+    "tools": [{ "type": "code_execution" }]
+}'
+```
+</CodeGroup>
+
+---
+
+## Thought Signatures (Tool Calling Verification)
+
+<Note>
+Set `x-portkey-strict-open-ai-compliance` to `false` to receive Gemini-native thinking and thought fields (including `thought_signature`) in responses. These are not OpenAI-compatible response fields, so the AI Gateway omits them when strict OpenAI compliance is enabled. This header must be included in all requests when using thought signatures.
+</Note>
+
+Google's Gemini 3 Pro model requires passing a `thought_signature` parameter in tool calling conversations for verifying the payload. This signature is returned by the model in the assistant's tool call response and must be included when continuing multi-turn conversations.
+
+<Card href="https://ai.google.dev/gemini-api/docs/thought-signatures" title="Google Gemini Thought Signatures Documentation">
+</Card>
+
+### Single turn conversation
+
+In a single-turn conversation, you make a request with tools defined, and the model returns tool calls with thought signatures.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@google/gemini-3-pro-preview",
+    "max_tokens": 1000,
+    "stream": true,
+    "messages": [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "What is the current time in Bombay?"
+        }
+    ],
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        }
+    ]
+}'
+```
+```py OpenAI Python
+from openai import OpenAI
+
+openai = OpenAI(
+    api_key='PORTKEY_API_KEY',
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-provider": 'google', "x-portkey-strict-open-ai-compliance": False}
+)
+
+response = openai.chat.completions.create(
+    model='gemini-3-pro-preview',
+    max_tokens=1000,
+    stream=True,
+    messages=[
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "What is the current time in Bombay?"
+        }
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        }
+    ]
+)
+print(response)
+```
+```js OpenAI NodeJS
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: 'PORTKEY_API_KEY',
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: { "x-portkey-provider": 'google', "x-portkey-strict-open-ai-compliance": false }
+});
+
+const response = await openai.chat.completions.create({
+  model: 'gemini-3-pro-preview',
+  max_tokens: 1000,
+  stream: true,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: 'You are a helpful assistant'
+        }
+      ]
+    },
+    {
+      role: 'user',
+      content: 'What is the current time in Bombay?'
+    }
+  ],
+  tools: [
+    {
+      type: 'function',
+      function: {
+        name: 'get_current_time',
+        description: 'Get the current time for a specific location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g., San Francisco, CA'
+            }
+          },
+          required: [
+            'location'
+          ]
+        }
+      }
+    }
+  ]
+});
+console.log(response);
+```
+</CodeGroup>
+
+### Multi turn conversation
+
+In multi-turn conversations, you must include the `thought_signature` field in the assistant's tool call when continuing the conversation.
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Authorization: YOUR_GEMINI_API_KEY' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@google/gemini-3-pro-preview",
+    "max_tokens": 1000,
+    "stream": true,
+    "messages": [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "Check the time in Chennai and if it is later than 9Pm get the temperature"
+        },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb",
+                    "type": "function",
+                    "function": {
+                        "name": "get_current_time",
+                        "arguments": "{\"location\":\"Chennai, India\"}",
+                        "thought_signature": "CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw="
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "content": "{ '\''time'\'': '\''10PM'\'' }",
+            "tool_call_id": "toolu_014jEfKqGbfFvRaKfiauxgPv"
+        }
+    ],
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_temperature",
+                "description": "Get the current temperature for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        },
+                        "unit": {
+                            "type": "string",
+                            "enum": [
+                                "Celsius",
+                                "Fahrenheit"
+                            ],
+                            "description": "The temperature unit to use. Infer this from the user'\''s location."
+                        }
+                    },
+                    "required": [
+                        "location",
+                        "unit"
+                    ]
+                }
+            }
+        }
+    ]
+}'
+```
+```py OpenAI Python
+from openai import OpenAI
+
+openai = OpenAI(
+    api_key='PORTKEY_API_KEY',
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-provider": 'google', "x-portkey-strict-open-ai-compliance": False}
+)
+
+response = openai.chat.completions.create(
+    model='gemini-3-pro-preview',
+    max_tokens=1000,
+    stream=True,
+    messages=[
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a helpful assistant"
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": "Check the time in Chennai and if it is later than 9Pm get the temperature"
+        },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb",
+                    "type": "function",
+                    "function": {
+                        "name": "get_current_time",
+                        "arguments": "{\"location\":\"Chennai, India\"}",
+                        "thought_signature": "CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw="
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "content": "{ 'time': '10PM' }",
+            "tool_call_id": "toolu_014jEfKqGbfFvRaKfiauxgPv"
+        }
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "Get the current time for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_temperature",
+                "description": "Get the current temperature for a specific location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g., San Francisco, CA"
+                        },
+                        "unit": {
+                            "type": "string",
+                            "enum": [
+                                "Celsius",
+                                "Fahrenheit"
+                            ],
+                            "description": "The temperature unit to use. Infer this from the user's location."
+                        }
+                    },
+                    "required": [
+                        "location",
+                        "unit"
+                    ]
+                }
+            }
+        }
+    ]
+)
+print(response)
+```
+```js OpenAI NodeJS
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: 'PORTKEY_API_KEY',
+  baseURL: "https://aigw.portkey.ai/v1",
+});
+
+const response = await openai.chat.completions.create({
+  model: '@google/gemini-3-pro-preview',
+  max_tokens: 1000,
+  stream: true,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: 'You are a helpful assistant'
+        }
+      ]
+    },
+    {
+      role: 'user',
+      content: 'Check the time in Chennai and if it is later than 9Pm get the temperature'
+    },
+    {
+      role: 'assistant',
+      tool_calls: [
+        {
+          id: 'portkey-1dcd51a0-a20a-482d-b244-2d4aff5aebdb',
+          type: 'function',
+          function: {
+            name: 'get_current_time',
+            arguments: '{"location":"Chennai, India"}',
+            thought_signature: 'CtQBAePx/17ARdotHH1RN31zOtCF+YpuOFTpU//tJRF4dEvegfDKLUaZnuG38II1POmVFdzBbzt87cTDr0TsEKHyHScN9PURHrhRer7liusjRrLR5QF4n1ZYJJYF3C+3bgC9YJsJyQhY/HAgVZQ53gq7n4I63CgXhYA+tzNN3CnHqdStgY0wLK0mCu/tb1kReSrXYMbre27SB5t2eRA7Wl+OKasKCOk7sYCJ8VkT+NaD+s6+NVTX2Au3RmUGVxYdjapo0vc7nnjvfmpTJHviyGJZIGIdXWw='
+          }
+        }
+      ]
+    },
+    {
+      role: 'tool',
+      content: "{ 'time': '10PM' }",
+      tool_call_id: 'toolu_014jEfKqGbfFvRaKfiauxgPv'
+    }
+  ],
+  tools: [
+    {
+      type: 'function',
+      function: {
+        name: 'get_current_time',
+        description: 'Get the current time for a specific location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g., San Francisco, CA'
+            }
+          },
+          required: [
+            'location'
+          ]
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_current_temperature',
+        description: 'Get the current temperature for a specific location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g., San Francisco, CA'
+            },
+            unit: {
+              type: 'string',
+              enum: [
+                'Celsius',
+                'Fahrenheit'
+              ],
+              description: 'The temperature unit to use. Infer this from the user\'s location.'
+            }
+          },
+          required: [
+            'location',
+            'unit'
+          ]
+        }
+      }
+    }
+  ]
+});
+console.log(response);
+```
+</CodeGroup>
+
+<Note>
+The `thought_signature` is automatically generated by the model and returned in the tool call response. You must preserve this signature when including the assistant's message in subsequent requests.
+</Note>
+
+---
+
+## Computer Use (Browser Automation) (Preview)
+
+<Note>
+Set <code>strict_open_ai_compliance</code> to <code>false</code> to use the Computer Use tool.
+</Note>
+
+### Single turn conversation
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer your-api-key' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@my-vertex-ai-provider/gemini-2.5-computer-use-preview-10-2025",
+    "stream": false,
+    "messages": [
+        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "user", "content": "Go to google.com and search for '\''weather in New York'\''"}
+    ],
+    "tools": [
+        {"type": "function", "function": {"name": "computer_use", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}}
+    ]
+}'
+```
+```js OpenAI NodeJS
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: 'PORTKEY_API_KEY',
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: { "x-portkey-provider": 'google', "x-portkey-strict-open-ai-compliance": false }
+});
+
+const response = await openai.chat.completions.create({
+  model: 'gemini-2.5-computer-use-preview-10-2025',
+  stream: false,
+  messages: [
+    { role: 'system', content: 'You are a helpful assistant' },
+    { role: 'user', content: "Go to google.com and search for 'weather in New York'" }
+  ],
+  tools: [{
+    type: 'function',
+    function: { name: 'computer_use', parameters: { environment: 'ENVIRONMENT_BROWSER' } }
+  }]
+});
+console.log(response);
+```
+```py OpenAI Python
+from openai import OpenAI
+
+openai = OpenAI(
+    api_key='PORTKEY_API_KEY',
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-provider": 'google', "x-portkey-strict-open-ai-compliance": False}
+)
+
+response = openai.chat.completions.create(
+    model='gemini-2.5-computer-use-preview-10-2025',
+    stream=False,
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "user", "content": "Go to google.com and search for 'weather in New York'"}
+    ],
+    tools=[{
+        "type": "function",
+        "function": {"name": "computer_use", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}
+    }]
+)
+print(response)
+```
+</CodeGroup>
+
+### Multi turn conversation
+<CodeGroup>
+```sh cURL
+curl --location 'https://aigw.portkey.ai/v1/chat/completions' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer your-api-key' \
+--header 'x-portkey-strict-open-ai-compliance: false' \
+--data '{
+    "model": "@my-vertex-ai-provider/gemini-2.5-computer-use-preview-10-2025",
+    "stream": false,
+    "messages": [
+        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "user", "content": "Go to google.com and search for 'weather in New York'"},
+        {"role": "assistant", "tool_calls": [{"id": "portkey-50925c03-b8cc-4057-948b-13a9d9de19e0", "type": "function", "function": {"name": "open_web_browser", "arguments": "{}"}}]},
+        {"role": "user", "content": "I've opened the browser"}
+    ],
+    "tools": [{"type": "function", "function": {"name": "computerUse", "parameters": {"environment": "ENVIRONMENT_BROWSER"}}}]
+}'
+```
+```js OpenAI NodeJS
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: 'PORTKEY_API_KEY',
+  baseURL: "https://aigw.portkey.ai/v1",
+  defaultHeaders: { "x-portkey-provider": 'google', "x-portkey-strict-open-ai-compliance": false }
+});
+
+const response = await openai.chat.completions.create({
+  model: 'gemini-2.5-computer-use-preview-10-2025',
+  stream: false,
+  messages: [
+    { role: 'system', content: 'You are a helpful assistant' },
+    { role: 'user', content: "Go to google.com and search for 'weather in New York'" },
+    { role: 'assistant', tool_calls: [{ id: 'portkey-50925c03-b8cc-4057-948b-13a9d9de19e0', type: 'function', function: { name: 'open_web_browser', arguments: '{}' } }] },
+    { role: 'user', content: "I've opened the browser" }
+  ],
+  tools: [{ type: 'function', function: { name: 'computerUse', parameters: { environment: 'ENVIRONMENT_BROWSER' } } }]
+});
+console.log(response);
+```
+```py OpenAI Python
+from openai import OpenAI
+
+openai = OpenAI(
+    api_key='PORTKEY_API_KEY',
+    base_url="https://aigw.portkey.ai/v1",
+    default_headers={"x-portkey-provider": 'google', "x-portkey-strict-open-ai-compliance": False}
+)
+
+response = openai.chat.completions.create(
+    model='gemini-2.5-computer-use-preview-10-2025',
+    stream=False,
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "user", "content": "Go to google.com and search for 'weather in New York'"},
+        {"role": "assistant", "tool_calls": [{"id": "portkey-50925c03-b8cc-4057-948b-13a9d9de19e0", "type": "function", "function": {"name": "open_web_browser", "arguments": "{}"}}]},
+        {"role": "user", "content": "I've opened the browser"}
+    ],
+    tools=[{ "type": "function", "function": { "name": "computerUse", "parameters": { "environment": "ENVIRONMENT_BROWSER" } } }]
+)
+print(response)
+```
+</CodeGroup>
+
+## Grounding with Google Search
+
+Vertex AI supports grounding with Google Search. This is a feature that allows you to ground your LLM responses with real-time search results.
+Grounding is invoked by passing the `google_search` tool (for newer models like gemini-2.0-flash-001), and `google_search_retrieval` (for older models like gemini-1.5-flash) in the `tools` array.
+
+```json
+"tools": [
+    {
+        "type": "function",
+        "function": {
+            "name": "google_search" // or google_search_retrieval for older models
+        }
+    }]
+```
+
+<Warning>
+If you mix regular tools with grounding tools, vertex might throw an error saying only one tool can be used at a time.
+</Warning>
+
+## Extended Thinking (Reasoning Models) (Beta)
+
+<Note>
+The assistants thinking response is returned in the `response_chunk.choices[0].delta.content_blocks` array, not the `response.choices[0].message.content` string.
+</Note>
+
+Models like `gemini-2.5-flash-preview-04-17` `gemini-2.5-flash-preview-04-17` support [extended thinking](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude#claude-3-7-sonnet).
+This is similar to openai thinking, but you get the model's reasoning as it processes the request as well.
+
+Note that you will have to set [`strict_open_ai_compliance=False`](/aigw/product/ai-gateway/strict-open-ai-compliance) in the headers to use this feature.
+
+### Single turn conversation
+<CodeGroup>
+    ```sh cURL
+    curl "https://aigw.portkey.ai/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $PORTKEY_API_KEY" \
+      -H "x-api-key: $VERTEX_API_KEY" \
+      -H "x-portkey-strict-open-ai-compliance: false" \
+      -d '{
+        "model": "@vertex-ai/gemini-2.5-flash-preview-04-17",
+        "max_tokens": 3000,
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 2030
+        },
+        "stream": true,
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+              }
+            ]
+          }
+        ]
+      }'
+    ```
+    ```js OpenAI NodeJS
+    import OpenAI from 'openai'; // We're using the v4 SDK
+
+    const openai = new OpenAI({
+      apiKey: "PORTKEY_API_KEY", // defaults to process.env["OPENAI_API_KEY"],
+      baseURL: "https://aigw.portkey.ai/v1",
+      defaultHeaders: {
+          // defaults to process.env["PORTKEY_API_KEY"]
+          "x-portkey-strict-open-ai-compliance": false,
+      }
+    });
+
+    // Generate a chat completion with streaming
+    async function getChatCompletionFunctions(){
+      const response = await openai.chat.completions.create({
+        model: "@vertex-ai/gemini-2.5-flash-preview-04-17",
+        max_tokens: 3000,
+        thinking: {
+            type: "enabled",
+            budget_tokens: 2030
+        },
+        stream: true,
+        messages: [
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                    }
+                ]
+            }
+        ],
+      });
+
+      console.log(response)
+      // in case of streaming responses you'd have to parse the response_chunk.choices[0].delta.content_blocks array
+      // const response = await openai.chat.completions.create({
+      //   ...same config as above but with stream: true
+      // });
+      // for await (const chunk of response) {
+      //   if (chunk.choices[0].delta?.content_blocks) {
+      //     for (const contentBlock of chunk.choices[0].delta.content_blocks) {
+      //       console.log(contentBlock);
+      //     }
+      //   }
+      // }
+    }
+    await getChatCompletionFunctions();
+    ```
+    ```py OpenAI Python
+    from openai import OpenAI
+
+    openai = OpenAI(
+        api_key="PORTKEY_API_KEY",
+        base_url="https://aigw.portkey.ai/v1",
+        default_headers={"x-portkey-provider": "vertex-ai", "x-portkey-strict-open-ai-compliance": False}
+    )
+
+    response = openai.chat.completions.create(
+        model="gemini-2.5-flash-preview-04-17",
+        max_tokens=3000,
+        thinking={
+            "type": "enabled",
+            "budget_tokens": 2030
+        },
+        stream=True,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "when does the flight from new york to bengaluru land tomorrow, what time, what is its flight number, and what is its baggage belt?"
+                    }
+                ]
+            }
+        ]
+    )
+
+    print(response)
+    ```
+</CodeGroup>
+
+<Note>
+    To disable thinking for gemini models like `gemini-2.5-flash-preview-04-17`, you are required to explicitly set `budget_tokens` to `0`.
+    ```json
+    "thinking": {
+        "type": "enabled",
+        "budget_tokens": 0
+    }
+    ```
+</Note>
+
+<Info>
+Gemini grounding mode may not work through the AI Gateway. [Contact support](https://support.portkey.ai/forms/customer-portal-ticket-form) for assistance.
+</Info>
+
+---
+
+## Image Generation (nano banana 🍌)
+
+Gemini models like `gemini-3-pro-image-preview` support native image generation capabilities. You can generate images by setting `modalities` to include `"image"` in your request.
+
+<Note>
+You must set [`strict_open_ai_compliance=False`](/aigw/product/ai-gateway/strict-open-ai-compliance) in the headers to use image generation, as the response format includes non-standard fields like `content_parts`.
+</Note>
+
+The generated image data is returned in the `content_parts` field of the response and can be used in multi-turn conversations for iterative image editing.
+
+<CodeGroup>
+```sh cURL
+curl "https://aigw.portkey.ai/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "Authorization: $GEMINI_API_KEY" \
+  -H "x-portkey-strict-open-ai-compliance: false" \
+  -d '{
+    "model": "@YOUR_/gemini-3-pro-image-preview",
+    "max_tokens": 32768,
+    "stream": false,
+    "modalities": ["image"],
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Create a picture of a cat eating a nano-banana in a fancy restaurant under the Gemini constellation."
+                }
+            ]
+        }
+    ]
+}'
+```
+```javascript OpenAI NodeJS
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",
+    baseURL: "https://aigw.portkey.ai/v1",
+    defaultHeaders: {
+        "x-portkey-strict-open-ai-compliance": false,
+    }
+});
+
+async function generateImage() {
+    const response = await openai.chat.completions.create({
+        model: "@google/gemini-3-pro-image-preview",
+        max_tokens: 32768,
+        stream: false,
+        modalities: ["image"],
+        messages: [
+            {
+                role: "system",
+                content: "You are a helpful assistant."
+            },
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: "Create a picture of a cat eating a nano-banana in a fancy restaurant under the Gemini constellation."
+                    }
+                ]
+            }
+        ]
+    });
+
+    console.log(response);
+}
+
+generateImage();
+```
+</CodeGroup>
+
+### Image Generation with Text Response
+
+You can also generate images along with text explanations by including both `"text"` and `"image"` in the modalities array:
+
+<CodeGroup>
+```sh cURL
+curl "https://aigw.portkey.ai/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "Authorization: $GEMINI_API_KEY" \
+  -H "x-portkey-strict-open-ai-compliance: false" \
+  -d '{
+    "model": "@google/gemini-3-pro-image-preview",
+    "max_tokens": 32768,
+    "stream": false,
+    "modalities": ["text", "image"],
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Create a picture of a sunset over mountains and describe what you created."
+                }
+            ]
+        }
+    ]
+}'
+```
+</CodeGroup>
+
+### Image Editing (Multi-turn)
+
+You can edit generated images by continuing the conversation. Pass the image data from the previous response back in the messages:
+
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Add Metadata" icon="tag" href="/aigw/product/observability/metadata">
+Add metadata to your Gemini requests
+</Card>
+
+<Card title="Gateway Configs" icon="sliders" href="/aigw/product/ai-gateway/configs">
+Configure advanced gateway features
+</Card>
+
+<Card title="Request Tracing" icon="chart-line" href="/aigw/product/observability/traces">
+Trace and monitor your Gemini requests
+</Card>
+
+<Card title="Setup Fallbacks" icon="shield" href="/aigw/product/ai-gateway/fallbacks">
+Create fallback configurations between providers
+</Card>
+
+</CardGroup>

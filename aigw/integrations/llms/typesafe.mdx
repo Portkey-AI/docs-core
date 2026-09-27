@@ -1,0 +1,93 @@
+---
+title: "TypeSafe (Jev)"
+description: "Use TypeSafe's Jev models for typed judgments through the Prisma AIRS AI Gateway's /v1/decisions endpoint."
+---
+
+TypeSafe's Jev models return a typed judgment — a probability, a choice, or a score — instead of generated text. The AI Gateway routes these calls through `/v1/decisions`, a separate endpoint from chat completions, while still giving you the gateway's full feature set: authentication, routing, retries, circuit breaking, caching, logging, and cost tracking.
+
+<Note>
+  `/v1/decisions` does not support streaming. Only before-request [guardrails](/aigw/product/guardrails/decisions-guardrails) apply, scanning the `state` field only.
+</Note>
+
+## Add Provider in Model Catalog
+
+1. Go to [**Model Catalog → Add Provider**](https://stratacloudmanager.paloaltonetworks.com/).
+2. Select **TypeSafe**.
+3. Enter your [TypeSafe API key](https://typesafe.ai).
+4. Name your provider (e.g., `typesafe`).
+
+<Card title="Complete Setup Guide" icon="book" href="/aigw/product/model-catalog">
+  See all setup options and detailed configuration instructions
+</Card>
+
+## Quick Start
+
+```bash cURL
+curl https://aigw.portkey.ai/v1/decisions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: typesafe" \
+  -d '{
+    "model": "jev-latest",
+    "state": "Help! My payouts have been failing for 3 days.",
+    "questions": {
+      "department": {
+        "type": "choice",
+        "instructions": "Which team should handle this?",
+        "criteria": { "billing": "Payments", "technical": "Bugs" }
+      }
+    }
+  }'
+```
+
+Response:
+
+```json
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "department": {
+      "type": "choice",
+      "choice": "billing",
+      "probabilities": { "billing": 0.88, "technical": 0.12 },
+      "confidence": 0.81
+    }
+  },
+  "usage": { "input_tokens": 296, "output_tokens": 20 },
+  "provider": "typesafe"
+}
+```
+
+## Question Types
+
+Each entry in `questions` picks a `type`, which determines the shape of its answer:
+
+| Type | Use for | Answer shape |
+|:---|:---|:---|
+| `noul` | A yes/no-style judgment | `{ noul: <0–1 probability> }` |
+| `choice` | Picking one label from a fixed set | `{ choice, probabilities, confidence }` |
+| `score` | A graded position on a scale | `{ score, legend, probabilities, confidence }` |
+
+`criteria` on a question defines the type-specific detail — for a `choice` question, the set of labels to choose from.
+
+## Model
+
+`model` defaults to `jev-latest` if omitted. Pin a specific version (e.g. `jev-1.13.0`) for reproducible judgments across a TypeSafe model upgrade.
+
+## Pricing
+
+TypeSafe bills on input tokens only — output tokens (the typed judgment itself) are free. Usage is reported in the response's `usage.input_tokens` / `usage.output_tokens`.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Guardrails for Decisions" icon="shield" href="/aigw/product/guardrails/decisions-guardrails">
+    Scan `state` before it reaches the model
+  </Card>
+  <Card title="Gateway Configs" icon="sliders" href="/aigw/product/ai-gateway">
+    Add retries, fallbacks, and caching
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/aigw/product/observability">
+    Monitor and trace your decisions requests
+  </Card>
+</CardGroup>
