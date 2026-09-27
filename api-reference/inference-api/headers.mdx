@@ -403,6 +403,32 @@ const portkey = new Portkey({
 </CodeGroup>
 </Accordion>
 
+### Fetch Integrated Models
+<ResponseField name="x-portkey-fetch-integrated-models" type="boolean">
+Applies to `GET /v1/models` only. When `true`, forces the endpoint to return Portkey's integrated (Model Catalog) models even when a provider or config is passed on the request. Without this header, any provider signal causes the endpoint to proxy to the upstream provider's `/v1/models`. You can also set this as `fetch_integrated_models: true` inside a Portkey config. ([Docs](/api-reference/inference-api/models/models))
+</ResponseField>
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {4}
+curl https://api.portkey.ai/v1/models \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "x-portkey-fetch-integrated-models: true"
+```
+
+```json Config
+{
+  "fetch_integrated_models": true,
+  "targets": [
+    { "provider": "@openai-prod" },
+    { "provider": "@anthropic-prod" }
+  ]
+}
+```
+</CodeGroup>
+</Accordion>
+
 ## Custom Headers
 
 You can pass any other headers your API expects by directly forwarding them without any processing by Portkey.<br />
@@ -462,6 +488,53 @@ Example: If you have a header of the format `X-My-Custom-Header`, it should be s
 With the JS SDK, you need to transform your headers to **Camel Case** and then include them while initializing the Portkey client.
 Example: If you have a header of the format `X-My-Custom-Header`, it should be sent as `xMyCustomHeader` in the SDK
 </Note>
+</Accordion>
+
+### Mask Sensitive Headers in Logs
+
+<ResponseField name="x-portkey-sensitive-headers / sensitive_headers / sensitiveHeaders" type="array of strings">
+List of header names whose values Portkey should mask (hash) in request, response, and trace logs. Matching is case-insensitive.
+</ResponseField>
+
+`x-portkey-sensitive-headers` only controls log masking. It does **not** forward headers to the upstream provider.
+
+If you need both behaviors, use:
+- `x-portkey-forward-headers` to forward the header upstream
+- `x-portkey-sensitive-headers` to mask that header's value in Portkey logs
+
+For organisation-wide defaults, set `ORGANISATION_HEADERS_TO_MASK` (comma-separated header names) in your gateway environment to mask matching headers across requests.
+
+<Accordion title="Example">
+<CodeGroup>
+
+```sh cURL {5}
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @openai-prod" \
+  -H "X-Internal-Token: supersecret" \
+  -H "x-portkey-sensitive-headers: X-Internal-Token"
+```
+
+```py Python {6}
+from portkey_ai import Portkey
+
+portkey = Portkey(
+  api_key="PORTKEY_API_KEY",
+  provider="@openai-prod",
+  sensitive_headers=["X-Internal-Token"]
+)
+```
+
+```js JavaScript {6}
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({
+  apiKey: 'PORTKEY_API_KEY',
+  provider: '@openai-prod',
+  sensitiveHeaders: ['X-Internal-Token']
+});
+```
+</CodeGroup>
 </Accordion>
 
 ## Cloud-Specific Headers (`Azure`, `Google`, `AWS`)
@@ -665,3 +738,8 @@ const response = await client.chat.completions.create(
 );
 ```
 </CodeGroup>
+
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />

@@ -1,0 +1,170 @@
+---
+title: "SCM Deployment Mode Architecture"
+sidebarTitle: "SCM Architecture"
+description: "Architecture guide for Portkey deployed in SCM (Palo Alto Networks Strata Cloud Manager) mode — covering the two-plane model, component roles, identity flow, and how data is distributed across the system."
+---
+
+## Overview
+
+SCM deployment mode is a specialized enterprise deployment pattern for Palo Alto Networks **Strata Cloud Manager** customers. It establishes a two-plane model where AI traffic processing runs inside the customer's own environment, and administration, analytics, and data storage run inside the Portkey-managed Management Plane.
+
+**Two-plane model:**
+
+- **Customer Environment** — The AI Gateway and the LLM providers it routes to reside here. All LLM traffic is processed within the customer's network boundary. No prompt or response data is forwarded to the Management Plane directly.
+- **Management Plane (SCM)** — The Dashboard, Backend, MySQL, ClickHouse, Redis, and Blob Store all reside here. This plane handles identity resolution, configuration management, analytics, log storage, and audit logging. It communicates with the Customer Environment over a private link.
+
+The Palo Alto SCM API Gateway sits at the boundary between the two planes. It is the sole authentication authority for all requests entering the Management Plane.
+
+---
+
+## Reference Architecture
+
+<Frame caption="SCM Deployment Architecture — AI Gateway sits in the Customer Environment; all storage and administration components are in the Management Plane (SCM)">
+  <img src="/images/scm-architecture.png" alt="SCM Deployment Architecture showing Customer Environment on the left with AI Gateway and LLM Providers, and SCM Management Plane on the right with Dashboard, Backend, MySQL, ClickHouse, Redis and Blob Store, connected via Private Link" />
+</Frame>
+
+---
+
+## Component Roles
+
+### Customer Environment
+
+| Component | Role |
+| :--- | :--- |
+| **AI Gateway** | LLM reverse proxy. Routes requests to LLM providers, enforces rate limits and quotas, applies guardrails, and produces all analytics and raw log data. Writes directly to ClickHouse (metrics) and Blob Store (raw logs). Reads from Redis for fast auth and config lookups on every request. |
+| **LLM Providers** | Upstream AI model providers — private, proprietary, or public — that the AI Gateway routes traffic to. |
+
+### Management Plane (SCM)
+
+| Component | Role |
+| :--- | :--- |
+| **SCM API Gateway** | Palo Alto Networks gateway that sits in front of the Management Plane. Terminates mTLS, authenticates end users, and injects identity context headers into every downstream request. It is the sole authentication authority for all Management Plane operations. |
+| **Backend** | Portkey control plane service. Owns all writes to MySQL. Reads ClickHouse to serve the analytics UI and log list. Reads Blob Store to serve individual log detail views. Writes audit log entries to ClickHouse for every configuration change. Manages cache invalidation in Redis on every configuration mutation. |
+| **Dashboard** | Web interface for managing AI Gateway configurations, viewing logs, monitoring analytics, and administering the deployment. All Dashboard requests pass through the SCM API Gateway before reaching the Backend. |
+| **MySQL** | Relational database exclusively owned by the Backend. Stores organisations, workspaces, API keys, routing configurations, guardrail definitions, virtual keys, licensing entitlements, and tenant-to-organisation mappings. The AI Gateway never connects to MySQL directly — it reads configuration data indirectly through the Backend. |
+| **ClickHouse** | Analytical database with split write ownership. The AI Gateway writes request metrics and guardrail execution results. The Backend writes control plane audit logs. The Backend reads all data to serve the analytics UI. |
+| **Redis** | In-memory cache that serves the AI Gateway on every request. Caches authentication context, API key details, routing configurations, virtual keys, and guardrail definitions. Also stores rate limit counters, circuit breaker state, and semantic cache entries. The Backend manages cache invalidation whenever configuration changes are made. |
+| **Blob Store** | Object storage that holds the complete request and response body for every LLM call. The AI Gateway writes to it directly and asynchronously. The Backend reads from it when a user opens a log detail view in the Dashboard. |
+
+---
+
+## Identity and Authentication
+
+The SCM API Gateway is the sole authentication authority. Standard Portkey session cookies are not used on Management Plane routes. Identity is established through three headers that the SCM API Gateway injects into every request it forwards:
+
+| Header | What it carries | How the Backend uses it |
+| :--- | :--- | :--- |
+| **Tenant ID** | The Palo Alto Tenant/TSG identifier for the calling organisation | Looked up in MySQL to resolve the internal organisation identity. If the tenant is unrecognised, the request is rejected before any business logic runs. |
+| **User Subject** | Opaque user identity from the JWT issued by Palo Alto | Used as the caller identity for audit log entries. Never persisted in the Backend's user store. SCM manages user lifecycle entirely outside Portkey. |
+| **Scope Access** | The set of workspace scopes the caller is permitted to access | Evaluated per-request to enforce workspace-level access control. Workspace membership tables are not consulted — access is entirely scope-based. |
+
+**mTLS boundary:** The load balancer between the SCM API Gateway and the Backend terminates the mTLS connection and forwards the verified client certificate subject. The Backend re-verifies the certificate CN so that gateway-injected identity headers are only trusted when the caller is the genuine SCM API Gateway.
+
+**Tenant-to-organisation resolution:** Every request to a Management Plane route resolves the Tenant ID to an internal organisation identifier by querying a dedicated tenant mapping table in MySQL. This resolved identifier scopes all downstream database queries and enforces data isolation between tenants.
+
+---
+
+## Request Lifecycle
+
+The following describes the end-to-end flow of an LLM request in SCM deployment mode.
+
+### Synchronous path (affects response latency)
+
+1. **Entry** — The customer application sends an LLM request to the SCM API Gateway. The gateway authenticates the caller and attaches identity headers before forwarding the request to the AI Gateway in the Customer Environment.
+
+2. **Auth and config hydration** — The AI Gateway checks Redis for a cached copy of the API key, organisation context, and routing configuration. On a cache hit, this is near-instantaneous. On a cache miss, the gateway calls the Backend over the private link; the Backend reads from MySQL and returns the hydrated object, which the gateway then stores in Redis for subsequent requests.
+
+3. **LLM proxying** — The gateway forwards the request, with any configured transformations, to the target LLM provider. The provider response is streamed back through the gateway.
+
+4. **Response return** — The LLM response is returned to the customer application. The request lifecycle ends here from the client's perspective.
+
+### Asynchronous path (non-blocking, runs after the response is returned)
+
+5. **Metrics write to ClickHouse** — The gateway writes a lightweight analytics record capturing token counts, cost, latency, model, provider, cache status, and trace identifiers — along with a pointer to the full log body. This write is batched and does not affect response latency.
+
+6. **Raw log write to Blob Store** — The gateway writes the complete request and response payload (headers, body, token breakdown) as a structured document to Blob Store. The file path is the same pointer stored in the ClickHouse record in step 5, enabling the Backend to cross-reference both stores when serving log details.
+
+7. **Usage sync** — The gateway notifies the Backend of updated usage counters, API key exhaustion events, and quota state. This call is non-blocking.
+
+---
+
+## Storage Ownership
+
+Understanding which component writes and reads each store is essential for network security design and access control.
+
+| Storage System | Written by | Read by | What it holds |
+| :--- | :--- | :--- | :--- |
+| **MySQL** | Backend only | Backend only | Organisation config, workspaces, API keys, routing configs, guardrails, virtual keys, tenant-to-organisation mappings, licensing entitlements |
+| **ClickHouse** | AI Gateway (metrics, guardrail results, feedback) and Backend (audit logs) | Backend (analytics UI, log list, audit log views) | Per-request analytics, guardrail execution outcomes, user feedback scores, and control plane change history |
+| **Blob Store** | AI Gateway (async, post-response) | Backend (log detail view only, via pointer from ClickHouse) | Full request and response payloads for every LLM call |
+| **Redis** | AI Gateway (post-cache-miss population, rate limit counters, circuit breaker state) and Backend (cache invalidation on config mutations) | AI Gateway (hot path lookup on every request) | Auth context, routing configs, rate limit counters, circuit breaker state, semantic cache entries |
+
+### ClickHouse split ownership
+
+ClickHouse has intentionally split write ownership across the two planes:
+
+- The **AI Gateway** writes to the analytics tables at high volume directly after every request. These writes are asynchronous and bypass the Backend entirely, keeping the write path low-latency.
+- The **Backend** writes only to the audit log table, recording every configuration change made through the Dashboard or API, tagged with the caller's identity and timestamp.
+
+The Backend reads all tables to power the analytics UI, log browsing, and audit log views.
+
+### Blob Store and ClickHouse cross-reference
+
+The ClickHouse record for every LLM request includes a storage pointer — the path under which the full request and response body is stored in Blob Store. When a user opens a log detail view in the Dashboard, the Backend reads this pointer from ClickHouse and fetches the corresponding file from Blob Store. The two stores are always used together for log detail retrieval; neither is queried in isolation.
+
+---
+
+## Redis
+
+Redis serves as the caching layer between the AI Gateway and the Management Plane Backend. It is the primary mechanism through which the gateway avoids a synchronous call to the Backend on every request.
+
+**What the AI Gateway stores in Redis:**
+
+- Hydrated API key and organisation context, populated after a cache-miss Backend call and retained across requests
+- Routing configurations, guardrail definitions, virtual key credentials, and prompt templates
+- Rate limit counters, tracked as atomic per-key and per-organisation windows
+- Circuit breaker state, tracking per-provider failure and recovery status
+- Semantic cache entries for prompt similarity matching
+
+**What the Backend does with Redis:**
+
+- On every configuration mutation — such as an API key rotation, config update, or workspace change — the Backend invalidates the relevant Redis entry. This forces the next gateway request for that key to re-fetch fresh data from MySQL via a Backend call.
+- The Backend also uses Redis for internal background job coordination, covering tasks such as analytics provisioning, alert dispatching, and usage syncing.
+
+---
+
+## Blob Store
+
+Blob Store is the raw log storage layer. It holds the full fidelity record of every LLM interaction and is intentionally kept separate from ClickHouse, which holds only lightweight analytics metrics.
+
+**What is stored:**
+
+Every LLM call results in a structured document written to Blob Store containing the complete request body, response body, headers, and token breakdown for that call.
+
+**How the AI Gateway writes to Blob Store:**
+
+The gateway writes to Blob Store asynchronously after returning the LLM response to the caller. This write does not block or affect response latency. The gateway also stores a pointer — the file path of the written document — in the corresponding ClickHouse analytics record.
+
+**How the Backend reads from Blob Store:**
+
+The Backend does not read from Blob Store in the regular request flow. It reads only on demand, when a user opens a log detail view in the Dashboard. At that point, the Backend retrieves the storage pointer from the ClickHouse record and fetches the corresponding document from Blob Store to render the full log view.
+
+Supported backends include AWS S3, Google Cloud Storage, Azure Blob Storage, and any S3-compatible store such as MinIO.
+
+---
+
+## SCM Mode vs Standard Deployment
+
+| Aspect | Standard deployment | SCM deployment |
+| :--- | :--- | :--- |
+| Auth authority | Portkey-issued API keys and session cookies | SCM API Gateway (Palo Alto) injects identity headers |
+| User identity | Persisted in Backend user store | Opaque JWT subject, never stored in the Backend |
+| Access control | Role-based membership tables per org and workspace | Scope-based, evaluated per-request from injected header |
+| Organisation resolution | API key lookup | Tenant ID mapped to organisation in MySQL |
+| Licensing | Standard Portkey subscription billing | Per-tenant entitlement table with device and quota tracking |
+| mTLS boundary | Not enforced | Certificate CN verified at the Management Plane entry point |
+| User management | Managed in Portkey Dashboard | Managed entirely within Palo Alto SCM — Portkey has no user records |
+| API surface | Full standard route set | Only SCM-scoped workspace and admin routes |
+| Storage mechanics | Identical to SCM | Identical to standard |
+
+The storage write paths — how the gateway writes to ClickHouse and Blob Store, and how the Backend writes to MySQL — are identical between deployment modes. SCM mode changes the authentication model and the API surface, not the underlying data architecture.

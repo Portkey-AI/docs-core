@@ -1,0 +1,81 @@
+---
+title: 'Controlled Generations'
+description: "Controlled Generations ensure that the model always follows your supplied [JSON schema](https://json-schema.org/overview/what-is-jsonschema). The Prisma AIRS AI Gateway supports Vertex AI's Controlled Generations feature out of the box with our SDKs & APIs.
+"
+---
+
+Controlled Generations allows you to constrain model responses to predefined sets of values. This is particularly useful for classification tasks, multiple choice responses, and structured data extraction.
+
+<Note>
+This feature is available for `Gemini 1.5 Pro` & `Gemini 1.5 Flash` models.
+</Note>
+
+## With Pydantic & Zod
+
+The OpenAI SDKs for [Python](https://github.com/openai/openai-python/blob/main/helpers.md#structured-outputs-parsing-helpers) and [JavaScript](https://github.com/openai/openai-node/blob/master/helpers.md#structured-outputs-parsing-helpers) also make it easy to define object schemas using [Pydantic](https://docs.pydantic.dev/latest/) and [Zod](https://zod.dev/) respectively. Below, you can see how to extract information from unstructured text that conforms to a schema defined in code.
+
+<Tabs>
+  <Tab title="Zod with NodeJS">
+To use Zod with VerteX AI you will also need to import `{ zodResponseFormat }` from `openai/helpers/zod`
+
+  </Tab>
+</Tabs>
+
+## Using Enums
+You can also use enums to constrain the model's output to a predefined set of values. This is particularly useful for classification tasks and multiple choice responses.
+
+## Using JSON schema Directly
+This method is more portable across different languages and doesn't require additional libraries, but lacks the integrated type checking of the Pydantic/Zod approach. Choose the method that best fits your project's needs.
+
+<Tabs>
+  <Tab title="cURL">
+    ```sh
+    curl https://aigw.portkey.ai/v1/chat/completions \
+      -H "Authorization: Bearer $PORTKEY_API_KEY" \
+      -H "x-portkey-provider: $VERTEX_PROVIDER" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model": "gemini-1.5-pro-002",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful math tutor. Guide the user through the solution step by step."
+          },
+          {
+            "role": "user",
+            "content": "how can I solve 8x + 7 = -23"
+          }
+        ],
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "math_reasoning",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "steps": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "explanation": { "type": "string" },
+                      "output": { "type": "string" }
+                    },
+                    "required": ["explanation", "output"],
+                    "additionalProperties": false
+                  }
+                },
+                "final_answer": { "type": "string" }
+              },
+              "required": ["steps", "final_answer"],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+For more, refer to Google Vertex AI's [detailed documentation on Controlled Generations here](https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev).

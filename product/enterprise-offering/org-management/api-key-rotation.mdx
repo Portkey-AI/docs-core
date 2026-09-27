@@ -4,11 +4,11 @@ description: "Periodically replace API key secrets without downtime using manual
 ---
 
 <Note>
-**Availability:** This feature is live on Portkey Cloud. 
+**Availability:** API key rotation is available on **all plans** (Free, Growth, and Enterprise) on Portkey Cloud. 
 
-For self-hosted deployments 
-  - **Airgapped:** Backend `v1.13.0+`
-  - **Hybrid:** Gateway Enterprise `v2.5.0+`.
+For self-hosted deployments:
+  - **Airgapped:** Backend `v1.14.0+`
+  - **Hybrid:** Gateway Enterprise `v2.5.0+`
 </Note>
 
 <Warning>
@@ -123,8 +123,9 @@ A rotation policy can be attached to any API key at [**creation**](/api-referenc
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `rotation_period` | `"weekly"` \| `"monthly"` | One of `rotation_period` or `next_rotation_at` | Recurring schedule. Weekly rotates every Monday 00:00 UTC; monthly rotates on the 1st of each month 00:00 UTC |
-| `next_rotation_at` | ISO 8601 datetime | One of `rotation_period` or `next_rotation_at` | Explicit one-time or override date for the next rotation (normalized to UTC midnight) |
+| `rotation_period` | `"weekly"` \| `"monthly"` | One of `rotation_period`, `rotation_period_days`, or `next_rotation_at` | Recurring schedule. Weekly rotates every Monday 00:00 UTC; monthly rotates on the 1st of each month 00:00 UTC |
+| `rotation_period_days` | integer (1–365) | One of `rotation_period`, `rotation_period_days`, or `next_rotation_at` | Custom rotation cadence in days. Mutually exclusive with `rotation_period`. _(Backend `v1.16.0+`)_ |
+| `next_rotation_at` | ISO 8601 datetime | One of `rotation_period`, `rotation_period_days`, or `next_rotation_at` | Explicit one-time or override date for the next rotation (normalized to UTC midnight) |
 | `key_transition_period_ms` | integer (ms) | No | How long the old key stays valid after rotation. Min: `1800000` (30 min). Default: `1800000` |
 
 <Note>
@@ -158,6 +159,12 @@ A rotation policy can be attached to any API key at [**creation**](/api-referenc
 ```
 
 **Removing a policy:** Set `rotation_policy` to `null` in the update request.
+
+## Organisation-Enforced Rotation Period
+
+Organisation owners/admins can enforce a rotation cadence on workspace-user API keys via the `user_api_key_rotation_period` setting (with optional per-workspace override). The setting accepts an integer between `1` and `365` (days). _(Backend `v1.17.0+` stores and returns days only; `weekly`/`monthly` input is normalized to `7`/`30`.)_
+
+When set, newly-created workspace-user keys without a rotation policy automatically get the enforced cadence, and any explicit `rotation_period` / `rotation_period_days` that differs from the enforced value is rejected at create/update time. **`next_rotation_at`** cannot be manually changed on API key update while enforcement is active.
 
 ## Email Notifications
 
@@ -218,6 +225,8 @@ Admins (org admin/owner, workspace admin/manager) can rotate any key within thei
   * `weekly`
   * `monthly`
 
+* `rotation_period_days` (Backend `v1.16.0+`) accepts an integer between `1` and `365`. Mutually exclusive with `rotation_period`.
+
 * `next_rotation_at` is always normalized to **UTC midnight** for consistency across schedules
 
 
@@ -248,3 +257,8 @@ Every rotation (manual and automatic) produces an audit log entry containing:
   <Card title="API Keys (AuthN & AuthZ)" icon="key" href="/product/enterprise-offering/org-management/api-keys-authn-and-authz" />
   <Card title="User Roles & Permissions" icon="shield" href="/product/enterprise-offering/org-management/user-roles-and-permissions" />
 </CardGroup>
+
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />

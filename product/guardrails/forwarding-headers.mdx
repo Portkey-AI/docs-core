@@ -1,0 +1,64 @@
+---
+title: "Forwarding Headers"
+description: "Pass client request headers through to guardrail providers for trace correlation and session context."
+---
+
+Header forwarding passes specific client headers through to your guardrail providers. Use it for trace correlation, session-aware policy enforcement, or custom context your provider expects.
+
+Without forwarding configured, only `Content-Type` and the provider's authentication reach the guardrail endpoint. All other client headers stop at Portkey.
+
+---
+
+## Configuration
+
+Add `forwardHeaders` to any external check's `parameters`. List the exact header names you want forwarded:
+
+```json
+{
+  "checks": [
+    {
+      "id": "default.webhook",
+      "parameters": {
+        "webhookURL": "https://guardrails.example.com/check",
+        "forwardHeaders": ["x-portkey-trace-id", "traceparent", "x-session-id"]
+      }
+    }
+  ]
+}
+```
+
+If `forwardHeaders` is absent or omitted, nothing is forwarded. Each check configures forwarding independently.
+
+Provider authentication headers always take precedence — forwarded headers cannot overwrite them.
+
+<Note>
+If you include `traceparent` in your list and the client sends `x-portkey-trace-id` but no `traceparent`, Portkey synthesizes a valid W3C traceparent automatically. If the client sends a valid `traceparent` directly, it passes through unchanged.
+</Note>
+
+---
+
+## Restricted Headers
+
+Portkey prevents forwarding headers that carry credentials or sensitive context. The following categories are blocked and rejected at save time:
+
+- **Credentials** — `authorization`, `x-api-key`, `ocp-apim-subscription-key`, `proxy-authorization`
+- **Session** — `cookie`
+- **Cloud metadata** — headers used by cloud IMDS endpoints (AWS, GCP)
+- **Internal routing** — all `x-portkey-*` headers except `x-portkey-trace-id` and `x-portkey-span-id`
+- **Hop-by-hop** — protocol headers like `connection`, `host`, `transfer-encoding`
+
+Header names must be valid per RFC 7230 — lowercase alphanumeric characters and hyphens only. Wildcards are not supported.
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Guardrails" href="/product/guardrails" />
+  <Card title="Bring Your Own Guardrails" href="/integrations/guardrails/bring-your-own-guardrails" />
+</CardGroup>
+
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
