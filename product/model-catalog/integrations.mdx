@@ -165,6 +165,45 @@ This is essential for:
 
 **Important:** The model list you set here applies to all Providers created from this Integration. Workspaces will only see and be able to use the models you've enabled.
 
+#### Controlling Model Provisioning via the API
+
+When you manage Integrations programmatically, model provisioning is controlled by two Admin API endpoints working together:
+- The [Create Integration API](/api-reference/admin-api/control-plane/integrations/create-integration) creates the Integration and its initial model access.
+- The [Update Model Access API](/api-reference/admin-api/control-plane/integrations/models/update-model-access) changes which models are enabled afterwards - the API equivalent of the Model Provisioning screen above.
+
+**Current default behavior:** Create Integration sets `allow_all_models` to `true`, so a new Integration enables every current model and auto-enables new ones. To restrict access, you follow up with an Update Model Access call - there's no way to lock an Integration down at creation time.
+
+#### Setting Provisioning at Creation Time (Beta)
+
+<Note>
+This is a beta feature, opt in by sending the `x-portkey-beta: model-provisioning-2026-09-02` header. This behavior will become the default in a future release - if your API integration relies on today's defaults, see [Preparing for the default change](#preparing-for-the-default-change).
+</Note>
+
+Creating Integrations through the UI is unaffected. The core change is a shift to a **restrictive default**: instead of a new Integration automatically enabling every model, it starts with nothing enabled, and you opt models in from the Create Integration call itself.
+
+When the header is present, two request fields govern model provisioning:
+
+| Field | Type | Default | Description |
+| :---- | :--- | :------ | :---------- |
+| `enable_all_current_models` | boolean | `false` | Enables every model the provider currently offers at creation. When `false`, those models are still attached to the Integration but left disabled, so you can enable only the ones you need. |
+| `auto_enable_new_models` | boolean | `false` | Determines whether models the provider adds *later* are automatically enabled on this Integration. |
+
+These are the same controls you already have through `allow_all_models` and Update Model Access - what changes is the default and *when* you apply it:
+- **Restrictive by default:** New Integrations enable nothing until you opt models in, rather than exposing every model automatically - no window where all models are briefly available before you curate them.
+- **One-step setup:** Provision models in the create request itself, instead of creating an Integration wide-open and then locking it down with a follow-up Update Model Access call.
+- **Current and future models together:** Decide up front which existing models are enabled and whether newly released ones auto-enable.
+
+##### Preparing for the default change
+
+<Warning>
+**The API default is changing.** Today, a new Integration enables all current models and auto-enables new ones. In a future release, both fields will default to `false` (the beta behavior) - new Integrations will start with no models enabled.
+
+If your integration relies on today's behavior, pass `enable_all_current_models: true` and `auto_enable_new_models: true` explicitly so it keeps working after the change.
+</Warning>
+
+<Card title="Create Integration API" icon="code" href="/api-reference/admin-api/control-plane/integrations/create-integration">
+  Set model provisioning controls when creating Integrations programmatically
+</Card>
 
 #### Advanced Model Management
 
