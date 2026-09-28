@@ -34,10 +34,10 @@ REPO = ROOT.parent
 # shrinking baseline: an entry that stops matching anything fails the check, same as the
 # endpoint check, so these cannot quietly rot once someone resolves them.
 KNOWN = {
-    # Inherited. "3. Enterprise Governance" does not exist in the Latest version of these
-    # pages either, so the links arrived broken; we did not break them. 24 links, 14 pages.
-    "3-enterprise-governance": "section absent upstream too -- needs a destination",
-    "enterprise-governance": "section absent upstream too -- needs a destination",
+    # Not broken in the rendered page. "# 3. Set Up Governance" is the first heading of
+    # snippets/aigw/portkey-advanced-features.mdx, which every linking page imports, and
+    # this check reads only the page's own headings, not imported snippets. 23 links, 14 pages.
+    "3-set-up-governance": "heading comes from an imported snippet this check does not read",
     # Sections removed by our own phases, with the links into them left behind.
     "auto-instrumentation": "SDK feature removed in Phase 3",
     "access-control-management": "section gone from list-of-guardrail-checks",
