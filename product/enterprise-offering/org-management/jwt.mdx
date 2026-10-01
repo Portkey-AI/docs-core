@@ -586,6 +586,7 @@ Use this when tokens come from Okta, Auth0, Entra, Cognito, or another IdP whose
 | `ORGANISATIONS_TO_SYNC` | **Yes** | Comma-separated org UUIDs to sync from the control plane. Also restricts which orgs this gateway accepts. |
 | `PORTKEY_CLIENT_AUTH` | **Yes** | Service auth token for the gateway to sync org, workspace, and deployment settings from the control plane. |
 | `JWT_LOCAL_AUTH_DEFAULT_SCOPES` | No | Comma-separated gateway scopes to apply when the IdP token does not include `scope` or `scopes`. Use this when you cannot add Portkey scopes to tokens in your IdP. |
+| `JWT_PREFER_USER_WORKSPACE_RESOLUTION` | No | Set to `ON` to resolve a user token's own workspace membership before the deployment and organisation defaults. See [Workspace resolution](#workspace-resolution). Service tokens are unaffected. |
 
 Example:
 
@@ -724,6 +725,24 @@ Workspace is determined after the token is verified, using token claims first, t
 | Org default workspace | Used when no workspace is resolved from the token or deployment settings |
 
 Whenever a request resolves to a specific workspace this way, the gateway verifies that the token's user is an active member of it, and rejects the request with **403** otherwise.
+
+#### Preferring the user's own workspace
+
+By default, when a user token does not name a workspace, the gateway tries the deployment default and the organisation default workspace before falling back to the user's own membership. Set `JWT_PREFER_USER_WORKSPACE_RESOLUTION=ON` on the gateway to try the user's own membership first.
+
+| Step | Default (flag off or unset) | `JWT_PREFER_USER_WORKSPACE_RESOLUTION=ON` |
+| ---- | --------------------------- | ----------------------------------------- |
+| 1 | `portkey_workspace` claim | `portkey_workspace` claim |
+| 2 | `workspace_slug` claim | `workspace_slug` claim |
+| 3 | `x-portkey-workspace` header hint (user tokens only) | `x-portkey-workspace` header hint (user tokens only) |
+| 4 | Deployment `sub` → workspace mapping | Deployment `sub` → workspace mapping |
+| 5 | Deployment default (first allowed workspace) | **The user's own membership** |
+| 6 | Organisation default workspace | Deployment default (first allowed workspace) |
+| 7 | The user's own membership | Organisation default workspace |
+
+Steps 1–4 are identical in both modes. The flag changes behaviour only for user tokens — those carrying a valid email claim. Service tokens always follow the default order.
+
+If the user-first lookup does not yield a workspace, the gateway falls back through the deployment default and then the organisation default. Membership is re-validated against whichever workspace is finally selected, so a user who is not an active member of the fallback workspace is still rejected with **403**.
 
 ### Usage limits, rate limits, and policies
 
