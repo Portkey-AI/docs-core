@@ -1,0 +1,90 @@
+---
+title: "Decisions"
+description: "Get typed judgments (probability, choice, or score) from models through the Prisma AIRS AI Gateway's /v1/decisions endpoint."
+---
+
+The Decisions API returns a **typed judgment** instead of generated text. You send a `state` and a set of `questions`. The model returns one typed answer for each question.
+
+Use it for classification, routing, scoring, and yes/no checks, where you need a structured answer and not free text.
+
+<Note>
+  `/v1/decisions` is currently available through [TypeSafe's Jev models](/aigw/integrations/llms/typesafe), directly or via [OpenRouter](/aigw/integrations/llms/openrouter). It does not support streaming.
+</Note>
+
+## Quick Start
+
+```sh cURL
+curl https://aigw.portkey.ai/v1/decisions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: typesafe" \
+  -d '{
+    "model": "jev-latest",
+    "state": "Help! My payouts have been failing for 3 days.",
+    "questions": {
+      "department": {
+        "type": "choice",
+        "instructions": "Which team should handle this?",
+        "criteria": { "billing": "Payments", "technical": "Bugs" }
+      }
+    }
+  }'
+```
+
+Response:
+
+```json
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "department": {
+      "type": "choice",
+      "choice": "billing",
+      "probabilities": { "billing": 0.88, "technical": 0.12 },
+      "confidence": 0.81
+    }
+  },
+  "usage": { "input_tokens": 296, "output_tokens": 20 },
+  "provider": "typesafe"
+}
+```
+
+## Question Types
+
+Each entry in `questions` sets a `type`. The type sets the shape of the answer:
+
+| Type | Use for | Answer shape |
+|:---|:---|:---|
+| `noul` | A yes/no judgment | `{ noul: <0–1 probability> }` |
+| `choice` | One label from a fixed set | `{ choice, probabilities, confidence }` |
+| `score` | A position on a scale | `{ score, legend, probabilities, confidence }` |
+
+`criteria` gives the type-specific detail. For a `choice` question, it is the set of labels.
+
+## Gateway Features
+
+Decisions requests go through the same gateway as other endpoints:
+
+- **Routing** — Retries, fallbacks, load balancing, and circuit breaking through [Configs](/aigw/product/ai-gateway/configs)
+- **Caching** — [Simple and semantic caching](/aigw/product/ai-gateway/cache-simple-and-semantic)
+- **Guardrails** — Before-request checks on the `state` field only. See [Guardrails for Decisions](/aigw/product/guardrails/decisions-guardrails)
+- **Observability** — Logs, cost tracking, and analytics in [Observability](/aigw/product/observability)
+
+## API Reference
+
+- [Create a Decision](/aigw/api-reference/decisions/create-decisions) -- `POST /v1/decisions`
+
+<CardGroup cols={2}>
+  <Card title="TypeSafe" icon="bolt" href="/aigw/integrations/llms/typesafe">
+    Provider setup and pricing
+  </Card>
+  <Card title="API Reference" icon="code" href="/aigw/api-reference/decisions/create-decisions">
+    Decisions API reference
+  </Card>
+  <Card title="Universal API" icon="arrows-rotate" href="/aigw/product/ai-gateway/universal-api">
+    All API formats
+  </Card>
+  <Card title="Guardrails for Decisions" icon="shield" href="/aigw/product/guardrails/decisions-guardrails">
+    Scan `state` before it reaches the model
+  </Card>
+</CardGroup>
