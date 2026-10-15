@@ -18,7 +18,7 @@ The JWT Token Validator guardrail provides comprehensive JWT (JSON Web Token) va
 - **Multi-tenant Support**: Validate tenant IDs and other organizational claims
 - **Role-Based Access**: Validate user groups, roles, and permissions
 - **OAuth2/OIDC Support**: Standard audience, issuer, and scope validation
-- **Claim Extraction**: Extract JWT claims and inject them into request context as headers
+- **Claim Extraction**: Extract JWT claims and inject them into request context as headers and metadata
 
 ## Validation Methods
 
@@ -71,8 +71,9 @@ When using `introspectEndpoint`:
 | `requiredClaims` | string[] | No | Array of claim names that must be present |
 | `claimValues` | object | No | Object mapping claim names to expected values with match types |
 | `headerPayloadMatch` | string[] | No | Array of keys where header[key] must equal payload[key] |
-| `extractClaims` | string[] | No | Array of claim names to extract and inject into request context |
+| `extractClaims` | string[] | No | Array of claim names to extract and inject into request headers and metadata |
 | `claimPrefix` | string | No | Prefix for extracted claim headers (default: `"x-jwt-"`) |
+| `metadataPrefix` | string | No | Prefix for extracted claim metadata keys (default: `""`, i.e. raw claim names) |
 
 ## Match Types
 
@@ -281,21 +282,30 @@ Value must match the regex pattern.
 
 ### Claim Extraction to Context
 
-Extracts validated JWT claims and injects them as headers for downstream services:
+Extracts validated JWT claims and injects them into both request headers and request metadata for downstream services. This only applies when the plugin runs as a **start hook** — as a before-request or after-request hook, the token is still validated but `extractClaims` is ignored.
 
 ```json
 {
   "jwksUri": "https://auth.example.com/.well-known/jwks.json",
   "extractClaims": ["sub", "email", "tenant_id", "groups"],
-  "claimPrefix": "x-jwt-"
+  "claimPrefix": "x-jwt-",
+  "metadataPrefix": ""
 }
 ```
 
-**Result**: Claims are extracted and added as headers:
+**Result**: Claims are extracted and added as headers (prefixed by `claimPrefix`):
 - `x-jwt-sub`: user-123
 - `x-jwt-email`: user@example.com
-- `x-jwt-tenant-id`: tenant-456
+- `x-jwt-tenant_id`: tenant-456
 - `x-jwt-groups`: admin,developer
+
+The same claims are also added to request metadata (prefixed by `metadataPrefix`, which defaults to empty, so raw claim names are used):
+- `sub`: user-123
+- `email`: user@example.com
+- `tenant_id`: tenant-456
+- `groups`: admin,developer
+
+The token owns every configured claim key: a verified claim overwrites client-supplied metadata and headers of the same name, and if the token lacks a configured claim (or validation fails) any client-supplied value for that key is removed. Organization/workspace default metadata and an enforced `_user` are never overridden.
 
 ### Comprehensive Production Setup
 
