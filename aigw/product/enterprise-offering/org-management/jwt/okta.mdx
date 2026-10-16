@@ -1,0 +1,334 @@
+---
+title: "JWT Authentication with Okta"
+description: "Step-by-step setup for authenticating an application to Prisma AIRS AI Gateway with Okta-issued JWTs"
+---
+
+This guide walks through every click needed to let an application call the AI Gateway with an access token issued by Okta instead of an API key. When you finish:
+
+- Your application gets an access token from Okta using the client credentials flow.
+- The AI Gateway validates that token against Okta's public keys.
+- The token carries your organisation, workspace and scopes, and can optionally carry a [default config](#optional-embed-a-default-config-in-the-token).
+
+For background on the claims and validation rules used here, see [JWT Authentication](/aigw/product/enterprise-offering/org-management/jwt).
+
+## Before you begin
+
+You need:
+
+- **Okta admin access** (Super Administrator, or an admin who can manage applications and authorization servers).
+- **Admin or Owner role** in your AI Gateway organisation in Strata Cloud Manager.
+- At least one LLM provider set up in the [Model Catalog](/aigw/product/model-catalog), so you have a provider slug to call.
+- (Optional) A [config](/aigw/product/ai-gateway/configs) you want applied to every request from this application.
+
+## Part 1: Collect values from Strata Cloud Manager
+
+Note these values down. You paste them into Okta in Part 2.
+
+| Value | Where to find it | Example |
+| ----- | ---------------- | ------- |
+| Organisation ID | The browser URL after you log in: `https://stratacloudmanager.paloaltonetworks.com/<organisation_id>/` | `3ed1b666-7e3d-416a-9260-da10e1610d1a` |
+| Workspace slug | The workspace the application should use | `ws-shared-8622d1` |
+| Provider slug | The provider in the Model Catalog that the application calls | `openai-prod` |
+| Config ID (optional) | The config to apply by default | `pc-your-config-id` |
+
+## Part 2: Configure Okta
+
+### Step 1: Pick an authorization server
+
+The AI Gateway must validate tokens with Okta's public keys, so the tokens have to come from a **custom authorization server**. Tokens from Okta's org authorization server (URLs like `https://<your-okta-domain>/oauth2/v1/...`) are meant for Okta's own APIs and cannot be validated by third parties.
+
+<Steps>
+  <Step title="Open authorization servers">
+    In the Okta Admin Console, go to **Security** → **API** → **Authorization Servers**.
+  </Step>
+  <Step title="Choose or create a server">
+    Use the server named **default**, or click **Add Authorization Server** to create a dedicated one:
+    - **Name**: `Prisma AIRS AI Gateway`
+    - **Audience**: any identifier for the AI Gateway, for example `api://prisma-airs-ai-gateway`
+    - **Description**: optional
+
+    Okta requires an audience and writes it to the token's `aud` claim. The AI Gateway doesn't check `aud`, so the value is up to you.
+
+    Click **Save**.
+  </Step>
+  <Step title="Note the issuer URI">
+    On the server's **Settings** tab, copy the **Issuer** value, for example `https://<your-okta-domain>/oauth2/default` or `https://<your-okta-domain>/oauth2/<auth-server-id>`. The rest of this guide calls it `<ISSUER>`.
+  </Step>
+</Steps>
+
+### Step 2: Add the gateway scope
+
+<Steps>
+  <Step title="Open the Scopes tab">
+    In **Security** → **API** → **Authorization Servers**, click the name of your server, then open its **Scopes** tab and click **Add Scope**.
+  </Step>
+  <Step title="Create the scope">
+    - **Name**: `completions.write`
+    - **Display phrase** and **Description**: for example, `Call the AI Gateway`
+    - **User consent**: **Implicit**. The client credentials flow has no user to ask, so a scope set to **Required** makes the token request fail.
+    - Leave **Block services from requesting this scope** unchecked. Your application is a service, so this would block it.
+
+    Click **Create**.
+  </Step>
+</Steps>
+
+`completions.write` covers chat completions, embeddings and most AI routes. Repeat this step for any other [gateway scopes](/aigw/product/enterprise-offering/org-management/jwt#authorization-%26-scopes) the application needs, such as `mcp.invoke`.
+
+### Step 3: Create an app integration for your application
+
+<Steps>
+  <Step title="Start a new app integration">
+    Go to **Applications** → **Applications** and click **Create App Integration**.
+  </Step>
+  <Step title="Choose API Services">
+    Select **API Services** and click **Next**. This creates a machine-to-machine client that uses the client credentials flow.
+  </Step>
+  <Step title="Name it and save">
+    Enter a name such as `my-app-ai-gateway` and click **Save**.
+  </Step>
+  <Step title="Copy the credentials">
+    On the **General** tab, copy the **Client ID** and **Client secret**. Store the secret in your application's secret manager.
+
+    If **Require Demonstrating Proof of Possession (DPoP) header in token requests** is shown, leave it unchecked unless your application already sends DPoP proofs.
+  </Step>
+</Steps>
+
+### Step 4: Add the claims the AI Gateway needs
+
+Okta puts granted scopes in a claim named `scp`, but the AI Gateway reads `scope` or `scopes`. Okta also has no idea which AI Gateway organisation or workspace the token is for. You fix both by adding custom claims.
+
+Go to **Security** → **API** → **Authorization Servers** and click the name of the server from Step 1 to open it. Open its **Claims** tab and click **Add Claim** once for each row below. Use these settings for every claim:
+
+- **Include in token type**: **Access Token**, **Always**
+- **Value type**: **Expression**
+- **Include in**: **Any scope**
+
+| Name | Value | Notes |
+| ---- | ----- | ----- |
+| `portkey_oid` | `"<ORGANISATION_ID>"` | Your organisation ID from Part 1, in double quotes |
+| `portkey_workspace` | `"<WORKSPACE_SLUG>"` | Your workspace slug from Part 1, in double quotes |
+| `scopes` | `access.scope` | Copies the granted scopes into a claim the AI Gateway reads |
+
+<Note>
+  Okta expressions treat unquoted text as an expression, so keep the double quotes around the literal organisation ID and workspace slug.
+</Note>
+
+If different applications should land in different workspaces, use a separate authorization server per workspace, or replace the literal workspace value with an expression that reads it from the client, for example `app.profile.workspace_slug`. Expressions like that need the matching attribute added to the app profile first.
+
+### Step 5: Allow your app to get tokens
+
+<Steps>
+  <Step title="Add an access policy">
+    In **Security** → **API** → **Authorization Servers**, click the name of your server, then open its **Access Policies** tab and click **Add New Access Policy**:
+    - **Name**: `AI Gateway clients`
+    - **Assign to**: **The following clients**, then select the app from Step 3
+
+    Click **Create Policy**.
+  </Step>
+  <Step title="Add a rule">
+    Inside the new policy, click **Add Rule**:
+    - **Rule name**: `Client credentials`
+    - **Grant type**: check **Client Credentials** only
+    - **Scopes requested**: **The following scopes**, then select `completions.write` and any other scopes you added
+    - **Access token lifetime**: `1 hour` is a sensible default
+
+    Click **Create Rule**.
+  </Step>
+</Steps>
+
+### Step 6: Copy the JWKS URL
+
+Your authorization server's public keys are published at:
+
+```
+<ISSUER>/v1/keys
+```
+
+For example, `https://<your-okta-domain>/oauth2/default/v1/keys`. You can confirm it by opening the **Metadata URI** on the server's **Settings** tab and finding the `jwks_uri` field.
+
+## Part 3: Point the AI Gateway at Okta's keys
+
+<Steps>
+  <Step title="Open organisation authentication settings">
+    In Strata Cloud Manager, go to **Admin Settings** → **Organisation** → **Authentication**.
+  </Step>
+  <Step title="Paste the JWKS URL">
+    Choose **JWKS URL** and paste the URL from Step 6.
+  </Step>
+  <Step title="Save">
+    Click **Save**.
+  </Step>
+</Steps>
+
+<Warning>
+  Use **JWKS URL**, not **JWKS JSON**. Okta rotates its signing keys automatically, and a pasted JSON copy stops matching new tokens after the next rotation.
+</Warning>
+
+## Part 4: Test the setup
+
+### Get a token from Okta
+
+```sh
+export OKTA_ISSUER="https://<your-okta-domain>/oauth2/default"
+export OKTA_CLIENT_ID="<CLIENT_ID>"
+export OKTA_CLIENT_SECRET="<CLIENT_SECRET>"
+
+export TOKEN=$(curl -s -X POST "$OKTA_ISSUER/v1/token" \
+  -u "$OKTA_CLIENT_ID:$OKTA_CLIENT_SECRET" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&scope=completions.write" \
+  | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])')
+```
+
+### Check the claims
+
+Decode the token locally. Don't paste production tokens into third-party websites.
+
+```sh
+python3 -c 'import sys, json, base64; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' "$TOKEN"
+```
+
+The output should include:
+
+```json
+{
+  "iss": "https://<your-okta-domain>/oauth2/default",
+  "sub": "<CLIENT_ID>",
+  "exp": 1735689600,
+  "scp": ["completions.write"],
+  "portkey_oid": "3ed1b666-7e3d-416a-9260-da10e1610d1a",
+  "portkey_workspace": "ws-shared-8622d1",
+  "scopes": ["completions.write"]
+}
+```
+
+If `portkey_oid`, `portkey_workspace` or `scopes` is missing, recheck the claim settings in Step 4. If you get no token at all, recheck the access policy rule in Step 5.
+
+### Call the AI Gateway
+
+```sh
+curl https://aigw.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "x-portkey-provider: @<YOUR_PROVIDER_SLUG>" \
+  -d '{
+    "model": "your-model-id",
+    "messages": [{ "role": "user", "content": "Hello!" }]
+  }'
+```
+
+A normal completion response means the setup works. The request appears in the workspace logs, attributed to the Okta client ID (the token's `sub`).
+
+## Part 5: Use the token in your application
+
+Fetch a token from Okta, reuse it until shortly before it expires, then fetch a new one. The AI Gateway caches validated tokens until their `exp`, so reusing a token is cheaper than requesting one per call.
+
+```py
+import time
+import requests
+from openai import OpenAI
+
+OKTA_ISSUER = "https://<your-okta-domain>/oauth2/default"
+OKTA_CLIENT_ID = "<CLIENT_ID>"
+OKTA_CLIENT_SECRET = "<CLIENT_SECRET>"  # load from your secret manager
+
+_token = None
+_expires_at = 0
+
+def get_token():
+    global _token, _expires_at
+    if _token and time.time() < _expires_at - 60:
+        return _token
+    resp = requests.post(
+        f"{OKTA_ISSUER}/v1/token",
+        auth=(OKTA_CLIENT_ID, OKTA_CLIENT_SECRET),
+        data={"grant_type": "client_credentials", "scope": "completions.write"},
+        headers={"Accept": "application/json"},
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    _token = body["access_token"]
+    _expires_at = time.time() + body["expires_in"]
+    return _token
+
+def gateway_client():
+    return OpenAI(api_key=get_token(), base_url="https://aigw.portkey.ai/v1")
+
+completion = gateway_client().chat.completions.create(
+    model="@<YOUR_PROVIDER_SLUG>/your-model-id",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(completion.choices[0].message)
+```
+
+If you run a [self-hosted gateway](/aigw/product/enterprise-offering/org-management/gateway-urls), replace `https://aigw.portkey.ai/v1` with your gateway URL.
+
+## Optional: Embed a default config in the token
+
+The [`defaults` claim](/aigw/product/enterprise-offering/org-management/jwt#embedding-default-configs-in-jwt) is a JSON object:
+
+```json
+"defaults": {
+  "config_id": "pc-your-config-id",
+  "metadata": { "environment": "production", "team": "backend" }
+}
+```
+
+Okta claim expressions return strings, numbers, booleans and arrays, not nested objects, so you can't add `defaults` from the **Claims** tab. Add it with an Okta **token inline hook** instead. The hook calls an HTTPS endpoint you host each time Okta mints a token, and your endpoint returns the claim to add.
+
+<Steps>
+  <Step title="Host the hook endpoint">
+    Deploy an HTTPS endpoint that responds to Okta's request with:
+
+    ```json
+    {
+      "commands": [
+        {
+          "type": "com.okta.access.patch",
+          "value": [
+            {
+              "op": "add",
+              "path": "/claims/defaults",
+              "value": {
+                "config_id": "pc-your-config-id",
+                "metadata": { "environment": "production", "team": "backend" }
+              }
+            }
+          ]
+        }
+      ]
+    }
+    ```
+
+    The request from Okta includes the client ID, so one endpoint can return a different config per application. Okta expects a reply within 3 seconds.
+  </Step>
+  <Step title="Register the hook in Okta">
+    Go to **Workflow** → **Inline Hooks**, click **Add Inline Hook**, and choose **Token**. Enter a name, your endpoint URL and the authentication header your endpoint expects, then click **Save**.
+  </Step>
+  <Step title="Attach the hook to your access policy rule">
+    Go back to **Security** → **API** → **Authorization Servers**, open your server's **Access Policies** tab, and edit the rule from Step 5. Under **Use this inline hook**, select the hook and click **Update Rule**.
+  </Step>
+  <Step title="Verify">
+    Get a new token as in [Part 4](#get-a-token-from-okta) and decode it. You should see the `defaults` object alongside the other claims.
+  </Step>
+</Steps>
+
+The AI Gateway applies `defaults.config_id` only if the config belongs to your organisation. A config passed explicitly in a request header still overrides the token default, unless config override is disabled for the workspace.
+
+If you don't want to run an inline hook, your application can send the config on each request with the `x-portkey-config` header instead.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| ------- | ------------ | --- |
+| Okta returns `invalid_client` | Wrong client ID or secret | Copy both again from the app's **General** tab |
+| Okta returns `invalid_scope` | Scope not created, or not allowed by the access policy rule | Check Step 2 and the rule's **Scopes requested** in Step 5 |
+| Okta says the scope requires user consent | The scope's **User consent** is set to **Required** | Edit the scope (Step 2) and set **User consent** to **Implicit** |
+| Okta returns `access_denied` or `no_matching_policy` | App not assigned to an access policy | Check **Assign to** in Step 5 |
+| AI Gateway returns **401**, audit log says `Signing Key Not Found` | JWKS URL points at a different authorization server than the one issuing tokens | Make sure the JWKS URL starts with the same `<ISSUER>` as the token's `iss` claim |
+| AI Gateway returns **401** after weeks of working | JWKS JSON was pasted instead of a URL, and Okta rotated its keys | Switch to **JWKS URL** in Part 3 |
+| AI Gateway returns **401** with an organisation or workspace error | `portkey_oid` or `portkey_workspace` missing or wrong | Decode the token and compare with Part 1 |
+| AI Gateway returns **403** | Token lacks the scope the route needs | Make sure `scopes` contains `completions.write` (or the scope for that route) |
+
+Invalid JWT errors are recorded in the [Audit Logs](/aigw/product/enterprise-offering/audit-logs).
