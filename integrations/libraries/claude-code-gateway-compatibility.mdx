@@ -1,0 +1,102 @@
+---
+title: 'Gateway Compatibility'
+description: 'How Portkey handles the headers, body fields and endpoints that Claude Code expects from an LLM gateway, and which Claude Code settings to use'
+---
+
+Anthropic publishes a [gateway compatibility guide](https://code.claude.com/docs/en/llm-gateway-protocol) that lists what Claude Code sends to a gateway and what breaks when the gateway drops it. This page maps that guide to Portkey's behavior and lists the Claude Code settings that go with it.
+
+For setup, start with [Claude Code](/integrations/libraries/claude-code).
+
+## How Claude Code connects
+
+Claude Code reaches Portkey in the Anthropic Messages format, through `ANTHROPIC_BASE_URL`, whichever provider sits behind it. Don't set `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX`.
+
+Because Claude Code thinks it is talking to the Claude API, it sends the full set of Anthropic features even when Portkey routes to Bedrock or Vertex AI. Portkey bridges the difference: it strips beta flags the provider doesn't support, rewrites the ones the provider renamed, and drops body fields the provider rejects.
+
+## What Portkey handles
+
+Versions are the enterprise gateway release that added each behavior. Self-hosted gateways need at least that version.
+
+| Claude Code expects | Portkey | Since |
+|---|---|---|
+| `POST /v1/messages` | Supported | |
+| `POST /v1/messages/count_tokens` (optional) | Supported for [Anthropic](/integrations/llms/anthropic/count-tokens), [Bedrock](/integrations/llms/bedrock/count-tokens) and [Vertex AI](/integrations/llms/vertex-ai/count-tokens) | |
+| `anthropic-beta` and `anthropic-version` forwarded | Read from the request when the provider or config doesn't set them | v2.22.0 |
+| Unknown beta flags passed through | Passed through. Unsupported flags are stripped per provider for Bedrock, Vertex AI, Azure AI and Databricks | v2.7.0 |
+| `output_config` (effort, structured outputs) | Forwarded to Anthropic. Dropped for Vertex AI, which rejects it | v2.19.0 |
+| `context_management` | Forwarded to Anthropic and Vertex AI. Not sent to Bedrock | v2.27.0 |
+| Interleaved thinking on Bedrock and Vertex AI | Beta header kept | v2.25.1 |
+| `safeguards` (auto mode classifier) | Forwarded, and `safeguard_results` logged on streams | v2.24.0 |
+| `GET /v1/models` for the `/model` picker | Returns Anthropic's model shape to Anthropic clients | v2.22.0 |
+| claude.ai OAuth token | `Authorization` forwarded to Anthropic | v2.11.0 |
+
+On gateways older than v2.22.0, add `"forward_headers": ["anthropic-beta"]` to the config, or features like extended context stay off with no error.
+
+## Claude Code settings
+
+### Show gateway models in `/model`
+
+```json
+{
+    "env": {
+        "ANTHROPIC_BASE_URL": "https://api.portkey.ai",
+        "ANTHROPIC_AUTH_TOKEN": "YOUR_PORTKEY_API_KEY",
+        "ANTHROPIC_CUSTOM_HEADERS": "x-portkey-api-key: YOUR_PORTKEY_API_KEY\nx-portkey-provider: @anthropic-prod",
+        "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
+    }
+}
+```
+
+- Keep `ANTHROPIC_AUTH_TOKEN` set. Claude Code skips discovery when the credential is only in `ANTHROPIC_CUSTOM_HEADERS`.
+- With `x-portkey-provider` set, the picker lists that provider's models. Without a provider, the gateway returns models across the workspace.
+- Claude Code keeps only IDs that contain `claude` or `anthropic`. Bedrock IDs like `us.anthropic.claude-sonnet-4-5-20250929-v1:0` pass; non-Claude models from the universal provider don't appear.
+
+### Bedrock and Vertex AI upstreams
+
+If a request fails with `400` and `Extra inputs are not permitted`, a pre-release Anthropic feature reached a provider that doesn't accept it. Turn pre-release features off in Claude Code:
+
+```json
+{
+    "env": {
+        "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
+    }
+}
+```
+
+This stops context management, beta tool fields (`strict`, `defer_loading`), structured output format and MCP tool search. Effort, extended context and interleaved thinking stay on.
+
+### Gateway caching
+
+Portkey's [simple cache](/product/ai-gateway/cache-simple-and-semantic) keys on the request body. Claude Code v2.1.181 and later keep the system prompt prefix stable within a conversation, so caching works without changes. On older versions, set `CLAUDE_CODE_ATTRIBUTION_HEADER=0`.
+
+## Guardrails
+
+Claude Code expects the `system`, `tools` and `messages` content of earlier turns to reach the provider unchanged. Guardrails that rewrite the request, such as [PII redaction](/product/guardrails/pii-redaction), can cause:
+
+- Cache misses on every turn
+- `400` errors saying a thinking block is `bound to a different conversation`. Claude Code recovers by dropping earlier thinking blocks.
+
+For Claude Code traffic, prefer guardrails that block or flag without editing the request. For the Prisma AIRS guardrail, set [`strip_scaffolding`](/integrations/guardrails/palo-alto-panw-prisma) to avoid false positives from Claude Code's system reminders.
+
+## Requests that skip the gateway
+
+Two checks call `api.anthropic.com` directly and never appear in Portkey logs:
+
+- The fast mode availability check
+- The WebFetch domain safety check
+
+On networks that block direct egress to `api.anthropic.com`, fast mode can report a connectivity error while requests through Portkey keep working. See [fast mode behind gateways](https://code.claude.com/docs/en/fast-mode#use-fast-mode-behind-proxies-and-llm-gateways).
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `400` with `Extra inputs are not permitted` on Bedrock or Vertex AI | Set `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`. |
+| Extended context or interleaved thinking silently unavailable | Upgrade the gateway to v2.22.0, or add `forward_headers: ["anthropic-beta"]` to the config. |
+| `/model` shows no gateway models | Set `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` and `ANTHROPIC_AUTH_TOKEN`. Gateway must be v2.22.0 or later. |
+| High `input_tokens` with no cache reads | Check for guardrails that rewrite requests. On Claude Code older than v2.1.181, set `CLAUDE_CODE_ATTRIBUTION_HEADER=0`. |
+| Fast mode connectivity error | Allow egress to `api.anthropic.com`, or see Anthropic's fast mode docs. |
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
