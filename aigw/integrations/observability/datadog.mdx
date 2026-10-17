@@ -1,0 +1,153 @@
+---
+title: 'Datadog'
+description: 'Send Prisma AIRS AI Gateway traces and analytics to Datadog APM and AI Observability through a Datadog Agent sidecar on a hybrid deployment.'
+---
+
+A hybrid AI Gateway can push OpenTelemetry data to a Datadog Agent running as a sidecar in the gateway pod. The Agent forwards it to Datadog, where it shows up in two places:
+
+- **APM**: a service for the gateway, per-request traces, and inferred services for the upstream LLM providers
+- **AI Observability**: per-request GenAI spans
+
+<Info>
+Available on [hybrid deployments](/aigw/self-hosting/hybrid-deployments/architecture) only. The AI Gateway SaaS can't push telemetry to your Datadog account.
+</Info>
+
+## How it works
+
+```
+AI Gateway container ──OTLP/HTTP──▶ localhost:4318 ──▶ Datadog Agent sidecar ──▶ Datadog
+```
+
+The gateway sends two separate OTLP streams to the sidecar:
+
+| Stream | Variables | What it carries |
+|--------|-----------|-----------------|
+| [Analytics](/aigw/product/enterprise-offering/otel/analytics) | `OTEL_PUSH_*` | Aggregated request counts, latency, tokens and cost |
+| [GenAI traces](/aigw/product/enterprise-offering/otel/complete-logs) | `EXPERIMENTAL_GEN_AI_OTEL_*` | One span per request. These are the traces you see in APM and AI Observability |
+
+Enabling the analytics stream alone gives you no traces.
+
+## Prerequisites
+
+- A hybrid AI Gateway deployed with the Helm chart
+- A Datadog API key stored in a Kubernetes Secret, for example `datadog-otel` with key `dd_api_key`. Don't put the key in `values.yaml` or Git.
+
+```sh
+kubectl create secret generic datadog-otel -n $namespace --from-literal=dd_api_key=<your-datadog-api-key>
+```
+
+## Setup
+
+<Steps>
+<Step title="Allow the gateway to reach localhost">
+The gateway's SSRF guard blocks loopback addresses in production, so the push to the sidecar fails until you allow it. Add `localhost`, `127.0.0.1` and `::1` to [`TRUSTED_CUSTOM_HOSTS`](/aigw/product/ai-gateway/custom-hosts#trusted-custom-hosts-allowlist):
+
+```yaml
+environment:
+  data:
+    TRUSTED_CUSTOM_HOSTS: "<your existing hosts>,localhost,127.0.0.1,::1"
+```
+
+<Warning>
+Setting `TRUSTED_CUSTOM_HOSTS` replaces the list. It doesn't merge with what's there. Append to your existing hosts, or internal MCP servers and custom hosts stop working.
+</Warning>
+</Step>
+
+<Step title="Configure the gateway container">
+Add these to `extraEnv` in `values.yaml`:
+
+```yaml
+extraEnv:
+  # Analytics stream
+  - { name: OTEL_PUSH_ENABLED, value: "true" }
+  - { name: OTEL_ENDPOINT, value: "http://localhost:4318" }
+  - { name: OTEL_SERVICE_NAME, value: "portkey" }
+  - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "http/json" }
+
+  # GenAI traces
+  - { name: EXPERIMENTAL_GEN_AI_OTEL_TRACES_ENABLED, value: "true" }
+  - { name: EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://localhost:4318" }
+  - name: DD_API_KEY
+    valueFrom: { secretKeyRef: { name: datadog-otel, key: dd_api_key } }
+  - { name: EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_HEADERS, value: "dd-api-key=$(DD_API_KEY)" }
+  - { name: EXPERIMENTAL_GEN_AI_OTEL_RESOURCE_ATTRIBUTES, value: "deployment.environment.name=<env>,deployment.environment=<env>" }
+```
+
+- `EXPERIMENTAL_GEN_AI_OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL. The gateway appends `/v1/traces`.
+- Declare `DD_API_KEY` before the headers variable. Kubernetes only expands `$(DD_API_KEY)` when the variable is defined earlier in the same container.
+- `OTEL_EXPORTER_OTLP_PROTOCOL` applies to the analytics stream only.
+- Both `deployment.environment.name` and the older `deployment.environment` are set because Datadog maps the older one to `env` most reliably.
+- Keep `OTEL_SERVICE_NAME` set to `portkey` and leave `service.name` out of the resource attributes. See [Service name](#service-name).
+</Step>
+
+<Step title="Add the Datadog Agent sidecar">
+Add the Agent to `sidecars` in `values.yaml`:
+
+```yaml
+sidecars:
+  - name: datadog-agent
+    image: gcr.io/datadoghq/agent:7
+    ports:
+      - containerPort: 4318
+      - containerPort: 4317
+    env:
+      - name: DD_API_KEY
+        valueFrom: { secretKeyRef: { name: datadog-otel, key: dd_api_key } }
+      - { name: DD_SITE, value: "datadoghq.com" }
+      - { name: DD_SERVICE, value: "airs-gw" }
+      - { name: DD_ENV, value: "<env>" }
+      - { name: DD_APM_ENABLED, value: "true" }
+      - { name: DD_LOGS_ENABLED, value: "true" }
+      - { name: DD_OTLP_CONFIG_LOGS_ENABLED, value: "true" }
+      - { name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT, value: "0.0.0.0:4318" }
+      - { name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT, value: "0.0.0.0:4317" }
+      - name: DD_HOSTNAME
+        valueFrom: { fieldRef: { fieldPath: metadata.name } }
+    securityContext: { allowPrivilegeEscalation: false }
+```
+
+- Set `DD_SITE` to your [Datadog site](https://docs.datadoghq.com/getting_started/site/), for example `datadoghq.eu` or `us5.datadoghq.com`.
+- `DD_ENV` tags the analytics stream with your environment.
+- The gateway container runs with `readOnlyRootFilesystem: true`. That setting doesn't apply to the sidecar, which needs a writable root filesystem (the Kubernetes default).
+</Step>
+
+<Step title="Deploy">
+```sh
+helm upgrade --install portkey-ai portkey-ai/gateway -f ./values.yaml -n $namespace
+kubectl rollout restart deployment -n $namespace
+```
+
+Send a few requests through the gateway. Within a few minutes the `portkey` service appears in **APM → Services**, and the requests appear in **APM → Traces** and **AI Observability**.
+</Step>
+</Steps>
+
+## Service name
+
+The gateway always sets `service.name=portkey` as the first resource attribute on GenAI spans. When spans go through the Agent, the first duplicate attribute wins. Datadog's direct intake does the opposite and keeps the last one. Two consequences:
+
+- Adding `service.name` to `EXPERIMENTAL_GEN_AI_OTEL_RESOURCE_ATTRIBUTES` has no effect.
+- `DD_APM_SERVICE_MAPPING` doesn't apply to OTLP traces, so you can't rename the service at the Agent either.
+
+To keep everything under one service, set `OTEL_SERVICE_NAME=portkey`. That moves the analytics stream and the gateway's request spans under the same `portkey` service as the GenAI spans.
+
+## Don't send the `dd-otlp-source=llmobs` header
+
+Datadog documents a `dd-otlp-source=llmobs` header for sending OTLP to AI Observability. That header is meant for Datadog's direct intake. Sent through the Agent, it routes spans to AI Observability only, and APM gets no traces or inferred services. Leave it out: without it, the Agent sends spans to APM, inferred services and AI Observability.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Gateway logs show `TypeError: fetch failed` or `Failed to push analytics objects to OTel collector` | The SSRF guard is blocking `localhost` | Add `localhost,127.0.0.1,::1` to `TRUSTED_CUSTOM_HOSTS`, appending to the existing list |
+| Analytics arrive but no traces | Only `OTEL_PUSH_*` is set | Set the `EXPERIMENTAL_GEN_AI_OTEL_*` variables too |
+| `404` from the Agent | The endpoint ends in `/v1/traces`, so the gateway calls `/v1/traces/v1/traces` | Set the endpoint to the base URL, `http://localhost:4318` |
+| Spans in AI Observability but nothing in APM | `dd-otlp-source=llmobs` is in the headers | Remove it, leaving only `dd-api-key` |
+| Gateway data split across several services | `OTEL_SERVICE_NAME` differs from `portkey` | Set `OTEL_SERVICE_NAME=portkey` |
+| Header is sent as a literal `$(DD_API_KEY)` | `DD_API_KEY` is declared after the headers variable, or only in the sidecar | Declare `DD_API_KEY` in the gateway container, above the headers variable |
+
+## Related
+
+- [Analytics export](/aigw/product/enterprise-offering/otel/analytics)
+- [Complete logs export](/aigw/product/enterprise-offering/otel/complete-logs)
+- [Connect to internal services](/aigw/self-hosting/private-network-access)
+- [Datadog OTLP ingestion by the Agent](https://docs.datadoghq.com/opentelemetry/setup/otlp_ingest_in_the_agent/)

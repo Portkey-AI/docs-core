@@ -1,0 +1,133 @@
+---
+title: 'Salesforce Agentforce'
+description: 'Connect Portkey to Salesforce Agentforce through the LLM Open Connector to use any model in Prompt Builder, agents and the Models API'
+---
+
+Salesforce lets you bring your own model (BYOLLM) to Agentforce through the [LLM Open Connector](https://opensource.salesforce.com/einstein-platform/docs/apis/llm-open-connector). The connector speaks a subset of the OpenAI Chat Completions API, so Portkey's `/v1/chat/completions` endpoint works with it directly. You don't need middleware.
+
+With Portkey in between, Salesforce can use any model in your Model Catalog, and every request shows up in Portkey logs with cost, latency and token counts.
+
+## Prerequisites
+
+- [Portkey API key](https://app.portkey.ai/api-keys)
+- Provider configured in [Model Catalog](https://app.portkey.ai/model-catalog)
+- Salesforce org with Data Cloud and Einstein generative AI enabled, and permission to use Model Builder
+
+## Setup
+
+<Steps>
+<Step title="Configure Portkey">
+1. Go to [Model Catalog](https://app.portkey.ai/model-catalog) → **Add Provider**.
+2. Select your provider (OpenAI, Anthropic, Bedrock, etc.), enter its credentials, and set a slug like `openai-prod`.
+3. Go to [API Keys](https://app.portkey.ai/api-keys) → **Create new key** → Save.
+
+The model ID you give Salesforce is `@<provider-slug>/<model>`, for example `@openai-prod/gpt-5`.
+</Step>
+
+<Step title="Test the endpoint">
+Salesforce sends a request like this one. Run it first to confirm the key and model work:
+
+```sh
+curl https://api.portkey.ai/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+    -d '{
+        "model": "@openai-prod/gpt-5",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is the capital of Canada?"}
+        ],
+        "max_tokens": 200,
+        "temperature": 0.7,
+        "n": 1
+    }'
+```
+</Step>
+
+<Step title="Add Portkey as a foundation model">
+1. In Salesforce, open **Einstein Studio** (in the Data Cloud app) and go to **Model Builder**.
+2. Click **Add Foundation Model**, then choose to connect your own LLM with the **LLM Open Connector**.
+3. Fill in the connection:
+
+| Field | Value |
+|-------|-------|
+| **URL** | `https://api.portkey.ai/v1/chat/completions` |
+| **Auth Header** | `x-portkey-api-key` |
+| **Auth Key** | Your Portkey API key |
+| **Model Name** | A Model Catalog ID, e.g. `@openai-prod/gpt-5` |
+
+4. Save the connection.
+
+<Note>
+Salesforce sends one auth header and nothing else, so you can't add other `x-portkey-*` headers here. To route or add fallbacks, attach a default config to the API key ([see below](#add-fallbacks-and-routing)).
+</Note>
+</Step>
+
+<Step title="Create a configured model">
+1. Select the new model in the **Model Library** and click **New Configuration**.
+2. Send a prompt in the **Model Playground**.
+3. Check that the request appears in [Portkey Logs](https://app.portkey.ai/logs).
+4. Save the configuration.
+</Step>
+</Steps>
+
+## Use the model in Salesforce
+
+Once saved, the configured model is available wherever Salesforce lets you pick a generative model:
+
+- **Prompt Builder**: select it as the model for a prompt template.
+- **Agentforce**: add a prompt template that uses the model to an agent as an action.
+- **Models API**: call it by its API name from Apex or REST. Find the API name on the configured model's detail page.
+
+<Note>
+The LLM Open Connector supports text chat only. It doesn't send tool definitions, images or streaming requests. Use the Portkey model for prompt templates and Models API calls, not for features that need tool calling.
+</Note>
+
+## Add fallbacks and routing
+
+Salesforce can't send `x-portkey-config`, so attach a [default config](/product/administration/enforce-default-config) to the API key you entered in Model Builder. Every request from Salesforce then uses that config.
+
+Example: try OpenAI first, fall back to Anthropic on errors:
+
+```json
+{
+    "strategy": { "mode": "fallback" },
+    "targets": [
+        {
+            "provider": "@openai-prod",
+            "override_params": { "model": "gpt-5" }
+        },
+        {
+            "provider": "@anthropic-prod",
+            "override_params": { "model": "claude-opus-4-7" }
+        }
+    ]
+}
+```
+
+1. Create the config in [Configs](https://app.portkey.ai/configs) and copy its ID.
+2. Go to [API Keys](https://app.portkey.ai/api-keys), edit the key Salesforce uses, and select the config.
+
+`override_params` rewrites the model in each request, so the **Model Name** in Salesforce becomes a label. Keep it in `@slug/model` form anyway so the connection still works if the config is removed.
+
+To cap spend or rate for Salesforce traffic, set [budget and rate limits](/product/model-catalog/budget-limits) on the provider in Model Catalog, or give Salesforce its own provider slug.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `401` when saving or testing | Set **Auth Header** to `x-portkey-api-key` and **Auth Key** to the raw key, with no `Bearer` prefix. |
+| Model not found | The **Model Name** must use a provider slug that exists in the API key's workspace, e.g. `@openai-prod/gpt-5`. |
+| Connection fails on save | The URL must end in `/chat/completions` and be reachable on HTTPS port 443. |
+| Self-hosted gateway unreachable | Allow Salesforce's BYO model IP ranges, listed in Salesforce's *IP Addresses and Domains to Allow* article. |
+| Provider rejects the `parameters` field | Salesforce can nest extra settings in a `parameters` object. Add `"drop_params": ["parameters"]` to the target in the key's default config. |
+
+## Resources
+
+- [LLM Open Connector API specification](https://opensource.salesforce.com/einstein-platform/docs/apis/llm-open-connector)
+- [LLM Open Connector FAQ](https://opensource.salesforce.com/einstein-platform/about)
+- [Bring Your Own Large Language Model in Einstein 1 Studio](https://developer.salesforce.com/blogs/2024/03/bring-your-own-large-language-model-in-einstein-1-studio)
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
