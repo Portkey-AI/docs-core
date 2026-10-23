@@ -914,6 +914,65 @@ Run: `python veo_request.py`, then `python veo_poll.py`.
 Ensure `PORTKEY_API_KEY` is set (and, for Python, optionally `VERTEX_PROJECT_ID`). Configure Vertex AI and project access in Strata Cloud Manager or via the client so the gateway can call the Vertex Veo API.
 </Note>
 
+## Content Filtering and Blocked Prompts
+
+Vertex AI reports content filtering through two independent signals, and the gateway surfaces both.
+
+| Vertex signal | Meaning | Response field |
+| --- | --- | --- |
+| `candidates[].finishReason` | The model's **response** was filtered | `choices[].finish_reason` |
+| `promptFeedback.blockReason` | Your **prompt** was rejected before inference | `promptFeedback.blockReason` |
+
+With strict OpenAI compliance enabled, both are normalized to the OpenAI value `content_filter`. To see the underlying Vertex reason, set [`strict_open_ai_compliance=false`](/aigw/product/ai-gateway/strict-open-ai-compliance):
+
+```sh
+curl https://aigw.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: vertex-ai" \
+  -H "x-portkey-strict-open-ai-compliance: false" \
+  -d '{
+    "model": "gemini-2.5-flash",
+    "messages": [{ "role": "user", "content": "..." }]
+  }'
+```
+
+When a prompt is blocked, the response includes a top-level `promptFeedback` object carrying `blockReason`, an optional human-readable `blockReasonMessage`, and the prompt-level `safetyRatings`:
+
+```json
+{
+  "choices": [
+    {
+      "index": 0,
+      "message": { "role": "assistant", "content": null },
+      "finish_reason": "PROHIBITED_CONTENT"
+    }
+  ],
+  "promptFeedback": {
+    "blockReason": "PROHIBITED_CONTENT",
+    "blockReasonMessage": "The prompt could not be submitted...",
+    "safetyRatings": [
+      {
+        "category": "HARM_CATEGORY_JAILBREAK",
+        "blocked": true,
+        "severity": "HARM_SEVERITY_HIGH",
+        "severityScore": 0.96875
+      }
+    ]
+  }
+}
+```
+
+Possible `blockReason` values are `SAFETY`, `OTHER`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `MODEL_ARMOR`, `IMAGE_SAFETY`, `JAILBREAK` and `BLOCKED_REASON_UNSPECIFIED`. Note that this is a **different enum** from `finishReason`.
+
+<Note>
+When Vertex blocks a prompt it usually returns no candidates. In that case the gateway synthesizes a single choice with `content: null` so the response remains a valid OpenAI completion, and sets `finish_reason` to the block reason.
+
+Some newer Gemini models return a content-less candidate **and** `promptFeedback` together. There, `finish_reason` reflects the candidate's own reason (for example `SAFETY`) while `promptFeedback.blockReason` carries the more specific cause (for example `JAILBREAK`), so check `promptFeedback` when you need to know exactly why a request was rejected.
+</Note>
+
+`promptFeedback` is also emitted on the first chunk of a streaming response when the prompt is blocked.
+
 ## Custom Metadata Labels
 <Warning>
 The recommended way to attribute costs and track usage is to use [metadata](/aigw/product/observability/metadata) which allows your workflows to be vendor agnostic
