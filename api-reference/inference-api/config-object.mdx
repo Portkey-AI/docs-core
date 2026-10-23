@@ -671,8 +671,10 @@ You can find more examples of schemas [below](/api-reference/inference-api/confi
 
 | Key Name | Description | Type | Required | Enum Values | Additional Info |
 | --- | --- | --- | --- | --- | --- |
-| `mode` | strategy mode for the config | string | Yes | "single", "loadbalance", "fallback", "conditional" |     |
+| `mode` | strategy mode for the config | string | Yes | "single", "loadbalance", "fallback", "conditional" | See [Conditional Routing](/product/ai-gateway/conditional-routing) when `mode` is `"conditional"` |
 | `on_status_codes` | status codes to apply the strategy. This field is only used when strategy mode is "fallback" | array of numbers | No  |     | Optional |
+| `conditions` | Routing rules for `"conditional"` mode. Each item has a `query` and a `then` target name | array of objects | Yes (when `mode` is `"conditional"`) | - | See [Conditional Routing](/product/ai-gateway/conditional-routing) |
+| `default` | Target `name` to use when no `conditions` match | string | Yes (when `mode` is `"conditional"`) | - | Required with `conditions` for `"conditional"` mode |
 
 ### Cache Object Details
 
@@ -729,7 +731,8 @@ You can find more examples of schemas [below](/api-reference/inference-api/confi
 ### Notes
 
 * The strategy `mode` key determines the operational mode of the config. If strategy `mode` is not specified, a single provider mode is assumed, requiring either `provider` and `api_key` or `virtual_key`.
-* In `loadbalance` and `fallback` modes, the `targets` array specifies the configurations for each target.
+* In `loadbalance`, `fallback`, and `conditional` modes, the `targets` array specifies the configurations for each target.
+* In `conditional` mode, `strategy.conditions` and `strategy.default` are required. Each condition routes to a named target; unmatched requests use `default`. Full query syntax and examples: [Conditional Routing](/product/ai-gateway/conditional-routing).
 * The `cache` and `retry` objects provide additional configurations for caching and retry policies, respectively.
 
 ## Examples
@@ -741,6 +744,7 @@ You can find more examples of schemas [below](/api-reference/inference-api/confi
 | [Cache + Retry](#provider-slug-with-cache-and-retry) | Enable caching and retry logic |
 | [Load Balancing](#load-balancing-with-provider-slugs) | Distribute traffic across providers |
 | [Fallback](#fallback-across-providers) | Automatic failover between providers |
+| [Conditional Routing](#conditional-routing) | Route by metadata or request params |
 | [Combined Strategies](#load-balancing-and-fallback-combination) | Nested load balancing with fallback |
 | [Passthrough Target](#passthrough-target) | Defer provider resolution to the request |
 | [Legacy: API Key](#legacy-single-provider-with-api-key) | Direct API key usage |
@@ -827,6 +831,39 @@ Automatically failover to backup providers on errors.
   "targets": [
     { "provider": "@openai-prod", "override_params": { "model": "gpt-4o" } },
     { "provider": "@anthropic-prod", "override_params": { "model": "claude-sonnet-4-20250514" } }
+  ]
+}
+```
+
+---
+
+### Conditional Routing
+
+Route to different named targets based on metadata or request parameters. `conditions` and `default` are required when `mode` is `"conditional"`. See [Conditional Routing](/product/ai-gateway/conditional-routing) for the full query language.
+
+```json
+{
+  "strategy": {
+    "mode": "conditional",
+    "conditions": [
+      {
+        "query": { "metadata.user_plan": { "$eq": "paid" } },
+        "then": "premium"
+      }
+    ],
+    "default": "free"
+  },
+  "targets": [
+    {
+      "name": "premium",
+      "provider": "@openai-prod",
+      "override_params": { "model": "gpt-4.1" }
+    },
+    {
+      "name": "free",
+      "provider": "@openai-prod",
+      "override_params": { "model": "gpt-4.1-mini" }
+    }
   ]
 }
 ```
