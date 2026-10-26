@@ -1,0 +1,95 @@
+---
+title: "Prisma AIRS AI Gateway: Major Performance Improvements Incoming"
+sidebarTitle: "Performance Improvements"
+description: "What the upcoming AI Gateway performance improvements mean for hybrid deployments, what changes in 2.30.0, and what your platform team should check."
+---
+
+**For:** Customers running the AI Gateway in hybrid or air-gapped mode (self-hosted data plane)
+
+**Applies from:** Gateway 2.30.0
+
+## Overview
+
+We're gradually rewriting parts of the Prisma AIRS AI Gateway in Rust, to make it faster and to keep
+memory use steadier under heavy traffic. The rewrite happens in stages: each release can
+move a few more components over.
+
+**You don't need to change anything.** The API, headers, configs, control-plane connection,
+image name and the ports you expose all stay the same. Your applications and SDKs won't
+notice any difference.
+
+## Why we're doing this
+
+The gateway sits directly in the path of your LLM traffic, so how efficiently it handles
+request and response bodies directly affects your cost and latency. Rust handles that data
+more efficiently than the current Node.js runtime and makes better use of extra CPU cores.
+
+## How we're rolling it out
+
+- **A few components at a time.** Each release may move a few more components to Rust. The
+  rest keep running on the existing TypeScript code inside the same container.
+
+## What changes in 2.30.0
+
+These are internal to the container and shouldn't affect a standard deployment. We're listing
+them so your platform team knows what to expect.
+
+### 1. A small Rust process now accepts incoming traffic
+
+The container now starts a Rust process first. It listens on your configured `PORT` (default
+`8787`) as before and passes requests to the gateway's TypeScript server, which now runs
+on an internal port inside the same container.
+
+| Port | What it is | Action needed |
+|---|---|---|
+| `8787` (`PORT`) | Gateway API, same as before | None |
+| `8788` (`MCP_PORT`) | MCP gateway, same as before | None |
+| `8799` | **New.** Internal TypeScript server | Don't expose or route traffic to it |
+| `9091` (`RUST_METRICS_PORT`) | **New.** Optional monitoring endpoint. Reports the CPU, memory and open file usage of the new front-end process described above, in Prometheus format at `/metrics`. Available by default; not started when `ENABLE_PROMETHEUS=false` | Optional: add it to your Prometheus scrape config if you want to monitor that process. Don't send application traffic to it, and keep it reachable only from your monitoring network |
+
+A few things to check:
+
+- **Keep routing all traffic to `PORT`.** Your Service, ingress and load balancer should
+  point at `PORT` only, as they do today. If you use Kubernetes NetworkPolicies or security
+  groups, there's no reason to allow traffic to `8799`.
+- **Don't reuse `8799` or `9091`.** Don't set `PORT` to either one, and make sure no sidecar
+  in the same pod listens on them.
+- **Your existing health checks and `/metrics` scraping on `PORT` keep working.**
+
+### 2. Use the image's default entrypoint
+
+The image's built-in entrypoint chooses the right startup mode for your configuration, and
+we'll keep improving it as more components move to Rust. **Please don't override the
+container's entrypoint or command with your own startup command** (for example,
+`node build/start-server.js` or `node /app/entrypoint.cjs`).
+
+- **Supported:** Configure startup with environment variables: `PORT`, `MCP_PORT`,
+  `SERVER_MODE` (`mcp`, `all`, `unified`), TLS settings, and so on.
+- **Avoid:** Overriding `ENTRYPOINT` or `command` in Docker, Compose, Helm or Kubernetes, or
+  passing `--port` as a command-line argument. Set the `PORT` environment variable instead.
+
+If you override the entrypoint, the gateway keeps working today but runs entirely on the
+older TypeScript code, so it misses the improvements in each release. In a future release,
+custom startup commands that call Node directly will stop working. If you currently use a
+custom entrypoint, contact us and we'll help you move to the standard one.
+
+### Automatic fallback to the TypeScript server
+
+In a few setups, the entrypoint skips the Rust process and runs the TypeScript server
+directly, exactly as before 2.30.0. This currently happens when:
+
+- the gateway handles TLS itself (`TLS_KEY`/`TLS_CERT` are set),
+- it runs in MCP-only mode (`SERVER_MODE=mcp`), or
+- `--port` is passed on the command line.
+
+Nothing breaks in these setups. They just don't use the Rust process yet.
+
+## What's coming next
+
+Over the next releases, more of the gateway moves to Rust. Eventually the gateway will be a
+single Rust service, and the TypeScript server will be removed.
+
+We'll announce that step in advance with upgrade notes. Our goal is for it to be a normal
+image upgrade for anyone using the default entrypoint and environment-variable
+configuration. Following the guidance above is the best way to make sure that's true for
+you.
