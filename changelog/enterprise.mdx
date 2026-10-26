@@ -1,12 +1,133 @@
 ---
 title: "Enterprise Gateway"
-sidebarTitle: "Enterprise Gateway [2.29.1]"
+sidebarTitle: "Enterprise Gateway [2.31.0]"
 rss: true
 ---
 
 <Card title="Schedule Call" href="https://www.paloaltonetworks.com/ai-security/ai-gateway#:~:text=See%20Prisma%20AIRS%20AI%20Gateway%20in%20Action" icon="calendar" horizontal>
 Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructure
 </Card>
+
+<Note>
+**Performance improvements are on the way!** We're rolling them out in stages, and your applications won't need any changes. Before you upgrade, we'd recommend a quick look at the deployment notes (new internal ports and using the default entrypoint) so everything goes smoothly: [Performance Improvements](/self-hosting/major-performance-improvements) · [Prisma AIRS AI Gateway](/aigw/self-hosting/major-performance-improvements)
+</Note>
+
+<Update label="2.31.0" description="2026-10-23">
+
+## v2.31.0
+
+---
+
+### OpenAI GPT Live Endpoint
+
+The gateway supports OpenAI's GPT Live endpoint for real-time, low-latency voice and multimodal sessions, with the same logging, cost tracking, and guardrails Portkey provides for the Realtime API.
+
+[Realtime API](/product/ai-gateway/realtime-api) · [OpenAI Integration](/integrations/llms/openai)
+
+### Gateway-Local JWT Auth: Claim-Based Policies
+
+Gateway-local JWT authentication now also supports claim-based policies, configured in the JWT configuration of your organisation. A request is denied if its token is missing a required claim or carries a claim value you haven't allowed, and selected claims can be added to the request as metadata for conditional routing and logs.
+[Gateway-Local JWT Authentication](/product/enterprise-offering/org-management/jwt)
+
+### Signals: Now in Beta
+
+A signal is a fact about a request, worked out before the request is routed. Signals give you three things:
+
+- **Out-of-the-box and custom signals**: The gateway works out facts such as `has_images`, `context_size`, or `client_agent` for you at no cost. You can also add your own, such as a support topic or how difficult a request is.
+- **Visibility**: Every signal is stored with the request log, so you can filter, list, and group your traffic by it. The response also includes `signal_results`.
+- **Routing**: `conditional` routing can read a signal, so you can send each request to the model that fits it. For example, send requests with images to a vision model, or billing questions to a smaller, more cost-effective model.
+
+You can create your own signals in two ways:
+
+- **Rule Signal**: Classify requests using rules you write over headers, metadata, body fields, and message content, with no model call and no cost.
+- **Request Classifier**: A model on your own integration answers a question about the request. This adds one model call before routing, billed by your provider.
+
+Signals never block or fail a request. If a signal can't be evaluated, your request goes to your default target. Signals work with chat completions, messages, and responses requests.
+
+This is an early preview, so some details may change as we build out the full experience.
+
+[Conditional Routing](/product/ai-gateway/conditional-routing) · [Guardrails](/product/guardrails) · [Logs](/product/observability/logs)
+
+### Custom Error Messages for Guardrail Failures
+
+When a guardrail check fails and denies a request, the gateway can now return your own error message instead of the generic denial response. Use it to tell users why a request was blocked and what to do next. Custom messages work on LLM requests and MCP servers, and are limited to 512 characters.
+
+[Guardrails](/product/guardrails)
+
+### Provider Updates
+
+- **Amazon Bedrock / Claude Platform on AWS**: The Messages API supports the `safeguards` parameter. [AWS Bedrock Integration](/integrations/llms/bedrock/aws-bedrock) · [Claude Platform on AWS](/integrations/llms/claude-platform-aws)
+- **Claude Platform on AWS**: Haiku 5.5 requests over 100K tokens are billed at the correct tiered rate, instead of the flat base-card price. [Claude Platform on AWS](/integrations/llms/claude-platform-aws)
+- **Google Gemini**: Streaming parallel tool calls get distinct indexes in OpenAI-compatible output, instead of all being reported as index `0` and corrupting tool-call grouping. [Gemini Integration](/integrations/llms/gemini)
+- **Responses API**: OpenAI Codex's custom/freeform tool definitions are translated to standard function tools for native Responses providers (like xAI), instead of being rejected with a 422. [Responses API](/product/ai-gateway/responses-api)
+- **OpenAI**: WebSocket upgrade requests to `/v1/responses` connect successfully, instead of being intercepted by the generic HTTP proxy fallback. [Responses API](/product/ai-gateway/responses-api)
+
+### Fixes and Improvements
+
+- **Gateway-Local JWT Auth**: Gateway-local JWT verification can now enforce the allowed signing algorithms, the expected audience and issuer, and a clock tolerance for token expiry checks. If you don't configure them, the existing defaults apply. [Gateway-Local JWT Authentication](/product/enterprise-offering/org-management/jwt)
+- **MCP Gateway**: Each integration can set its own upstream request timeout, instead of relying only on the global `MCP_REQUEST_TIMEOUT_MS`. [Request Timeouts](/product/ai-gateway/request-timeouts)
+- **MCP Gateway**: Access policy evaluation now recovers on its own after an unexpected internal error, instead of leaving the workspace stuck in fail-open mode. [Access Control](/product/mcp-gateway/access-control)
+- **MCP Gateway**: Exported MCP logs include metadata, matching LLM log exports. [MCP Observability](/product/mcp-gateway/observability)
+- **MCP Gateway**: Guardrail updates pushed from the dashboard are synced to the gateway's cache immediately, instead of a stale guardrail persisting on MCP servers until the cache naturally expired. [MCP Guardrails](/product/mcp-gateway/guardrails)
+- **PANW AIRS**: You can now choose to block requests when AIRS returns an error or is rate-limited, instead of letting them through. Retries also add a small random delay to avoid sudden bursts of repeated requests. By default, requests are still allowed through when AIRS fails. [Palo Alto Networks AIRS](/integrations/guardrails/palo-alto-panw-prisma)
+- **PANW AIRS**: Codex session and turn identifiers map correctly to AIRS session/turn tracking. [Palo Alto Networks AIRS](/integrations/guardrails/palo-alto-panw-prisma)
+- **Messages API**: Streamed responses from non-native providers (for example, Vertex Gemini) report the requested model in `message_start.model`, instead of an empty string that broke tools that group by model, like Claude Code's session logs. [Messages API](/product/ai-gateway/messages-api)
+- **Messages API**: `tool_result` content blocks beyond text and image (for example, tool references) are no longer dropped when routed to Bedrock Converse, preserving context for MCP tool workflows. [AWS Bedrock Integration](/integrations/llms/bedrock/aws-bedrock)
+- **Configs**: The client's `anthropic-beta` header propagates to nested targets inside fallback/loadbalance configs, instead of being dropped. Previously this caused rejected requests to providers like Vertex AI that require it. [Configs](/product/ai-gateway/configs)
+- **Observability**: Prometheus metrics can now include the workspace as a label, for per-workspace filtering and aggregation. It is off by default and is enabled through the `PROMETHEUS_EXTRA_LABELS` environment variable. [Prometheus Metrics](/self-hosting/prometheus-metrics)
+- **Observability**: Every request gets a span ID even when the client doesn't send a trace header, improving internal distributed tracing. [Tracing](/product/observability/traces)
+- **Pricing**: Model pricing fetched from the remote pricing service is validated before being cached, preventing malformed responses from corrupting cost calculations.
+- **Security**: Hardened upstream URL construction for Fireworks AI requests. [Fireworks AI Integration](/integrations/llms/fireworks)
+- **Security**: Hardened upstream URL construction for Vertex AI requests. [Vertex AI Integration](/integrations/llms/vertex-ai)
+- **Security**: Expanded the SSRF-protection allowlist to cover additional provider, log-store, and plugin domains the gateway calls. [Security](/product/enterprise-offering/security-portkey)
+- **Security**: Updated dependencies to patch security vulnerabilities.
+
+</Update>
+
+<Update label="2.30.1" description="2026-10-22">
+
+## v2.30.1
+
+---
+
+<Warning>
+**Action recommended: upgrade to v2.30.1 if you are on the 2.30.x line.** This release updates the trust store after the eMudhra (emSign) CA distrust. If you supply your own CA bundle (`TLS_CA`, `TLS_CA_PATH` or `NODE_EXTRA_CA_CERTS`), remove `emSign ECC Root CA - G3` from it.
+
+Connections to upstream endpoints whose certificates chain to the affected eMudhra authorities will fail TLS verification. This matches current browser behavior.
+</Warning>
+
+### Security: Updated Trust Store for the eMudhra (emSign) CA Distrust
+
+This is the same update shipped in v2.29.1, built on top of v2.30.0. On October 20, 2026, major root programs distrusted certificate authorities operated by eMudhra (emSign). This release updates the Gateway images to match:
+
+- **Node.js 24.22.1**, which no longer trusts the affected certificate authorities (standard and FIPS images)
+- **Updated system CA bundle** with `emSign ECC Root CA - G3` removed (standard image)
+
+</Update>
+
+<Update label="2.30.0" description="2026-10-16">
+
+## v2.30.0
+
+---
+
+<Warning>
+**Please review the deployment notes before upgrading.** This release includes performance improvements that add a new internal port and work best with the default container entrypoint. Your applications won't need any changes, but your platform team should take a quick look: [Performance Improvements](/self-hosting/major-performance-improvements) · [Prisma AIRS AI Gateway](/aigw/self-hosting/major-performance-improvements)
+</Warning>
+
+### NEAR AI Provider
+
+The gateway supports NEAR AI as a new provider, including chat completions (with streaming), text completions, embeddings, and transcription, with pricing synced for cost tracking.
+
+[Supported Providers](/integrations/llms)
+
+### Fixes and Improvements
+
+- **Caching**: Simple cache entries now expire at the configured `max_age` instead of silently falling back to the 7-day default. [Simple and Semantic Caching](/product/ai-gateway/cache-simple-and-semantic)
+- **Messages API**: Fixed a negative-cost bug on Workers AI requests where a large cached prompt prefix could make the billed token count go negative. [Workers AI Integration](/integrations/llms/workers-ai)
+- **Logging**: Writing logs to the control plane and custom S3-compatible log stores is now faster and uses fewer resources, matching the existing improvement for standard S3 log stores. [Log Store Configuration](/product/enterprise-offering/components)
+
+</Update>
 
 <Update label="2.29.1" description="2026-10-22">
 

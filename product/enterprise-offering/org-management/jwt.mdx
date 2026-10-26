@@ -606,6 +606,47 @@ Configure JWKS under **Admin Settings** → **Organisation** → **Authenticatio
 
 Authentication fails if JWKS is not configured for the organisation.
 
+#### JWT Settings: claim policies and verification options
+
+The same authentication settings object that holds JWKS also accepts a `jwt_settings` object, which lets you enforce policy on JWT claims and tune signature verification for gateway-local JWT auth.
+
+**Claim policies**
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `required_claims` | `string[]` | Claims that must be present and non-null in the verified token. A missing or null claim denies the request with a `403`. |
+| `claim_values` | `Record<string, { values, match_type }>` | Per-claim value checks. `match_type` is one of `exact` (default), `contains`, `containsAll`, or `regex`. A claim that fails its check, is missing, or has an invalid config denies the request with a `403`. Regex patterns are validated and rejected if unsafe or malformed. |
+| `extract_claims` | `string[]` | Claims to copy into request metadata. Array values are joined with commas; object values are JSON-stringified. |
+| `metadata_prefix` | `string` | Prefix added to each key written by `extract_claims` (for example, `jwt_` turns the `team` claim into `jwt_team`). |
+
+Extracted claims, and Portkey's own metadata keys (`organisation_id`, `workspace_slug`, `_user`, `auth_type`), always take precedence over a client-supplied metadata value with the same key. This also applies when a configured claim is absent from the token, so a client cannot spoof it by sending the metadata header directly.
+
+Example:
+
+```json
+{
+  "jwt_settings": {
+    "required_claims": ["sub", "team"],
+    "claim_values": {
+      "team": { "values": ["ml", "platform"], "match_type": "contains" }
+    },
+    "extract_claims": ["team", "region"],
+    "metadata_prefix": "jwt_"
+  }
+}
+```
+
+**Verification options**
+
+| Field | Default | Description |
+| ----- | ------- | ----------- |
+| `algos` | `RS256` | Allowed signing algorithm(s) for the token. Accepts a single string or an array. |
+| `aud` | Not enforced | Expected audience. Enforced during verification when set. |
+| `iss` | Not enforced | Expected issuer. Enforced during verification when set. |
+| `clock_tolerance` | `5` | Seconds of tolerance allowed for `exp` / `nbf` checks. |
+
+An unset or malformed value keeps the default above.
+
 #### Required JWT claims (gateway-local)
 
 | Claim | Required | Notes |
