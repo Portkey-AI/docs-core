@@ -1,0 +1,139 @@
+---
+title: "FlashData MCP server"
+description: "Connect Google search, news, places, and YouTube transcript and channel tools through Portkey MCP Gateway."
+---
+
+<img src="/images/flashdata-logo.svg" alt="FlashData" width="72" height="72" />
+
+[FlashData](https://flashdata.dev/?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=mcp-overview) provides structured Google and YouTube data through a hosted MCP server. Use it to build source lists, news briefings, local business shortlists, and summaries of existing YouTube captions.
+
+## Connect through Portkey
+
+Create a [FlashData API key](https://flashdata.dev/app/api-keys) with the required source permissions. Data queries consume the key owner's [FlashData Credits](https://flashdata.dev/pricing). Account and pricing reads are free. Portkey and model usage have separate billing.
+
+In **MCP Registry → Add MCP Integration**, configure:
+
+| Field | Value |
+| --- | --- |
+| Name | `FlashData` |
+| Slug | A unique slug, such as `flashdata-personal` |
+| Server URL | `https://data.flashdata.dev/mcp` |
+| Transport | HTTP (Streamable HTTP) |
+| Authentication | Custom headers |
+| Header | `X-API-Key: <YOUR_FLASHDATA_API_KEY>` |
+
+The corresponding authentication configuration is:
+
+```json
+{
+    "mcp_integration_details": {
+        "transport": "http",
+        "auth_type": "custom",
+        "configurations": {
+            "headers": {
+                "X-API-Key": "<YOUR_FLASHDATA_API_KEY>"
+            }
+        }
+    }
+}
+```
+
+Restrict access to the intended workspace in **Access Control & Limits**. Connect an MCP client using a Portkey API key with **MCP Invoke** permission:
+
+```json
+{
+    "mcpServers": {
+        "flashdata": {
+            "url": "https://mcp.portkey.ai/flashdata-personal/mcp",
+            "headers": {
+                "x-portkey-api-key": "<YOUR_PORTKEY_API_KEY>"
+            }
+        }
+    }
+}
+```
+
+Replace the slug with the one configured in the registry. Store actual keys in the relevant secret settings, outside source control and chat messages.
+
+<Warning>
+Portkey [custom authentication](/product/mcp-gateway/authentication/custom-auth) shares the configured upstream key across everyone granted access to that integration. For users paying from their own FlashData accounts, create separate integrations with each user's own key and isolate workspace access. A shared integration charges its configured key owner's Credits. FlashData uses API key authentication, without per-user OAuth. Portkey blocks forwarding or renaming headers to `X-API-Key`; client-side header forwarding cannot provide per-user keys here.
+</Warning>
+
+## Verify the connection
+
+Discover the available tools, then ask the client:
+
+```text
+Use FlashData get_pricing with source "google_search" and request_count 1.
+Do not run a search or any other paid data query.
+```
+
+This reads the current rate without spending FlashData Credits. It verifies authenticated connectivity, not paid retrieval. Tool discovery depends on the key's source permissions and Portkey's tool provisioning.
+
+## Run a web search
+
+After approving the query scope and Credits, call `google_search` with flat arguments:
+
+```json
+{
+    "query": "battery recycling research",
+    "gl": "us",
+    "hl": "en",
+    "num": 10
+}
+```
+
+Return a table of the actual result positions, titles, source URLs, and snippets. Preserve the requested locale and capture time. Search snippets do not contain guaranteed full-page text.
+
+For asynchronous work, retain the returned job `id` and call `get_job` with `job_id`. Read completed data from `output`. Pending work is not a completed result. For chunked MCP responses, call `get_result` with `result_id` and `next_offset`, then concatenate the chunks before parsing JSON. Check the original job after a timeout; repeating a query can incur another charge.
+
+## Google tools
+
+Each tool returns structured data. Follow the linked reference for the full input schema and output fields.
+
+| Tool | Inputs | Task and result boundaries |
+| --- | --- | --- |
+| [`google_search`](https://flashdata.dev/docs/sources/google_search?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=google_search-task) | `query`, optional `gl`, `hl`, `num` | Build ranked source lists with URLs and snippets. Results are dated snapshots, not full-page extraction. |
+| [`google_news`](https://flashdata.dev/docs/sources/google_news?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=google_news-task) | `query`, optional `gl`, `hl`, `num` | Collect article links, publishers, and date labels for a news briefing. Full article text is not guaranteed. |
+| [`google_images`](https://flashdata.dev/docs/sources/google_images?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=google_images-task) | `query`, optional `num` | Find image URLs, source pages, and available dimensions. Searches images without downloading them or granting reuse rights. |
+| [`google_shopping`](https://flashdata.dev/docs/sources/google_shopping?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=google_shopping-task) | `query`, optional `gl`, `hl`, `num` | Compare product identifiers, merchants, and price labels. Offers do not guarantee current stock or checkout prices. |
+| [`google_videos`](https://flashdata.dev/docs/sources/google_videos?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=google_videos-task) | `query`, optional `num` | Build a cross-site video inventory with URLs, sources, and available durations. Distinct from YouTube-only search. |
+| [`google_places`](https://flashdata.dev/docs/sources/google_places?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=google_places-task) | `query`, optional `num` | Find places with addresses, ratings, and review counts when present. Phone numbers and websites may be absent. |
+
+## YouTube tools
+
+| Tool | Inputs | Task and result boundaries |
+| --- | --- | --- |
+| [`youtube_search`](https://flashdata.dev/docs/sources/youtube_search?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=youtube_search-task) | `query`, optional `max_results` | Find videos and channel information. Requests at most 20 results; the actual count may be lower. |
+| [`youtube_search_extended`](https://flashdata.dev/docs/sources/youtube_search_extended?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=youtube_search_extended-task) | `query`, optional `max_results` | Research larger video samples, up to 700 requested results, at a different rate. Does not guarantee that count. |
+| [`youtube_metadata`](https://flashdata.dev/docs/sources/youtube_metadata?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=youtube_metadata-task) | `video_id`, optional `include_formats`, `include_chapters` | Read descriptions, statistics, formats, and available chapters. Metadata is not evidence of spoken content. |
+| [`youtube_transcript`](https://flashdata.dev/docs/sources/youtube_transcript?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=youtube_transcript-task) | `video_id`, optional `language`, `auto` | Read existing timed caption tracks for cited summaries. `auto` defaults to `true`; no speech recognition or translation. |
+| [`youtube_captions`](https://flashdata.dev/docs/sources/youtube_captions?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=youtube_captions-task) | `video_id`, optional `language`, `auto` | Read existing uploader caption tracks. `auto` defaults to `false`; no speech recognition, translation, or automatic fallback. |
+| [`youtube_trainability`](https://flashdata.dev/docs/sources/youtube_trainability?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=youtube_trainability-task) | `video_id` | Inspect a license/Creative Commons classification signal. The result does not grant training, download, or republication permission. |
+| [`youtube_channel`](https://flashdata.dev/docs/sources/youtube_channel?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=youtube_channel-task) | `handle`, optional `video_limit` | Read a channel profile and bounded recent-video inventory. Not a complete channel history. |
+| [`youtube_suggestions`](https://flashdata.dev/docs/sources/youtube_suggestions?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=youtube_suggestions-task) | `query`, optional `language`, `region` | Collect actual autocomplete phrases for keyword research. Suggestions are not search-volume estimates. |
+| [`youtube_download`](https://flashdata.dev/docs/sources/youtube_download?utm_source=portkey&utm_medium=integration&utm_campaign=intent_gtm_2026q4&utm_content=youtube_download-task) | `video_id`, download options, `storage` | Deliver video, audio, or clips asynchronously to the user's writable storage. Read the completed job's output manifest. |
+
+### Download setup
+
+Downloads require the user's destination and scoped storage credentials. Confirm media rights, destination, retention, and costs before submission. FlashData receives the storage credentials to perform the upload; those tool arguments can also be retained in client or gateway logs. Use an approved secret-input process and appropriate log controls. If none is available, leave download and download-containing batches disabled.
+
+Download charges reserve Credits and settle by uploaded bytes. `get_pricing` returns the byte rate; a per-request quote is not a delivery-cost estimate. Private output URLs retain the storage provider's access controls.
+
+## Supporting tools
+
+* `get_balance`, `get_pricing`, `get_limits`, and `get_usage`: free account reads.
+* `get_job`: free job-status and completed-result reads.
+* `get_result`: read the remaining chunks of a large MCP response.
+* `submit_batch`: submit multiple background queries. Each item consumes Credits and follows its source's restrictions.
+
+## References
+
+* [FlashData MCP source and setup](https://github.com/rocosen/flashdata-mcp)
+* [Add external MCP servers](/product/mcp-gateway/external-mcp-servers)
+* [Use MCP servers](/product/mcp-gateway/using-mcp-servers)
+* [Header forwarding restrictions](/product/mcp-gateway/authentication/forwarding-headers)
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
