@@ -7,64 +7,266 @@ description: "Get typed judgments (probability, choice, or score) from models th
 Available on all Portkey [plans](https://portkey.ai/pricing).
 </Info>
 
-The Decisions API returns a **typed judgment** instead of generated text. You send a `state` and a set of `questions`. The model returns one typed answer for each question.
+The Decisions API returns a **typed judgment** instead of generated text. Send the content to judge and a set of `questions`. The model returns one typed answer per question.
 
-Use it for classification, routing, scoring, and yes/no checks, where you need a structured answer and not free text.
+Use it for classification, routing, scoring, and yes/no checks, where a structured answer is needed and not free text.
 
 <Note>
-  `/v1/decisions` is currently available through [TypeSafe's Jev models](/integrations/llms/typesafe), directly or via [OpenRouter](/integrations/llms/openrouter). It does not support streaming.
+  `/v1/decisions` does not support streaming. A `stream` parameter in the request is ignored.
 </Note>
 
 ## Quick Start
 
-```sh cURL
-curl https://api.portkey.ai/v1/decisions \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: typesafe" \
-  -H "Authorization: Bearer $TYPESAFE_API_KEY" \
-  -d '{
-    "model": "jev-latest",
-    "state": "Help! My payouts have been failing for 3 days.",
-    "questions": {
-      "department": {
-        "type": "choice",
-        "instructions": "Which team should handle this?",
-        "criteria": { "billing": "Payments", "technical": "Bugs" }
+Set `model` to `@integration-slug/model`. The integration holds the provider credentials, so no provider headers are needed.
+
+Request shape depends on the provider. Workers AI (Cloudflare), TypeSafe, and OpenRouter use the **Jev shape**. OpenAI and Azure OpenAI use the **OpenAI shape**. The examples below are the same three questions in each shape.
+
+<CodeGroup>
+
+```sh Jev shape
+curl --request POST \
+  --url https://api.portkey.ai/v1/decisions \
+  --header 'Content-Type: application/json' \
+  --header "x-portkey-api-key: $PORTKEY_API_KEY" \
+  --data '{
+  "model": "@your-cf-integration-slug/model",
+  "state": "I was charged twice for my order. Please return the extra charge.",
+  "questions": {
+    "refund_requested": {
+      "type": "noul",
+      "instructions": "Does the customer ask for a refund?"
+    },
+    "department": {
+      "type": "choice",
+      "instructions": "Which department should handle this complaint?",
+      "criteria": {
+        "billing": "Payments and refunds.",
+        "technical": "Product problems.",
+        "shipping": "Delivery and tracking.",
+        "other": "All other requests."
       }
+    },
+    "severity": {
+      "type": "score",
+      "instructions": "How severe is this issue?",
+      "criteria": [
+        "Cosmetic: no lost functionality.",
+        "Workaround available: a task fails, but another way works.",
+        "Fully blocked: a task fails with no workaround."
+      ]
     }
-  }'
+  }
+}'
 ```
 
-Response:
+```sh OpenAI shape
+curl --request POST \
+  --url https://api.portkey.ai/v1/decisions \
+  --header 'Content-Type: application/json' \
+  --header "x-portkey-api-key: $PORTKEY_API_KEY" \
+  --data '{
+  "model": "@your-openai-integration-slug/gpt-6-luna",
+  "input": "I was charged twice for my order. Please return the extra charge.",
+  "questions": [
+    {
+      "type": "predicate",
+      "name": "refund_requested",
+      "instructions": "Does the customer ask for a refund?"
+    },
+    {
+      "type": "choice",
+      "name": "department",
+      "instructions": "Which department should handle this complaint?",
+      "choices": [
+        {"value": "billing", "description": "Payments and refunds."},
+        {"value": "technical", "description": "Product problems."},
+        {"value": "shipping", "description": "Delivery and tracking."},
+        {"value": "other", "description": "All other requests."}
+      ]
+    },
+    {
+      "type": "score",
+      "name": "severity",
+      "instructions": "How severe is this issue?",
+      "levels": [
+        {"label": "Cosmetic", "description": "No lost functionality."},
+        {"label": "Workaround available", "description": "A task fails, but another way works."},
+        {"label": "Fully blocked", "description": "A task fails with no workaround."}
+      ]
+    }
+  ]
+}'
+```
 
-```json
+</CodeGroup>
+
+Responses follow the shape of the request (values are illustrative):
+
+<CodeGroup>
+
+```json Jev shape
 {
-  "model": "jev-1.13.0",
+  "model": "<model>",
   "answers": {
+    "refund_requested": { "type": "noul", "noul": 0.95 },
     "department": {
       "type": "choice",
       "choice": "billing",
-      "probabilities": { "billing": 0.88, "technical": 0.12 },
-      "confidence": 0.81
+      "probabilities": { "billing": 0.93, "technical": 0.03, "shipping": 0.01, "other": 0.03 },
+      "confidence": 0.9
+    },
+    "severity": {
+      "type": "score",
+      "score": 1.1,
+      "legend": {
+        "0": "Cosmetic: no lost functionality.",
+        "1": "Workaround available: a task fails, but another way works.",
+        "2": "Fully blocked: a task fails with no workaround."
+      },
+      "probabilities": { "0": 0.1, "1": 0.7, "2": 0.2 },
+      "confidence": 0.55
     }
   },
-  "usage": { "input_tokens": 296, "output_tokens": 20 },
-  "provider": "typesafe"
+  "usage": { "input_tokens": 162, "output_tokens": 0 },
+  "provider": "workers-ai"
 }
 ```
 
+```json OpenAI shape
+{
+  "model": "gpt-6-luna",
+  "answers": [
+    { "type": "predicate", "name": "refund_requested", "probability": 0.95 },
+    {
+      "type": "choice",
+      "name": "department",
+      "choice": "billing",
+      "probabilities": [
+        { "value": "billing", "probability": 0.93 },
+        { "value": "technical", "probability": 0.03 },
+        { "value": "shipping", "probability": 0.01 },
+        { "value": "other", "probability": 0.03 }
+      ],
+      "confidence": 0.9
+    },
+    {
+      "type": "score",
+      "name": "severity",
+      "score": 1.1,
+      "probabilities": [
+        { "value": 0, "label": "Cosmetic", "probability": 0.1 },
+        { "value": 1, "label": "Workaround available", "probability": 0.7 },
+        { "value": 2, "label": "Fully blocked", "probability": 0.2 }
+      ],
+      "confidence": 0.55
+    }
+  ],
+  "usage": { "input_tokens": 162, "output_tokens": 0, "total_tokens": 162 },
+  "provider": "openai"
+}
+```
+
+</CodeGroup>
+
+Either shape works with any provider. See [Switching Shapes](#switching-shapes).
+
+## Supported Providers
+
+| Provider | Slug | Native shape | Notes |
+|:---|:---|:---|:---|
+| [TypeSafe](/integrations/llms/typesafe) | `typesafe` | Jev | `jev-latest` is the default model |
+| [OpenRouter](/integrations/llms/openrouter) | `openrouter` | Jev | Routes to Jev models |
+| [Workers AI](/integrations/llms/workers-ai) | `workers-ai` | Jev | Cloudflare model ID, for example `@your-cf-integration-slug/model` |
+| [OpenAI](/integrations/llms/openai) | `openai` | OpenAI | `gpt-6-luna` |
+
+Any provider accepts either request shape. Portkey converts the request to the provider's native shape and converts the answers back. See [Switching Shapes](#switching-shapes).
+
+## Request Shapes
+
+The shape is detected from the body. A body that mixes fields from both shapes, or matches neither, returns `400`.
+
+| Field | Jev shape | OpenAI shape |
+|:---|:---|:---|
+| Content to judge | `state`: string, object, or array | `input`: string, or user messages with `input_text` and `input_image` parts |
+| Questions | `questions`: map of question ID to question | `questions`: array. Each question has a `name` |
+| Yes/no type | `noul` | `predicate` |
+| Choice options | `criteria`: map of label to description, or array of labels | `choices`: array of `{ value, description }` |
+| Score levels | `criteria`: ordered array of labels or `{ label, description }` | `levels`: ordered array of `{ label, description }`, lowest to highest |
+| `model` | Optional. Defaults to `jev-latest` | Required |
+| Other | | `safety_identifier` |
+
 ## Question Types
 
-Each entry in `questions` sets a `type`. The type sets the shape of the answer:
+Each question sets a `type`. The type sets the shape of the answer:
 
-| Type | Use for | Answer shape |
+| Jev type | OpenAI type | Use for | Answer |
+|:---|:---|:---|:---|
+| `noul` | `predicate` | A yes/no judgment | Jev: `{ noul }`. OpenAI: `{ probability }`. A 0–1 probability |
+| `choice` | `choice` | One label from a fixed set | `{ choice, probabilities, confidence }` |
+| `score` | `score` | A position on an ordered scale | `{ score, probabilities, confidence }`, plus `legend` in the Jev shape |
+
+A `score` is the probability-weighted average of the level indices, so it can fall between levels.
+
+### Refusals
+
+Any question can come back as `{ "type": "refusal" }` while other questions in the same request still return answers. In the OpenAI shape the refusal also carries the question `name`. Check each answer's `type` before reading its result.
+
+Portkey also returns a refusal for a question the provider returned no answer for, when converting a Jev-shaped answer to the OpenAI shape.
+
+## Response Shapes
+
+| | Jev shape | OpenAI shape |
 |:---|:---|:---|
-| `noul` | A yes/no judgment | `{ noul: <0–1 probability> }` |
-| `choice` | One label from a fixed set | `{ choice, probabilities, confidence }` |
-| `score` | A position on a scale | `{ score, legend, probabilities, confidence }` |
+| `answers` | Map keyed by question ID | Array, in question order |
+| Choice and score `probabilities` | Map of label to probability | Array of `{ value, probability }`. Score entries also carry `label` |
+| `usage` | `input_tokens`, `output_tokens` | Provider usage, passed through |
 
-`criteria` gives the type-specific detail. For a `choice` question, it is the set of labels.
+Every response includes `provider`, the slug that served the request.
+
+## Switching Shapes
+
+Portkey converts between shapes, so one request body works across providers. To fail over between a Jev provider and an OpenAI-native one, keep the same text-only body and switch the model per target.
+
+```json Fallback config
+{
+  "strategy": { "mode": "fallback" },
+  "targets": [
+    { "override_params": { "model": "@your-typesafe-slug/jev-latest" } },
+    { "override_params": { "model": "@your-openai-slug/gpt-6-luna" } }
+  ]
+}
+```
+
+Conversion rules:
+
+- **Jev `state`** that is an object or array is JSON-stringified into `input`.
+- **`noul` criteria** are appended to the question's `instructions`, since a `predicate` has no criteria field.
+- **OpenAI `input`** is flattened to text for Jev providers. Only `input_text` parts are kept.
+- **Unnamed questions** are keyed `q0`, `q1`, and so on.
+
+Jev providers return a `400` for requests they cannot serve:
+
+- `input_image` parts. Jev is text-only.
+- `safety_identifier`.
+- Duplicate question `name` values, since names become response keys.
+
+## Errors
+
+Upstream errors return the standard Portkey error shape. The message is prefixed with the provider slug, and `provider` is included:
+
+```json
+{
+  "error": {
+    "message": "workers-ai error: model not found",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": null
+  },
+  "provider": "workers-ai"
+}
+```
+
+A `200` response from the provider without an `answers` field also returns an error, not an empty result.
 
 ## Gateway Features
 
@@ -72,7 +274,7 @@ Decisions requests go through the same gateway as other endpoints:
 
 - **Routing** — Retries, fallbacks, load balancing, and circuit breaking through [Configs](/product/ai-gateway/configs)
 - **Caching** — [Simple and semantic caching](/product/ai-gateway/cache-simple-and-semantic)
-- **Guardrails** — Before-request checks on the `state` field only. See [Guardrails for Decisions](/product/guardrails/decisions-guardrails)
+- **Guardrails** — Before-request checks on the content to judge only: `state` in the Jev shape, or the text in `input` in the OpenAI shape. See [Guardrails for Decisions](/product/guardrails/decisions-guardrails)
 - **Observability** — Logs, cost tracking, and analytics in [Observability](/product/observability)
 
 ## API Reference
@@ -90,7 +292,7 @@ Decisions requests go through the same gateway as other endpoints:
     All API formats
   </Card>
   <Card title="Guardrails for Decisions" icon="shield" href="/product/guardrails/decisions-guardrails">
-    Scan `state` before it reaches the model
+    Scan the content to judge before it reaches the model
   </Card>
 </CardGroup>
 

@@ -6,7 +6,7 @@ description: "Use TypeSafe's Jev models for typed judgments through Portkey's /v
 TypeSafe's Jev models return a typed judgment — a probability, a choice, or a score — instead of generated text. Portkey routes these calls through `/v1/decisions`, a separate endpoint from chat completions, while still giving you the gateway's full feature set: authentication, routing, retries, circuit breaking, caching, logging, and cost tracking.
 
 <Note>
-  `/v1/decisions` does not support streaming. Only before-request [guardrails](/product/guardrails/decisions-guardrails) apply, scanning the `state` field only.
+  `/v1/decisions` does not support streaming. Only before-request [guardrails](/product/guardrails/decisions-guardrails) apply, scanning the content to judge only (`state`).
 </Note>
 
 ## Add Provider in Model Catalog
@@ -22,42 +22,75 @@ TypeSafe's Jev models return a typed judgment — a probability, a choice, or a 
 
 ## Quick Start
 
+TypeSafe uses the Jev request shape: `state` for the content to judge, and a `questions` map. Set `model` to `@integration-slug/model`. The integration holds the TypeSafe API key, so no provider headers are needed.
+
 ```bash cURL
-curl https://api.portkey.ai/v1/decisions \
-  -H "Content-Type: application/json" \
-  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: typesafe" \
-  -H "Authorization: Bearer $TYPESAFE_API_KEY" \
-  -d '{
-    "model": "jev-latest",
-    "state": "Help! My payouts have been failing for 3 days.",
-    "questions": {
-      "department": {
-        "type": "choice",
-        "instructions": "Which team should handle this?",
-        "criteria": { "billing": "Payments", "technical": "Bugs" }
+curl --request POST \
+  --url https://api.portkey.ai/v1/decisions \
+  --header 'Content-Type: application/json' \
+  --header "x-portkey-api-key: $PORTKEY_API_KEY" \
+  --data '{
+  "model": "@your-typesafe-slug/jev-latest",
+  "state": "I was charged twice for my order. Please return the extra charge.",
+  "questions": {
+    "refund_requested": {
+      "type": "noul",
+      "instructions": "Does the customer ask for a refund?"
+    },
+    "department": {
+      "type": "choice",
+      "instructions": "Which department should handle this complaint?",
+      "criteria": {
+        "billing": "Payments and refunds.",
+        "technical": "Product problems.",
+        "shipping": "Delivery and tracking.",
+        "other": "All other requests."
       }
+    },
+    "severity": {
+      "type": "score",
+      "instructions": "How severe is this issue?",
+      "criteria": [
+        "Cosmetic: no lost functionality.",
+        "Workaround available: a task fails, but another way works.",
+        "Fully blocked: a task fails with no workaround."
+      ]
     }
-  }'
+  }
+}'
 ```
 
-Response:
+Response (values are illustrative):
 
 ```json
 {
   "model": "jev-1.13.0",
   "answers": {
+    "refund_requested": { "type": "noul", "noul": 0.95 },
     "department": {
       "type": "choice",
       "choice": "billing",
-      "probabilities": { "billing": 0.88, "technical": 0.12 },
-      "confidence": 0.81
+      "probabilities": { "billing": 0.93, "technical": 0.03, "shipping": 0.01, "other": 0.03 },
+      "confidence": 0.9
+    },
+    "severity": {
+      "type": "score",
+      "score": 1.1,
+      "legend": {
+        "0": "Cosmetic: no lost functionality.",
+        "1": "Workaround available: a task fails, but another way works.",
+        "2": "Fully blocked: a task fails with no workaround."
+      },
+      "probabilities": { "0": 0.1, "1": 0.7, "2": 0.2 },
+      "confidence": 0.55
     }
   },
-  "usage": { "input_tokens": 296, "output_tokens": 20 },
+  "usage": { "input_tokens": 162, "output_tokens": 0 },
   "provider": "typesafe"
 }
 ```
+
+The OpenAI request shape (`input` and a `questions` array) also works. See [Request Shapes](/product/ai-gateway/decisions-api#request-shapes).
 
 ## Question Types
 
