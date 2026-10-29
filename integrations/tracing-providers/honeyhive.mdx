@@ -1,195 +1,150 @@
 ---
 title: "HoneyHive"
-description: "Integrate HoneyHive observability with Portkey's AI gateway for comprehensive LLM monitoring and advanced routing capabilities"
+description: "Trace requests routed through Portkey's AI gateway in HoneyHive. Capture gateway completions, tool calls, and token usage across providers with OpenTelemetry."
 ---
 
-HoneyHive is a comprehensive AI observability platform that helps you monitor, evaluate, and improve your LLM applications. When combined with Portkey, you get powerful observability features alongside Portkey's advanced AI gateway capabilities.
+[HoneyHive](https://www.honeyhive.ai) is an AI observability and evaluation platform for agents and LLM applications. Portkey exposes an OpenAI-compatible API, so HoneyHive traces every request routed through the gateway with the OpenInference OpenAI instrumentor. No Portkey-specific instrumentor is required.
 
 This integration allows you to:
-- Automatically trace all LLM requests through Portkey's gateway
-- Use Portkey's 250+ LLM providers with HoneyHive observability
-- Implement advanced features like caching, fallbacks, and load balancing
-- Maintain detailed traces and analytics in both platforms
+- Trace requests routed through Portkey, whichever provider handles them
+- Keep Portkey's routing, fallbacks, load balancing, and caching, and view each request as a HoneyHive trace
+- Group gateway calls into named spans alongside your own application logic
+- Run HoneyHive evaluators and experiments on the same traces
 
-## Quick Start Integration
+## Quick Start
 
-HoneyHive automatically traces requests to popular LLM providers, making the integration with Portkey seamless. Simply initialize HoneyHive and point your LLM clients to Portkey's gateway.
+### Prerequisites
+
+- Python 3.11 or later
+- Portkey account with an API key
+- A provider added in Portkey's [Model Catalog](/product/model-catalog) (for example, `openai-prod`)
+- HoneyHive account with an [ingestion API key](https://docs.honeyhive.ai/v2/workspace/api-keys#ingestion-keys)
 
 ### Installation
 
 ```bash
-pip install portkey-ai honeyhive openai
+pip install honeyhive openinference-instrumentation-openai openai portkey-ai
 ```
 
 ### Basic Setup
 
 ```python
+import os
+
 from openai import OpenAI
-from honeyhive import HoneyHiveTracer, trace
+from portkey_ai import PORTKEY_GATEWAY_URL
+from honeyhive import HoneyHiveTracer
+from openinference.instrumentation.openai import OpenAIInstrumentor
 
-# Initialize HoneyHive tracer at the beginning of your application
-HoneyHiveTracer.init(
-    api_key='YOUR_HONEYHIVE_API_KEY',
-    project='your-project-name',
-    source='production',  # Optional: dev, staging, production
-    session_name='Portkey Integration'  # Optional
-)
+# Reads HH_INGESTION_API_KEY from your environment
+tracer = HoneyHiveTracer.init()
+OpenAIInstrumentor().instrument(tracer_provider=tracer.provider)
 
-# Create OpenAI client pointing to Portkey
+# Point the OpenAI client at Portkey's gateway
 client = OpenAI(
-    api_key="YOUR_PORTKEY_API_KEY",
-    base_url="https://api.portkey.ai/v1"
+    api_key=os.getenv("PORTKEY_API_KEY"),
+    base_url=PORTKEY_GATEWAY_URL,
 )
 
-# Make requests - automatically traced by HoneyHive
+# Use the @provider-slug/model format from Model Catalog
 response = client.chat.completions.create(
-    model="@openai-provider-slug/gpt-4o-mini",
-    messages=[{"role": "user", "content": "Hello, world!"}]
+    model="@openai-prod/gpt-4o-mini",
+    messages=[{"role": "user", "content": "Hello, world!"}],
 )
 
 print(response.choices[0].message.content)
 ```
 
+Set the HoneyHive key before you run the script:
+
+```bash
+export HH_INGESTION_API_KEY="your-honeyhive-ingestion-key"
+export PORTKEY_API_KEY="your-portkey-api-key"
+```
+
 <Note>
-HoneyHive automatically traces all requests to popular LLM providers, so you get observability data without additional configuration.
+Call `instrument()` before you make any requests, and pass `tracer_provider=tracer.provider`. Without the provider, spans do not reach HoneyHive.
 </Note>
+
+## What Gets Traced
+
+The OpenAI instrumentor captures every call that goes through the gateway:
+
+- **Chat completions**: inputs, outputs, and token usage across providers
+- **Tool and function calls**: arguments and results
+- **Streaming responses**: streamed completions with aggregated tokens
 
 ## Using Portkey Features with HoneyHive
 
-### 1. Trace Functions with @trace Decorator
+### 1. Multiple Providers
 
-Use HoneyHive's `@trace` decorator to monitor specific functions:
+Change the model slug to switch providers. Each `@provider-slug` maps to credentials in Model Catalog:
 
 ```python
+# Uses the tracer and client from Basic Setup
+from honeyhive import trace
+
 @trace
-def call_openai():
-    client = OpenAI(
-        api_key="YOUR_PORTKEY_API_KEY",
-        base_url="https://api.portkey.ai/v1"
+def query_multiple_providers():
+    openai_response = client.chat.completions.create(
+        model="@openai-prod/gpt-4o-mini",
+        messages=[{"role": "user", "content": "Explain quantum computing briefly."}],
     )
 
-    completion = client.chat.completions.create(
-        model="@openai-provider-slug/gpt-4o-mini",
-        messages=[{"role": "user", "content": "What is the meaning of life?"}]
+    anthropic_response = client.chat.completions.create(
+        model="@anthropic-prod/claude-sonnet-4-5-20250929",
+        messages=[{"role": "user", "content": "Explain quantum computing briefly."}],
+        max_tokens=250,
     )
 
-    return completion.choices[0].message.content
+    return openai_response, anthropic_response
 
-# Call the traced function
-result = call_openai()
+query_multiple_providers()
 ```
 
-### 2. Multiple Providers
+The `@trace` decorator groups both calls under one span in HoneyHive.
 
-Switch between 250+ LLM providers while maintaining HoneyHive observability:
+### 2. Fallbacks and Load Balancing
 
-<Tabs>
-<Tab title="OpenAI">
-```python
-@trace
-def call_openai():
-    client = OpenAI(
-        api_key="YOUR_PORTKEY_API_KEY",
-        base_url="https://api.portkey.ai/v1"
-    )
-    return client.chat.completions.create(
-        model="@openai-provider-slug/gpt-4o-mini",
-        messages=[{"role": "user", "content": "Hello!"}]
-    )
-```
-</Tab>
-<Tab title="Anthropic">
-```python
-@trace
-def call_anthropic():
-    client = OpenAI(
-        api_key="YOUR_PORTKEY_API_KEY",
-        base_url="https://api.portkey.ai/v1"
-    )
-    return client.chat.completions.create(
-        model="@anthropic-provider-slug/claude-3-sonnet-20240229",
-        messages=[{"role": "user", "content": "Hello!"}]
-    )
-```
-</Tab>
-</Tabs>
-
-### 3. Advanced Routing with Configs
-
-Use Portkey's config system for advanced features while tracking in HoneyHive:
+Create a [config](/product/ai-gateway/configs) in the Portkey dashboard and pass its ID in the default headers. HoneyHive traces whichever provider handles the request:
 
 ```python
+import os
+
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+from honeyhive import trace
+
+# Run after the tracer and instrumentor from Basic Setup
+client = OpenAI(
+    api_key=os.getenv("PORTKEY_API_KEY"),
+    base_url=PORTKEY_GATEWAY_URL,
+    default_headers=createHeaders(
+        api_key=os.getenv("PORTKEY_API_KEY"),
+        config=os.getenv("PORTKEY_CONFIG_ID"),
+    ),
+)
+
 @trace
-def advanced_llm_call():
-    # Reference a saved config from Portkey dashboard
-    client = OpenAI(
-        api_key="YOUR_PORTKEY_API_KEY",
-        base_url="https://api.portkey.ai/v1"
+def resilient_completion(prompt: str):
+    return client.chat.completions.create(
+        model="@openai-prod/gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
     )
 
-    return client.chat.completions.create(
-        model="@config-slug/model-name",  # Your saved config ID
-        messages=[{"role": "user", "content": "Analyze this data..."}]
-    )
+resilient_completion("What are the benefits of AI observability?")
 ```
 
 Example config for fallback between providers:
+
 ```json
 {
-  "strategy": {
-    "mode": "fallback"
-  },
+  "strategy": { "mode": "fallback" },
   "targets": [
-    {
-      "provider": "openai",
-      "api_key": "YOUR_OPENAI_KEY",
-      "override_params": {"model": "gpt-4o"}
-    },
-    {
-      "provider": "anthropic",
-      "api_key": "YOUR_ANTHROPIC_KEY",
-      "override_params": {"model": "claude-3-opus-20240229"}
-    }
+    { "override_params": { "model": "@openai-prod/gpt-4o" } },
+    { "override_params": { "model": "@anthropic-prod/claude-sonnet-4-5-20250929" } }
   ]
 }
-```
-
-### 4. Caching for Cost Optimization
-
-Enable caching to reduce costs while maintaining full observability:
-
-```python
-@trace
-def cached_llm_call():
-    client = OpenAI(
-        api_key="YOUR_PORTKEY_API_KEY",
-        base_url="https://api.portkey.ai/v1"
-    )
-
-    return client.chat.completions.create(
-        model="@cache-config-slug/gpt-4o-mini",
-        messages=[{"role": "user", "content": "What is machine learning?"}]
-    )
-```
-
-### 5. Custom Metadata and Tracing
-
-Add custom metadata visible in both HoneyHive and Portkey:
-
-```python
-@trace
-def contextualized_llm_call(user_id, query):
-    client = OpenAI(
-        api_key="YOUR_PORTKEY_API_KEY",
-        base_url="https://api.portkey.ai/v1"
-    )
-
-    return client.chat.completions.create(
-        model="@openai-provider-slug/gpt-4o-mini",
-        messages=[{"role": "user", "content": query}],
-        # Metadata can be passed directly in the request
-        user=user_id
-    )
 ```
 
 <CardGroup cols={3}>
@@ -200,93 +155,56 @@ def contextualized_llm_call(user_id, query):
     Route requests to different targets based on specified conditions.
   </Card>
   <Card title="Load Balancing" icon="key" href="/product/ai-gateway/load-balancing">
-      Distribute requests across multiple targets based on defined weights.
+    Distribute requests across multiple targets based on defined weights.
   </Card>
   <Card title="Caching" icon="database" href="/product/ai-gateway/cache-simple-and-semantic">
     Enable caching of responses to improve performance and reduce costs.
   </Card>
   <Card title="Smart Retries" icon="database" href="/product/ai-gateway/automatic-retries">
-Automatic retry handling with exponential backoff for failed requests
-</Card>
-<Card title="Budget Limits" icon="shield-check" href="/product/model-catalog/budget-limits">
-    Set and manage budget limits across teams and departments. Control costs with granular budget limits and usage tracking.
-</Card>
+    Automatic retry handling with exponential backoff for failed requests.
+  </Card>
+  <Card title="Budget Limits" icon="shield-check" href="/product/model-catalog/budget-limits">
+    Set and manage budget limits across teams and departments.
+  </Card>
 </CardGroup>
 
 ## Observability Features
 
-With this integration, you get:
-
 ### In HoneyHive:
-- Automatic request/response tracing
-- Function-level performance metrics
-- Session-based analytics
-- Custom event tracking
-- Error monitoring and debugging
+- Trace tree for each request, with inputs, outputs, and token usage
+- Session grouping and custom spans around gateway calls
+- Evaluators and experiments on production traces
+- Filtering by user, session, and custom metadata
 
 ### In Portkey:
 - Request logs with provider details
-- Advanced analytics across providers
+- Analytics across providers
 - Cost tracking and budgets
 - Performance metrics
-- Custom dashboards
-- Token usage analytics
 
-<Frame>
-<img src="/images/integrations/observability.png" width="600"/>
-</Frame>
+## Troubleshooting
 
-## Migration Guide
+### Traces not appearing
 
-If you're already using HoneyHive with OpenAI, migrating to use Portkey is simple:
+- Confirm `HH_INGESTION_API_KEY` is set.
+- Initialize `OpenAIInstrumentor` with `tracer_provider=tracer.provider` before the first request.
+- Point the OpenAI client at `PORTKEY_GATEWAY_URL` (`https://api.portkey.ai/v1`).
 
-<CodeGroup>
-```python Before
-from openai import OpenAI
-from honeyhive import HoneyHiveTracer, trace
+### Requests failing with provider errors
 
-HoneyHiveTracer.init(
-    api_key='YOUR_HONEYHIVE_API_KEY',
-    project='my-project'
-)
+- Use the `@provider-slug/model-name` format, for example `@openai-prod/gpt-4o-mini`.
+- Match the provider slug to a provider in [Model Catalog](/product/model-catalog).
 
-@trace
-def call_openai():
-    client = OpenAI(api_key="YOUR_OPENAI_KEY")
-    return client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": "Hello!"}]
-    )
-```
+### Gateway and direct calls look the same
 
-```python After
-from openai import OpenAI
-from honeyhive import HoneyHiveTracer, trace
-
-HoneyHiveTracer.init(
-    api_key='YOUR_HONEYHIVE_API_KEY',
-    project='my-project'
-)
-
-@trace
-def call_openai():
-    client = OpenAI(
-        api_key="YOUR_PORTKEY_API_KEY",
-        base_url="https://api.portkey.ai/v1"
-    )
-    return client.chat.completions.create(
-        model="@openai-provider-slug/gpt-4",
-        messages=[{"role": "user", "content": "Hello!"}]
-    )
-```
-</CodeGroup>
-
+The OpenAI instrumentor traces a Portkey client and a direct OpenAI client in the same app in the same way. Wrap related calls in `@trace` to group them under a named span.
 
 ## Resources
 
-- [HoneyHive Documentation](https://docs.honeyhive.ai)
+- [HoneyHive Portkey Integration Guide](https://docs.honeyhive.ai/v2/integrations/portkey)
+- [HoneyHive Tracing Quickstart](https://docs.honeyhive.ai/v2/introduction/tracing-quickstart)
 - [Portkey AI Gateway Guide](/product/ai-gateway)
-- [Portkey Python SDK Reference](/api-reference/sdk)
+- [Portkey Python SDK Reference](/api-reference/sdk/python)
 
 <Note>
 For enterprise support and custom features, contact our [enterprise team](https://www.paloaltonetworks.com/ai-security/ai-gateway#:~:text=See%20Prisma%20AIRS%20AI%20Gateway%20in%20Action
