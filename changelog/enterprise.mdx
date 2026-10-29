@@ -20,21 +20,21 @@ Discuss how Portkey's AI Gateway can enhance your organization's AI infrastructu
 
 ### MCP Gateway: OAuth Client Credentials for Upstream Servers
 
-The gateway supports upstream MCP servers that use the OAuth client credentials grant, with a dedicated configuration for the client ID, client secret, token endpoint, and an optional scope. It requests only the scope you configure, and fetches and refreshes tokens automatically. The token endpoint must use HTTPS and cannot point to a private network address, and the headers configured on your MCP server are never sent to it. If the client ID or token endpoint is missing, requests to the server fail instead of silently falling back to static headers.
+The gateway supports upstream MCP servers that use the OAuth client credentials grant, with a dedicated configuration for the client ID, client secret, token endpoint, and an optional scope. It requests only the scope you configure, and fetches and refreshes tokens automatically.
 
 [MCP Authentication](/product/mcp-gateway/authentication)
+
+### Decisions API on Azure OpenAI and Azure AI Foundry
+
+The Decisions API (`/v1/decisions`) is now available on both Azure OpenAI and Azure AI Foundry, with price tracking for Azure OpenAI.
+
+[Decisions API](/product/ai-gateway/decisions-api)
 
 ### Agent Gateway: Forward Caller Headers
 
 Agent integrations can now forward headers from the caller's request to the upstream agent. Use the same `forward_headers` format as MCP servers to choose which headers to pass through and rename them if needed. Headers configured on the agent take precedence over forwarded ones, and connection-level headers are never forwarded.
 
 [Agent Servers](/product/agent-gateway/servers) · [Forwarding Headers](/product/mcp-gateway/authentication/forwarding-headers)
-
-### Guardrails: Soft Deny for Start Hooks
-
-Guardrail checks that run as start hooks now support `soft_deny_200`. When a request is denied, the gateway returns HTTP 200 with the denial message formatted for the endpoint that was called, instead of the standard HTTP 446. Streaming requests receive a valid stream. This keeps sessions alive for clients that treat 4xx status codes as fatal errors (e.g., Claude Code).
-
-[Guardrails](/product/guardrails)
 
 ### OpenTelemetry Complete Logs: Metadata and Cost
 
@@ -45,8 +45,7 @@ Spans exported through Complete Logs now include your request metadata as `portk
 ### Provider Updates
 
 - **OpenAI**: The `moderation` parameter on chat completions is now passed through to OpenAI. [OpenAI Integration](/integrations/llms/openai)
-- **OpenAI**: Codex personal access tokens (starting with `at-`) are now supported. [OpenAI Integration](/integrations/llms/openai)
-- **Azure OpenAI / Azure AI Foundry**: The Decisions API (`/v1/decisions`) is now available on both providers, with price tracking for Azure OpenAI. [Decisions API](/product/ai-gateway/decisions-api)
+- **OpenAI**: Requests that use a Codex personal access token (starting with `at-`) are now routed to the Codex backend, instead of failing against the standard OpenAI API. [OpenAI Integration](/integrations/llms/openai)
 - **Vertex AI**: Service account access tokens are now kept for their actual validity period instead of a fixed duration, and a failed token request is retried once, reducing intermittent authentication errors. [Vertex AI Integration](/integrations/llms/vertex-ai)
 - **Vertex AI**: When a prompt is blocked, the response now contains a choice with the block reason as its finish reason, instead of an empty `choices` array. The `promptFeedback` details are also returned unless `strictOpenAiCompliance` is enabled. [Vertex AI Integration](/integrations/llms/vertex-ai)
 - **Vertex AI**: With `strictOpenAiCompliance` enabled, responses blocked by Model Armor or for prohibited image content now return `content_filter` as the finish reason, instead of `stop`. [Vertex AI Integration](/integrations/llms/vertex-ai)
@@ -54,16 +53,15 @@ Spans exported through Complete Logs now include your request metadata as `portk
 - **Google Gemini / Vertex AI**: Images returned by tools in `/v1/messages` requests are now sent to the model as images, instead of as text. [Messages API](/product/ai-gateway/messages-api)
 - **Claude Platform on AWS**: `/chat/completions` responses, including streaming responses, now follow the OpenAI response format. [Claude Platform on AWS](/integrations/llms/claude-platform-aws)
 - **Together AI**: Streamed responses no longer break on keep-alive messages. [Together AI Integration](/integrations/llms/together-ai)
-- **Pricing**: Pricing is now available for `gpt-6.1-terra` on OpenAI, Azure OpenAI, Amazon Bedrock, Bedrock Mantle, and OpenRouter, and for Claude Sonnet 5.5 on Amazon Bedrock. [Model Catalog](/product/model-catalog)
 
 ### Fixes and Improvements
 
-- **Messages API**: When a streamed response ends unexpectedly, the client now receives an error, instead of a response that looks complete. [Messages API](/product/ai-gateway/messages-api)
+- **Guardrails**: Start hooks now support `soft_deny_200`, which returns HTTP 200 with the denial message instead of HTTP 446, including for streaming requests. [Guardrails](/product/guardrails)
+- **Messages API**: A stream that ends without a terminal event is reported to the client as an Anthropic `error` event, instead of a silent empty `end_turn`. [Messages API](/product/ai-gateway/messages-api)
 - **Circuit Breaker**: Fixed errors when the circuit breaker's stored failure or success counts were missing. [Circuit Breaker](/product/ai-gateway/circuit-breaker)
 - **Gateway-Local JWT Auth**: A default Config set on the API key by Config ID is now applied correctly, and changes to your organisation's settings take effect without waiting for cached authentication results to expire. [Gateway-Local JWT Authentication](/product/enterprise-offering/org-management/jwt)
 - **Guardrails**: You can now set the maximum response size accepted from a guardrail plugin with the `PLUGIN_MAX_RESPONSE_BYTES` environment variable. The default is 10 MB. [Guardrails](/product/guardrails)
-- **Security**: Trusted in-cluster hostnames, such as `*.svc.cluster.local`, are accepted again for agent and OpenTelemetry endpoints, instead of being blocked. Cloud metadata and loopback addresses remain blocked. [Custom Hosts](/product/ai-gateway/custom-hosts)
-- **Security**: Secret values used by the header check and header transform guardrails are masked in logs and guardrail results. [Guardrails](/product/guardrails)
+- **Agent Gateway**: Trusted in-cluster hostnames, such as `*.svc.cluster.local`, are accepted again for agent and OpenTelemetry endpoints, instead of being blocked. Cloud metadata and loopback addresses remain blocked. [Custom Hosts](/product/ai-gateway/custom-hosts)
 - **Security**: Updated dependencies to patch security vulnerabilities.
 
 </Update>
