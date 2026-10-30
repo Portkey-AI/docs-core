@@ -20,6 +20,9 @@ The JWT Token Validator guardrail provides comprehensive JWT (JSON Web Token) va
 - **OAuth2/OIDC Support**: Standard audience, issuer, and scope validation
 - **Claim Extraction**: Extract JWT claims and inject them into request context as headers and metadata
 
+## Where It Runs
+
+The JWT guardrail can run as a [start hook](/product/guardrails/start-hooks) or as an input guardrail (before-request hook). In both cases it validates the token. Claim extraction only happens when it runs as a start hook, because that is the stage that can add headers and metadata to the request before it is routed. To require a valid token on every request in a workspace or organization, attach the guardrail as a start hook. See [Enforcing Policies with Start Hooks](/product/administration/enforce-policies-with-start-hooks#require-a-valid-jwt-and-take-identity-from-it).
 ## Validation Methods
 
 The guardrail supports three validation methods:
@@ -53,6 +56,11 @@ When using `jwks` or `jwksUri`:
 | `cacheMaxAge` | number | No | `86400` | JWKS cache duration in seconds (24h) - only applies to `jwksUri` |
 | `clockTolerance` | number | No | `5` | Clock tolerance in seconds for time-based claims (`exp`, `nbf`) |
 | `maxTokenAge` | string | No | `"1d"` | Maximum token age (e.g., '1d', '12h', '30m') |
+| `failOpenOnInvalidToken` | boolean | No | `false` | Legacy escape hatch. When `true`, a signature, algorithm, or expiry failure is reported as an error and the request is allowed through (subject to `failOnError`) instead of denied. Leave `false` to fail closed. |
+
+<Warning>
+A token that fails signature, algorithm, or expiry verification is denied by default. This differs from the general guardrail default, where an error does not block the request, because admitting a forged or expired token defeats the purpose of this check. Set `failOpenOnInvalidToken: true` only if you must restore the previous fail-open behavior.
+</Warning>
 
 ### Token Introspection Parameters
 
@@ -60,7 +68,7 @@ When using `introspectEndpoint`:
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `introspectContentType` | string | No | - | Content type for Introspection Endpoint |
+| `introspectContentType` | string | No | `"application/x-www-form-urlencoded"` | Content type for the introspection request. The request body is encoded to match |
 | `introspectCacheMaxAge` | number | No | - | Cache introspection results for this many seconds |
 | `clockTolerance` | number | No | `5` | Clock tolerance in seconds for time-based claims |
 
@@ -71,7 +79,7 @@ When using `introspectEndpoint`:
 | `requiredClaims` | string[] | No | Array of claim names that must be present |
 | `claimValues` | object | No | Object mapping claim names to expected values with match types |
 | `headerPayloadMatch` | string[] | No | Array of keys where header[key] must equal payload[key] |
-| `extractClaims` | string[] | No | Array of claim names to extract and inject into request headers and metadata |
+| `extractClaims` | string[] | No | Array of claim names to extract and inject into request headers and metadata. Only applies when the guardrail runs as a start hook |
 | `claimPrefix` | string | No | Prefix for extracted claim headers (default: `"x-jwt-"`) |
 | `metadataPrefix` | string | No | Prefix for extracted claim metadata keys (default: `""`, i.e. raw claim names) |
 
@@ -307,6 +315,20 @@ The same claims are also added to request metadata (prefixed by `metadataPrefix`
 
 The token owns every configured claim key: a verified claim overwrites client-supplied metadata and headers of the same name, and if the token lacks a configured claim (or validation fails) any client-supplied value for that key is removed. Organization/workspace default metadata and an enforced `_user` are never overridden.
 
+Extracted metadata is available to conditional routing and appears in your logs. Downstream services can read the headers directly, for example `req.headers['x-jwt-sub']`.
+
+**How values are written**
+
+- Arrays are joined with commas, so `["admin", "developer"]` becomes `admin,developer`
+- Objects are serialized as JSON
+- Other values are converted to strings
+- A claim the token doesn't have is skipped
+
+**Header restrictions**
+
+- Claims never set or remove authentication or restricted headers, such as `authorization`, `cookie`, and hop-by-hop headers, or any `x-portkey-*` header
+- A claim whose value contains characters outside printable ASCII is not written to a header, but is still written to metadata
+
 ### Comprehensive Production Setup
 
 ```json
@@ -367,15 +389,26 @@ The token owns every configured claim key: a verified claim overwrites client-su
     }
   },
   "transformedData": {
-    "headers": {
-      "x-jwt-sub": "user-123",
-      "x-jwt-email": "user@example.com",
-      "x-jwt-tenant-id": "tenant-456"
+    "request": {
+      "headers": {
+        "x-jwt-sub": "user-123",
+        "x-jwt-email": "user@example.com",
+        "x-jwt-tenant_id": "tenant-456"
+      },
+      "removedHeaders": [],
+      "metadata": {
+        "sub": "user-123",
+        "email": "user@example.com",
+        "tenant_id": "tenant-456"
+      },
+      "removedMetadata": []
     }
   },
   "transformed": true
 }
 ```
+
+`transformedData` is only present when the guardrail runs as a start hook with `extractClaims` set.
 
 ### Failure Response
 
@@ -502,6 +535,8 @@ The `Bearer` prefix is optional and will be automatically stripped if present.
 - Only extract claims needed by downstream services
 - Use consistent `claimPrefix` across your infrastructure
 - Be mindful of header size limits when extracting large claims
+- Prefer extracting computed or scalar values over large arrays
+- Run the guardrail as a start hook, because claims are not extracted in any other stage
 - Extracted claims are only added if validation succeeds
 
 ## Troubleshooting
@@ -545,6 +580,15 @@ JWT signature validation error: token is expired
 ```
 
 Increase `clockTolerance` to handle clock differences between systems.
+
+### Claim Extraction Not Working
+
+If claims are not being extracted:
+
+1. Make sure the guardrail runs as a [start hook](/product/guardrails/start-hooks). In a before-request or after-request hook the token is validated but `extractClaims` is ignored.
+2. Make sure validation passes. Claims are only extracted on success, and when validation fails, client-supplied values for the configured claims are removed.
+3. Check that the claim names exist in the token payload and that `extractClaims` is an array of strings.
+4. Check the claim values. A value with non-printable ASCII characters is not written to a header, and a claim in the restricted header list is never written.
 
 
 
