@@ -1822,6 +1822,87 @@ Grounding is invoked by passing the `google_search` tool (for newer models like 
 If you mix regular tools with grounding tools, vertex might throw an error saying only one tool can be used at a time.
 </Warning>
 
+### Excluding domains from search results
+
+Pass `excludeDomains` inside the function `parameters` to keep specific domains out of the search results the model is grounded on. Optionally set `blockingConfidence` to also filter out risky sites:
+
+<CodeGroup>
+```sh cURL
+curl --location 'https://api.portkey.ai/v1/chat/completions' \
+--header 'x-portkey-api-key: YOUR_PORTKEY_API_KEY' \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "@YOUR_VERTEX_PROVIDER/gemini-2.5-flash",
+    "messages": [{"role": "user", "content": "What is the latest news about NVIDIA stock?"}],
+    "tools": [{
+        "type": "function",
+        "function": {
+            "name": "google_search",
+            "parameters": {
+                "excludeDomains": ["example.com", "reddit.com"],
+                "blockingConfidence": "BLOCK_LOW_AND_ABOVE"
+            }
+        }
+    }]
+}'
+```
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(api_key="YOUR_PORTKEY_API_KEY")
+
+response = portkey.chat.completions.create(
+    model="@YOUR_VERTEX_PROVIDER/gemini-2.5-flash",
+    messages=[{"role": "user", "content": "What is the latest news about NVIDIA stock?"}],
+    tools=[{
+        "type": "function",
+        "function": {
+            "name": "google_search",
+            "parameters": {
+                "excludeDomains": ["example.com", "reddit.com"],
+                "blockingConfidence": "BLOCK_LOW_AND_ABOVE"
+            }
+        }
+    }]
+)
+
+print(response)
+```
+```typescript NodeJS
+import Portkey from 'portkey-ai';
+
+const portkey = new Portkey({ apiKey: "YOUR_PORTKEY_API_KEY" });
+
+const response = await portkey.chat.completions.create({
+    model: "@YOUR_VERTEX_PROVIDER/gemini-2.5-flash",
+    messages: [{ role: "user", content: "What is the latest news about NVIDIA stock?" }],
+    tools: [{
+        type: "function",
+        function: {
+            name: "google_search",
+            parameters: {
+                excludeDomains: ["example.com", "reddit.com"],
+                blockingConfidence: "BLOCK_LOW_AND_ABOVE"
+            }
+        }
+    }]
+});
+
+console.log(response);
+```
+</CodeGroup>
+
+| Parameter | Description |
+|-----------|-------------|
+| `excludeDomains` | List of domains to exclude from search results (up to 2000), e.g. `["example.com", "reddit.com"]` |
+| `blockingConfidence` | Block risky (phishing) sites at or above this confidence level: `BLOCK_LOW_AND_ABOVE`, `BLOCK_MEDIUM_AND_ABOVE`, `BLOCK_HIGH_AND_ABOVE`, `BLOCK_HIGHER_AND_ABOVE`, `BLOCK_VERY_HIGH_AND_ABOVE`, or `BLOCK_ONLY_EXTREMELY_HIGH` |
+
+<Note>
+Vertex AI supports blocking domains but not allowlisting them. These parameters are Vertex AI only; the Gemini API (Google AI Studio) does not support domain filtering for search grounding, and Portkey ignores them for Gemini requests.
+</Note>
+
+To see which sources a response was grounded on, set the [strict open ai compliance flag](/product/ai-gateway/strict-open-ai-compliance) to `false` and read `groundingMetadata` from the response.
+
 ## Grounding with Google Maps
 
 Vertex AI supports grounding with Google Maps for location-based queries — places, directions, ratings, and geographic information.
@@ -1967,6 +2048,21 @@ Vertex AI supports enterprise web search grounding for organizations with [Verte
         "type": "function",
         "function": {
             "name": "enterpriseWebSearch"
+        }
+    }]
+```
+
+`excludeDomains` and `blockingConfidence` work the same way as with [Google Search grounding](#excluding-domains-from-search-results):
+
+```json
+"tools": [
+    {
+        "type": "function",
+        "function": {
+            "name": "enterpriseWebSearch",
+            "parameters": {
+                "excludeDomains": ["example.com"]
+            }
         }
     }]
 ```
