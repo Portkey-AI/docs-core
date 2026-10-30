@@ -1,0 +1,645 @@
+---
+title: "Enforcing Policies with Start Hooks"
+description: "Apply start hook guardrails to every request in a workspace or your whole organization, so header, metadata, identity, and endpoint rules can't be skipped by individual clients."
+---
+
+[Start hooks](/product/guardrails/start-hooks) can be attached to a single request through its config. To enforce a policy instead, attach them as **defaults** on a workspace or on the organization. The gateway then runs them on every request, whatever config the client sends.
+
+Use this to guarantee rules such as:
+
+- Every request carries the metadata your cost reports depend on
+- Clients can't turn off request logging
+- Only approved endpoints are reachable
+- Callers present a valid JWT, and their identity comes from the token rather than from headers they set themselves
+
+## How Enforcement Works
+
+For each request, the gateway collects start hooks from three places, in this order:
+
+1. **Organization** start hooks
+2. **Workspace** start hooks, for the workspace the API key belongs to
+3. **Config** `start_hooks`, from the config attached to the request
+
+All of them run. Defaults are added to the hooks in the config, never replaced by them, so a client can't opt out by sending a different config. If any hook with `deny: true` fails, the request is blocked.
+
+| Level | Set by | Applies to |
+| :--- | :--- | :--- |
+| Organization | Organization owners | Every workspace |
+| Workspace | Workspace owners | Every request in that workspace |
+| Config | Whoever builds the request | Requests that use that config |
+
+<Note>
+Start hooks enforced at the organization or workspace level run in addition to input and output guardrails you've already configured at those levels. See [Enforcing Org Level Guardrails](/product/administration/enforce-orgnization-level-guardrails) and [Enforcing Workspace Level Guardrails](/product/administration/enforce-workspace-level-guardials).
+</Note>
+
+## Enforce at the Organization Level
+
+1. Create a guardrail made only of [checks that support start hooks](/product/guardrails/start-hooks#supported-checks). See [Start Hooks](/product/guardrails/start-hooks#create-a-start-hook).
+2. Go to `Admin Settings` in the Portkey dashboard.
+3. Open the `Organisation Guardrails` section.
+4. In **Start Hooks**, add the guardrail.
+5. Save your changes.
+
+The hook now runs on requests in all workspaces. The section describes this setting as enforcing policies before request processing: validating headers, JWT tokens, metadata, and endpoint access.
+
+<Note>
+An organization-level start hook must be an organization-level guardrail, not one created inside a single workspace.
+</Note>
+
+<Note>
+If you create the guardrail from the **Start Hooks** section here, the check list only shows checks that support start hooks. A guardrail you created elsewhere may contain other checks, so make sure it only uses [checks that support start hooks](/product/guardrails/start-hooks#supported-checks).
+</Note>
+
+## Enforce at the Workspace Level
+
+1. Open your workspace's settings.
+2. Go to **Workspace Guardrails**.
+3. Under **Start Hook Guardrail**, select a start hook guardrail created in the workspace.
+4. Click **Update**.
+
+All requests made with API keys in this workspace now run the hook.
+
+<Warning>
+The workspace dropdown lists all guardrails in the workspace, not only ones that work at the start stage. Select a guardrail made only of [checks that support start hooks](/product/guardrails/start-hooks#supported-checks): Header Check, Header Transform, Required Metadata Keys, Allowed Request Types, JWT, or Webhook. The dashboard won't stop you from attaching an incompatible guardrail, and it may not enforce what you intended.
+</Warning>
+
+## Enforce Through a Config
+
+A config only applies to requests that use it, and a client can choose its own config. To make a config enforce a policy, attach it as the **default config** of an API key and turn off **Allow Config Override**. Requests made with that key then always run the config's `start_hooks`, and a request that sends its own config gets a `400` error. See [Enforcing Default Configs on API Keys](/product/administration/enforce-default-config).
+
+<Note>
+If config override is left on, a client can send a different config and the `start_hooks` in your default config no longer run. Start hooks set at the organization or workspace level are not affected, because they run in addition to any config.
+</Note>
+
+## Policy Recipes
+
+Each recipe below shows two ways to set up the same policy. Use the tab that fits how you enforce it:
+
+- **Dashboard**: create a regular guardrail on the **Guardrails** page with the check, parameters, and actions shown, then attach it as a start hook at the [organization](#enforce-at-the-organization-level) or [workspace](#enforce-at-the-workspace-level) level.
+- **Config**: add the `start_hooks` entry shown to a config, alongside your usual provider settings, and [enforce it with a default config](#enforce-through-a-config).
+
+Use only [checks that support start hooks](/product/guardrails/start-hooks#supported-checks).
+
+### Require Request Metadata
+
+Block requests that don't say who or what they're for, so logs and reports can always be attributed, before any LLM spend happens.
+
+<Tabs>
+  <Tab title="Dashboard">
+**Check:** Required Metadata Keys
+
+- **Operator:** `all`
+- **Metadata Keys:** `user_id`, `team`
+- **Action:** Deny on Failure
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/01-required-metadata.png" alt="Required Metadata Keys check with operator all and keys user_id and team" />
+</Frame>
+
+</Tab>
+  <Tab title="Config">
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "require-attribution",
+      "deny": true,
+      "checks": [
+        {
+          "id": "default.requiredMetadataKeys",
+          "parameters": {
+            "metadataKeys": ["user_id", "team"],
+            "operator": "all"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+With `all`, a request missing any listed key is blocked. Use `any` to require at least one key, or `none` to prohibit keys, for example to reject requests that include a key reserved for your own systems.
+
+### Prevent Clients from Disabling Logging
+
+Block requests that send `x-portkey-debug: false`.
+
+<Tabs>
+  <Tab title="Dashboard">
+**Check:** Header Check
+
+- **Operator:** `none`
+- **Header Key-Value Pairs:** `{"x-portkey-debug": "false"}`
+- **Action:** Deny on Failure
+
+For a step-by-step walkthrough with screenshots, see [Start Hooks](/product/guardrails/start-hooks#example-block-clients-from-turning-off-request-logging).
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/02-block-debug-opt-out.png" alt="Header Check with operator none and header pair x-portkey-debug false" />
+</Frame>
+
+</Tab>
+  <Tab title="Config">
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "enforce-debug-logging",
+      "deny": true,
+      "checks": [
+        {
+          "id": "default.headerCheck",
+          "parameters": {
+            "headerPairs": { "x-portkey-debug": "false" },
+            "operator": "none"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+`none` means the check passes only if none of the listed pairs match. A request with `x-portkey-debug: false` is blocked with `446`. A request without the header, or with `x-portkey-debug: true`, goes through.
+
+### Allow Only Specific Endpoints
+
+Allow chat and embeddings requests, and block everything else.
+
+<Tabs>
+  <Tab title="Dashboard">
+**Check:** Allowed Request Types
+
+- **Allowed Request Types (Multi-select):** `chatComplete`, `embed`
+- **Action:** Deny on Failure
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/03-allow-request-types.png" alt="Allowed Request Types check with chatComplete and embed selected" />
+</Frame>
+
+</Tab>
+  <Tab title="Config">
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "endpoint-allowlist",
+      "deny": true,
+      "checks": [
+        {
+          "id": "default.allowedRequestTypes",
+          "parameters": {
+            "allowedTypes": ["chatComplete", "embed"]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+The check works out the request type from the path, for example `/v1/chat/completions` becomes `chatComplete`. A request to any type not in the list, including paths such as `/v1/models`, is blocked. See [Allowed Request Types](/product/guardrails/start-hooks#allowed-request-types) for the full list of request types.
+
+### Block Specific Endpoints
+
+Block batch and fine-tuning requests and allow everything else.
+
+<Tabs>
+  <Tab title="Dashboard">
+**Check:** Allowed Request Types
+
+- **Blocked Request Types (Multi-select):** `createBatch`, `createFinetune`
+- **Action:** Deny on Failure
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/04-block-request-types.png" alt="Allowed Request Types check with createBatch and createFinetune selected under Blocked Request Types" />
+</Frame>
+
+</Tab>
+  <Tab title="Config">
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "block-expensive-ops",
+      "deny": true,
+      "checks": [
+        {
+          "id": "default.allowedRequestTypes",
+          "parameters": {
+            "blockedTypes": ["createBatch", "createFinetune"]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+<Note>
+In a start hook, `createBatch` and `createFinetune` stand for their whole endpoint families. This policy blocks every request to `/v1/batches` and `/v1/fine_tuning/jobs`, including listing and retrieving jobs, not only creating them.
+</Note>
+
+### Require a Valid JWT and Take Identity from It
+
+Validate the caller's token, check its claims, and write trusted claims into the request so they can't be spoofed.
+
+<Tabs>
+  <Tab title="Dashboard">
+**Check:** JWT
+
+- **Header Key:** `Authorization`
+- **JWKS URI:** `https://auth.example.com/.well-known/jwks.json`
+- **Required Claims:** `sub`, `email`, `org_id`
+- **Claim Values:** `{"org_id": {"values": "org_12345", "matchType": "exact"}}`
+- **Extract Claims:** `sub`, `email`, `org_id`
+- **Claim Prefix:** `x-jwt-`
+- **Action:** Deny on Failure
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/05-jwt-check.png" alt="JWT check with JWKS URI, header key, required claims, and claim values filled in" />
+</Frame>
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/06-jwt-extract-claims.png" alt="JWT check Extract Claims set to sub, email, and org_id, with the x-jwt- claim prefix" />
+</Frame>
+
+</Tab>
+  <Tab title="Config">
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "jwt-auth",
+      "deny": true,
+      "checks": [
+        {
+          "id": "default.jwt",
+          "parameters": {
+            "headerKey": "Authorization",
+            "jwksUri": "https://auth.example.com/.well-known/jwks.json",
+            "requiredClaims": ["sub", "email", "org_id"],
+            "claimValues": {
+              "org_id": { "values": "org_12345", "matchType": "exact" }
+            },
+            "extractClaims": ["sub", "email", "org_id"],
+            "claimPrefix": "x-jwt-",
+            "failOnError": true
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+With these parameters:
+
+- The token signature is verified against the JWKS URI, and a missing, expired, or invalid token is blocked
+- `sub`, `email`, and `org_id` must be present, and `org_id` must equal `org_12345`
+- The extracted claims are written to the `x-jwt-sub`, `x-jwt-email`, and `x-jwt-org_id` headers, and to request metadata under their raw names (set `metadataPrefix` to add a prefix)
+- Any value the client sent for those headers or keys is overwritten, or removed if the token doesn't have the claim
+
+`failOnError: true` makes an error, such as an unreachable JWKS endpoint, block the request instead of letting it through. The dashboard doesn't show this option for the JWT check, so use the Config tab if you need it. See the [JWT guardrail](/integrations/guardrails/jwt) for validation options.
+
+### Normalize Headers
+
+Remove client-controlled headers your downstream services shouldn't trust, and stamp the request with values you control.
+
+<Tabs>
+  <Tab title="Dashboard">
+**Check:** Header Transform
+
+- **Headers to Remove:** `["x-internal-override"]`
+- **Headers to Set:** `{"x-gateway-env": "production"}`
+- **Execute guardrails sequentially:** on
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/07-normalize-headers.png" alt="Header Transform with x-internal-override under Headers to Remove and x-gateway-env under Headers to Set" />
+</Frame>
+
+</Tab>
+  <Tab title="Config">
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "normalize-headers",
+      "deny": true,
+      "sequential": true,
+      "checks": [
+        {
+          "id": "default.headerTransform",
+          "parameters": {
+            "remove": ["x-internal-override"],
+            "set": { "x-gateway-env": "production" }
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+Header Transform never blocks a request. Authentication headers and `x-portkey-*` headers can't be changed, and headers the gateway reads itself, such as `anthropic-beta`, are not affected. The provider may also ignore the headers you set. See [Header Transform](/product/guardrails/start-hooks#header-transform).
+
+<Note>
+To keep clients from using an `anthropic-beta` feature you haven't approved, don't try to strip the header with Header Transform. A Header Check can block the request instead, but it matches an exact header value, so it only works when you know the exact value clients send.
+</Note>
+
+### Keep an Agent's Requests on the Same Workers AI Instance
+
+[Workers AI prompt caching](https://developers.cloudflare.com/workers-ai/features/prompt-caching/) routes requests that carry the same `x-session-affinity` value to the same model instance, so a long shared prefix such as a system prompt and tool definitions is reused instead of reprocessed. Header Transform can add this header for clients that don't send it.
+
+<Tabs>
+  <Tab title="Dashboard">
+**Check:** Header Transform
+
+- **Headers to Set:** `{"x-session-affinity": "support-agent"}`
+
+This replaces any `x-session-affinity` value the client sends. To keep a value the client sends, use the Config tab.
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/08-pin-session-affinity.png" alt="Header Transform with x-session-affinity set to support-agent under Headers to Set" />
+</Frame>
+
+</Tab>
+  <Tab title="Config">
+Set the header on every request:
+
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "pin-session-affinity",
+      "deny": true,
+      "checks": [
+        {
+          "id": "default.headerTransform",
+          "parameters": {
+            "set": { "x-session-affinity": "support-agent" }
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Or set it only when the client didn't send one:
+
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "default-session-affinity",
+      "deny": true,
+      "checks": [
+        {
+          "id": "default.headerTransform",
+          "parameters": {
+            "setIf": {
+              "x-session-affinity": {
+                "exists": false,
+                "set": { "x-session-affinity": "support-agent" }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+Headers that Header Transform sets are forwarded to the provider, and the Workers AI provider passes them through. A few things to keep in mind:
+
+- **Use one value per agent.** The value is a fixed string. If every request in the organization or workspace gets the same value, they all go to one instance, which removes the benefit and can overload it. Use this on a workspace or API key dedicated to one agent, or let each client send its own per-session value and use the `setIf` version only as a fallback.
+- **It reaches every provider in the request.** The start hook runs once per request, not per target, so the header is also sent to any fallback or load-balance targets in the same config. Most providers ignore an unknown header.
+- **You can't see the effect in the response headers or body fields the gateway adds.** Cloudflare doesn't echo the header back. The gateway returns Cloudflare's `usage` object unchanged, so check it for cached token counts on models that support prefix caching, as described in Cloudflare's guide.
+
+### Delegate the Decision to an External Policy Service
+
+Send the request context to your own service, such as an internal access control system, and let it decide.
+
+<Tabs>
+  <Tab title="Dashboard">
+**Check:** Webhook
+
+- **Webhook URL:** `https://policy.internal.example.com/v1/check`
+- **Headers:** `{"x-service-auth": "YOUR_SERVICE_TOKEN"}`
+- **Timeout:** `3000`
+- **Fail if the webhook returns a non-200 status or times out:** on
+- **Action:** Deny on Failure
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/09-external-policy-check.png" alt="Webhook check with the policy service URL, authentication header, and 3000 ms timeout" />
+</Frame>
+
+</Tab>
+  <Tab title="Config">
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "external-policy-check",
+      "deny": true,
+      "checks": [
+        {
+          "id": "default.webhook",
+          "parameters": {
+            "webhookURL": "https://policy.internal.example.com/v1/check",
+            "headers": { "x-service-auth": "YOUR_SERVICE_TOKEN" },
+            "timeout": 3000,
+            "failOnError": true
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+The gateway sends your service the request context: the request metadata, request path and type, and provider. Request headers are not sent, so a webhook can't see the caller's credentials. To pass specific headers, list them in `forwardHeaders`. See [Forwarding headers](/product/guardrails/forwarding-headers).
+
+Your service replies with a JSON body like `{ "verdict": true, "data": { ... } }`. If `verdict` is `false`, the request is blocked and `data` is included in the check result. Set `failOnError` so that a timeout or error from your service blocks the request. Without it, an unreachable service lets every request through.
+
+### Audit Without Adding Latency
+
+Run a check after the response has been sent, so it records the request without slowing it down.
+
+<Tabs>
+  <Tab title="Dashboard">
+**Check:** Webhook
+
+- **Webhook URL:** `https://compliance.internal.example.com/v1/audit`
+- **Action:** Run Asynchronously
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/10-async-check.png" alt="Webhook check pointing at the compliance audit URL" />
+</Frame>
+
+<Frame>
+  <img src="/images/guardrails/start-hooks-policies/11-async-actions.png" alt="Actions tab with Run Asynchronously selected" />
+</Frame>
+
+</Tab>
+  <Tab title="Config">
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "async-compliance-check",
+      "deny": false,
+      "async": true,
+      "checks": [
+        {
+          "id": "default.webhook",
+          "parameters": {
+            "webhookURL": "https://compliance.internal.example.com/v1/audit"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+An async start hook can't block the request or change its headers or metadata. Its result appears in your logs, so use it for compliance auditing.
+
+## Combine Multiple Checks and Policies
+
+You can stack checks and policies instead of using one per hook:
+
+- **Several checks in one guardrail.** Add more than one check to a single guardrail. The guardrail passes only if every check passes. For example, put a JWT check and an Allowed Request Types check in one guardrail to require a valid token and an approved endpoint.
+- **A transform followed by a check.** Add Header Transform and then Header Check to the same guardrail, with **Execute guardrails sequentially** turned on, so the check sees the headers as the transform left them. For example, Header Transform sets `x-gateway-env: production`, and Header Check then verifies that `x-gateway-env` is `production`, or that a header you removed is gone. Without sequential execution, the checks run in parallel and the Header Check sees the original headers.
+- **Several guardrails.** Attach more than one guardrail as a start hook at the same level. Each is evaluated on its own, and the request is blocked if any guardrail with **Deny on Failure** fails. Use separate guardrails when you want each policy reported and managed independently, for example to run one in observe mode (without **Deny on Failure**) while the others enforce.
+
+In a config, the checks go in the `checks` array of one hook, and separate guardrails are separate entries in `start_hooks`:
+
+```json
+{
+  "start_hooks": [
+    {
+      "type": "guardrail",
+      "id": "stamp-and-verify",
+      "deny": true,
+      "sequential": true,
+      "checks": [
+        {
+          "id": "default.headerTransform",
+          "parameters": { "set": { "x-gateway-env": "production" } }
+        },
+        {
+          "id": "default.headerCheck",
+          "parameters": {
+            "headerPairs": { "x-gateway-env": "production" },
+            "operator": "all"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Roll Out Safely
+
+Start hooks run before everything else, so a misconfigured one can block all traffic. A safe rollout:
+
+1. **Observe.** Attach the hook with `deny: false`. Violations don't block anything, but they appear in `hook_results` and in your logs, so you can see who would be affected.
+2. **Fix clients.** Update the applications that fail the check.
+3. **Soft deny, if needed.** Set `deny: true` and `soft_deny_200: true` for clients that can't handle non-`2xx` errors. They get a `200` response that carries the failure message.
+4. **Enforce.** Switch to `deny: true` without soft deny, so violations return `446`.
+
+## Verify a Policy
+
+Send a request that breaks the rule and check the response. For the metadata example above:
+
+```bash
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@openai-xxx/gpt-4o-mini",
+    "messages": [{ "role": "user", "content": "Hello" }]
+  }'
+```
+
+With the hook enforced and no `user_id` or `team` metadata, the request returns `446` and never reaches the provider:
+
+```json
+{
+  "status": "failure",
+  "message": "Request denied by start hook guardrail",
+  "details": {
+    "hookId": "pg-required-metadata-xxx",
+    "checks": [
+      {
+        "id": "default.requiredMetadataKeys",
+        "verdict": false,
+        "data": {
+          "explanation": "Check failed for 'all' metadata keys. Some metadata keys were missing.",
+          "missing_metadata_keys": ["user_id", "team"],
+          "found_metadata_keys": [],
+          "operator": "all"
+        }
+      }
+    ]
+  }
+}
+```
+
+Add the metadata with the `x-portkey-metadata` header and the same request goes through. Set a [custom error message](/product/guardrails/start-hooks#hard-deny-446) on the guardrail so developers know how to fix the request.
+
+<Note>
+Best Practices
+- Start with `deny: false` and move to enforcement once you've reviewed the logs.
+- Put one policy in each guardrail, so a failure points to a single rule and you can change or remove rules independently.
+- Set `failOnError` on checks that call external services, such as a webhook, or a JWT check with a remote JWKS. For JWT, set it in a config, since the dashboard doesn't show it.
+- Tell developers what is enforced and how to comply, using a clear custom error message.
+- A guardrail that's in use as an organization or workspace default can't be deleted until you remove it from those settings.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Start Hooks" href="/product/guardrails/start-hooks">
+    How start hooks work and the checks they support
+  </Card>
+  <Card title="Enforcing Request Metadata" href="/product/administration/enforcing-request-metadata">
+    Make metadata mandatory on requests
+  </Card>
+</CardGroup>
+
+## Support
+
+For questions about configuring start hooks or troubleshooting issues, contact [Portkey support](https://support.portkey.ai/forms/customer-portal-ticket-form).
