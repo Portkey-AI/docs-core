@@ -35,6 +35,8 @@ Without `--since`, the driver takes the sync point from the newest commit whose 
 | `MISSING 0/m` | nothing ported |
 | `... removed line(s) still in aigw` | root deleted text that aigw still has |
 | `NEW PAGE, no aigw twin` / `NO aigw twin` | needs a new aigw page and a `docs.json` entry, or a deliberate skip |
+| `ROOT PAGE DELETED, aigw twin still exists` | root removed the page; decide whether aigw drops it too (and its nav entry) |
+| `MIRRORED (page deleted in both)` | root deleted the page and aigw has no twin |
 
 `-v` prints each added line it couldn't find in aigw. Comparing against `--to HEAD` after porting is the self-check. The only remaining PARTIALs should be deliberate rewording.
 
@@ -81,7 +83,7 @@ Stop the preview by stopping the background task (or `Ctrl-C` in a terminal).
 - **`merge-file --theirs` brings back content aigw deliberately removed.** In the Nov 2026 sync it restored the `/prompts/{promptId}/completions` rows (Prompt Studio is banned in aigw) and replaced aigw's own `/aigw/api-reference/...` links with root ones. Read the whole diff afterwards.
 - **Some engineers now mirror their own changes into aigw** (Prometheus, Bedrock and the performance page did in Oct 2026). `drift` shows them as `MIRRORED`, so don't port them twice.
 - **PARTIAL is expected where aigw has only curl**: `03abe08f` stays `PARTIAL 1/4` because root's Python and Node SDK `model=` lines have no aigw counterpart, and aigw's curl uses `@provider-slug/` model prefixes.
-- **The `drift` matcher normalises** Portkey/AI Gateway naming, link targets and `organisation`/`behaviour` spelling. It does not handle restructured tables or rewritten sentences, which show up as PARTIAL.
+- **The `drift` matcher normalises** Portkey/AI Gateway naming, link targets and `organisation`/`behaviour` spelling. Lines of 20+ normalised characters may match anywhere in the twin. Shorter ones (`"max_age": 300`, `## Azure OpenAI`) must equal a whole twin line, because otherwise they match inside unrelated sentences. Restructured tables and rewritten sentences still show up as PARTIAL, and an unported page with lots of shared JSON keys can show a low `PARTIAL n/m` rather than `MISSING`.
 - **Zsh doesn't word-split `$VAR`.** `for f in $FILES` runs once with the whole string. Use an array (`F=(a b); for f in $F`) when scripting over files.
 
 ## Troubleshooting

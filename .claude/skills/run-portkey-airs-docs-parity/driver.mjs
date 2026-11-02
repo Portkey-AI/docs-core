@@ -46,6 +46,15 @@ function norm(s) {
     .trim();
 }
 
+// Long lines may match anywhere in the twin (wrapping and rewording around them
+// differ). Short ones like `"max_age": 300` or `## Azure OpenAI` would match by
+// coincidence inside other sentences, so they must equal a whole twin line.
+function twinMatcher(text) {
+  const body = norm(text);
+  const lines = new Set(text.split("\n").map(norm));
+  return (l) => { const n = norm(l); return n.length >= 20 ? body.includes(n) : lines.has(n); };
+}
+
 function lastSyncPoint(ref) {
   const r = gitOk("log", ref, "-1", "--format=%H%n%B", `--grep=${SYNC_GREP}`, "--fixed-strings");
   const m = /up to ([0-9a-f]{7,40})/.exec(r.stdout || "");
@@ -77,16 +86,19 @@ function drift(args) {
       const pick = (c) => diff.split("\n")
         .filter((l) => l.startsWith(c) && !l.startsWith(c + c + c))
         .map((l) => l.slice(1))
-        .filter((l) => norm(l).length >= 20 && !/^\s*(```|<\/?\w+>?\s*$|import |\{|\}|\]|\[)/.test(l));
+        // Drop only lines with no words left (braces, blank) and pure markup/imports.
+        // Short settings such as `"max_age": 300` must stay: they are real edits.
+        .filter((l) => norm(l).length > 0 && !/^\s*(```[\w-]*\s*$|<\/?[\w.]+\s*\/?>\s*$|import )/.test(l));
       const added = pick("+"), removed = pick("-");
       let status;
-      if (!has) status = git("show", `${to}:${f}`, "--").length && gitOk("cat-file", "-e", `${sha}^:${f}`).status !== 0
-        ? "NEW PAGE, no aigw twin" : "NO aigw twin";
+      const exists = (rev) => gitOk("cat-file", "-e", `${rev}:${f}`).status === 0;
+      if (!exists(sha)) status = has ? "ROOT PAGE DELETED, aigw twin still exists" : "MIRRORED (page deleted in both)";
+      else if (!has) status = exists(`${sha}^`) ? "NO aigw twin" : "NEW PAGE, no aigw twin";
       else {
-        const body = norm(git("show", `${to}:${twin}`));
-        const inA = added.filter((l) => body.includes(norm(l))).length;
+        const inTwin = twinMatcher(git("show", `${to}:${twin}`));
+        const inA = added.filter(inTwin).length;
         // A removed line that survives inside an added line was edited, not deleted.
-        const stillR = removed.filter((l) => !added.some((a) => norm(a).includes(norm(l))) && body.includes(norm(l))).length;
+        const stillR = removed.filter((l) => !added.some((a) => norm(a).includes(norm(l))) && inTwin(l)).length;
         if (!added.length && !removed.length) status = "trivial (formatting only)";
         else if (added.length && inA === added.length && !stillR) status = "MIRRORED";
         else if (!added.length) status = stillR ? `REMOVAL NOT MIRRORED (${stillR} line(s) still in aigw)` : "MIRRORED (removal)";
@@ -95,8 +107,8 @@ function drift(args) {
       rows.push({ sha, f, status });
       console.log(`  ${status.padEnd(44)} ${f}`);
       if (verbose && has && /PARTIAL|MISSING/.test(status)) {
-        const body = norm(git("show", `${to}:${twin}`));
-        for (const l of added.filter((l) => !body.includes(norm(l)))) console.log(`      not in aigw: ${l.trim().slice(0, 140)}`);
+        const inTwin = twinMatcher(git("show", `${to}:${twin}`));
+        for (const l of added.filter((l) => !inTwin(l))) console.log(`      not in aigw: ${l.trim().slice(0, 140)}`);
       }
     }
   }
