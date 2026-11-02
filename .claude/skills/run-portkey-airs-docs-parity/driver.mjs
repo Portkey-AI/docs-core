@@ -37,15 +37,22 @@ function opt(args, name, dflt) {
 // Strip what legitimately differs between the trees so a mirrored line still matches.
 function norm(s) {
   return s
-    .toLowerCase()
     // Keep link targets so a URL-only fix is visible; drop just the /aigw prefix
-    // the twin adds to internal links. Runs before the punctuation strip below.
+    // the twin adds to internal links.
     .replace(/(\]\(|href=")\/aigw\//g, "$1/")
     // Every app.portkey.ai deep link becomes the one Strata Cloud Manager link in aigw.
     .replace(/https:\/\/(app\.portkey\.ai|stratacloudmanager\.paloaltonetworks\.com)[^)\s"`]*/g, "console-link")
-    .replace(/prisma airs ai gateway('s)?|the ai gateway('s)?|ai gateway('s)?|portkey('s)?( gateway)?/g, "")
-    .replace(/organisation/g, "organization").replace(/behaviour/g, "behavior")
-    .replace(/[^a-z0-9]+/g, " ")
+    // Key placeholders: aigw writes YOUR_API_KEY / $AIGW_API_KEY as well as the Portkey names.
+    .replace(/(PORTKEY|AIGW)_API_KEY/g, "API_KEY")
+    // Product naming is the only case-insensitive part: case changes elsewhere
+    // (`apiKey` -> `api_key`, header names) are real edits and must not match.
+    .replace(/\b(prisma airs ai gateway('s)?|the ai gateway('s)?|ai gateway('s)?|portkey('s)?( gateway)?)\b/gi, "")
+    .replace(/organisation/g, "organization").replace(/Organisation/g, "Organization")
+    .replace(/behaviour/g, "behavior").replace(/Behaviour/g, "Behavior")
+    // Punctuation inside a token (`max_tokens`, `/a/b-c`, `?x=1`, `v1.2`) is
+    // content; markdown and sentence punctuation around tokens is not.
+    .replace(/[_\-./#?=:](?![A-Za-z0-9])|(?<![A-Za-z0-9])[_\-./#?=:]/g, " ")
+    .replace(/[^A-Za-z0-9_\-./#?=:]+/g, " ")
     .trim();
 }
 
@@ -93,29 +100,35 @@ function drift(args) {
         // Short settings such as `"max_age": 300` must stay: they are real edits.
         .filter((l) => norm(l).length > 0 && !/^\s*(```[\w-]*\s*$|<\/?[\w.]+\s*\/?>\s*$|import )/.test(l));
       const added = pick("+"), removed = pick("-");
-      let status;
+      let status, live = added;
       const exists = (rev) => gitOk("cat-file", "-e", `${rev}:${f}`).status === 0;
       if (!exists(sha)) status = has ? "ROOT PAGE DELETED, aigw twin still exists" : "MIRRORED (page deleted in both)";
       else if (!has) status = exists(`${sha}^`) ? "NO aigw twin" : "NEW PAGE, no aigw twin";
       else {
         const inTwin = twinMatcher(git("show", `${to}:${twin}`));
-        const inA = added.filter(inTwin).length;
+        // Judge each commit against where root ended up: a line a later commit
+        // replaced (or a deletion a later commit undid) is not work to port.
+        const inRoot = exists(to) ? twinMatcher(git("show", `${to}:${f}`)) : () => false;
+        live = added.filter(inRoot);
+        const goneR = removed.filter((l) => !inRoot(l));
+        const inA = live.filter(inTwin).length;
         // A removed line that survives inside an added line was edited, not deleted.
-        const stillR = removed.filter((l) => !added.some((a) => norm(a).includes(norm(l))) && inTwin(l)).length;
+        const stillR = goneR.filter((l) => !added.some((a) => norm(a).includes(norm(l))) && inTwin(l)).length;
         if (!added.length && !removed.length) status = "trivial (formatting only)";
-        else if (added.length && inA === added.length && !stillR) status = "MIRRORED";
-        else if (!added.length) status = stillR ? `REMOVAL NOT MIRRORED (${stillR} line(s) still in aigw)` : "MIRRORED (removal)";
-        else status = `${inA === 0 ? "MISSING" : "PARTIAL"} ${inA}/${added.length} added lines found` + (stillR ? `, ${stillR} removed line(s) still in aigw` : "");
+        else if (!live.length && !stillR && added.length) status = "SUPERSEDED (root changed these lines again later)";
+        else if (live.length && inA === live.length && !stillR) status = "MIRRORED";
+        else if (!live.length) status = stillR ? `REMOVAL NOT MIRRORED (${stillR} line(s) still in aigw)` : "MIRRORED (removal)";
+        else status = `${inA === 0 ? "MISSING" : "PARTIAL"} ${inA}/${live.length} added lines found` + (stillR ? `, ${stillR} removed line(s) still in aigw` : "");
       }
       rows.push({ sha, f, status });
       console.log(`  ${status.padEnd(44)} ${f}`);
       if (verbose && has && /PARTIAL|MISSING/.test(status)) {
         const inTwin = twinMatcher(git("show", `${to}:${twin}`));
-        for (const l of added.filter((l) => !inTwin(l))) console.log(`      not in aigw: ${l.trim().slice(0, 140)}`);
+        for (const l of live.filter((l) => !inTwin(l))) console.log(`      not in aigw: ${l.trim().slice(0, 140)}`);
       }
     }
   }
-  const todo = rows.filter((r) => !/^MIRRORED|^trivial/.test(r.status));
+  const todo = rows.filter((r) => !/^MIRRORED|^trivial|^SUPERSEDED/.test(r.status));
   console.log(`\n${todo.length} file change(s) to review/port out of ${rows.length}.`);
   console.log("Heuristic: rewording on either side shows as PARTIAL. Read the diff before trusting a MIRRORED/MISSING verdict.");
 }
