@@ -64,7 +64,7 @@ node .claude/skills/run-portkey-airs-docs-parity/driver.mjs shots product/ai-gat
 node .claude/skills/run-portkey-airs-docs-parity/driver.mjs shots product/model-catalog/workload-identity-federation --top
 ```
 
-For each page it loads `/<page>` and `/aigw/<page>` and prints the `h1` along with `OK`, `404` (the aigw twin is missing or not in nav) or `FAIL`. It writes `/tmp/aigw-parity/shots/<page__path>.{root,aigw}.png`. `--top` captures only the first 1400×1000 viewport. Use it for checking nav, title and breadcrumbs, because full-page shots of long pages run to 7000+ px and come out unreadable when viewed. The port comes from `mint.log`; override it with `--port N`. Exit code 1 if any page 404s or throws.
+For each page it loads `/<page>` and `/aigw/<page>` and prints the `h1` along with `OK`, `404` (the aigw twin is missing or not in nav) or `FAIL` (no `<h1>` rendered within `--wait` seconds, default 120, or the page errored). It writes `/tmp/aigw-parity/shots/<page__path>.{root,aigw}.png`. `--top` captures only the first 1400×1000 viewport. Use it for checking nav, title and breadcrumbs, because full-page shots of long pages run to 7000+ px and come out unreadable when viewed. The port comes from `mint.log`; override it with `--port N`. Exit code 1 if any page 404s, fails or throws.
 
 Stop the preview by stopping the background task (or `Ctrl-C` in a terminal).
 
@@ -83,7 +83,7 @@ Stop the preview by stopping the background task (or `Ctrl-C` in a terminal).
 - **`merge-file --theirs` brings back content aigw deliberately removed.** In the Nov 2026 sync it restored the `/prompts/{promptId}/completions` rows (Prompt Studio is banned in aigw) and replaced aigw's own `/aigw/api-reference/...` links with root ones. Read the whole diff afterwards.
 - **Some engineers now mirror their own changes into aigw** (Prometheus, Bedrock and the performance page did in Oct 2026). `drift` shows them as `MIRRORED`, so don't port them twice.
 - **PARTIAL is expected where aigw has only curl**: `03abe08f` stays `PARTIAL 1/4` because root's Python and Node SDK `model=` lines have no aigw counterpart, and aigw's curl uses `@provider-slug/` model prefixes.
-- **The `drift` matcher normalises** Portkey/AI Gateway naming, link targets and `organisation`/`behaviour` spelling. Lines of 20+ normalised characters may match anywhere in the twin. Shorter ones (`"max_age": 300`, `## Azure OpenAI`) must equal a whole twin line, because otherwise they match inside unrelated sentences. Restructured tables and rewritten sentences still show up as PARTIAL, and an unported page with lots of shared JSON keys can show a low `PARTIAL n/m` rather than `MISSING`.
+- **The `drift` matcher normalises** Portkey/AI Gateway naming, `organisation`/`behaviour` spelling, the `/aigw/` prefix on internal links, and any `app.portkey.ai/...` or Strata Cloud Manager URL (treated as the same console link). Link targets are otherwise compared, so a URL-only fix in root shows up, and pages that live at a different aigw path (e.g. `/aigw/product/policies/budget-limits`) show as PARTIAL lines under `-v`. Lines of 20+ normalised characters may match anywhere in the twin. Shorter ones (`"max_age": 300`, `## Azure OpenAI`) must equal a whole twin line, because otherwise they match inside unrelated sentences. Restructured tables and rewritten sentences still show up as PARTIAL, and an unported page with lots of shared JSON keys can show a low `PARTIAL n/m` rather than `MISSING`.
 - **Zsh doesn't word-split `$VAR`.** `for f in $FILES` runs once with the whole string. Use an array (`F=(a b); for f in $F`) when scripting over files.
 
 ## Troubleshooting
@@ -92,4 +92,5 @@ Stop the preview by stopping the background task (or `Ctrl-C` in a terminal).
 - **`check_nav_page_parity` on base reports `file is unreachable from navigation` for your new page**: you compared using `git stash`, which leaves untracked files in place. `checks` uses a real worktree for this reason.
 - **`No sync commit on origin/main says "up to <sha>"`**: the last sync isn't merged yet, or its message lacked "up to". Pass `--since <sha>`, which is recorded in the sync PR description.
 - **`playwright-core missing`**: run the Prerequisites install line. The driver resolves it from `~/.cache/aigw-parity-driver`.
+- **`shots` prints `FAIL ... no <h1> rendered within Ns`**: the page shell loaded but the doc content never rendered; check `mint.log` for errors. The screenshot is still saved. Use `--wait 10` to fail fast when probing.
 - **`shots` prints `FAIL ... page.goto: net::ERR_CONNECTION_REFUSED`**: the preview isn't up yet, or is on another port. Check `mint.log` for `preview ready` and the port.

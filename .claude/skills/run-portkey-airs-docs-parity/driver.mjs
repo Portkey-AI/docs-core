@@ -3,8 +3,8 @@
 //
 //   node driver.mjs drift  [--since <sha>] [--to <ref>] [-v]  root changes not yet mirrored into aigw/
 //   node driver.mjs checks [--base <ref>]                 run aigw/scripts checks here and on <ref>, diff
-//   node driver.mjs shots  <page> [<page>...] [--port N] [--top]  screenshot root page and its aigw twin
-//                                                       (--top = first viewport only, not full page)
+//   node driver.mjs shots  <page> [<page>...] [--port N] [--top] [--wait S]  screenshot root page and its aigw twin
+//                                                       (--top = first viewport only; --wait = seconds to wait for <h1>, default 120)
 //
 // Run from the repo root. Paths are root-tree page paths without .mdx,
 // e.g. product/ai-gateway/decisions-api.
@@ -38,8 +38,11 @@ function opt(args, name, dflt) {
 function norm(s) {
   return s
     .toLowerCase()
-    .replace(/\]\([^)]*\)/g, "]")          // link targets (/aigw/ prefix)
-    .replace(/href="[^"]*"/g, "")
+    // Keep link targets so a URL-only fix is visible; drop just the /aigw prefix
+    // the twin adds to internal links. Runs before the punctuation strip below.
+    .replace(/(\]\(|href=")\/aigw\//g, "$1/")
+    // Every app.portkey.ai deep link becomes the one Strata Cloud Manager link in aigw.
+    .replace(/https:\/\/(app\.portkey\.ai|stratacloudmanager\.paloaltonetworks\.com)[^)\s"`]*/g, "console-link")
     .replace(/prisma airs ai gateway('s)?|the ai gateway('s)?|ai gateway('s)?|portkey('s)?( gateway)?/g, "")
     .replace(/organisation/g, "organization").replace(/behaviour/g, "behavior")
     .replace(/[^a-z0-9]+/g, " ")
@@ -183,6 +186,7 @@ function detectPort() {
 
 async function shots(args) {
   const port = opt(args, "--port", detectPort());
+  const waitMs = Number(opt(args, "--wait", "120")) * 1000;
   const top = args.includes("--top"); if (top) args.splice(args.indexOf("--top"), 1);
   const pages = args.map((p) => p.replace(/^\/|\.mdx$/g, "").replace(/^aigw\//, ""));
   if (!pages.length) die("usage: shots <page> [<page>...] [--port N]");
@@ -200,15 +204,19 @@ async function shots(args) {
         const page = await (await browser.newContext({ viewport: { width: 1400, height: 1000 } })).newPage();
         const errs = [];
         page.on("pageerror", (e) => errs.push(e.message));
-        const res = await page.goto(`http://localhost:${port}${url}`, { waitUntil: "domcontentloaded", timeout: 120000 });
-        await page.waitForSelector("h1", { timeout: 120000 }).catch(() => {});
+        const res = await page.goto(`http://localhost:${port}${url}`, { waitUntil: "domcontentloaded", timeout: waitMs });
+        const h1 = await page.waitForSelector("h1", { timeout: waitMs }).then(() => true, () => false);
         await page.waitForTimeout(1500); // let mermaid / code blocks settle
-        const title = (await page.locator("h1").first().textContent().catch(() => "")) || "";
+        // Only read the heading when one rendered: textContent() on a missing <h1>
+        // waits Playwright's 30s default, and the browser is gone by the screenshot.
+        const title = h1 ? (await page.locator("h1").first().textContent({ timeout: 5000 }).catch(() => "")) || "" : "";
         const notFound = res.status() >= 400 || /page not found|404/i.test(title);
+        // No <h1> after --wait seconds means the page shell loaded but the doc never rendered.
+        const verdict = notFound ? "404 " : !h1 ? "FAIL" : "OK  ";
         const file = path.join(dir, `${p.replace(/\//g, "__")}.${tag}.png`);
         await page.screenshot({ path: file, fullPage: !top });
-        if (notFound || errs.length) bad++;
-        console.log(`${notFound ? "404 " : "OK  "} ${tag.padEnd(4)} ${url}  h1="${title.trim()}"${errs.length ? `  pageerrors=${errs.length}: ${errs[0]}` : ""}\n     -> ${file}`);
+        if (verdict !== "OK  " || errs.length) bad++;
+        console.log(`${verdict} ${tag.padEnd(4)} ${url}  ${h1 ? `h1="${title.trim()}"` : `no <h1> rendered within ${waitMs / 1000}s`}${errs.length ? `  pageerrors=${errs.length}: ${errs[0]}` : ""}\n     -> ${file}`);
       } catch (e) {
         bad++;
         console.log(`FAIL ${tag.padEnd(4)} ${url}  ${e.message.split("\n")[0]}`);
