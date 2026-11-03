@@ -46,14 +46,14 @@ Admin API requests are authorised with a **Strata Cloud Manager access token**, 
     ```
   </Step>
   <Step title="Call an endpoint">
-    Send the token as a bearer token. Every endpoint takes the same header.
+    Send the token as a bearer token. Every endpoint takes the same header. Configs belong to a workspace, so name one with `workspace_id`, the workspace's **UUID**.
 
     ```sh
-    curl https://api.apps.paloaltonetworks.com/ai_gw/v2/configs \
+    curl "https://api.apps.paloaltonetworks.com/ai_gw/v2/configs?workspace_id=<workspace_uuid>" \
       -H "Authorization: Bearer $ACCESS_TOKEN"
     ```
 
-    The response lists the configs belonging to the organisation the token is scoped to. You do not send a tenant identifier on the request, because the token carries it.
+    The response lists the configs in that workspace. You don't send a tenant identifier, because the token carries it. You do send the workspace, because the token is scoped to the whole organisation. [Find a workspace's ID](#find-a-workspaces-id) shows how to get the UUID.
   </Step>
   <Step title="Refresh before it expires">
     Tokens last **15 minutes**, reported as `expires_in: 900` on the token response. Cache one for that window and refresh it shortly before it lapses.
@@ -69,6 +69,7 @@ Which base URL an endpoint uses follows the resource, not the sidebar group it s
 | `https://api.apps.paloaltonetworks.com/ai_gw/v2` | Configs, workspace guardrails, providers, API keys, usage and rate limit policies, MCP servers, analytics, feedback |
 | `https://api.apps.paloaltonetworks.com/ai_gw/admin/v2` | Integrations, MCP integrations, secret references, deployments, organisation guardrails |
 | `https://aigw.portkey.ai/v1` | `POST /logs` and `GET /logs/{logId}`. Self-hosted deployments substitute their own host |
+| `https://api.sase.paloaltonetworks.com/airs/workspace/v1` | [Workspaces](/aigw/api-reference/workspaces/list-workspaces): list, create, view and update the workspaces in a tenant |
 
 The organisation guardrail endpoints carry their prefix in the path instead of the base URL, as `/admin/v2/guardrails` against `https://api.apps.paloaltonetworks.com/ai_gw`. That resolves to the same place as the admin base above.
 
@@ -92,18 +93,50 @@ graph LR
 | Level | Addressed by | Holds |
 |:--|:--|:--|
 | **Organisation** | The TSG ID inside your token. One TSG is one organisation. | Integrations, MCP integrations, secret references, deployments, organisation guardrails |
-| **Workspace** | A `workspace_id`, passed explicitly | Configs, providers, workspace guardrails, analytics |
+| **Workspace** | A `workspace_id` (the workspace UUID), passed explicitly | Configs, providers, workspace guardrails, analytics |
 
 The split matches the base URLs: organisation-level resources are served from the `admin/v2` base. API keys and limit policies span both levels, and [`POST /api-keys/{sub-type}`](/aigw/api-reference/api-keys/post-api-keys-by-sub-type) takes the level from the calling token rather than from the path — `sub-type` chooses `user` or `service`, nothing more.
 
-To reach a workspace-level resource, pass `workspace_id` as a **query parameter** on `GET` and list requests, and in the **request body** on `POST` and `PUT`. A workspace UUID or a slug both work.
+To reach a workspace-level resource, pass `workspace_id` as a **query parameter**, on every method, including `POST` and `PUT`. It's required on these calls, and it must be the workspace's **UUID**. A workspace slug doesn't work here.
 
 ```sh
-curl "https://api.apps.paloaltonetworks.com/ai_gw/v2/configs?workspace_id=WORKSPACE_SLUG" \
+curl "https://api.apps.paloaltonetworks.com/ai_gw/v2/configs?workspace_id=a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-Omit it and the call resolves against the organisation default.
+The Admin API takes an access token, and an access token is scoped to the whole organisation, so it can't tell the gateway which workspace you mean. A workspace API key already belongs to one workspace, but the Admin API doesn't accept those keys.
+
+### Find a workspace's ID
+
+The workspace UUID isn't shown next to the slug in Strata Cloud Manager. Get it either of these ways:
+
+- **From the API.** [`GET /workspaces`](/aigw/api-reference/workspaces/list-workspaces) on the Workspace Service lists the workspaces in your tenant, with the same access token. Filter by name with `exact_name`, or with `name` for a case-insensitive substring match. Each workspace's `id` is the value to pass as `workspace_id`.
+
+  ```sh
+  curl "https://api.sase.paloaltonetworks.com/airs/workspace/v1/workspaces?exact_name=ML%20Platform%20Team" \
+    -H "Authorization: Bearer $ACCESS_TOKEN"
+  ```
+
+  ```json
+  {
+    "workspaces": [
+      {
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "name": "ML Platform Team",
+        "scope_name": "ml_platform_team_x7k2",
+        "is_default": false,
+        "status": "active"
+      }
+    ],
+    "total_count": 1,
+    "limit": 20,
+    "offset": 0
+  }
+  ```
+
+  The response is shortened here. Workspace names aren't unique within a tenant, so check `total_count` before you take the first result.
+
+- **From Strata Cloud Manager.** Open the workspace and copy the UUID from the page URL.
 
 ### Slugs and IDs
 
