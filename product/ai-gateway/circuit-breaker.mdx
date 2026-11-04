@@ -9,10 +9,6 @@ Available on all Portkey [plans](https://portkey.ai/pricing).
 
 Circuit breakers prevent cascading failures by temporarily blocking requests to targets that are failing.
 
-<Note>
-Circuit breakers react to failures only. They do not manage concurrency. See [Circuit Breakers and Concurrency](#circuit-breakers-and-concurrency).
-</Note>
-
 ## Config Schema
 
 | Field | Description |
@@ -85,35 +81,17 @@ flowchart TD
 - Unhealthy targets removed from routing
 - If all targets are OPEN, circuit breaker is bypassed
 
-## Circuit Breakers and Concurrency
+## Where Circuit Breakers Fit
 
-Circuit breakers are a **health mechanism, not a concurrency control**. They open only when a target is failing, and they have no concept of how many requests are running at the same time.
+Circuit breakers protect your setup from unhealthy targets. They watch for failures and open when a target stops responding reliably, so the gateway can route around it until it recovers. Since they are driven by failure signals, the number of requests in flight doesn't play a part in when a circuit opens or closes.
 
-**What circuit breakers do**
-- Count failures and successes per strategy path
-- Open when `failure_threshold` or `failure_threshold_percentage` is exceeded, counting only responses matching `failure_status_codes`
-- Close again after `cooldown_interval`
+If your goal is to shape traffic or manage load, for example handling bursts of parallel requests, these work well alongside circuit breakers in a config:
 
-**What circuit breakers do not do**
-- Limit, queue, or throttle concurrent requests to a target
-- Use the number of simultaneous requests as an input to open or close the circuit
-- Open because of a burst of parallel requests. Only failures open the circuit.
-
-### Why concurrency can seem relevant
-
-The question usually comes up when circuit breakers are combined with [configs](/product/ai-gateway/configs) and [fallbacks](/product/ai-gateway/fallbacks). For example, a provider that rejects requests under heavy load may return `429`. If `429` is in `failure_status_codes`, those responses count as failures and can open the circuit. The circuit breaker is reacting to the failures, not to the load that caused them. Any rerouting of traffic that follows comes from your fallback or load balancing strategy.
-
-<Warning>
-Managing concurrency in a config and fallback setup is outside the scope of circuit breakers. Do not rely on them to cap parallel requests or smooth out traffic spikes.
-</Warning>
-
-### Managing concurrency and load
-
-Use the controls built for it:
 - [Rate limits](/product/ai-gateway/virtual-keys/rate-limits) to cap requests or tokens on a provider or integration
 - [Load balancing](/product/ai-gateway/load-balancing) to spread traffic across targets by weight
 - [Fallbacks](/product/ai-gateway/fallbacks) to route to a backup target when a request fails
 
+Each handles its own part. For example, if a provider returns `429` under heavy load and `429` is in `failure_status_codes`, the circuit breaker counts those responses as failures and can open the circuit, while your fallback or load balancing strategy decides where traffic goes next.
 
 import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
 
