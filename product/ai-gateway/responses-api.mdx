@@ -247,6 +247,78 @@ const response = await portkey.responses.create({
 
 Supported roles: `user`, `assistant`, `developer` (maps to system), `system`, and `tool`.
 
+### Stateful Conversations (previous_response_id)
+
+For native providers, use `previous_response_id` to chain turns without resending the full conversation history. The server manages state — you send only the new input.
+
+<CodeGroup>
+```python Python
+# First turn
+response1 = portkey.responses.create(
+    model="@google-provider/gemini-3.5-flash",
+    input="My name is Alice and I'm a software engineer.",
+    store=True  # Required for stateful conversations
+)
+
+# Second turn — only send the new message
+response2 = portkey.responses.create(
+    model="@google-provider/gemini-3.5-flash",
+    input="What is my name and job?",
+    previous_response_id=response1.id
+)
+
+print(response2.output_text)  # "Your name is Alice and you're a software engineer."
+```
+
+```javascript JavaScript
+// First turn
+const response1 = await portkey.responses.create({
+    model: "@google-provider/gemini-3.5-flash",
+    input: "My name is Alice and I'm a software engineer.",
+    store: true
+});
+
+// Second turn
+const response2 = await portkey.responses.create({
+    model: "@google-provider/gemini-3.5-flash",
+    input: "What is my name and job?",
+    previous_response_id: response1.id
+});
+
+console.log(response2.output_text);
+```
+
+```sh cURL
+# First turn
+RESPONSE=$(curl -s https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@google-provider/gemini-3.5-flash",
+    "input": "My name is Alice and I am a software engineer.",
+    "store": true
+  }')
+
+RESPONSE_ID=$(echo $RESPONSE | jq -r '.id')
+
+# Second turn — server remembers the context
+curl https://api.portkey.ai/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -d "{
+    \"model\": \"@google-provider/gemini-3.5-flash\",
+    \"input\": \"What is my name and job?\",
+    \"previous_response_id\": \"$RESPONSE_ID\"
+  }"
+```
+</CodeGroup>
+
+<Info>
+`previous_response_id` is supported by **OpenAI**, **Azure OpenAI**, **Google Gemini**, and **Google Vertex AI**. For Gemini, Portkey maps this to the native Interactions API (`previous_interaction_id`) for server-side conversation state.
+
+For all other providers, use the `input` array to pass full conversation history in each request.
+</Info>
+
 ### Generation Parameters
 
 Control generation behavior with optional parameters:
@@ -764,9 +836,9 @@ Portkey handles the Responses API in two ways depending on the provider:
 
 This translation is transparent — the response format is identical regardless of which provider handles the request.
 
-**Native providers:** OpenAI, Azure OpenAI, Grok (x.ai), Groq, OpenRouter, Azure AI, Perplexity AI 
+**Native providers:** OpenAI, Azure OpenAI, Google Gemini, Google Vertex AI, Grok (x.ai), Groq, OpenRouter, Azure AI, Perplexity AI 
 
-**Adapter providers:** Anthropic, Google Gemini, Google Vertex AI, AWS Bedrock, Mistral AI, Together AI, and [all other providers](/integrations)
+**Adapter providers:** Anthropic, AWS Bedrock, Mistral AI, Together AI, and [all other providers](/integrations)
 
 All features documented on this page — text generation, streaming, tool calling, reasoning, vision, structured output, prompt caching, and multi-turn conversations — work with both native and adapter providers.
 
@@ -774,9 +846,9 @@ All features documented on this page — text generation, streaming, tool callin
 
 A few features require server-side state and are limited to native providers:
 
-- **`previous_response_id`** — Use [multi-turn conversations](#multi-turn-conversations) to pass history in the `input` array instead
-- **`store`** — Silently ignored on adapter providers; responses are not persisted server-side
-- **Retrieve / Delete** — `GET` and `DELETE` on `/v1/responses/:id` are not available
+- **`previous_response_id`** — Works with OpenAI, Azure OpenAI, Google Gemini, and Google Vertex AI. Gemini uses its native Interactions API (`previous_interaction_id`) for server-side conversation state. For other providers, use [multi-turn conversations](#multi-turn-conversations) to pass history in the `input` array instead
+- **`store`** — Silently ignored on adapter providers; responses are not persisted server-side. On Gemini, defaults to `true` (required for `previous_response_id`)
+- **Retrieve / Delete** — `GET` and `DELETE` on `/v1/responses/:id` work with OpenAI, Azure OpenAI, Google Gemini, and Google Vertex AI
 - **Built-in tools** — `web_search`, `file_search`, `computer_use` are native-only. Use [Remote MCP](/product/ai-gateway/remote-mcp) or custom function tools instead
 
 Everything else — text generation, streaming, instructions, tool calling, structured output, reasoning, vision, file inputs, prompt caching, and multi-turn conversations — works with **every provider**.
