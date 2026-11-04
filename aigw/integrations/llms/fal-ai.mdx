@@ -1,15 +1,222 @@
 ---
 title: "fal.ai"
-description: "Integrate fal.ai models with Prisma AIRS AI Gateway via an OpenAI-compatible API."
+description: "Use fal.ai image generation models and LLMs through Prisma AIRS AI Gateway."
 ---
 
-[fal.ai](https://fal.ai/) provides fast inference for 1000+ models including LLMs, image, video, and audio generation.
+[fal.ai](https://fal.ai/) is a fast inference platform for image generation models (FLUX, Ideogram, Recraft, Nano Banana, and more) plus LLMs via OpenRouter. The AI Gateway routes image generation requests to fal's native API and chat completion requests through fal's OpenAI-compatible path.
 
 <Note>
-Provider slug: `fal-ai`. Requires Backend `v1.16.2+` in Model Catalog.
+Provider slug: **`fal-ai`**. Requires Backend `v1.16.2+` in Model Catalog.
 </Note>
 
 ## Quick Start
 
+<CodeGroup>
 
-Add a **fal.ai** provider in [Model Catalog](/aigw/product/model-catalog) with your fal.ai API key, then reference it as `@<provider-slug>/<model-id>` in requests.
+```sh cURL
+curl https://aigw.portkey.ai/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@fal-ai/fal-ai/flux/schnell",
+    "prompt": "A photorealistic mountain lake at sunrise"
+  }'
+```
+
+```python OpenAI Py icon="python"
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",  # AI Gateway API key
+    base_url="https://aigw.portkey.ai/v1"
+)
+
+image = client.images.generate(
+    model="@fal-ai/fal-ai/flux/schnell",
+    prompt="A photorealistic mountain lake at sunrise"
+)
+
+print(image.data[0].url)
+```
+
+```js OpenAI JS icon="square-js"
+import OpenAI from "openai"
+
+const client = new OpenAI({
+    apiKey: "PORTKEY_API_KEY",  // AI Gateway API key
+    baseURL: "https://aigw.portkey.ai/v1"
+})
+
+const image = await client.images.generate({
+    model: "@fal-ai/fal-ai/flux/schnell",
+    prompt: "A photorealistic mountain lake at sunrise"
+})
+
+console.log(image.data[0].url)
+```
+
+</CodeGroup>
+
+<Tip>
+The model format is `@{provider-slug}/{fal-model-id}`. Since fal model IDs start with `fal-ai/`, the full path becomes `@fal-ai/fal-ai/flux/schnell`.
+</Tip>
+
+## Add Provider in Model Catalog
+
+1. Go to [**Model Catalog → Add Provider**](https://stratacloudmanager.paloaltonetworks.com/)
+2. Select **fal.ai**
+3. Enter your [fal.ai API key](https://fal.ai/dashboard/keys)
+4. Name your provider (e.g., `fal-ai`)
+
+<Card title="Model Catalog Setup" icon="book" href="/aigw/product/model-catalog">
+  Complete setup options and configuration
+</Card>
+
+## Chat Completions
+
+fal.ai provides LLM access via an OpenAI-compatible endpoint (powered by OpenRouter). Use `chat.completions.create` with the same client:
+
+<CodeGroup>
+
+```sh cURL
+curl https://aigw.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@fal-ai/google/gemini-2.5-flash",
+    "messages": [{"role": "user", "content": "Explain diffusion models in one sentence."}]
+  }'
+```
+
+```python OpenAI Py icon="python"
+response = client.chat.completions.create(
+    model="@fal-ai/google/gemini-2.5-flash",
+    messages=[{"role": "user", "content": "Explain diffusion models in one sentence."}]
+)
+
+print(response.choices[0].message.content)
+```
+
+```js OpenAI JS icon="square-js"
+const response = await client.chat.completions.create({
+    model: "@fal-ai/google/gemini-2.5-flash",
+    messages: [{ role: "user", content: "Explain diffusion models in one sentence." }]
+})
+
+console.log(response.choices[0].message.content)
+```
+
+</CodeGroup>
+
+LLM model IDs follow OpenRouter's format — e.g., `google/gemini-2.5-flash`, `anthropic/claude-sonnet-4`, `meta-llama/llama-4-maverick`. Browse available models at [fal.ai/models](https://fal.ai/models/openrouter/router/openai/v1/chat/completions).
+
+## Image Generation
+
+Image generation requests go to `POST /v1/images/generations`. The model ID maps to a path on `fal.run` — for example, `model="@fal-ai/fal-ai/flux/dev"` routes to `https://fal.run/fal-ai/flux/dev`.
+
+<CodeGroup>
+
+```sh cURL
+curl https://aigw.portkey.ai/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PORTKEY_API_KEY" \
+  -d '{
+    "model": "@fal-ai/fal-ai/flux-pro/v1.1",
+    "prompt": "A futuristic city at night, neon lights reflecting on wet streets",
+    "n": 2,
+    "size": "1024x1024"
+  }'
+```
+
+```python OpenAI Py icon="python"
+image = client.images.generate(
+    model="@fal-ai/fal-ai/flux-pro/v1.1",
+    prompt="A futuristic city at night, neon lights reflecting on wet streets",
+    n=2,
+    size="1024x1024"
+)
+
+for img in image.data:
+    print(img.url)
+```
+
+```js OpenAI JS icon="square-js"
+const image = await client.images.generate({
+    model: "@fal-ai/fal-ai/flux-pro/v1.1",
+    prompt: "A futuristic city at night, neon lights reflecting on wet streets",
+    n: 2,
+    size: "1024x1024"
+})
+
+image.data.forEach(img => console.log(img.url))
+```
+
+</CodeGroup>
+
+### Parameters
+
+The AI Gateway maps OpenAI-style parameters to fal's API:
+
+| Parameter | fal parameter | Details |
+|---|---|---|
+| `prompt` | `prompt` | Required |
+| `n` | `num_images` | 1–4, default 1 |
+| `size` | `image_size` | See size mapping below |
+| `seed` | `seed` | For reproducible outputs |
+
+**Size mapping:**
+
+| `size` value | fal `image_size` |
+|---|---|
+| `256x256` | `square_hd` |
+| `512x512` | `square` |
+| `1024x1024` | `square_hd` |
+| `1024x1792` | `portrait_4_3` |
+| `1792x1024` | `landscape_4_3` |
+| Any other value | Passed through as-is |
+
+fal-native size strings like `landscape_16_9` or `portrait_16_9` can be passed directly.
+
+Responses always return image URLs. `response_format: "b64_json"` is not supported.
+
+<Note>
+Parameters outside the table above (`quality`, `style`, `guidance_scale`, `num_inference_steps`, etc.) are not forwarded to fal.
+</Note>
+
+## Supported Image Models
+
+| Model ID | Description |
+|---|---|
+| `fal-ai/flux/schnell` | FLUX Schnell — fastest, best for rapid iteration |
+| `fal-ai/flux/dev` | FLUX Dev — higher quality, open weights |
+| `fal-ai/flux-pro/v1.1` | FLUX Pro 1.1 — high quality, commercial use |
+| `fal-ai/flux-pro/v1.1-ultra` | FLUX Pro Ultra — highest resolution |
+| `fal-ai/flux-pro/kontext` | FLUX Kontext — context-aware generation |
+| `fal-ai/recraft-v3` | Recraft V3 |
+| `fal-ai/recraft/v4/pro/text-to-image` | Recraft V4 Pro |
+| `fal-ai/nano-banana-2` | Nano Banana 2 — fast semantic generation |
+| `fal-ai/nano-banana-pro` | Nano Banana Pro — highest quality |
+| `fal-ai/ideogram/v2` | Ideogram V2 |
+| `fal-ai/ideogram/v2/turbo` | Ideogram V2 Turbo |
+| `openai/gpt-image-2` | GPT Image 2 via fal |
+
+<Tip>
+fal.ai hosts 1000+ models. Any model on [fal.ai/models](https://fal.ai/models) that accepts a `prompt` input works with the AI Gateway's image generation route — use its endpoint ID as the model value.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configs" icon="sliders" href="/aigw/product/ai-gateway/configs">
+    Add fallbacks, load balancing, and retries
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/aigw/product/observability">
+    Monitor usage and costs across models
+  </Card>
+  <Card title="Caching" icon="database" href="/aigw/product/ai-gateway/cache-simple-and-semantic">
+    Cache image generation results
+  </Card>
+  <Card title="Metadata" icon="tag" href="/aigw/product/observability/metadata">
+    Tag requests with custom metadata
+  </Card>
+</CardGroup>
