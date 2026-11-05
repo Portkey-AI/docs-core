@@ -1,0 +1,173 @@
+---
+title: Forwarding Headers
+description: Pass headers from client requests through to your agents.
+---
+
+By default, Portkey sends only the headers configured on the agent integration to the upstream agent. Header forwarding passes selected headers from the client request through as well. Use it for distributed tracing, tenant context, or per-request metadata your agent expects.
+
+It works the same way as [header forwarding for MCP servers](/product/mcp-gateway/authentication/forwarding-headers), including inline renaming.
+
+Common scenarios:
+
+- **Distributed tracing.** Forward `x-request-id`, `x-trace-id` or `traceparent` to correlate logs across services.
+- **Multi-tenancy.** Forward `x-tenant-id` or `x-org-id` for tenant-scoped operations.
+- **User context.** Forward `x-user-id` or `x-user-role` for upstream authorization.
+
+---
+
+## Configuration
+
+Set `forward_headers` in the agent integration's `configurations`, or use **Forward Caller Headers** when adding or editing an agent in the Agent Registry.
+
+### Shorthand (string array)
+
+Forward only the headers you list:
+
+```json
+{
+  "configurations": {
+    "forward_headers": ["x-request-id", "x-trace-id", "x-tenant-id"]
+  }
+}
+```
+
+All other client headers are dropped.
+
+### Allowlist mode
+
+Entries in `headers` can be:
+
+- **A string**: forwards the header as-is.
+- **An object** `{ "from": "<client_header>", "to": "<agent_header>" }`: forwards the header under a new name.
+
+```json
+{
+  "configurations": {
+    "forward_headers": {
+      "mode": "allowlist",
+      "headers": [
+        "x-trace-id",
+        { "from": "x-tenant-id", "to": "X-Organization-Id" }
+      ]
+    }
+  }
+}
+```
+
+Here `x-trace-id` is forwarded as-is and `x-tenant-id` reaches the agent as `X-Organization-Id`.
+
+### All-except mode
+
+Forward every client header except the ones you list. String entries are excluded; object entries rename forwarded headers:
+
+```json
+{
+  "configurations": {
+    "forward_headers": {
+      "mode": "all-except",
+      "headers": [
+        "x-internal-debug",
+        { "from": "x-tenant-id", "to": "X-Org-Id" }
+      ]
+    }
+  }
+}
+```
+
+<Warning>
+`all-except` forwards more than you might expect, including the client's `Authorization` header if the integration does not set its own. Prefer an explicit allowlist when possible.
+</Warning>
+
+---
+
+## Headers that are never forwarded
+
+These headers are dropped regardless of your configuration.
+
+**Protected headers**, the same list as for MCP servers. A rename is dropped if either its source or its target is protected:
+
+`cookie`, `set-cookie`, `x-api-key`, `x-portkey-api-key`, `api-key`, `apikey`, `x-auth-token`, `x-access-token`, `x-user-claims`, `x-user-jwt`
+
+**Connection headers**, which describe the client's connection to Portkey rather than Portkey's request to the agent. They are never sent to the agent, including as a rename target:
+
+`host`, `connection`, `keep-alive`, `proxy-connection`, `transfer-encoding`, `te`, `trailer`, `upgrade`, `content-length`, `expect`, `accept-encoding`
+
+Header names are matched case-insensitively.
+
+---
+
+## Header priority
+
+Headers configured on the integration always win over forwarded ones:
+
+| Priority | Source |
+|----------|--------|
+| 1 (lowest) | Forwarded client headers |
+| 2 | `headers` configured on the integration (authentication) |
+| 3 (highest) | `passthrough_headers` configured on the integration |
+
+If a configured header and a forwarded header share a name, in any case, only the configured value is sent. Clients cannot override the agent's credentials.
+
+---
+
+## Example
+
+**Integration configuration:**
+
+```json
+{
+  "configurations": {
+    "headers": { "Authorization": "Bearer <agent-api-key>" },
+    "forward_headers": {
+      "mode": "allowlist",
+      "headers": [
+        "A2A-Version",
+        "x-trace-id",
+        { "from": "x-user-token", "to": "x-upstream-token" }
+      ]
+    }
+  }
+}
+```
+
+**Client request:**
+
+```sh
+curl https://agents.portkey.ai/v1/agent/my-agent/a2a/jsonrpc \
+  -H 'x-portkey-api-key: {PORTKEY_API_KEY}' \
+  -H 'Content-Type: application/json' \
+  -H 'A2A-Version: 1.0' \
+  -H 'x-trace-id: trace-xyz789' \
+  -H 'x-user-token: user-abc' \
+  -H 'x-debug: 1' \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "SendMessage", "params": {...}}'
+```
+
+**Agent receives:**
+
+```
+Authorization: Bearer <agent-api-key>
+A2A-Version: 1.0
+x-trace-id: trace-xyz789
+x-upstream-token: user-abc
+```
+
+`x-debug` is not on the allowlist, and `x-portkey-api-key` is protected, so neither is forwarded.
+
+<Note>
+Forwarded headers apply to requests proxied to the agent. They are not sent when Portkey fetches the agent card.
+</Note>
+
+---
+
+## Related
+
+| Topic | Description |
+|-------|-------------|
+| [Agent Registry](/product/agent-gateway/registry) | Manage agent integrations |
+| [MCP header forwarding](/product/mcp-gateway/authentication/forwarding-headers) | The same feature for MCP servers |
+
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
