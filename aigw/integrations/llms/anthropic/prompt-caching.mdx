@@ -102,6 +102,30 @@ Instead of marking individual messages, you can have the gateway turn on Anthrop
 
 The gateway adds a top-level `cache_control: { "type": "ephemeral" }` to the request. A `cache_control` you set on the request yourself is kept as is. `auto_caching` is inherited by nested targets and can be overridden on a target. It applies to Claude models on Anthropic, Google Vertex AI, Azure AI Foundry, and Claude Platform on AWS for `/chat/completions` and `/messages`, including requests to the Responses API (`/v1/responses`) that are sent to Claude. It also applies to `/messages` on Amazon Bedrock (InvokeModel) and Bedrock Mantle (`anthropic.*` models only). Bedrock Converse is not covered.
 
+<Warning>
+`auto_caching` is opt-in per config, not an organisation-wide default. Before turning it on broadly, consider:
+
+- **One-shot traffic can cost more.** The cache marker goes after the last block of the request. If your prompt ends in content that is unique to each request, every request pays the 1.25x cache write price and never gets a cache hit. It saves money on multi-turn chats and agent loops.
+- **Anthropic can return a 400** if the client already uses all 4 explicit cache breakpoints, or has a `cache_control` on the last block with a different TTL than the automatic one. Requests without cache markers are not affected, so the risk is mostly clients that mix their own markers with `auto_caching`.
+</Warning>
+
+### Using a 1-hour TTL
+
+`auto_caching` always uses Anthropic's default 5-minute TTL. To cache with a 1-hour TTL, set the top-level `cache_control` through `default_params` instead:
+
+```json
+{
+  "provider": "@anthropic-provider",
+  "default_params": {
+    "cache_control": { "type": "ephemeral", "ttl": "1h" }
+  }
+}
+```
+
+- Pass `cache_control` as an object. The gateway forwards it unchanged, so the string `"ephemeral"` would reach Anthropic as a plain string.
+- Use `default_params` rather than `override_params`. `default_params` only fills in `cache_control` when the request doesn't already have one, while `override_params` always overwrites a `cache_control` the client sent deliberately. See [Default and drop params](/aigw/product/ai-gateway/configs#default-and-drop-params).
+- Coverage is the same as `auto_caching`, except that `default_params` does not skip non-Anthropic models on Bedrock Mantle. Bedrock Converse (`/chat/completions`) ignores both.
+
 ## Seeing Cache Results in Prisma AIRS AI Gateway
 
 The AI Gateway automatically calculates the correct pricing for your prompt caching requests & responses based on Anthropic's calculations here:
