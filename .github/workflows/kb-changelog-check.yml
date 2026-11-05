@@ -1,0 +1,114 @@
+name: Request a KB changelog check
+
+# When a pull request merges to main, build a request for the KB ingest pipeline
+# (POST /v1/write/ingest_source): the PR's changed aigw/ pages, the merge commit,
+# and a note asking whether the changelog needs an entry for them. This is only
+# the trigger: what the KB does with the request, including deciding whether an
+# entry is missing, lives in the KB.
+#
+# The KB is not reachable from GitHub, so this workflow sends nothing. It
+# uploads the request as the `kb-changelog-check` artifact, and the KB side
+# pulls it, checks it against its own configuration, and submits it. The
+# request names pages and a commit, never content: the KB fetches the pages
+# itself from source.docs-core-aigw.
+#
+# The changelog is changelog/enterprise.mdx (https://portkey.ai/docs/changelog/enterprise).
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'Number of a merged pull request to build the request for again'
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: kb-changelog-check-${{ github.event.pull_request.number || github.event.inputs.pr }}
+
+jobs:
+  trigger:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+      KB_SOURCE_ID: source.docs-core-aigw
+      CHANGELOG_PATH: changelog/enterprise.mdx
+      CHANGELOG_URL: https://portkey.ai/docs/changelog/enterprise
+      MAX_PAGES: '40'
+    steps:
+      - name: Build the ingest request
+        id: build
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          gh api "repos/$REPO/pulls/$PR" > build/pr.json
+          if [ "$(jq -r .merged build/pr.json)" != "true" ]; then
+            echo "PR #$PR is not merged." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | [.status, .filename] | @tsv' > build/files.tsv
+
+          # Pages the source covers: aigw/ .mdx, minus what the resource excludes.
+          # A removed page cannot be fetched at the merge commit, so it is
+          # named in the note rather than sent as a page.
+          in_scope='^aigw/.*\.mdx$'
+          excluded='^aigw/(_project|scripts)/'
+          awk -F'\t' '$1!="removed"{print $2}' build/files.tsv | grep -E "$in_scope" | grep -Ev "$excluded" > build/pages.txt || true
+          awk -F'\t' '$1=="removed"{print $2}' build/files.tsv | grep -E "$in_scope" | grep -Ev "$excluded" > build/removed.txt || true
+
+          total=$(wc -l < build/pages.txt | tr -d ' ')
+          removed=$(wc -l < build/removed.txt | tr -d ' ')
+          if [ "$total" -eq 0 ] && [ "$removed" -eq 0 ]; then
+            echo "PR #$PR changes no page under aigw/; nothing to send." >> "$GITHUB_STEP_SUMMARY"
+            echo "send=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          head -n "$MAX_PAGES" build/pages.txt > build/sent.txt
+          if cut -f2 build/files.tsv | grep -qxF "$CHANGELOG_PATH"; then
+            touched="This PR also changed the changelog."
+          else
+            touched="This PR did not change the changelog."
+          fi
+
+          sha=$(jq -r .merge_commit_sha build/pr.json)
+          title=$(jq -r .title build/pr.json)
+          url=$(jq -r .html_url build/pr.json)
+          note="Changelog check for $REPO PR #$PR ($url), \"$title\", merged as $sha. It changed $total page(s) under aigw/"
+          [ "$total" -gt "$MAX_PAGES" ] && note="$note; the first $MAX_PAGES are sent"
+          [ "$removed" -gt 0 ] && note="$note, and removed: $(paste -sd, build/removed.txt)"
+          note="$note. $touched Decide whether the changelog ($CHANGELOG_PATH in $REPO, $CHANGELOG_URL) needs an entry for these changes, and flag a meaningful change it does not reflect."
+
+          # A removed page cannot be fetched, so a PR that only removed pages
+          # leaves nothing to send.
+          if [ ! -s build/sent.txt ]; then
+            echo "PR #$PR only removed pages under aigw/; nothing to send." >> "$GITHUB_STEP_SUMMARY"
+            echo "send=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          jq -n \
+            --arg source "$KB_SOURCE_ID" \
+            --arg commit "$sha" \
+            --arg note "$note" \
+            --arg key "changelog-check:$REPO:pr-$PR:$sha" \
+            --rawfile pages build/sent.txt \
+            '{source_id: $source, commit: $commit, note: $note, idempotency_key: $key,
+              pages: ($pages | split("\n") | map(select(length > 0)) | map({locator: .}))}' \
+            > build/ingest-request.json
+          cat build/ingest-request.json
+          echo "send=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.build.outputs.send == 'true'
+        with:
+          name: kb-changelog-check
+          path: build/ingest-request.json
+          retention-days: 30
