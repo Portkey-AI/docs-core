@@ -1,0 +1,124 @@
+---
+title: "Authentication"
+description: "Authenticate Portkey's Anthropic integration using API keys or Workload Identity Federation (WIF)."
+---
+
+Portkey supports two authentication modes for Anthropic integrations. Pick the one that matches your security requirements.
+
+| Mode | `provider_auth_type` | When to use |
+| --- | --- | --- |
+| API key | `apiKey` (default) | Fastest setup; works everywhere. |
+| Workload Identity Federation | `wif` | No static Anthropic API key stored. Exchanges a workload identity token for a short-lived credential. |
+
+<Note>
+Workload Identity Federation is relevant for organisations enrolled in Anthropic's **Cyber Verification Program (CVP)**. Defense Access tier customers must stop using API keys by **December 15, 2026** — until then, API keys expire every 7 days. WIF eliminates the need to rotate keys entirely.
+</Note>
+
+## API key
+
+The default mode. Provide your Anthropic API key when creating the integration — Portkey stores it encrypted and sends it as `X-API-Key` on every upstream request.
+
+```json
+{
+  "provider": "anthropic",
+  "name": "anthropic-prod",
+  "key": "<ANTHROPIC_API_KEY>",
+  "configurations": {
+    "provider_auth_type": "apiKey"
+  }
+}
+```
+
+No additional configuration is needed beyond the key itself.
+
+## Workload Identity Federation
+
+WIF replaces static API keys with short-lived tokens. The gateway performs a **two-hop token exchange** on every request — transparently, with no changes to your application code:
+
+1. **Hop 1 — Your Identity Provider:** The gateway mints a short-lived JWT from your IdP (Okta, Azure AD, Auth0, etc.) using a standard OAuth `client_credentials` grant.
+2. **Hop 2 — Anthropic Token Exchange:** The gateway exchanges that JWT at Anthropic's WIF endpoint (`https://api.anthropic.com/v1/oauth/token`) for a short-lived bearer token via the [RFC 7523 `jwt-bearer` grant](https://datatracker.ietf.org/doc/html/rfc7523).
+
+Both tokens are cached independently — a warm cache adds zero latency. Tokens are refreshed ahead of expiry and never cached past their lifetime.
+
+### Prerequisites
+
+**From Anthropic** (set up in the [Anthropic Console](https://console.anthropic.com/)):
+- A **Federation Rule** linking your IdP to your Anthropic organisation
+- Your **Organization ID**
+- A **Service Account ID**
+- *(Optional)* A **Workspace ID** — only required when the federation rule spans multiple Anthropic workspaces
+
+**From your Identity Provider** (Okta, Azure AD, Auth0, etc.):
+- An OAuth application configured for the `client_credentials` grant
+- **Token Endpoint URL** (e.g., `https://your-tenant.okta.com/oauth2/default/v1/token`)
+- **Client ID**
+- **Client Secret**
+- *(If required by your IdP)* Scope and Audience values
+
+### Integration configuration
+
+Create the integration via the [Integrations API](/api-reference/admin-api/control-plane/integrations/create-integration) with `provider_auth_type` set to `wif`:
+
+```json
+{
+  "provider": "anthropic",
+  "name": "anthropic-wif-prod",
+  "configurations": {
+    "provider_auth_type": "wif",
+    "oauth_token_endpoint": "https://your-idp.example.com/oauth/token",
+    "oauth_client_id": "<YOUR_CLIENT_ID>",
+    "oauth_client_secret": "<YOUR_CLIENT_SECRET>",
+    "oauth_scope": "<OPTIONAL_SCOPE>",
+    "oauth_audience": "<OPTIONAL_AUDIENCE>",
+    "anthropic_federation_rule_id": "<FROM_ANTHROPIC_CONSOLE>",
+    "anthropic_organization_id": "<FROM_ANTHROPIC_CONSOLE>",
+    "anthropic_service_account_id": "<FROM_ANTHROPIC_CONSOLE>",
+    "anthropic_workspace_id": "<OPTIONAL_FROM_ANTHROPIC_CONSOLE>"
+  }
+}
+```
+
+### Configuration reference
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `provider_auth_type` | Yes | Set to `wif`. |
+| `oauth_token_endpoint` | Yes | Your IdP's token endpoint URL (hop 1). |
+| `oauth_client_id` | Yes | Client ID for the IdP application. |
+| `oauth_client_secret` | Yes | Client secret for the IdP application (stored encrypted). |
+| `oauth_scope` | No | OAuth scope, if your IdP requires one. |
+| `oauth_audience` | No | OAuth audience, if your IdP requires one. |
+| `anthropic_federation_rule_id` | Yes | Federation Rule ID from Anthropic Console. |
+| `anthropic_organization_id` | Yes | Organization ID from Anthropic Console. |
+| `anthropic_service_account_id` | Yes | Service Account ID from Anthropic Console. |
+| `anthropic_workspace_id` | No | Workspace ID — required only when the federation rule spans multiple Anthropic workspaces. |
+
+### What doesn't change
+
+Once the integration is configured with WIF, everything else stays the same:
+
+- SDK calls, configs, routing rules — **zero application code changes**
+- Observability, caching, guardrails, fallbacks — all continue to work
+- The only difference is **how the gateway authenticates upstream** with Anthropic
+
+### Token caching and refresh
+
+The gateway caches both the IdP token (hop 1) and the Anthropic token (hop 2) independently:
+
+- Tokens are refreshed **ahead of expiry** with a safety buffer
+- Short-lived tokens (Anthropic can mint tokens as short as 60s) are never cached past their lifetime
+- Rotating your IdP client secret automatically invalidates the cache (the secret is part of the cache key hash)
+
+### Error handling
+
+| Error | Status | Cause |
+| --- | --- | --- |
+| `WIF config incomplete: <fields>` | `400` | One or more required fields are missing from the integration config. |
+| `subject token rejected` | `401` | The IdP JWT was rejected by Anthropic's WIF endpoint — check the federation rule configuration. |
+| `WIF is not supported for provider` | `400` | WIF was set on a non-Anthropic/non-OpenAI integration. |
+| `token exchange timed out` | `502` | The IdP or Anthropic token endpoint did not respond within 10 seconds. |
+
+
+import PrismaAirsCta from "/snippets/prisma-airs-cta.mdx";
+
+<PrismaAirsCta />
