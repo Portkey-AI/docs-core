@@ -100,31 +100,102 @@ Instead of marking individual messages, you can have the gateway turn on Anthrop
 }
 ```
 
-The gateway adds a top-level `cache_control: { "type": "ephemeral" }` to the request. A `cache_control` you set on the request yourself is kept as is. `auto_caching` is inherited by nested targets and can be overridden on a target. It applies to Claude models on Anthropic, Google Vertex AI, Azure AI Foundry, and Claude Platform on AWS for `/chat/completions` and `/messages`, including requests to the Responses API (`/v1/responses`) that are sent to Claude. It also applies to `/messages` on Amazon Bedrock (InvokeModel) and Bedrock Mantle (`anthropic.*` models only). Bedrock Converse is not covered.
+The gateway adds a top-level `cache_control: { "type": "ephemeral" }` to the request, and Anthropic places the cache breakpoint on the last cacheable block. A `cache_control` you set on the request yourself is kept as is. `auto_caching` is inherited by nested targets and can be overridden on a target.
+
+### When to use it
+
+`auto_caching` is for requests where the **client never sends `cache_control` markers of its own**:
+
+- **Clients you don't control the request body for** — OpenAI-compatible SDKs, internal applications, and anything that has no way to express Anthropic's cache markers.
+- **Codex and other Responses API clients.** Codex calls `/v1/responses`, which the gateway converts internally before sending it to Claude. The Responses API has no `cache_control` field, so the client cannot request caching at all — `auto_caching` injects the marker on that converted request for you.
+- **Clients where you also want to control the TTL.** Combine `auto_caching` with `default_params` to set a 1-hour cache without touching the client. See [Controlling the TTL](#controlling-the-ttl).
+
+If your client already sends its own block-level markers — Claude Code is the common case — read [Clients that send their own cache markers](#clients-that-send-their-own-cache-markers) before enabling this.
+
+### Supported providers and endpoints
+
+The endpoint column is the route **your client calls on the gateway**. 
+
+| Provider | `/v1/messages` | `/v1/chat/completions` | `/v1/responses` |
+| --- | --- | --- | --- |
+| Anthropic | Yes | Yes | Yes |
+| Claude Platform on AWS | Yes | Yes | Yes |
+| Google Vertex AI | Yes | Yes | Yes |
+| Azure AI Foundry | Yes | Yes <sup>1</sup> | Yes <sup>1</sup> |
+| Amazon Bedrock | Yes (InvokeModel) | No (Converse) | No |
+
+<sup>1</sup> Anthropic deployments only — the gateway uses Claude's request format when the Foundry deployment URL identifies an Anthropic model.
+
+Where a cell says No, the request still succeeds — it is simply sent without a top-level `cache_control`.
+
+<Note>
+Sending the `x-portkey-beta: use-responses-api-2026-07-30` header with a `/v1/responses` request keeps it on the provider's native Responses API instead of converting it. No `cache_control` is injected on that path for any provider, and providers without a native Responses endpoint return an error. Leave the header off if you want automatic caching.
+</Note>
 
 <Warning>
 `auto_caching` is opt-in per config, not an organisation-wide default. Before turning it on broadly, consider:
 
 - **One-shot traffic can cost more.** The cache marker goes after the last block of the request. If your prompt ends in content that is unique to each request, every request pays the 1.25x cache write price and never gets a cache hit. It saves money on multi-turn chats and agent loops.
-- **Anthropic can return a 400** if the client already uses all 4 explicit cache breakpoints, or has a `cache_control` on the last block with a different TTL than the automatic one. Requests without cache markers are not affected, so the risk is mostly clients that mix their own markers with `auto_caching`.
+- **Anthropic can return a 400** if the client already uses all 4 explicit cache breakpoints, or has a `cache_control` on the last block with a different TTL than the automatic one. Requests without cache markers are not affected, so the risk is clients that mix their own markers with `auto_caching`.
 </Warning>
 
-### Using a 1-hour TTL
+### Controlling the TTL
 
-`auto_caching` always uses Anthropic's default 5-minute TTL. To cache with a 1-hour TTL, set the top-level `cache_control` through `default_params` instead:
+`auto_caching` on its own uses Anthropic's default 5-minute TTL. To cache with a 1-hour TTL, set the top-level `cache_control` through `default_params`:
 
 ```json
 {
   "provider": "@anthropic-provider",
+  "auto_caching": true,
   "default_params": {
     "cache_control": { "type": "ephemeral", "ttl": "1h" }
   }
 }
 ```
 
+A 1-hour cache write costs 2x the base input token price, against 1.25x for 5 minutes. Cache reads cost 0.1x at either TTL.
+
 - Pass `cache_control` as an object. The gateway forwards it unchanged, so the string `"ephemeral"` would reach Anthropic as a plain string.
-- Use `default_params` rather than `override_params`. `default_params` only fills in `cache_control` when the request doesn't already have one, while `override_params` always overwrites a `cache_control` the client sent deliberately. See [Default and drop params](/aigw/product/ai-gateway/configs#default-and-drop-params).
-- Coverage is the same as `auto_caching`, except that `default_params` does not skip non-Anthropic models on Bedrock Mantle. Bedrock Converse (`/chat/completions`) ignores both.
+- Use `default_params` rather than `override_params`. `default_params` only fills in `cache_control` when the request doesn't already have one, while `override_params` always overwrites a `cache_control` the client sent deliberately.  See [Default and drop params](/aigw/product/ai-gateway/configs#default-and-drop-params).
+- `default_params` works on `/v1/messages` for every provider in the table above, including Bedrock Mantle's non-Claude models. On `/v1/chat/completions` and `/v1/responses` it is carried only by the providers marked Yes in that column; elsewhere the value is dropped and the request is sent uncached.
+
+### Clients that send their own cache markers
+
+Some clients place `cache_control` markers on individual blocks themselves. **Claude Code** does this on every request — it marks `system` blocks, tool definitions, and `messages` entries, including the `role: "system"` entries it appends mid-conversation. It never sends a top-level `cache_control`, so `auto_caching` will add one *on top of* its markers.
+
+<Warning>
+Anthropic allows a maximum of **4 cache breakpoints per request**, and the automatic marker consumes one of them. If Claude Code is already using all four, the gateway's injected marker makes five and Anthropic returns a **400**. A marker on the last block with a TTL different from the injected one also returns a 400.
+
+Claude Code recovers from this by retrying once with the marker moved onto the last conversation message and keeping it there until it exits, so sessions are not broken — but the affected block is billed as uncached input for the rest of the session.
+</Warning>
+
+You have two options.
+
+**Option 1 — Keep Claude Code's own caching (recommended).** Leave `auto_caching` off for configs serving Claude Code. Its markers pass through unchanged, and the TTL is configured in the client with the [`promptCacheTtl`](https://code.claude.com/docs/en/settings-reference#promptcachettl) and [`subagentPromptCacheTtl`](https://code.claude.com/docs/en/settings-reference#subagentprompt-cache-ttl) settings, or the `ENABLE_PROMPT_CACHING_1H` environment variable. Claude Code places its breakpoints at stable prefix boundaries, which is usually better tuned than a single automatic breakpoint.
+
+**Option 2 — Switch to top-level caching controlled by the gateway.** If you want the TTL decided centrally rather than per developer machine, strip the client's block-level markers with `drop_params` so the injected top-level marker is the only one left:
+
+```json
+{
+  "provider": "@anthropic-provider",
+  "auto_caching": true,
+  "default_params": {
+    "cache_control": { "type": "ephemeral", "ttl": "1h" }
+  },
+  "drop_params": [
+    "system[*].cache_control",
+    "messages[*].cache_control",
+    "messages[*].content[*].cache_control",
+    "tools[*].cache_control"
+  ]
+}
+```
+
+All four paths are required — omitting `messages[*].cache_control` leaves the marker on mid-conversation `role: "system"` entries. With no block markers left, neither 400 case can occur. Drop `default_params` from the example to use the 5-minute TTL instead.
+
+<Note>
+With `drop_params` in place, the client's own TTL settings no longer have any effect, because the TTL lives inside the markers being removed. A developer who sets `ENABLE_PROMPT_CACHING_1H` will still get whatever the config specifies. The gateway becomes the only place the TTL is set, so use separate configs or targets if different teams need different TTLs.
+</Note>
 
 ## Seeing Cache Results in Prisma AIRS AI Gateway
 
