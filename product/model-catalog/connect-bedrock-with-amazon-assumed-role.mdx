@@ -23,6 +23,8 @@ This role you create will be used by Porktey to execute InvokeModel commands on 
 
 ### Create a permission policy in your AWS account using the following JSON
 
+These actions cover standard inference — chat completions, the Messages API, embeddings, image generation, and token counting:
+
 ```json
 {
   "Version": "2012-10-17",
@@ -32,7 +34,8 @@ This role you create will be used by Porktey to execute InvokeModel commands on 
       "Effect": "Allow",
       "Action": [
         "bedrock:InvokeModel",
-        "bedrock:InvokeModelWithResponseStream"
+        "bedrock:InvokeModelWithResponseStream",
+        "bedrock:CountTokens"
         ],
       "Resource": "*"
     }
@@ -40,9 +43,101 @@ This role you create will be used by Porktey to execute InvokeModel commands on 
 }
 ```
 
+<Note>
+`bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` also authorize the Converse and ConverseStream APIs, which Portkey uses for most models.
+
+`bedrock:CountTokens` backs the `/v1/messages/count_tokens` endpoint. Clients such as Claude Code call it on every turn, so omitting it shows up as `is not authorized to perform: bedrock:CountTokens`. It is a recent addition to Bedrock — roles created before it existed need it added explicitly.
+</Note>
+
 <Frame>
   <img src="/images/product/ai-gateway/create-policy.png"/>
 </Frame>
+
+### Additional permissions by feature
+
+Add these only if you use the corresponding feature — everything else works with the three actions above.
+
+| Feature | Additional actions |
+| :-- | :-- |
+| [Inference profiles](/integrations/llms/bedrock/aws-bedrock#inference-profiles) (the model ID is an inference profile ARN) | `bedrock:GetInferenceProfile` |
+| Model discovery (listing Bedrock models through Portkey) | `bedrock:ListFoundationModels` |
+| [Bedrock Guardrails](/integrations/guardrails/bedrock-guardrails) | `bedrock:ApplyGuardrail` |
+| [Reranking](/integrations/llms/bedrock/rerank) | `bedrock:Rerank` |
+| [Batch inference](/integrations/llms/bedrock/batches) | `bedrock:CreateModelInvocationJob`, `bedrock:GetModelInvocationJob`, `bedrock:ListModelInvocationJobs`, `bedrock:StopModelInvocationJob`, plus S3 access to the input/output bucket and `iam:PassRole` for the Bedrock service role — see the [full batch policy](/integrations/llms/bedrock/batches#information-about-permissions-and-iam-roles) |
+| [Fine-tuning](/integrations/llms/bedrock/fine-tuning) | `bedrock:CreateModelCustomizationJob`, `bedrock:GetModelCustomizationJob`, `bedrock:ListModelCustomizationJobs`, `bedrock:StopModelCustomizationJob`, plus S3 access to the training-data bucket and `iam:PassRole` |
+| [Files](/integrations/llms/bedrock/files) | `s3:PutObject`, `s3:GetObject`, `s3:GetObjectAttributes`, `s3:AbortMultipartUpload`, `s3:ListBucket` on your bucket |
+
+
+<Accordion title="Combined policy with every optional action">
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockInference",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream",
+        "bedrock:CountTokens",
+        "bedrock:ApplyGuardrail",
+        "bedrock:Rerank",
+        "bedrock:ListFoundationModels",
+        "bedrock:GetFoundationModel",
+        "bedrock:GetInferenceProfile"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BedrockBatchAndFineTuning",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:CreateModelInvocationJob",
+        "bedrock:GetModelInvocationJob",
+        "bedrock:ListModelInvocationJobs",
+        "bedrock:StopModelInvocationJob",
+        "bedrock:CreateModelCustomizationJob",
+        "bedrock:GetModelCustomizationJob",
+        "bedrock:ListModelCustomizationJobs",
+        "bedrock:StopModelCustomizationJob",
+        "bedrock:TagResource",
+        "bedrock:UntagResource",
+        "bedrock:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3ForFilesAndJobIO",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:GetObjectAttributes",
+        "s3:AbortMultipartUpload"
+      ],
+      "Resource": [
+        "arn:aws:s3:::<bucket>",
+        "arn:aws:s3:::<bucket>/*"
+      ]
+    },
+    {
+      "Sid": "PassBedrockServiceRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::<account_id>:role/<bedrock_service_role>",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "bedrock.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+```
+
+Replace `<bucket>`, `<account_id>` and `<bedrock_service_role>` with your own values, and narrow each `Resource` to the model, inference profile and job ARNs you actually use.
+</Accordion>
 
 ### Create a new IAM role
 Choose *AWS account* as the trusted entity type. If you set an external ID be sure to copy it, we will need it later.
