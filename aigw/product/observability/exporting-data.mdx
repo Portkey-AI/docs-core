@@ -1,0 +1,140 @@
+---
+title: "Exporting Data"
+description: "Access audit logs, export logs, and download exported logs from Strata Cloud Manager (SCM) or the API."
+---
+
+This page covers three tasks. Each has an app flow and an API flow.
+
+1. [Access audit logs](#1-access-audit-logs): see who changed what in your organisation
+2. [Export logs](#2-export-logs): create an export job for your request logs
+3. [Download exported logs](#3-download-exported-logs): get the finished file
+
+## 1. Access audit logs
+
+Audit logs record administrative changes: who made a change, to which resource, and when.
+
+### Access in SCM
+
+In SCM, open **Log Viewer** and select **Common/Audit** from the drop-down. See [Audit Logs](/aigw/product/enterprise-offering/audit-logs) for what each entry contains.
+
+### Filters
+
+Narrow the results with any of these filters:
+
+| Filter | Description |
+|---|---|
+| **Time range** | Period to search |
+| **Method** | HTTP method: `POST`, `PUT`, or `DELETE` |
+| **Request ID** | A specific request |
+| **Resource type** | Type of resource affected, such as workspaces, API keys, integrations, configs, or guardrails |
+| **Action** | Create, update, delete, publish, export, rotate, manage, or duplicate |
+| **Response status** | HTTP status code |
+| **Workspace** | A specific workspace |
+| **User** | The user or API key that made the change |
+| **Client IP** | Originating IP address |
+| **Country** | Originating country |
+
+In SCM, use the filters in Log Viewer.
+
+### Access with the API
+
+Audit logs are available in SCM. An audit logs endpoint is not published in the Prisma AIRS AI Gateway API reference.
+
+## 2. Export logs
+
+Exports run as jobs. Each job writes your request logs for a time range to a JSONL file, up to 50,000 logs per job.
+
+### Export in SCM
+
+<Steps>
+<Step title="Open Exports">
+Go to **Exports** on the main sidebar and click **Request Data**.
+</Step>
+<Step title="Configure the export">
+Set the **Time Range**, the **Logs Limits** (maximum number of logs or a custom offset), and the **Requested Fields** to include.
+</Step>
+<Step title="Request and start the export">
+Click **Request Export**. The job appears in the exports list with the status **Draft**. Click **Start** to run it.
+</Step>
+</Steps>
+
+### Export with the API
+
+Create the export job, then start it. The job runs asynchronously.
+
+<Steps>
+<Step title="Create the export">
+`POST /v1/logs/exports` with a time range and the fields to export. The response contains the export `id`.
+
+```bash
+curl -X POST "https://aigw.portkey.ai/v1/logs/exports" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filters": {
+      "created_at": {
+        "gte": "2026-11-01T00:00:00Z",
+        "lte": "2026-11-18T23:59:59Z"
+      }
+    },
+    "requested_data": ["id", "created_at", "ai_model", "total_tokens", "cost", "status_code"]
+  }'
+```
+</Step>
+<Step title="Start the export">
+`POST /v1/logs/exports/{export_id}/start`
+
+```bash
+curl -X POST "https://aigw.portkey.ai/v1/logs/exports/EXPORT_ID/start" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+</Step>
+</Steps>
+
+For the full list of fields, restrictions on exportable fields, and a complete script, see [Logs Export](/aigw/product/observability/logs-export).
+
+## 3. Download exported logs
+
+### Download in SCM
+
+<Steps>
+<Step title="Wait for the export to finish">
+Open **Exports** on the main sidebar. The status changes to **Success** when the job is done. If it shows **Failure**, click **Start Again** to retry.
+</Step>
+<Step title="Download the file">
+Click **Download** next to the completed export. The file is in JSONL format, one log entry per line.
+</Step>
+</Steps>
+
+### Download with the API
+
+<Steps>
+<Step title="Check the export status">
+`GET /v1/logs/exports/{export_id}`. Repeat until `status` is `success`. A status of `failure` means the job failed.
+
+```bash
+curl "https://aigw.portkey.ai/v1/logs/exports/EXPORT_ID" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+</Step>
+<Step title="Get the download URL">
+`GET /v1/logs/exports/{export_id}/download` returns a signed URL.
+
+```bash
+curl "https://aigw.portkey.ai/v1/logs/exports/EXPORT_ID/download" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+</Step>
+<Step title="Download the file">
+```bash
+curl -o logs_export.jsonl "SIGNED_DOWNLOAD_URL"
+```
+</Step>
+</Steps>
+
+## Related
+
+<CardGroup cols=2>
+  <Card title="Audit Logs" icon="clipboard-list" href="/aigw/product/enterprise-offering/audit-logs" />
+  <Card title="Logs Export" icon="file-export" href="/aigw/product/observability/logs-export" />
+</CardGroup>
