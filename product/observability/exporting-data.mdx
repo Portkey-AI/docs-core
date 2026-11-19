@@ -9,6 +9,10 @@ This page covers three tasks. Each has an app flow and an API flow.
 2. [Export logs](#2-export-logs): create an export job for your request logs
 3. [Download exported logs](#3-download-exported-logs): get the finished file
 
+<Note>
+  Have a list of IDs, such as from a data pack? See [Look up by request ID](#look-up-by-request-id) for audit log entries and [Export specific logs by ID](#export-specific-logs-by-id) for logs.
+</Note>
+
 ## 1. Access audit logs
 
 Audit logs record administrative changes: who made a change, to which resource, and when.
@@ -63,9 +67,34 @@ Add any of these query parameters to filter the results:
 
 Results are paginated. Use `current_page` and `page_size` (maximum 100) to page through them.
 
+### Look up by request ID
+
+To fetch specific audit log entries from a list of request IDs, use `POST /v1/audit-logs/bulk` instead of paging through a time range. Use an organisation admin API key.
+
+In the app, filter by **Request ID** and paste the ID.
+
+With the API, send the request IDs in batches:
+
+```bash
+curl -X POST "https://api.portkey.ai/v1/audit-logs/bulk" \
+  -H "x-portkey-api-key: YOUR_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request_ids": ["REQUEST_ID_1", "REQUEST_ID_2"],
+    "last_page": true
+  }'
+```
+
+- Send 500 to 2,500 request IDs per call.
+- If the final batch has fewer than 500 IDs, set `last_page` to `true`.
+- The response contains the matching audit log entries and a `total`.
+- IDs with no entry are left out. You only see entries for your own organisation. Duplicate IDs are ignored.
+
+Audit logs are not looked up through log exports. Use this endpoint.
+
 ## 2. Export logs
 
-Exports run as jobs. Each job writes your request logs for a time range to a JSONL file, up to 50,000 logs per job.
+Exports run as jobs. Each job writes your request logs for a time range, or for a list of log IDs, to a JSONL file, up to 50,000 logs per job.
 
 ### Export in the app
 
@@ -116,6 +145,38 @@ curl -X POST "https://api.portkey.ai/v1/logs/exports/EXPORT_ID/start" \
 
 For the full list of fields, restrictions on exportable fields, and a complete script, see [Logs Export](/product/observability/logs-export).
 
+### Open a single log in the app
+
+To open one log by its ID, use this URL pattern:
+
+```
+https://app.portkey.ai/organisation/ORGANISATION_ID/logs?logId=LOG_ID
+```
+
+### Export specific logs by ID
+
+To get the full request and response for a list of log IDs, create an export with `filters.ids`. Use an organisation admin API key.
+
+```bash
+curl -X POST "https://api.portkey.ai/v1/logs/exports" \
+  -H "x-portkey-api-key: YOUR_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Logs by ID",
+    "requested_data": ["id", "created_at", "request", "response"],
+    "filters": { "ids": ["LOG_ID_1", "LOG_ID_2"] }
+  }'
+```
+
+Then [start the export](#export-with-the-api) and [download it](#download-with-the-api) as for any other export.
+
+- Include 1 to 50,000 IDs per export. For a longer list, create more than one export.
+- Use `ids` only. Don't combine it with a date range or other filters.
+- You can't change the IDs on an export after creating it. Create a new export.
+- Export by ID returns logs even if they are older than your plan's log retention period.
+- If your organisation blocks fields such as `request` or `response` from exports, creating the export is rejected. Check what is allowed with `GET /v1/logs/exports/field-restrictions`.
+- Export by ID is for logs only. It isn't available for organisations with an enterprise or self-hosted deployment.
+
 ## 3. Download exported logs
 
 ### Download in the app
@@ -133,7 +194,7 @@ Click **Download** next to the completed export. The file is in JSONL format, on
 
 <Steps>
 <Step title="Check the export status">
-[`GET /v1/logs/exports/{export_id}`](/api-reference/admin-api/data-plane/logs/log-exports-beta/retrieve-a-log-export). Repeat until `status` is `success`. A status of `failure` means the job failed.
+[`GET /v1/logs/exports/{export_id}`](/api-reference/admin-api/data-plane/logs/log-exports-beta/retrieve-a-log-export). Check about every 30 seconds until `status` is `success`.
 
 ```bash
 curl "https://api.portkey.ai/v1/logs/exports/EXPORT_ID" \
@@ -141,7 +202,7 @@ curl "https://api.portkey.ai/v1/logs/exports/EXPORT_ID" \
 ```
 </Step>
 <Step title="Get the download URL">
-[`GET /v1/logs/exports/{export_id}/download`](/api-reference/admin-api/data-plane/logs/log-exports-beta/download-a-log-export) returns a signed URL.
+[`GET /v1/logs/exports/{export_id}/download`](/api-reference/admin-api/data-plane/logs/log-exports-beta/download-a-log-export) returns a signed URL. Use an organisation admin API key.
 
 ```bash
 curl "https://api.portkey.ai/v1/logs/exports/EXPORT_ID/download" \
@@ -149,11 +210,28 @@ curl "https://api.portkey.ai/v1/logs/exports/EXPORT_ID/download" \
 ```
 </Step>
 <Step title="Download the file">
+The signed URL expires quickly, so download the file right away. If the link has expired, request a new one.
+
 ```bash
 curl -o logs_export.jsonl "SIGNED_DOWNLOAD_URL"
 ```
 </Step>
 </Steps>
+
+## Other data
+
+- **Hook results:** results stored with your logs are included in log exports. For hook results that aren't in logs, email datasupport@portkey.ai.
+- **Fine-tuning runs:** list jobs with [`GET /v1/fine_tuning/jobs`](/api-reference/inference-api/fine-tuning/list-fine-tuning-jobs) and open one with [`GET /v1/fine_tuning/jobs/{job_id}`](/api-reference/inference-api/fine-tuning/retrieve-fine-tuning-job).
+
+## Troubleshooting
+
+| What you see | Likely cause | What to do |
+|---|---|---|
+| Fewer logs in the export than IDs in your list | Some IDs don't exist or belong to another organisation | Check the IDs against your list |
+| `400` on `POST /v1/audit-logs/bulk` | Under 500 IDs without `last_page`, over 2,500 IDs, an empty list, or an invalid ID | Fix the batch and retry |
+| `400` when creating an export | `ids` combined with other filters, an empty list, or a blocked field | Use `ids` only and check `GET /v1/logs/exports/field-restrictions` |
+| `401` or `403` | The key isn't an organisation admin key, or (for export by ID) the organisation has an enterprise or self-hosted deployment | Use an organisation admin API key |
+| The download link doesn't work | The signed link expired | Request a new link and download right away |
 
 ## Related
 
