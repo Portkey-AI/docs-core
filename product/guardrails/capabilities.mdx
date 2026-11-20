@@ -57,8 +57,6 @@ The following Inference API endpoints **do not run guardrails**:
 
 Use async to observe and log without blocking. Use sync when the guardrail result must gate the request.
 
-To restore values before sending an answer, use synchronous input and output hooks (`async: false`). The input hook disables streaming **from the provider**; the output hook restores the complete answer. A client that requested streaming still receives streamed events, but only after restoration finishes. Async output hooks cannot replace the delivered answer.
-
 <Info>
   With `async=false`, Portkey returns `246` (failed, but allowed) or `446` (failed, denied) instead of the standard provider status codes. See [Guardrail behavior on the gateway](/product/guardrails#guardrail-behavior-on-the-gateway).
 </Info>
@@ -70,19 +68,15 @@ To restore values before sending an answer, use synchronous input and output hoo
 | Guardrail Type | Streaming |
 |:---|:---|
 | `input_guardrails` | **Supported** — evaluated before the stream starts |
-| `output_guardrails` | **Supported** — evaluated on the full response after stream completes (informational only) |
+| `output_guardrails` | **Supported** — informational when provider streaming remains enabled |
 
-The table above describes requests that keep provider streaming enabled. If an input check passes without disabling streaming, the stream proceeds normally. If it fails with `deny=true`, the stream is blocked with `446` before any tokens are sent.
+Input guardrails can [disable provider streaming](/integrations/guardrails/bring-your-own-guardrails#disabling-streaming) to apply output checks before delivery. Otherwise, a passing check lets the stream proceed normally. A failed check with `deny=true` blocks the request with `446`.
 
-A passing synchronous input check can instead set `stream: false` in a complete replacement body. Portkey receives the provider's complete JSON answer and runs synchronous output checks before delivery. The client still receives its originally requested format: streamed events for `stream: true`, or JSON for a non-streaming request. The streamed answer is delayed until output checks finish; it is not live token streaming.
-
-This applies to JSON Chat Completions, Completions, Messages, and Responses requests. Omitting `stream` in a replacement also disables provider streaming. A final change from `false` to `true`, compared with the mode after configuration resolution and before input hooks, returns HTTP `400` with `x-portkey-gateway-exception: true`. Configuration override rules are unchanged.
+When provider streaming remains enabled, Portkey evaluates output guardrails after the stream completes. Results arrive in an additional `hook_results` chunk after `[DONE]`. They are **informational only** and do not trigger fallback or retry.
 
 <Note>
-  Release version: TBD. See [Disable Provider Streaming for Output Restoration](/integrations/guardrails/bring-your-own-guardrails#disable-provider-streaming-for-output-restoration) for synchronous webhook examples and limits. Do not rely on this behaviour on older builds.
+  For Chat Completions, Completions, Messages, and Responses, response caching is disabled when an input guardrail changes the request body or a synchronous output check is enabled.
 </Note>
-
-When provider streaming remains enabled: After the stream completes and the `[DONE]` chunk is sent, Portkey evaluates the full assembled response against your output guardrails. The results are delivered as an additional `hook_results` chunk. These output guardrail results are **informational only** — no fallback or retry actions are triggered, and content already sent cannot be replaced.
 
 To receive `hook_results` inside streaming chunks, set:
 
@@ -139,7 +133,7 @@ Tool call arguments (JSON) are treated as text — checks like Regex Match, Cont
 | Async execution | ✓ (default) |
 | Sync execution | ✓ |
 | Streaming — input | ✓ |
-| Streaming — output | ✓ (informational only while provider streaming remains enabled) |
+| Streaming — output | ✓ (informational when provider streaming remains enabled) |
 | Image inputs | ✗ |
 | Text in multimodal messages | ✓ |
 | Tool call text | ✓ |
