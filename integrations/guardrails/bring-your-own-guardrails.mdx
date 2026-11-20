@@ -208,7 +208,7 @@ Portkey sends comprehensive information about the AI request to your webhook:
     <Expandable title="Properties">
       <ParamField body="json" type="object">OpenAI compliant request body json.</ParamField>
       <ParamField body="text" type="string">Last message/prompt content from the overall request body.</ParamField>
-      <ParamField body="isStreamingRequest" type="boolean">Whether the request uses streaming</ParamField>
+      <ParamField body="isStreamingRequest" type="boolean">Whether the current request to the provider uses streaming. Synchronous input replacements update this value before the next sequential check.</ParamField>
     </Expandable>
   </ParamField>
   
@@ -443,6 +443,152 @@ Modify the user's request before it reaches the LLM provider:
 ```
 </Tab>
 </Tabs>
+
+### Disable Provider Streaming for Output Restoration
+
+Use a synchronous input webhook to replace personal data with tokens and set `stream: false`. Portkey waits for the provider's complete answer, then runs the synchronous output webhook to restore the values.
+
+<Note>
+  Release version: TBD. Publish this workflow with the gateway release that supports it; do not rely on this behaviour on older builds.
+</Note>
+
+<Warning>
+  A client that requested `stream: true` still receives streamed events in the requested API's format, not JSON. All answer events wait until the provider finishes and output restoration completes. This path has no live token streaming. A client that requested a non-streaming answer still receives JSON.
+</Warning>
+
+#### Configure Synchronous Webhooks
+
+Use this configuration in `x-portkey-config`, following the authentication example above. Replace the example URLs with your own tokenisation and restoration webhooks. Both hooks require `async: false`.
+
+```json Synchronous guardrail configuration
+{
+    "before_request_hooks": [{
+        "id": "tokenise-input",
+        "type": "guardrail",
+        "async": false,
+        "deny": true,
+        "checks": [{
+            "id": "default.webhook",
+            "parameters": {
+                "webhookURL": "https://guardrails.example.com/tokenise",
+                "timeout": 5000,
+                "failOnError": true
+            }
+        }]
+    }],
+    "after_request_hooks": [{
+        "id": "restore-output",
+        "type": "guardrail",
+        "async": false,
+        "deny": true,
+        "checks": [{
+            "id": "default.webhook",
+            "parameters": {
+                "webhookURL": "https://guardrails.example.com/restore",
+                "timeout": 5000,
+                "failOnError": true
+            }
+        }]
+    }]
+}
+```
+
+Send this JSON body to `/v1/chat/completions`. All names and tokens below are fictional.
+
+```json Client request
+{
+    "model": "@my-openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Say hello to Alex Example."}],
+    "stream": true
+}
+```
+
+#### Replace the Complete Request
+
+When the input webhook finds personal data, return a passing verdict with the complete replacement body. Preserve the model and other fields received by the webhook; the example uses the resolved provider model.
+
+```json Input webhook response
+{
+    "verdict": true,
+    "transformedData": {
+        "request": {
+            "json": {
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "Say hello to PERSON_001."}],
+                "stream": false
+            }
+        }
+    }
+}
+```
+
+`transformedData.request.json` replaces the whole body. Returning only `{"stream": false}` drops required fields such as `model` and `messages`. Preserve all fields required by the requested API.
+
+Later sequential input checks see the replacement and `request.isStreamingRequest: false`. The output webhook receives the complete provider answer, such as `Hello, PERSON_001!`, with the same non-streaming flag. The flag describes the provider request, not the client's response format.
+
+#### Restore Before Sending the Answer
+
+Return the complete restored response from the output webhook. Preserve the provider response fields, including usage when present. For example, a JavaScript webhook handler can return:
+
+```js Output webhook response
+const restoredResponse = {
+    ...payload.response.json,
+    choices: payload.response.json.choices.map(choice => ({
+        ...choice,
+        message: {
+            ...choice.message,
+            content: choice.message.content?.replaceAll("PERSON_001", "Alex Example")
+        }
+    }))
+}
+
+return {
+    verdict: true,
+    transformedData: {
+        response: { json: restoredResponse }
+    }
+}
+```
+
+This example handles text Chat Completions responses. Use your own request-specific token mapping and handle the response fields used by your application.
+
+After restoration, Portkey sends streamed answer events containing `Hello, Alex Example!` and the requested API's completion events. The response uses `Content-Type: text/event-stream`. No answer content is sent before restoration completes. For an originally non-streaming request, the restored answer uses `Content-Type: application/json`.
+
+#### Keep Streaming When No Replacement Is Needed
+
+Return `{"verdict": true}` without `transformedData` to leave the request unchanged. If another content change needs a full replacement, retain the incoming `stream` value:
+
+```js Preserve the incoming mode
+return {
+    verdict: true,
+    transformedData: {
+        request: {
+            json: {
+                ...payload.request.json,
+                messages: updatedMessages
+            }
+        }
+    }
+}
+```
+
+Omitting `stream` from a replacement selects non-streaming for the provider, even for a content-only change. With provider streaming unchanged, tokens arrive as they are generated; output checks remain informational and cannot replace content already sent.
+
+#### Supported Routes and Limits
+
+- Applies to synchronous input hooks on JSON `POST /v1/chat/completions`, `POST /v1/completions`, `POST /v1/messages`, and `POST /v1/responses`, including their existing provider adapters.
+- Configuration overrides still resolve before input hooks. The gateway compares the mode immediately before those hooks with the final mode after all synchronous input hooks finish.
+- A final `false` to `true` change is rejected before a provider call with HTTP `400`, `x-portkey-gateway-exception: true`, and the JSON error below. An omitted pre-hook `stream` counts as `false`. Retries and fallbacks cannot bypass this rejection; existing hard denials still take precedence.
+- Start hooks and async hooks cannot select this behaviour. An async output hook cannot restore the answer before delivery.
+- This does not apply to embeddings, multipart, audio, images, MCP, WebSockets, or arbitrary proxy paths.
+- Cache lookup and storage are bypassed when a synchronous input hook changes the request body or an enabled synchronous output hook is configured. This keeps cached answers from skipping restoration or replaying another request's restored values. Non-mutating input-only requests retain existing cache behaviour.
+
+```json Unsupported mode change
+{
+    "status": "failure",
+    "message": "Input guardrails cannot enable streaming for a non-streaming request."
+}
+```
 
 ### Response Transformation
 
