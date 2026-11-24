@@ -28,25 +28,37 @@ Portkey offers two primary methods to integrate your private LLMs:
 
 ### Option 1: Using Model Catalog
 
-#### Step 1: Add Your Private LLM to Model Catalog
+There is no separate "generic / private LLM" entry in the provider dropdown. After the Model Catalog upgrade, private and local endpoints are added as **custom models** on an integration that matches their API shape (usually OpenAI-compatible), with a per-model `custom_host`.
 
-Navigate to [**Model Catalog → Add Provider**](https://app.portkey.ai/model-catalog/providers) in your Portkey dashboard.
+See also: [Adding Custom Models](/product/model-catalog/custom-models) and [Upgrade to Model Catalog](/support/upgrade-to-model-catalog).
 
-<Frame caption="Adding a private LLM to Model Catalog">
-  <img src="/images/private-llm.png" alt="Model Catalog setup for private LLM" />
+#### Step 1: Connect (or open) a compatible Integration
+
+1. Open [**Model Catalog → AI Providers / Integrations**](https://app.portkey.ai/model-catalog) in your Portkey dashboard.
+2. Connect a provider whose **API signature** matches your private server (typically **OpenAI** for `/v1/chat/completions`). You are choosing the wire format, not the commercial vendor behind your host.
+3. Open that integration and go to **Model Provisioning**.
+
+#### Step 2: Add your private model with a custom host
+
+1. Click **Add Model**.
+2. Choose **Custom model** (or **Fine-tuned model** if applicable).
+3. Set a **Model Slug** (what you will call in API requests, e.g. `my-local-llama`).
+4. Pick a **Base Model** that is API-compatible with your deployment (e.g. `gpt-4o` for OpenAI-format payloads).
+5. Set **custom host** to your private base URL (include the version path, e.g. `https://llm.internal.example.com/v1`).
+6. Optionally set **custom headers** for auth (or rely on the integration's credentials / forwarded headers).
+7. Save / enable the model.
+
+<Frame caption="Adding a custom / private model in Model Provisioning">
+  <img src="/images/custom-model.png" alt="Add Custom Model form in Model Catalog" />
 </Frame>
 
-1. Click **"Add Provider"** and enable the **"Local/Privately hosted provider"** toggle
-2. Configure your deployment:
-   - Select the matching provider API specification (typically `OpenAI`)
-   - Enter your model's base URL in the `Custom Host` field
-   - Add required authentication headers and their values
-3. Name your provider (e.g., `my-private-llm`)
-4. Click **"Create"** to save your configuration
+<Note>
+If your LLM only speaks another provider's protocol (Anthropic Messages, etc.), connect that provider's integration instead of OpenAI, then add the custom model the same way. For a full field reference, see [Adding Custom Models](/product/model-catalog/custom-models).
+</Note>
 
-#### Step 2: Use Your Provider in Requests
+#### Step 3: Call the model
 
-After adding your provider to the Model Catalog, you can use it in your applications:
+Use the Model Catalog slug form `@provider_slug/model_slug` (or the workspace provider slug your dashboard shows):
 
 <CodeGroup>
 ```js NodeJS
@@ -54,13 +66,12 @@ import Portkey from 'portkey-ai'
 
 const portkey = new Portkey({
     apiKey: "PORTKEY_API_KEY",
-    provider:"@YOUR_PRIVATE_LLM_PROVIDER"
 })
 
 async function main() {
   const response = await portkey.chat.completions.create({
+    model: "@YOUR_PROVIDER_SLUG/my-local-llama",
     messages: [{ role: "user", content: "Explain quantum computing in simple terms" }],
-    model: "YOUR_MODEL_NAME",  // The model name your private deployment expects
   });
 
   console.log(response.choices[0].message.content);
@@ -72,13 +83,10 @@ main();
 ```py Python
 from portkey_ai import Portkey
 
-portkey = Portkey(
-    api_key="PORTKEY_API_KEY",
-    provider="@YOUR_PRIVATE_LLM_PROVIDER"
-)
+portkey = Portkey(api_key="PORTKEY_API_KEY")
 
 response = portkey.chat.completions.create(
-  model="YOUR_MODEL_NAME",  # The model name your private deployment expects
+  model="@YOUR_PROVIDER_SLUG/my-local-llama",
   messages=[
     {"role": "user", "content": "Explain quantum computing in simple terms"}
   ]
@@ -91,9 +99,8 @@ print(response.choices[0].message.content)
 curl https://api.portkey.ai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "x-portkey-api-key: $PORTKEY_API_KEY" \
-  -H "x-portkey-provider: @my-private-llm" \
   -d '{
-    "model": "YOUR_MODEL_NAME",
+    "model": "@YOUR_PROVIDER_SLUG/my-local-llama",
     "messages": [
       { "role": "user", "content": "Explain quantum computing in simple terms" }
     ]
