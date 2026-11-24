@@ -1,0 +1,270 @@
+---
+title: "Automated Prompt Replication"
+description: "Bulk-copy Portkey prompts and point them at a new model using the Admin API—no manual duplication in the UI."
+---
+
+Use this workflow when many prompts target one model (for example Claude 3.7) and you want **replicas** that keep the same template and settings but run on another model (for example Claude 3.5 Sonnet on Bedrock). The [List prompts](/api-reference/admin-api/control-plane/prompts/list-prompts), [Retrieve prompt](/api-reference/admin-api/control-plane/prompts/retrieve-prompt), and [Create prompt](/api-reference/admin-api/control-plane/prompts/create-prompt) endpoints drive the migration.
+
+<Info>
+**Auth:** Use an [Admin API key](/api-reference/admin-api/introduction) or a **Workspace API key** with prompt permissions. Send `x-portkey-api-key` on every request.
+</Info>
+
+## When to use this
+
+- Migrate dozens of prompts to a new default model after a provider or catalog change  
+- Keep originals untouched by creating **named replicas** (for example append `-replica`)  
+- Automate what would otherwise be repeated copy-paste in Prompt Studio  
+
+## How it works
+
+1. **List** all prompts and collect their IDs.  
+2. **Retrieve** each prompt’s full definition (template `string`, `parameters`, `virtual_key`, metadata, etc.).  
+3. **Create** a new prompt per ID with the same body fields and a **new `model`** value.  
+
+Replace the example model string (`anthropic.claude-3-5-sonnet`) with the exact model identifier your workspace uses.
+
+---
+
+## Step 1: List prompts and collect IDs
+
+<Tabs>
+  <Tab title="Python">
+```python
+import requests
+
+BASE = "https://api.portkey.ai/v1"
+headers = {"x-portkey-api-key": "YOUR_API_KEY"}
+
+r = requests.get(f"{BASE}/prompts", headers=headers)
+r.raise_for_status()
+
+prompt_ids = [item["id"] for item in r.json()["data"]]
+print(prompt_ids)
+```
+  </Tab>
+  <Tab title="Node.js">
+```javascript
+async function main() {
+  const BASE = 'https://api.portkey.ai/v1';
+  const headers = { 'x-portkey-api-key': process.env.PORTKEY_API_KEY ?? 'YOUR_API_KEY' };
+
+  const res = await fetch(`${BASE}/prompts`, { headers });
+  if (!res.ok) throw new Error(`List prompts failed: ${res.status}`);
+  const { data } = await res.json();
+  const promptIds = data.map((row) => row.id);
+  console.log(promptIds);
+}
+
+main().catch(console.error);
+```
+  </Tab>
+</Tabs>
+
+<Note>
+**Python (steps 2–3):** Run the snippets in order in the same session so `BASE`, `headers`, and `prompt_ids` / `prompt_data` stay in scope. **Node.js:** Examples use native `fetch` (Node.js 18+).
+</Note>
+
+---
+
+## Step 2: Fetch one prompt’s full configuration
+
+Use this shape to see which fields the API returns before building the create payload (names vary slightly by version; always log once and adjust keys if needed).
+
+<Tabs>
+  <Tab title="Python">
+```python
+prompt_id = prompt_ids[0]
+url = f"{BASE}/prompts/{prompt_id}"
+
+prompt_data = requests.get(url, headers=headers).json()
+print(prompt_data)
+```
+  </Tab>
+  <Tab title="Node.js">
+```javascript
+async function main() {
+  const BASE = 'https://api.portkey.ai/v1';
+  const headers = { 'x-portkey-api-key': process.env.PORTKEY_API_KEY ?? 'YOUR_API_KEY' };
+
+  const listRes = await fetch(`${BASE}/prompts`, { headers });
+  const { data } = await listRes.json();
+  const promptId = data[0].id;
+
+  const promptData = await fetch(`${BASE}/prompts/${promptId}`, { headers }).then((r) =>
+    r.json()
+  );
+  console.log(promptData);
+}
+
+main().catch(console.error);
+```
+  </Tab>
+</Tabs>
+
+---
+
+## Step 3: Create a single replicated prompt
+
+The replica reuses template content and metadata, overrides **`model`**, and uses a distinct **`name`** so it does not collide with the original.
+
+<Tabs>
+  <Tab title="Python">
+```python
+TARGET_MODEL = "anthropic.claude-3-5-sonnet"
+
+payload = {
+    "name": prompt_data["name"] + "-replica",
+    "collection_id": prompt_data["collection_id"],
+    "string": prompt_data["string"],
+    "parameters": prompt_data["parameters"],
+    "virtual_key": prompt_data["virtual_key"],
+    "model": TARGET_MODEL,
+    "version_description": prompt_data.get(
+        "prompt_version_description", "Replicated prompt"
+    ),
+    "template_metadata": prompt_data["template_metadata"],
+}
+
+r = requests.post(f"{BASE}/prompts", json=payload, headers=headers)
+r.raise_for_status()
+print(r.json())
+```
+  </Tab>
+  <Tab title="Node.js">
+```javascript
+async function main() {
+  const BASE = 'https://api.portkey.ai/v1';
+  const headers = { 'x-portkey-api-key': process.env.PORTKEY_API_KEY ?? 'YOUR_API_KEY' };
+  const TARGET_MODEL = 'anthropic.claude-3-5-sonnet';
+
+  const listRes = await fetch(`${BASE}/prompts`, { headers });
+  const { data } = await listRes.json();
+  const promptData = await fetch(`${BASE}/prompts/${data[0].id}`, { headers }).then((r) =>
+    r.json()
+  );
+
+  const payload = {
+    name: `${promptData.name}-replica`,
+    collection_id: promptData.collection_id,
+    string: promptData.string,
+    parameters: promptData.parameters,
+    virtual_key: promptData.virtual_key,
+    model: TARGET_MODEL,
+    version_description:
+      promptData.prompt_version_description ?? 'Replicated prompt',
+    template_metadata: promptData.template_metadata,
+  };
+
+  const created = await fetch(`${BASE}/prompts`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then((r) => r.json());
+  console.log(created);
+}
+
+main().catch(console.error);
+```
+  </Tab>
+</Tabs>
+
+---
+
+## Full loop: replicate every prompt
+
+<Tabs>
+  <Tab title="Python">
+```python
+import requests
+
+BASE = "https://api.portkey.ai/v1"
+TARGET_MODEL = "anthropic.claude-3-5-sonnet"
+
+headers = {"x-portkey-api-key": "YOUR_API_KEY"}
+
+list_res = requests.get(f"{BASE}/prompts", headers=headers)
+list_res.raise_for_status()
+prompt_ids = [row["id"] for row in list_res.json()["data"]]
+
+for prompt_id in prompt_ids:
+    data = requests.get(f"{BASE}/prompts/{prompt_id}", headers=headers).json()
+
+    payload = {
+        "name": data["name"] + "-replica",
+        "collection_id": data["collection_id"],
+        "string": data["string"],
+        "parameters": data["parameters"],
+        "virtual_key": data["virtual_key"],
+        "model": TARGET_MODEL,
+        "version_description": data.get(
+            "prompt_version_description", "Replicated"
+        ),
+        "template_metadata": data["template_metadata"],
+    }
+
+    r = requests.post(f"{BASE}/prompts", json=payload, headers=headers)
+    r.raise_for_status()
+    print(r.json())
+```
+  </Tab>
+  <Tab title="Node.js">
+```javascript
+async function main() {
+  const BASE = 'https://api.portkey.ai/v1';
+  const TARGET_MODEL = 'anthropic.claude-3-5-sonnet';
+  const headers = { 'x-portkey-api-key': process.env.PORTKEY_API_KEY ?? 'YOUR_API_KEY' };
+
+  const listRes = await fetch(`${BASE}/prompts`, { headers });
+  if (!listRes.ok) throw new Error(`List failed: ${listRes.status}`);
+  const { data: rows } = await listRes.json();
+  const promptIds = rows.map((r) => r.id);
+
+  for (const promptId of promptIds) {
+    const data = await fetch(`${BASE}/prompts/${promptId}`, { headers }).then((r) =>
+      r.json()
+    );
+
+    const payload = {
+      name: `${data.name}-replica`,
+      collection_id: data.collection_id,
+      string: data.string,
+      parameters: data.parameters,
+      virtual_key: data.virtual_key,
+      model: TARGET_MODEL,
+      version_description: data.prompt_version_description ?? 'Replicated',
+      template_metadata: data.template_metadata,
+    };
+
+    const r = await fetch(`${BASE}/prompts`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error(`Create failed for ${promptId}: ${r.status}`);
+    console.log(await r.json());
+  }
+}
+
+main().catch(console.error);
+```
+  </Tab>
+</Tabs>
+
+<Note>
+**Field names:** If `retrieve` responses use different keys (for example nested version objects), log one response and map fields explicitly. **Null `collection_id`:** Omit or pass `null` only if the create API accepts it for your workspace. **Rate limits:** Add backoff or batching for very large prompt libraries.
+</Note>
+
+## After replication
+
+- Point applications at the **new prompt IDs** or keep names predictable (for example `*-replica`) and resolve by name if your tooling supports it.  
+- For runtime calls, use the [Prompt API](/product/prompt-engineering-studio/prompt-api) (`/v1/prompts/{promptId}/completions`) with the replica’s ID.  
+
+## Summary
+
+| Step | Action |
+|:-----|:-------|
+| 1 | `GET /v1/prompts` → collect IDs |
+| 2 | `GET /v1/prompts/{id}` → read full config |
+| 3 | `POST /v1/prompts` → same body + new `model` + new `name` |
+
+Bulk replication avoids manual duplication, keeps templates aligned, and makes model upgrades repeatable across the workspace.
