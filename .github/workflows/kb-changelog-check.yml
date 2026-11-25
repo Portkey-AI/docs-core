@@ -48,51 +48,67 @@ jobs:
         id: build
         run: |
           set -euo pipefail
+          if ! [[ "$PR" =~ ^[0-9]+$ ]]; then
+            echo "Not a pull request number: $PR" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           mkdir -p build
           gh api "repos/$REPO/pulls/$PR" > build/pr.json
           if [ "$(jq -r .merged build/pr.json)" != "true" ]; then
             echo "PR #$PR is not merged." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | [.status, .filename] | @tsv' > build/files.tsv
+          gh api --paginate "repos/$REPO/pulls/$PR/files" > build/files.json
 
           # Pages the source covers: aigw/ .mdx, minus what the resource excludes.
-          # A removed page cannot be fetched at the merge commit, so it is
-          # named in the note rather than sent as a page.
-          in_scope='^aigw/.*\.mdx$'
-          excluded='^aigw/(_project|scripts)/'
-          awk -F'\t' '$1!="removed"{print $2}' build/files.tsv | grep -E "$in_scope" | grep -Ev "$excluded" > build/pages.txt || true
-          awk -F'\t' '$1=="removed"{print $2}' build/files.tsv | grep -E "$in_scope" | grep -Ev "$excluded" > build/removed.txt || true
+          # A removed page cannot be fetched at the merge commit, so it is named
+          # in the note rather than sent as a page. A renamed page's old path is
+          # gone too, so it counts as removed and its new path as changed.
+          # --paginate prints one array per page; -s joins them.
+          jq -rs --arg changelog "$CHANGELOG_PATH" '
+            def scoped: test("^aigw/.*\\.mdx$") and (test("^aigw/(_project|scripts)/") | not);
+            add // [] |
+            { pages:   [.[] | select(.status != "removed") | .filename | select(scoped)],
+              removed: ([.[] | select(.status == "removed") | .filename | select(scoped)]
+                        + [.[] | select(.status == "renamed") | .previous_filename // empty | select(scoped)]),
+              changelog: any(.[]; .filename == $changelog) }
+          ' build/files.json > build/scope.json
 
-          total=$(wc -l < build/pages.txt | tr -d ' ')
-          removed=$(wc -l < build/removed.txt | tr -d ' ')
+          total=$(jq '.pages | length' build/scope.json)
+          removed=$(jq '.removed | length' build/scope.json)
           if [ "$total" -eq 0 ] && [ "$removed" -eq 0 ]; then
             echo "PR #$PR changes no page under aigw/; nothing to send." >> "$GITHUB_STEP_SUMMARY"
             echo "send=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          head -n "$MAX_PAGES" build/pages.txt > build/sent.txt
-          if cut -f2 build/files.tsv | grep -qxF "$CHANGELOG_PATH"; then
-            touched="This PR also changed the changelog."
-          else
-            touched="This PR did not change the changelog."
-          fi
-
-          sha=$(jq -r .merge_commit_sha build/pr.json)
-          title=$(jq -r .title build/pr.json)
-          url=$(jq -r .html_url build/pr.json)
-          note="Changelog check for $REPO PR #$PR ($url), \"$title\", merged as $sha. It changed $total page(s) under aigw/"
-          [ "$total" -gt "$MAX_PAGES" ] && note="$note; the first $MAX_PAGES are sent"
-          [ "$removed" -gt 0 ] && note="$note, and removed: $(paste -sd, build/removed.txt)"
-          note="$note. $touched Decide whether the changelog ($CHANGELOG_PATH in $REPO, $CHANGELOG_URL) needs an entry for these changes, and flag a meaningful change it does not reflect."
-
           # A removed page cannot be fetched, so a PR that only removed pages
           # leaves nothing to send.
-          if [ ! -s build/sent.txt ]; then
+          if [ "$total" -eq 0 ]; then
             echo "PR #$PR only removed pages under aigw/; nothing to send." >> "$GITHUB_STEP_SUMMARY"
             echo "send=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          jq -r --argjson n "$MAX_PAGES" '.pages[:$n][]' build/scope.json > build/sent.txt
+
+          if [ "$(jq .changelog build/scope.json)" = "true" ]; then
+            touched="This PR also changed the changelog."
+          else
+            touched="This PR did not change the changelog."
+          fi
+          sha=$(jq -r .merge_commit_sha build/pr.json)
+          title=$(jq -r .title build/pr.json)
+          url=$(jq -r .html_url build/pr.json)
+          note="Changelog check for $REPO PR #$PR ($url), \"$title\", merged as $sha. It changed $total page(s) under aigw/"
+          if [ "$total" -gt "$MAX_PAGES" ]; then
+            note="$note; the first $MAX_PAGES are sent"
+          fi
+          if [ "$removed" -gt 0 ]; then
+            note="$note, and removed $removed: $(jq -r --argjson n "$MAX_PAGES" '.removed[:$n] | join(", ")' build/scope.json)"
+            if [ "$removed" -gt "$MAX_PAGES" ]; then
+              note="$note, and more"
+            fi
+          fi
+          note="$note. $touched Decide whether the changelog ($CHANGELOG_PATH in $REPO, $CHANGELOG_URL) needs an entry for these changes, and flag a meaningful change it does not reflect."
 
           jq -n \
             --arg source "$KB_SOURCE_ID" \
