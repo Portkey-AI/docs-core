@@ -1,0 +1,210 @@
+---
+title: "Sarvam AI"
+description: "Use Sarvam AI's Token Factory models, including Sarvam 105B, through Portkey."
+---
+
+Portkey provides a robust and secure gateway to integrate [Sarvam AI](https://www.sarvam.ai/) models into your applications. Sarvam's Token Factory API serves Sarvam's own multilingual models, built for Indian languages, along with hosted open-weight models through an OpenAI-compatible chat completions API.
+
+With Portkey, you get observability, fallbacks, caching, cost tracking and secure key management through [Model Catalog](/product/model-catalog).
+
+<Note>
+Provider Slug: `sarvam`
+</Note>
+
+## Supported models
+
+| Model | Context | Notes |
+|---|---|---|
+| `sarvam-105b` | 128K | Sarvam's flagship reasoning model, multilingual across Indian languages |
+| `sarvam-105b-conversations` | 32K | Tuned for low-latency conversation, no reasoning |
+| `glm5.3` | 1M | Hosted open-weight reasoning model |
+| `glm5.3-flash` | 1M | Hosted open-weight reasoning model, image input |
+| `gemma4` | 256K | Hosted open-weight model, image input |
+| `deepseekv4.1-flash-1017` | 1M | Hosted open-weight reasoning model, image input |
+| `deepseekv4.1-flash-1017-interactive` | 1M | Lower-latency tier of `deepseekv4.1-flash-1017` |
+
+See the full, current list in the [Sarvam docs](https://docs.sarvam.ai/) or from `GET https://api.sarvam.ai/v2/models`.
+
+## Quick start
+
+### 1. Get your Sarvam API key
+
+Create an API key in the [Sarvam dashboard](https://dashboard.sarvam.ai/), then add it to [Model Catalog](https://app.portkey.ai/model-catalog) to get your AI Provider slug (for example `@sarvam-prod`).
+
+### 2. Install the Portkey SDK
+
+<CodeGroup>
+```sh NodeJS
+npm install --save portkey-ai
+```
+```sh Python
+pip install portkey-ai
+```
+</CodeGroup>
+
+### 3. Make a request
+
+<CodeGroup>
+```python Python
+from portkey_ai import Portkey
+
+portkey = Portkey(
+    api_key="PORTKEY_API_KEY",
+    provider="@sarvam-prod"  # Your AI Provider slug from Model Catalog
+)
+
+completion = portkey.chat.completions.create(
+    model="sarvam-105b",
+    messages=[{"role": "user", "content": "भारत की राजधानी क्या है?"}]
+)
+
+print(completion.choices[0].message.content)
+```
+
+```js NodeJS
+import Portkey from 'portkey-ai'
+
+const portkey = new Portkey({
+    apiKey: "PORTKEY_API_KEY",
+    provider: "@sarvam-prod" // Your AI Provider slug from Model Catalog
+})
+
+const completion = await portkey.chat.completions.create({
+    model: "sarvam-105b",
+    messages: [{ role: "user", content: "भारत की राजधानी क्या है?" }]
+})
+
+console.log(completion.choices[0].message.content)
+```
+
+```python OpenAI Python SDK
+from openai import OpenAI
+from portkey_ai import PORTKEY_GATEWAY_URL
+
+client = OpenAI(
+    api_key="PORTKEY_API_KEY",
+    base_url=PORTKEY_GATEWAY_URL
+)
+
+completion = client.chat.completions.create(
+    model="@sarvam-prod/sarvam-105b",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+print(completion.choices[0].message.content)
+```
+
+```sh cURL
+curl https://api.portkey.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "x-portkey-provider: @sarvam-prod" \
+  -d '{
+    "model": "sarvam-105b",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+</CodeGroup>
+
+### Self-hosted gateway
+
+With the open-source [Portkey Gateway](https://github.com/Portkey-AI/gateway), pass your Sarvam key directly:
+
+```sh
+curl http://localhost:8787/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-portkey-provider: sarvam" \
+  -H "Authorization: Bearer $SARVAM_API_KEY" \
+  -d '{
+    "model": "sarvam-105b",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+## Streaming
+
+```python
+stream = portkey.chat.completions.create(
+    model="sarvam-105b",
+    messages=[{"role": "user", "content": "Write a short poem in Tamil."}],
+    stream=True
+)
+
+for chunk in stream:
+    if chunk.choices and chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)
+```
+
+## Tool calling
+
+All Sarvam chat models support OpenAI-style tool calling with `tool_choice` set to `auto`, `none`, `required` or a named function.
+
+```python
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "getWeather",
+        "description": "Get the current weather",
+        "parameters": {
+            "type": "object",
+            "properties": {"location": {"type": "string", "description": "City"}},
+            "required": ["location"]
+        }
+    }
+}]
+
+response = portkey.chat.completions.create(
+    model="sarvam-105b",
+    messages=[{"role": "user", "content": "What's the weather like in Bengaluru?"}],
+    tools=tools,
+    tool_choice="auto"
+)
+
+print(response.choices[0].message.tool_calls)
+```
+
+## Responses API
+
+Sarvam supports the OpenAI [Responses API](/product/ai-gateway/responses-api) for creating responses, both streaming and non-streaming.
+
+```python
+response = portkey.responses.create(
+    model="sarvam-105b",
+    input="Explain the monsoon in two sentences, in Hindi."
+)
+
+print(response.output_text)
+```
+
+<Note>
+Sarvam's Responses API is stateless. `store`, `background`, `previous_response_id` and `conversation` are not supported, and responses can't be retrieved or deleted later. Send the full conversation in `input` on every request.
+</Note>
+
+## Reasoning
+
+`sarvam-105b` reasons by default. Set `reasoning_effort` to `low`, `medium` or `high`, or to `none` to turn reasoning off. The GLM and DeepSeek models accept `low`, `high` or `max`. Reasoning tokens count toward `max_tokens`, so leave enough room for the answer.
+
+```python
+response = portkey.chat.completions.create(
+    model="sarvam-105b",
+    messages=[{"role": "user", "content": "Solve: 17 × 23"}],
+    reasoning_effort="high"
+)
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Add metadata" icon="tags" href="/product/observability/metadata">
+    Attach custom metadata to your Sarvam requests
+  </Card>
+  <Card title="Gateway configs" icon="gear" href="/product/ai-gateway/configs">
+    Add fallbacks, retries and load balancing
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/product/observability">
+    Track Sarvam usage, latency and cost
+  </Card>
+  <Card title="Caching" icon="database" href="/product/ai-gateway/cache-simple-and-semantic">
+    Cache Sarvam responses
+  </Card>
+</CardGroup>
