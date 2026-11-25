@@ -249,15 +249,192 @@ Portkey maintains a trusted hosts allowlist via the `TRUSTED_CUSTOM_HOSTS` envir
 
 ### Default behavior
 
-| Environment | `TRUSTED_CUSTOM_HOSTS` unset | Behavior |
-|-------------|------------------------------|----------|
-| **Non-production** (`NODE_ENV` ≠ `production`) | Yes | Defaults to `localhost`, `127.0.0.1`, `::1`, and `host.docker.internal` |
-| **Production** (`NODE_ENV` = `production`) | Yes | **Empty allowlist** — localhost and private IPs are blocked until you opt in |
-| Any | Explicitly set | Uses **only** the hosts you specify (replaces defaults; does not merge) |
+| `TRUSTED_CUSTOM_HOSTS` | Behavior |
+|------------------------|----------|
+| Unset | Only the [built-in provider endpoints](#built-in-provider-endpoints) are trusted. `localhost`, `127.0.0.1`, `::1`, `host.docker.internal`, private IPs, and internal hostnames are blocked in every environment. |
+| Set | Your entries are **merged** with the built-in provider endpoints. They don't replace them. |
 
-<Warning>
-When setting `TRUSTED_CUSTOM_HOSTS` in non-production, include the default values (`localhost`, `127.0.0.1`, `::1`, `host.docker.internal`) along with your additions if you still need local development access.
-</Warning>
+<Note>
+For local development against `localhost` or Docker, add those hosts explicitly, for example `TRUSTED_CUSTOM_HOSTS="localhost,127.0.0.1,::1,host.docker.internal"`.
+</Note>
+
+### Built-in provider endpoints
+
+The AI Gateway always trusts the provider endpoints it calls itself. If one of these hostnames resolves to a private IP, for example through AWS PrivateLink, Azure Private Endpoint, Google Private Service Connect, or split-horizon DNS, requests keep working without any configuration.
+
+Only the exact endpoints the gateway builds are trusted, never a whole cloud namespace. Anyone can create a public DNS name under a shared namespace such as `*.amazonaws.com` that points at a private IP. If you configure a hostname yourself, add it to `TRUSTED_CUSTOM_HOSTS`. That covers VPC endpoint URLs (`vpce-*.amazonaws.com`), FIPS endpoints, and sovereign or China cloud hosts.
+
+These patterns follow different rules from `TRUSTED_CUSTOM_HOSTS` wildcards:
+
+- `*` matches exactly one DNS label, such as a region, bucket, or resource name. It never matches a dotted run of labels or the apex.
+- `*-name` matches one label ending in `-name`. For example, `*-aiplatform.googleapis.com` matches `us-central1-aiplatform.googleapis.com`.
+- `bedrock-runtime.*.amazonaws.com` matches `bedrock-runtime.us-east-1.amazonaws.com` but not `bedrock-runtime.x.elb.us-east-1.amazonaws.com`.
+
+For AWS, `<domain>` is the value of `AWS_ENDPOINT_DOMAIN` (default `amazonaws.com`). The AWS endpoints are always trusted under `amazonaws.com`, which covers commercial regions and GovCloud. If you set `AWS_ENDPOINT_DOMAIN` (for example `amazonaws.com.cn`), the same endpoints are also trusted under that domain.
+
+<AccordionGroup>
+<Accordion title="Google Cloud">
+  - `aiplatform.googleapis.com`
+  - `*-aiplatform.googleapis.com`
+  - `aiplatform.*.rep.googleapis.com`
+  - `discoveryengine.googleapis.com`
+  - `*-discoveryengine.googleapis.com`
+  - `texttospeech.googleapis.com`
+  - `*-texttospeech.googleapis.com`
+  - `generativelanguage.googleapis.com`
+  - `storage.googleapis.com`
+  - `*.storage.googleapis.com`
+  - `oauth2.googleapis.com`
+  - `www.googleapis.com`
+  - `sts.googleapis.com`
+  - `iamcredentials.googleapis.com`
+</Accordion>
+<Accordion title="Microsoft Azure and Entra ID">
+  - `*.openai.azure.com`
+  - `*.cognitiveservices.azure.com`
+  - `*.services.ai.azure.com`
+  - `*.*.models.ai.azure.com`
+  - `models.inference.ai.azure.com`
+  - `*.*.inference.ml.azure.com`
+  - `*.blob.core.windows.net`
+  - `*.vault.azure.net`
+  - `*.openai.azure.us`
+  - `*.cognitiveservices.azure.us`
+  - `*.services.ai.azure.us`
+  - `*.blob.core.usgovcloudapi.net`
+  - `*.vault.usgovcloudapi.net`
+  - `*.openai.azure.cn`
+  - `*.cognitiveservices.azure.cn`
+  - `*.blob.core.chinacloudapi.cn`
+  - `*.vault.azure.cn`
+  - `login.microsoftonline.com`
+  - `login.microsoftonline.us`
+  - `login.partner.microsoftonline.cn`
+  - `login.microsoftonline.de`
+  - `login.windows.net`
+  - `login.microsoft.com`
+  - `sts.windows.net`
+</Accordion>
+<Accordion title="AWS">
+  - `bedrock-runtime.*.<domain>`
+  - `bedrock.*.<domain>`
+  - `bedrock-agent-runtime.*.<domain>`
+  - `runtime.sagemaker.*.<domain>`
+  - `sts.*.<domain>`
+  - `secretsmanager.*.<domain>`
+  - `*.s3.*.<domain>`
+  - `bedrock-mantle.*.api.aws`
+  - `aws-external-anthropic.*.api.aws`
+</Accordion>
+<Accordion title="Other clouds and data platforms">
+  - `*.snowflakecomputing.com`
+  - `*.*.snowflakecomputing.com`
+  - `*.*.*.snowflakecomputing.com`
+  - `*.cloud.databricks.com`
+  - `inference.generativeai.*.oci.oraclecloud.com`
+  - `iaas.*.oraclecloud.com`
+  - `dashscope.aliyuncs.com`
+  - `dashscope-intl.aliyuncs.com`
+  - `green-cip.*.aliyuncs.com`
+  - `ark.*.bytepluses.com`
+  - `api.cloudflare.com`
+  - `*.s3.*.wasabisys.com`
+</Accordion>
+<Accordion title="Model providers">
+  - `api.openai.com`
+  - `*.api.openai.com`
+  - `auth.openai.com`
+  - `api.anthropic.com`
+  - `api.portkey.ai`
+  - `api.deepseek.com`
+  - `api.groq.com`
+  - `api.mistral.ai`
+  - `api.cohere.ai`
+  - `api.together.xyz`
+  - `api.fireworks.ai`
+  - `api.perplexity.ai`
+  - `api.cerebras.ai`
+  - `api.x.ai`
+  - `api.z.ai`
+  - `api.replicate.com`
+  - `api.deepinfra.com`
+  - `api.sambanova.ai`
+  - `router.huggingface.co`
+  - `api.meta.ai`
+  - `api.ai21.com`
+  - `api.upstage.ai`
+  - `openrouter.ai`
+  - `api.siliconflow.cn`
+  - `open.bigmodel.cn`
+  - `api.lingyiwanwu.com`
+  - `api.302.ai`
+  - `aibadgr.com`
+  - `api.bytez.com`
+  - `api.cometapi.com`
+  - `api.deepbricks.ai`
+  - `api.lemonfox.ai`
+  - `api.matterai.so`
+  - `api.minimax.io`
+  - `api.moonshot.cn`
+  - `api.ncompass.tech`
+  - `api.nextbit256.com`
+  - `api.reka.ai`
+  - `api.scx.ai`
+  - `api.segmind.com`
+  - `api.typesafe.ai`
+  - `cloud.olakrutrim.com`
+  - `oai.endpoints.kepler.ai.cloud.ovh.net`
+  - `fal.run`
+</Accordion>
+<Accordion title="Inference platforms">
+  - `api.lepton.ai`
+  - `api.hyperbolic.xyz`
+  - `api.lambdalabs.com`
+  - `api.modal.com`
+  - `serving.app.predibase.com`
+  - `api.endpoints.anyscale.com`
+  - `api.novita.ai`
+  - `api.featherless.ai`
+  - `api.inference.net`
+  - `inference.api.nscale.com`
+  - `api.studio.nebius.ai`
+  - `lightning.ai`
+  - `cloud-api.near.ai`
+  - `llm.monsterapi.ai`
+  - `api.intelligence.io.solutions`
+  - `api.kluster.ai`
+</Accordion>
+<Accordion title="Embedding, search, media, and audio providers">
+  - `api-atlas.nomic.ai`
+  - `api.voyageai.com`
+  - `api.jina.ai`
+  - `api.pinecone.io`
+  - `api.stability.ai`
+  - `external.api.recraft.ai`
+  - `api.tripo3d.ai`
+  - `api.cloud.scenario.com`
+  - `api.meshy.ai`
+  - `api.deepgram.com`
+  - `api.elevenlabs.io`
+</Accordion>
+<Accordion title="Guardrail and plugin vendors">
+  - `api.lakera.ai`
+  - `api.patronus.ai`
+  - `api.pillarseclabs.com`
+  - `api.aisec.catonetworks.com`
+  - `gr-prd.aporia.com`
+  - `guard.sydelabs.ai`
+  - `proxy.qualifire.ai`
+  - `server.lasso.security`
+  - `service.api.aisecurity.paloaltonetworks.com`
+  - `services.walled.ai`
+  - `us1.calypsoai.app`
+  - `api.zseclipse.net`
+  - `api.promptfoo.dev`
+  - `api.exa.ai`
+  - `api.tavily.com`
+</Accordion>
+</AccordionGroup>
 
 ### Adding hosts to the allowlist
 
@@ -308,8 +485,10 @@ Even for trusted hosts, Portkey enforces:
 
 | Scenario | Default behavior | Action needed |
 |----------|-----------------|---------------|
-| **Local development** (e.g., Ollama on `localhost`) | Allowed in non-production — `localhost` and `127.0.0.1` are trusted by default | None in dev. In production, add to `TRUSTED_CUSTOM_HOSTS`. See the [Ollama integration guide](/integrations/llms/ollama). |
-| **Docker containers** (`host.docker.internal`) | Allowed in non-production — trusted by default | In production, add to `TRUSTED_CUSTOM_HOSTS` |
+| **Local development** (e.g., Ollama on `localhost`) | Blocked — not trusted by default | Add `localhost` and `127.0.0.1` to `TRUSTED_CUSTOM_HOSTS`. See the [Ollama integration guide](/integrations/llms/ollama). |
+| **Docker containers** (`host.docker.internal`) | Blocked — not trusted by default | Add `host.docker.internal` to `TRUSTED_CUSTOM_HOSTS` |
+| **Provider over a private endpoint** (e.g., `bedrock-runtime.us-east-1.amazonaws.com` via PrivateLink) | Allowed — a [built-in provider endpoint](#built-in-provider-endpoints) | None |
+| **Customer-specific cloud endpoint** (e.g., `vpce-0abc-xyz.bedrock-runtime.us-east-1.vpce.amazonaws.com`) | Blocked if it resolves to a private IP | Add the hostname to `TRUSTED_CUSTOM_HOSTS` |
 | **Private network IP** (e.g., `172.31.2.45:8008`) | Blocked — falls within `172.16.0.0/12` | Add the IP to `TRUSTED_CUSTOM_HOSTS` (hybrid/air-gapped only) |
 | **Internal DNS name** (e.g., `llm.svc.internal`) | Blocked — `.internal` TLD | Add the hostname (or `*.svc.internal`) to `TRUSTED_CUSTOM_HOSTS` |
 | **Cloud metadata** (`169.254.169.254`) | Always blocked | Cannot be allowlisted for security reasons |
