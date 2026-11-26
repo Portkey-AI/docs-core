@@ -68,11 +68,15 @@ Use async to observe and log without blocking. Use sync when the guardrail resul
 | Guardrail Type | Streaming |
 |:---|:---|
 | `input_guardrails` | **Supported** — evaluated before the stream starts |
-| `output_guardrails` | **Supported** — evaluated on the full response after stream completes (informational only) |
+| `output_guardrails` | **Supported** — informational when provider streaming remains enabled |
 
-With input guardrails on a streaming request: if the check passes, the stream proceeds normally. If it fails with `deny=true`, the stream is blocked with `446` before any tokens are sent.
+Input guardrails can [disable provider streaming](/integrations/guardrails/bring-your-own-guardrails#disabling-streaming) to apply output checks before delivery. Otherwise, a passing check lets the stream proceed normally. A failed check with `deny=true` blocks the request with `446`.
 
-With output guardrails on a streaming request: After the stream completes and the `[DONE]` chunk is sent, Portkey evaluates the full assembled response against your output guardrails. The results are delivered as an additional `hook_results` chunk. Output guardrail results on streaming are **informational only** — no fallback or retry actions are triggered.
+When provider streaming remains enabled, Portkey evaluates output guardrails after the stream completes. Results arrive in an additional `hook_results` chunk after `[DONE]`. They are **informational only** and do not trigger fallback or retry.
+
+<Note>
+  For Chat Completions, Completions, Messages, and Responses, response cache reads and writes are bypassed only when an input guardrail changes provider streaming from enabled to disabled. Other requests retain their existing cache behaviour, including non-streaming requests and body changes that keep the same streaming mode. Downgraded requests can incur more provider calls, cost, and latency.
+</Note>
 
 To receive `hook_results` inside streaming chunks, set:
 
@@ -129,7 +133,7 @@ Tool call arguments (JSON) are treated as text — checks like Regex Match, Cont
 | Async execution | ✓ (default) |
 | Sync execution | ✓ |
 | Streaming — input | ✓ |
-| Streaming — output | ✓ (informational only, no fallback/retry) |
+| Streaming — output | ✓ (informational when provider streaming remains enabled) |
 | Image inputs | ✗ |
 | Text in multimodal messages | ✓ |
 | Tool call text | ✓ |
