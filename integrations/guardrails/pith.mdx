@@ -1,0 +1,65 @@
+---
+title: "pith"
+description: "pith shortens model output per route and proves the shorter answers are equivalent before pinning them."
+---
+
+[pith](https://github.com/dex0shubham/pith) is a self-hosted output-token optimizer. It fingerprints each route by its system prompt and tools, records usage, and, once an offline sweep has shown that a shorter output profile is judged equivalent to the unconstrained baseline, applies that profile to requests. With Portkey it needs no plugin code: the built-in **Webhook** guardrail calls pith before and after each request.
+
+<Card title="Get Started with pith" href="https://github.com/dex0shubham/pith#portkey-plugin" />
+
+<Note>
+pith is **self-hosted**. Portkey does not host it. Run `pith serve` where the gateway can reach it; request bodies go to your pith instance and nowhere else, and pith holds no provider keys.
+</Note>
+
+## Deploy pith
+
+```bash
+pip install pith-optimizer
+OPTIMIZER_WEBHOOK_TOKEN="your-webhook-token" pith serve --config pith.toml
+```
+
+pith listens on port 8787 by default, the same as the open-source gateway, so move one of them (`listen = "0.0.0.0:8788"` in `pith.toml`). Set `webhook_token` (or `OPTIMIZER_WEBHOOK_TOKEN`) when the endpoint is reachable beyond the gateway; pith warns at startup when it is open on a non-loopback bind.
+
+## Using pith with Portkey
+
+### 1. Add two Webhook guardrail checks
+
+Both point at `POST /optimizer/portkey` on your pith instance, with the bearer token in the headers:
+
+* **Before request** (type `mutator`): pith fingerprints the request and, for a pinned route, returns the request with the shape instruction appended to the last user message.
+* **After request** (type `guardrail`, `deny: false`): pith records usage from the response.
+
+```json
+{
+  "before_request_hooks": [{"type": "mutator", "id": "pith-before",
+    "checks": [{"id": "default.webhook", "parameters": {"webhookURL": "http://pith:8788/optimizer/portkey",
+                                                        "headers": {"authorization": "Bearer your-webhook-token"}}}]}],
+  "after_request_hooks":  [{"type": "guardrail", "id": "pith-after", "deny": false,
+    "checks": [{"id": "default.webhook", "parameters": {"webhookURL": "http://pith:8788/optimizer/portkey",
+                                                        "headers": {"authorization": "Bearer your-webhook-token"}}}]}]
+}
+```
+
+### 2. Send traffic, then sweep
+
+Requests are recorded as they flow. A route becomes sweepable after 50 sampled baseline requests. From the pith host:
+
+```bash
+export PORTKEY_API_KEY=pk-...
+pith sweep --config pith.toml --holdout 0.3
+```
+
+Replays go through the gateway (`portkey_upstream` in `pith.toml`, routing headers under `[portkey_headers]`) with `x-portkey-metadata: {"pith_bypass": true}`, so the webhook ignores them. The sweep judges each profile against the unconstrained baseline, measures the baseline's own self-consistency as the noise floor, confirms the winner on a holdout, and pins or refuses with a reason.
+
+### 3. Metadata keys
+
+Send `x-portkey-metadata` to steer pith per request: `pith_route` names the route, `pith_bypass` skips pith entirely, `pith: "off"` forces the baseline.
+
+## Limits
+
+* OpenAI-format (`chatComplete`) requests only.
+* Streaming responses are seen but not recorded, because the after hook receives no body for them.
+* Provider rejections are invisible to after hooks; `pith recheck` is the drift guard.
+* Portkey appends `hook_results` to responses whenever hooks run.
+
+Benchmarks and the decision rule: [pith README](https://github.com/dex0shubham/pith#readme) and [how pith decides a pin](https://github.com/dex0shubham/pith/blob/main/docs/methodology.md).
