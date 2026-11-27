@@ -15,21 +15,23 @@ Requires Backend `v1.17.0+`.
 
 * Navigate to `Admin Settings` → `Plugins`
 * Edit the **Cato Networks** integration
-* Add your Cato API credentials per your Cato deployment
+* Add your **API Key** (`apiKey`, required)
+* Add the **API Base URL** (`apiBase`, optional). Default: `https://api.aisec.catonetworks.com`
 
 ### 2. Add Cato Guardrail Check
 
 * Navigate to `Guardrails` → `Create`
 * Search for **"Cato Networks Guardrail"** and click `Add`
 * Configure:
-  * **User Email** (`userEmail`, optional) — sent as `x-cato-user-email` for policy enforcement and audit
-  * **Gateway Key Alias** (`keyAlias`, optional) — sent as `x-cato-gateway-key-alias` for tracking
+  * **Application Name** (`appName`, optional) — sent to Cato as `x-cato-gateway-key-alias`, for tracking
   * **Timeout** (`timeout`, default `5000` ms)
 * Set guardrail actions and create the guardrail
 
 | Check Name | Description | Parameters | Supported Hooks |
 |------------|-------------|------------|-----------------|
-| Cato Networks Guardrail | Inspects content via Cato analyze API; can monitor, anonymize, or block | `userEmail`, `keyAlias`, `timeout` | `beforeRequestHook`, `afterRequestHook` |
+| Cato Networks Guardrail | Inspects content via Cato analyze API; can monitor, anonymize, or block | `appName`, `timeout` | `beforeRequestHook`, `afterRequestHook` |
+
+To pass a user email or session ID to Cato, send the `x-cato-user-email` or `x-cato-session-id` header on your request. The AI Gateway forwards them to Cato.
 
 ### 3. Attach to a Config
 
@@ -41,3 +43,21 @@ Requires Backend `v1.17.0+`.
 ```
 
 See [Configs](/aigw/product/ai-gateway/configs) for usage with SDKs and the gateway.
+
+## When Cato Blocks a Request
+
+If Cato returns a block action, the check fails. The `data` field of the check result in `hook_results` explains why:
+
+```json
+{
+  "action": "block",
+  "detection_message": "Sensitive content detected"
+}
+```
+
+* `action` is always `block`.
+* `detection_message` is the message from Cato. It is `null` if Cato sends no message.
+* For monitor and anonymize actions, `data` is `null`.
+
+The same fields apply to input and output guardrails. The HTTP response for a failed check depends on the guardrail action (log, soft-deny, or deny with `446`). See [Guardrails](/aigw/product/guardrails).
+
